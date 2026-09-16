@@ -1,14 +1,17 @@
-# Guía de Integración con el SDK de TypeScript
+# 04. Guía de Integración con el SDK de TypeScript
 
 > **Etapa:** Etapa 1 — Memoria Local  
 > **Estado:** Vigente y Activo  
-> **Traducción hermana:** [English Version](../en/04-typescript-04-sdk-typescript.md)
+> **Traducción hermana:** [04 (EN). TypeScript SDK Guide (MemoryStore)](../en/04-typescript-sdk.md)
 
 Esta guía explica cómo importar y utilizar la clase `MemoryStore` en tus propias aplicaciones y scripts de TypeScript dentro de este repositorio.
 
+> [!NOTE]
+> **Dirigido a programadores:** `MemoryStore` es una herramienta para programadores que desean embeber memoria en sus aplicaciones. El usuario final de la terminal no necesita escribir código TypeScript para usar `forge614-engram`.
+
 ---
 
-## 1. Importación y Ciclo de Vida de la Conexión
+## 1. Importación y Opciones de Conexión
 
 Forge614 Engram exporta su interfaz principal directamente desde `src/index.ts`:
 
@@ -16,6 +19,7 @@ Forge614 Engram exporta su interfaz principal directamente desde `src/index.ts`:
 import {
   MemoryStore,
   MemoryError,
+  defaultDatabasePath,
   memoryTypes,
   type SaveInput,
   type Memory,
@@ -25,13 +29,15 @@ import {
 ```
 
 ### Inicialización de la Base de Datos
-Para crear una instancia de almacenamiento debes proporcionar una ruta al archivo SQLite:
 
 ```typescript
-// Almacenamiento persistente en disco (crea carpetas y archivo si no existen)
-const store = new MemoryStore("./.forge614/example.sqlite");
+// 1. Conexión estándar compartida: usa automáticamente ~/.forge614/engram.db
+const store = new MemoryStore();
 
-// O almacenamiento en memoria volátil (desaparece por completo al cerrar)
+// 2. Ruta personalizada: para bases de datos aisladas o pruebas
+const customStore = new MemoryStore("./carpeta-aislada/pruebas.sqlite");
+
+// 3. Almacenamiento en memoria volátil: desaparece por completo al cerrar el proceso
 const memoryOnlyStore = new MemoryStore(":memory:");
 ```
 
@@ -42,20 +48,21 @@ const memoryOnlyStore = new MemoryStore(":memory:");
 
 ## 2. Ejemplo Completo y Funcional
 
-Crea un script (por ejemplo en `scratch/example.ts`) y ejecútalo con `bun run scratch/example.ts`:
+Guarda este script en la raíz del repositorio (por ejemplo en `ejemplo.ts`) y ejecútalo con `bun run ejemplo.ts`:
 
 ```typescript
-import { MemoryStore, MemoryError } from "./src/index";
+import { MemoryStore, MemoryError, defaultDatabasePath } from "./src/index";
 
-// 1. Abrir la conexión a la base de datos
-const store = new MemoryStore("./.forge614/app-memory.sqlite");
+// Abre la conexión predeterminada del usuario (~/.forge614/engram.db)
+const store = new MemoryStore();
+console.log("Ruta de almacenamiento utilizada:", defaultDatabasePath());
 
 try {
-  // 2. Guardar un recuerdo inicial con clave temática
+  // 1. Guardar un recuerdo inicial con clave temática
   const saved = store.save({
     project: "backend-api",
     title: "Motor de Base de Datos",
-    content: "Utilizamos PostgreSQL para producción y SQLite para pruebas",
+    content: "Utilizamos PostgreSQL para producción y SQLite para pruebas locales",
     type: "decision",
     topicKey: "architecture/storage",
     requestKey: "req-001",
@@ -64,24 +71,24 @@ try {
   console.log("Recuerdo guardado con ID:", saved.id);
   console.log("Versión actual:", saved.version);
 
-  // 3. Buscar recuerdos activos relacionados con SQLite
+  // 2. Buscar recuerdos activos relacionados con SQLite
   const searchResults = store.search("backend-api", "SQLite", 5);
   for (const item of searchResults) {
     console.log(`[Coincidencia] ${item.memory.title}: ${item.memory.content}`);
     console.log(`Modo: ${item.explanation.mode}, Puntaje: ${item.explanation.orderScore}`);
   }
 
-  // 4. Recuperar la ficha completa del recuerdo
+  // 3. Recuperar la ficha completa del recuerdo
   const current = store.get("backend-api", saved.id);
   if (current) {
     console.log("Estado de la memoria:", current.state); // "active"
   }
 
-  // 5. Actualizar a la versión 2 (requiere expectedVersion)
+  // 4. Actualizar a la versión 2 (requiere expectedVersion)
   const updated = store.save({
     project: "backend-api",
     title: "Motor de Base de Datos",
-    content: "Utilizamos PostgreSQL 16 con extensión pgvector en producción",
+    content: "Utilizamos PostgreSQL 16 en producción y SQLite en desarrollo local",
     type: "decision",
     topicKey: "architecture/storage",
     expectedVersion: 1, // Coincide con la versión 1 existente
@@ -90,18 +97,19 @@ try {
 
   console.log("Nueva versión guardada:", updated.version); // 2
 
-  // 6. Consultar la auditoría completa de versiones
+  // 5. Consultar la auditoría completa de versiones
   const historyList = store.history("backend-api", saved.id);
   console.log(`Total de versiones históricas: ${historyList.length}`);
   for (const snap of historyList) {
     console.log(` -> Versión ${snap.version} (${snap.updatedAt}): ${snap.content}`);
   }
 
-  // 7. Archivar el recuerdo (lo retira de búsquedas activas)
+  // 6. Archivar el recuerdo (lo retira de búsquedas activas)
   store.archive("backend-api", saved.id);
   console.log("Búsqueda tras archivar:", store.search("backend-api", "SQLite").length); // 0
 
-  // 8. Restaurar el recuerdo
+  // 7. Restaurar el recuerdo (restituye la visibilidad en búsquedas)
+  // NOTA: restore() solo cambia la visibilidad a 'active', no revierte el texto al pasado.
   store.restore("backend-api", saved.id);
   console.log("Búsqueda tras restaurar:", store.search("backend-api", "SQLite").length); // 1
 
@@ -112,7 +120,6 @@ try {
     console.error("Error inesperado del sistema de archivos o SQLite:", error);
   }
 } finally {
-  // Aseguramos el cierre de la base de datos siempre
   store.close();
 }
 ```
@@ -121,48 +128,42 @@ try {
 
 ## 3. Catálogo de Métodos de `MemoryStore`
 
+### `constructor(path?: string)`
+Crea la instancia del almacén. Si se omite `path`, utiliza `defaultDatabasePath()` (`~/.forge614/engram.db`).
+
 ### `save(input: SaveInput): MemoryVersion`
 Guarda una memoria o actualiza una existente.
 - **Diferencia frente a la CLI:** En el SDK el campo `type` es **estrictamente obligatorio** (`SaveInput.type`).
 - **Parámetros obligatorios:** `project`, `title`, `content`, `type`.
-- **Parámetros opcionales:** `topicKey`, `pinned` (booleano), `expectedVersion` (número entero $\ge 1$), `requestKey`.
+- **Parámetros opcionales:** `topicKey`, `pinned` (booleano), `expectedVersion` (entero $\ge 1$), `requestKey`.
 - **Retorno:** Devuelve el objeto `MemoryVersion` con la foto guardada.
-- **Excepciones:** Lanza `MemoryError` si los datos son inválidos, si hay colisión de versión (`VERSION_CONFLICT`), si se reusa la clave con datos distintos (`REQUEST_CONFLICT`) o si el tema está archivado (`ARCHIVED`).
 
 ### `get(project: string, id: string): Memory | null`
-Obtiene la memoria activa o archivada según su ID.
-- **Comportamiento:** A diferencia de la terminal (que lanza error), si el ID no existe en el proyecto el SDK devuelve `null`.
+Obtiene la memoria activa o archivada según su ID. Devuelve `null` si no existe.
 
-### `search(project: string, query: string, limit?: number): SearchResult[]`
-Busca todas las notas activas cuyas palabras coincidan con la consulta.
-- `limit` es opcional (predeterminado: 10, rango permitido: 1 a 100).
-- Devuelve un arreglo de objetos `SearchResult`, donde cada elemento incluye el objeto `memory` y el bloque `explanation`.
+### `search(project: string, query: string, limit = 10): SearchResult[]`
+Busca todas las notas activas cuyas palabras coincidan con la consulta. `limit` por defecto es 10 (rango: 1..100).
 
 ### `history(project: string, id: string): MemoryVersion[]`
-Devuelve la lista cronológica de fotos de contenido ordenadas por `version ASC`.
-- Si el identificador no existe en el proyecto, devuelve un arreglo vacío `[]`.
+Devuelve la lista cronológica de fotos de contenido ordenadas por `version ASC`. Devuelve `[]` si el ID no existe.
 
 ### `archive(project: string, id: string): Memory`
-Marca el estado del recuerdo como `'archived'` y registra un evento en la base de datos.
-- Si el ID no existe, lanza `MemoryError("NOT_FOUND")`.
+Marca el estado del recuerdo como `'archived'`. Lanza `NOT_FOUND` si no existe.
 
 ### `restore(project: string, id: string): Memory`
-Restaura un recuerdo previamente archivado al estado `'active'` y registra el evento.
-- Si el ID no existe, lanza `MemoryError("NOT_FOUND")`.
+Restaura un recuerdo previamente archivado al estado `'active'`. Lanza `NOT_FOUND` si no existe.
 
 ### `close(): void`
-Cierra la conexión con SQLite. Puede llamarse múltiples veces de forma segura (es idempotente).
+Cierra la conexión con SQLite de forma segura e idempotente.
 
 ---
 
-## 4. Tipos e Interfaces de Dominio
+## 4. Tipos de Datos e Interfaces
 
 ```typescript
-// Categorías válidas de recuerdos
 export const memoryTypes = ["fact", "decision", "procedure", "warning", "preference"] as const;
 export type MemoryType = (typeof memoryTypes)[number];
 
-// Entrada para guardar
 export interface SaveInput {
   project: string;
   title: string;
@@ -174,7 +175,6 @@ export interface SaveInput {
   requestKey?: string;
 }
 
-// Foto histórica inmutable
 export interface MemoryVersion {
   id: string;
   project: string;
@@ -188,12 +188,10 @@ export interface MemoryVersion {
   updatedAt: string;
 }
 
-// Recuerdo completo con estado de visibilidad
 export interface Memory extends MemoryVersion {
   state: "active" | "archived";
 }
 
-// Resultado de búsqueda con explicación de orden
 export interface SearchResult {
   memory: Memory;
   explanation: {
@@ -204,21 +202,3 @@ export interface SearchResult {
   };
 }
 ```
-
----
-
-## 5. Manejo de Excepciones y Errores
-
-El SDK define la clase `MemoryError`:
-
-```typescript
-export class MemoryError extends Error {
-  constructor(public readonly code: string, message: string) {
-    super(message);
-    this.name = "MemoryError";
-  }
-}
-```
-
-> [!WARNING]
-> No todos los errores lanzados durante la ejecución serán instancias de `MemoryError`. Si el disco está lleno, si no hay permisos de escritura en la carpeta o si el archivo SQLite está dañado físicamente a nivel de sistema operativo, el motor de Bun o Node pueden propagar errores nativos de tipo `Error` o `SQLiteError`. Asegúrate de envolver tus operaciones en bloques de captura generales.

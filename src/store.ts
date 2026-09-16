@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { MemoryError, memoryTypes, type Memory, type MemoryVersion, type SaveInput, type SearchResult } from "./domain";
 import { initialize } from "./schema";
+import { defaultDatabasePath } from "./paths";
 
 interface Row {
   id: string; project: string; topic_key: string | null; type: Memory["type"];
@@ -27,7 +28,7 @@ export class MemoryStore {
   private readonly db: Database;
   private closed = false;
 
-  constructor(path: string) {
+  constructor(path: string = defaultDatabasePath()) {
     required(path, "path");
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new Database(path, { create: true, strict: true });

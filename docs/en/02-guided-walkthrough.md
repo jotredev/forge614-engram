@@ -1,39 +1,49 @@
-# System Walkthrough Guide
+# 02. System Walkthrough Guide
 
 > **Stage:** Stage 1 — Local Memory  
 > **Status:** Current & Active  
-> **Sister translation:** [Versión en español](../es/02-recorrido-guiado.md)
+> **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
-This guided walkthrough demonstrates the entire lifecycle of a memory in Forge614 Engram: from initial storage to revision updates, word-matching search, historical auditing, and reversible archiving.
+This guided walkthrough demonstrates the complete lifecycle of a memory in Forge614 Engram: from initial storage to revision updates, explainable search, historical auditing, and reversible archiving.
+
+> [!NOTE]
+> All examples use the compiled `forge614-engram` command. If developing inside the repository without installing, replace `forge614-engram` with `bun run cli`.
 
 ---
 
-## 1. The Concept of Project Scope
+## 1. Project Scoping within Centralized Storage
 
 In Forge614 Engram, **every operation is strictly bound to a project name** via `--project`.
 
-Project names are automatically normalized: leading and trailing whitespaces are trimmed, and letters are converted to lowercase (`Demo-App` becomes `demo-app`).
+Project names are automatically normalized: whitespaces are trimmed, and letters are lowercased (`Demo-App` becomes `demo-app`).
 
-> [!IMPORTANT]
-> **Data Separation, Not User Authentication:** Project scoping organizes records so different workspaces do not cross-contaminate. However, it is not an authentication system. Anyone with access to the SQLite file on disk can inspect its content. Therefore, **never store passwords or sensitive private credentials**.
+All project memories reside within a single user database (`~/.forge614/engram.db`). The `--project` flag ensures that searches executed in `frontend-web` never leak memories from `backend-api`.
+
+<callout icon="⚠️" color="yellow_bg">
+**Data Separation, Not User Authentication:** Project scoping organizes records logically. Anyone with local file access to your hard drive can inspect the SQLite file. **Never store secret passwords or tokens**.
+</callout>
+
+> [!NOTE]
+> **Approved Future Design (`idProject`):** In the current Stage 1 release, project scoping relies on the textual name in `--project`. An approved future architecture (pending implementation) introduces a unique and stable identifier named `idProject` with private per-project configuration in `~/.forge614/projects/<idProject>/.env`. See [08. Stage 1 Boundaries and Planned Roadmap](08-boundaries-and-roadmap.md) for technical details.
+
 
 ---
 
 ## 2. Standalone Memories vs. Topic Memories
 
-You can store memories in two distinct ways:
+You can record memories in two distinct ways:
 
 ### Option A: Standalone Memory (Without a Topic)
-If you omit `--topic`, the system records an independent memory card:
+Omit `--topic` to store an independent memory card:
 ```bash
-bun run cli save --project demo --title "Team Meeting" --content "Team agreed to hold weekly sprint reviews on Fridays" --type fact
+forge614-engram save --project demo --title "Team Meeting" --content "Team agreed to hold weekly sprint reviews on Fridays" --type fact
 ```
-Executing this command twice (without `--request-key`) will create two distinct memories with separate UUIDs.
+Executing this command twice (without `--request-key`) creates two distinct memories with separate UUIDs.
 
 ### Option B: Topic Memory (With Revision Tracking)
-When an observation represents an evolving concept (e.g. database choice, coding conventions, or architecture patterns), assign a topic key (`--topic`):
+Assign a topic key (`--topic`) when recording evolving architectural or operational decisions:
 ```bash
-bun run cli save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
+forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
 ```
 
 **Returned JSON:**
@@ -60,7 +70,7 @@ Assigning `architecture/database` reserves that topic within project `demo` at *
 
 Search active memories in the project:
 ```bash
-bun run cli search --project demo --query SQLite
+forge614-engram search --project demo --query SQLite
 ```
 
 ### Response:
@@ -91,12 +101,12 @@ bun run cli search --project demo --query SQLite
 ```
 
 ### Search Mechanics:
-1. **All Words Must Match (Conjunctive AND):** Searching `SQLite localmente` requires both words to exist within the memory (across title, content, or topic).
+1. **Conjunctive Matching (AND):** Searching `SQLite localmente` requires both words to exist within the memory.
 2. **Rank Explanation (`explanation`):**
-   - `mode: "fts5"`: Query evaluated via SQLite's full-text search engine (FTS5).
-   - `bm25`: BM25 algorithm score. In SQLite, **more negative numbers indicate stronger textual matches**.
+   - `mode: "fts5"`: Evaluated via SQLite's FTS5 full-text search.
+   - `bm25`: BM25 score. More negative numbers indicate stronger textual matches.
    - `multiplier`: Factor boosting recent memories and prioritized notes (`pinned`).
-   - `orderScore`: Final ranking score (`bm25 * multiplier`), ordered ascending (most negative value first).
+   - `orderScore`: Final ranking score (`bm25 * multiplier`), ordered ascending (most negative first).
 
 ---
 
@@ -105,114 +115,59 @@ bun run cli search --project demo --query SQLite
 When updating a topic, you **must explicitly specify the version you previously read** using `--expected-version`:
 
 ```bash
-bun run cli save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
-```
-
-### Response:
-```json
-{
-  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-  "project": "demo",
-  "topicKey": "architecture/database",
-  "type": "decision",
-  "title": "Base de datos",
-  "content": "Usamos SQLite y conservamos revisiones",
-  "pinned": false,
-  "version": 2,
-  "createdAt": "2026-09-16T16:19:51.746Z",
-  "updatedAt": "2026-09-16T16:20:31.248Z"
-}
+forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
 ```
 
 ### Key Update Behaviors:
 1. **Stable Identifier:** The `id` remains unchanged.
 2. **Version Incremented:** Advanced from `1` to `2`.
-3. **Full Replacement:** The new body completely replaces previous text (not a partial patch).
-4. **Preserving Type and Priority:** The CLI resets omitted fields to defaults (`fact` and `false`). To retain `decision` and `pinned: true`, specify them explicitly during update.
-5. **Collision Protection:** If another process modified the topic to version 2 first, sending `--expected-version 1` will abort with `VERSION_CONFLICT`.
+3. **Full Replacement:** The new body completely replaces previous text.
+4. **Preserving Fields:** The CLI resets omitted flags to defaults (`fact` and `false`). Specify flags explicitly to retain them.
+5. **Collision Protection:** If another process modified the topic to version 2 first, sending `--expected-version 1` aborts with `VERSION_CONFLICT`.
 
 ---
 
 ## 5. History Inspection: Auditing Historical Snapshots
 
-Retrieve past snapshots of the memory using the `history` command:
+Retrieve past snapshots using `history`:
 
 ```bash
-bun run cli history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
-```
-
-### Response:
-```json
-[
-  {
-    "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-    "project": "demo",
-    "topicKey": "architecture/database",
-    "type": "decision",
-    "title": "Base de datos",
-    "content": "Usamos SQLite localmente",
-    "pinned": false,
-    "version": 1,
-    "createdAt": "2026-09-16T16:19:51.746Z",
-    "updatedAt": "2026-09-16T16:19:51.746Z"
-  },
-  {
-    "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-    "project": "demo",
-    "topicKey": "architecture/database",
-    "type": "decision",
-    "title": "Base de datos",
-    "content": "Usamos SQLite y conservamos revisiones",
-    "pinned": false,
-    "version": 2,
-    "createdAt": "2026-09-16T16:19:51.746Z",
-    "updatedAt": "2026-09-16T16:20:31.248Z"
-  }
-]
+forge614-engram history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
 
 ---
 
 ## 6. Duplicate Prevention with Request Keys (Idempotency)
 
-When automated scripts save memories, connection drops or retries can occur:
-- Re-sending identical payload data with the same `--request-key demo-v1` returns the original record without adding new database entries.
-- Re-using `--request-key demo-v1` with altered text will throw `REQUEST_CONFLICT`.
+- Re-sending identical payload data with the same `--request-key demo-v1` returns the original record without writing duplicate rows.
+- Re-using `--request-key demo-v1` with altered text throws `REQUEST_CONFLICT`.
 
 ---
 
 ## 7. Archiving and Restoring
 
-Stage 1 does not implement permanent destructive deletion. When a memory is obsolete, archive it:
-
 ### Archive:
 ```bash
-bun run cli archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
-- State transitions to `state: "archived"`.
-- Excluded from regular `search` results.
-- Still accessible via direct `get` or `history`.
-- Trying to save a revision to an archived topic throws `ARCHIVED` until restored.
+- Transitions to `state: "archived"`.
+- Hidden from regular search, preserved in `get` and `history`.
 
 ### Restore:
 ```bash
-bun run cli restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
-- Transitions back to `state: "active"`.
-- Instantly reappears in search results.
-- Does not modify content text, version number, or `updatedAt` date.
+- Transitions back to `state: "active"` and reappears in search.
+- **Note:** `restore()` only toggles search visibility; it does not roll back text to older revisions.
 
 ---
 
 ## 8. Short-Word Fallback: Literal Search Mode
 
-Because FTS5 trigrams require tokens of at least 3 characters, searching short terms like `"UI"` or `"DB"` automatically engages the **literal search mode**:
-
+When searching words shorter than 3 characters (e.g. `"UI"`, `"DB"`):
 ```bash
-bun run cli search --project demo --query "UI árbol"
+forge614-engram search --project demo --query "UI árbol"
 ```
-
-- Scans active memories in the project using case-insensitive Unicode (`toLowerCase()`).
-- Matches accented characters and short abbreviations.
+- Scans active memories using Unicode lowercasing (`toLowerCase()`).
+- Matches short terms and accented characters.
 - Sets `mode: "literal"`, `bm25: null`, `multiplier: 1`, `orderScore: null`.
-- Orders results by `pinned DESC, updated_at DESC, id ASC`.

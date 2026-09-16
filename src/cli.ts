@@ -1,9 +1,9 @@
-import { resolve } from "node:path";
 import { MemoryError, MemoryStore, memoryTypes, type SaveInput } from "./index";
+import { version } from "../package.json";
 
 const HELP = `Forge614 Engram — memoria personal local (etapa 1)
 
-Uso: bun run cli <comando> --project <proyecto> [opciones]
+Uso: forge614-engram <comando> --project <proyecto> [opciones]
 
 save     --title <título> --content <texto> [--type fact|decision|procedure|warning|preference]
          [--topic <tema>] [--expected-version <versión>] [--request-key <clave>]
@@ -14,12 +14,15 @@ history  --id <identificador>
 archive  --id <identificador>
 restore  --id <identificador>
 help     Muestra esta ayuda sin crear archivos.
+--version Muestra la versión instalada.
 
-Todos los comandos de datos aceptan --db <ruta>.
-Ruta predeterminada: .forge614/memory.sqlite, relativa al directorio de ejecución.
+Base predeterminada: ~/.forge614/engram.db, dentro de tu carpeta de usuario.
+Todos los proyectos comparten ese archivo y se separan mediante --project.
+--db <ruta> permite elegir otro archivo explícitamente (uso avanzado o pruebas).
 Las consultas son literales; todas las palabras deben coincidir.
 Actualizar un tema existente exige --expected-version. No hay borrado definitivo.
 Los resultados son JSON. Los errores van a stderr y devuelven código de salida 1.
+save es una operación manual. La integración con asistentes aún está pendiente.
 `;
 
 const OPTIONS: Record<string, readonly string[]> = {
@@ -37,6 +40,11 @@ function integer(value: string, field: string, max = Number.MAX_SAFE_INTEGER): n
 
 function main(args: string[]): void {
   const command = args[0] ?? "help";
+  if (command === "--version") {
+    if (args.length > 1) invalid("--version no acepta opciones.");
+    console.log(`forge614-engram ${version}`);
+    return;
+  }
   if (command === "help" || command === "--help") {
     if (args.length > 1) invalid("help no acepta opciones.");
     console.log(HELP);
@@ -78,8 +86,7 @@ function main(args: string[]): void {
     if (values.has("limit")) limit = integer(need("limit"),"limit",100);
   } else { id = need("id"); }
 
-  const db = values.get("db") ?? resolve(".forge614","memory.sqlite");
-  const store = new MemoryStore(db);
+  const store = new MemoryStore(values.get("db"));
   try {
     let result: unknown;
     switch (command) {

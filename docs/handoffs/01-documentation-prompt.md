@@ -1,5 +1,9 @@
 # Prompt de documentación — etapa 1: memoria local
 
+Actualizaciones posteriores: consultar también los encargos 02 y 03.
+La instalación y ubicación de datos descritas aquí son históricas; el encargo 03
+establece la base actual en `~/.forge614/engram.db` para CLI y SDK sin ruta.
+
 Copia desde «Tu tarea» hasta el final en la sesión del modelo que documentará.
 Este archivo es un encargo para otro modelo; no sustituye las guías de usuario.
 

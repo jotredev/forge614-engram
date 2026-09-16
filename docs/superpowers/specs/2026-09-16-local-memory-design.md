@@ -20,8 +20,10 @@ entrega debe ser utilizable, comprobada y documentada antes de avanzar.
 
 - Nombre de trabajo: Forge614 Engram, sin implicar afiliación con los originales.
 - Bun >=1.3.8, TypeScript estricto, SQLite local con FTS5 y tokenizador trigram.
-- Base por defecto: `.forge614/memory.sqlite` relativa al directorio de ejecución.
-  Todas las interfaces permiten una ruta explícita; no se exploran bases ajenas.
+- Base por defecto: `~/.forge614/engram.db`, en la carpeta del usuario, independiente
+  del directorio de ejecución. CLI y SDK comparten `defaultDatabasePath()`.
+  Una ruta explícita sigue disponible para pruebas o uso avanzado; no se exploran
+  ni migran bases ajenas o anteriores automáticamente.
 - Proyecto explícito y obligatorio; espacios exteriores eliminados, minúsculas.
   No inferir identidad a partir de carpetas o remotos todavía.
 - Una memoria tiene UUID, título, contenido, tipo, tema opcional, prioridad,
@@ -66,6 +68,32 @@ La CLI debe guardar y recuperar datos entre procesos y rechazar argumentos erró
 antes de crear una base. Comandos: `bun test`, `bun run typecheck`.
 
 ## Entregas posteriores y límites
+
+### Aclaraciones del usuario después de revisar documentación
+
+El programa debe instalarse desde el repositorio y ofrecer el comando
+`forge614-engram`, sin publicación ni instalación desde npm. El instalador
+`scripts/install.sh` compila un ejecutable autónomo con Bun >=1.3.8 y lo copia
+a `$HOME/.local/bin` o a `--bin-dir`. Bun es necesario al compilar, no al ejecutar
+el binario. `--force` autoriza reemplazar el ejecutable existente; no toca bases.
+La ayuda pública usa el nombre del comando; `bun run cli` queda para desarrollo.
+
+El guardado cotidiano esperado es de decisiones y aprendizajes importantes,
+iniciado por el asistente durante el trabajo, no captura de conversaciones
+completas ni escritura manual obligatoria. Esto sigue pendiente de conectar
+mediante MCP y un protocolo de uso. Instalar MCP por sí solo no garantiza que
+un asistente utilice la memoria. Se deberán probar guardado, recuperación,
+correcciones y continuidad por cliente compatible.
+
+«Aprender» significa mejorar la selección y vigencia del conocimiento mediante
+feedback por memoria, procedencia, revisiones y conflictos; no entrenar el modelo.
+La superioridad frente a los repositorios de referencia se evalúa con un corpus
+común y métricas, no se presume por agregar funciones.
+
+El usuario normal no instancia MemoryStore ni configura un servidor de base de
+datos. La CLI abre/crea el archivo automáticamente al usar un comando válido.
+`new MemoryStore()` abre la misma base del usuario; pasar una ruta explícita
+elige otro archivo. Ambos pertenecen únicamente a la integración programática.
 
 Sesiones, MCP y HTTP local reutilizarán el núcleo. Embeddings locales generarán
 candidatos independientes y se fusionarán por RRF; MMR limitará redundancia.

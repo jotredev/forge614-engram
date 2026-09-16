@@ -57,4 +57,4 @@ Explore the documentation following the chronological study path:
 5. [**05. Internal Architecture and Formulas (`05-internal-architecture-and-formulas.md`)**](05-internal-architecture-and-formulas.md): SQLite table schemas, automated triggers, FTS5 trigram tokenization, and mathematical ranking formulas.
 6. [**06. Troubleshooting and Errors (`06-troubleshooting.md`)**](06-troubleshooting.md): Comprehensive catalog of error codes (`INVALID_INPUT`, `VERSION_CONFLICT`, etc.), explained causes, and recommended solutions.
 7. [**07. Plain-Language Glossary (`07-glossary.md`)**](07-glossary.md): Everyday explanations for every technical term used in the project.
-8. [**08. Boundaries and Roadmap (`08-boundaries-and-roadmap.md`)**](08-boundaries-and-roadmap.md): Features completed in Stage 1 and planned capabilities (MCP protocol, sessions, vector embeddings) for future stages.
+8. [**08. Boundaries and Roadmap (`08-boundaries-and-roadmap.md`)**](08-boundaries-and-roadmap.md): Verified Stage 1 capabilities, comparison with Gentleman and Softmax, approved project identity design (`idProject`), and official 6-phase backlog.

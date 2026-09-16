@@ -1,10 +1,13 @@
-# Recorrido Guiado del Sistema
+# 02. Recorrido Guiado del Sistema
 
 > **Etapa:** Etapa 1 — Memoria Local  
 > **Estado:** Vigente y Activo  
-> **Traducción hermana:** [English Version](../en/02-guided-walkthrough.md)
+> **Traducción hermana:** [02 (EN). Guided System Walkthrough](../en/02-guided-walkthrough.md)
 
-Este recorrido guiado te llevará de la mano por el ciclo de vida completo de un recuerdo en Forge614 Engram: desde su creación inicial hasta la actualización de versiones, búsqueda textual, auditoría de cambios y archivo reversible.
+Este recorrido guiado te llevará de la mano por el ciclo de vida completo de un recuerdo en Forge614 Engram: desde su creación inicial hasta la actualización de versiones, búsqueda textual explicable, auditoría de cambios históricos y archivo reversible.
+
+> [!NOTE]
+> Todos los ejemplos utilizan el comando instalado `forge614-engram`. Si te encuentras trabajando directamente en el repositorio de código sin haber ejecutado el instalador, puedes sustituir `forge614-engram` por `bun run cli`.
 
 ---
 
@@ -14,8 +17,15 @@ En Forge614 Engram, **cada operación está estrictamente asociada a un proyecto
 
 El nombre del proyecto se normaliza automáticamente: se eliminan los espacios en blanco sobrantes en los extremos y se convierte todo a minúsculas (`Demo-App` se convierte internamente en `demo-app`).
 
-> [!IMPORTANT]
-> **Aislamiento de datos, no control de usuarios:** Esta separación organiza los datos para que proyectos distintos no se mezclen. Sin embargo, no es un sistema de contraseñas ni autenticación de usuarios. Cualquier persona que tenga acceso al archivo de la base de datos en el disco puede leer su contenido. Por ello, **nunca guardes contraseñas ni datos personales sensibles**.
+Todos los recuerdos de todos tus proyectos residen dentro del mismo archivo de base de datos en tu carpeta de usuario (`~/.forge614/engram.db`). La opción `--project` garantiza que al buscar o consultar desde el proyecto `mi-web`, jamás aparezcan recuerdos del proyecto `mi-backend`.
+
+<callout icon="⚠️" color="yellow_bg">
+**Aislamiento de datos, no control de usuarios:** Esta separación organiza los datos para que proyectos distintos no se mezclen. Sin embargo, no es un sistema de contraseñas ni permisos multiusuario. Cualquier persona con acceso al archivo en el disco puede leer su contenido. **Nunca guardes contraseñas ni claves secretas**.
+</callout>
+
+> [!NOTE]
+> **Diseño Aprobado Futuro (`idProject`):** En la versión actual de la Etapa 1, la gaveta de trabajo se define mediante el nombre textual en `--project`. Se ha aprobado un diseño futuro (pendiente de implementación) donde cada proyecto contará con un identificador único y estable llamado `idProject`, alojando su configuración privada en `~/.forge614/projects/<idProject>/.env`. Para más detalles técnicos, consulta [08. Límites y Hoja de Ruta](08-limites-y-roadmap.md).
+
 
 ---
 
@@ -26,14 +36,14 @@ Existen dos maneras de guardar recuerdos en el sistema:
 ### Opción A: Memoria Suelta (sin tema)
 Si no especificas un tema (`--topic`), el sistema crea una nota independiente:
 ```bash
-bun run cli save --project demo --title "Reunión de bienvenida" --content "El equipo acordó entregas semanales los viernes" --type fact
+forge614-engram save --project demo --title "Reunión de bienvenida" --content "El equipo acordó entregas semanales los viernes" --type fact
 ```
 Si ejecutas este mismo comando dos veces (sin una clave de petición `--request-key`), el sistema creará dos notas separadas con identificadores distintos.
 
 ### Opción B: Memoria Temática (con control de versiones)
 Cuando un recuerdo representa un tema que evolucionará con el tiempo (por ejemplo, la arquitectura técnica, la versión de un lenguaje o una regla de negocio), debes asignarle un tema (`--topic`):
 ```bash
-bun run cli save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
+forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
 ```
 
 **Respuesta recibida:**
@@ -60,7 +70,7 @@ Al asignar el tema `architecture/database`, el sistema crea la **versión 1** co
 
 Para buscar recuerdos activos dentro del proyecto:
 ```bash
-bun run cli search --project demo --query SQLite
+forge614-engram search --project demo --query SQLite
 ```
 
 ### Respuesta interpretada:
@@ -94,7 +104,7 @@ bun run cli search --project demo --query SQLite
 1. **Todas las palabras deben coincidir:** Si buscas `SQLite localmente`, ambas palabras deben estar presentes en la nota (en el título, en el contenido o en el tema).
 2. **Explicación del orden (`explanation`):**
    - `mode: "fts5"`: La búsqueda se realizó mediante el motor de búsqueda rápida de texto completo de SQLite (FTS5).
-   - `bm25`: Puntuación matemática del algoritmo BM25. En SQLite, **los números más negativos indican mayor relevancia**. No representa una probabilidad ni un porcentaje de verdad.
+   - `bm25`: Puntuación matemática del algoritmo BM25. En SQLite, **los números más negativos indican mayor relevancia**.
    - `multiplier`: Factor multiplicador que premia notas recientes y notas marcadas como prioritarias (`pinned`).
    - `orderScore`: El puntaje final (`bm25 * multiplier`). Los resultados se ordenan de menor a mayor (el número más negativo aparece en primer lugar).
 
@@ -107,7 +117,7 @@ Supongamos que semanas después decides añadir detalles sobre las revisiones. E
 En Forge614 Engram, para actualizar un tema existente **debes indicar obligatoriamente qué versión leíste** mediante `--expected-version`:
 
 ```bash
-bun run cli save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
+forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
 ```
 
 ### Respuesta:
@@ -140,7 +150,7 @@ bun run cli save --project demo --title "Base de datos" --content "Usamos SQLite
 ¿Cómo puedes comprobar qué decía la versión 1 antes de tu cambio? Utiliza el comando `history` con el identificador del recuerdo:
 
 ```bash
-bun run cli history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
 
 ### Respuesta:
@@ -192,7 +202,7 @@ En esta primera etapa, **no existe borrado destructivo permanente**. Si una nota
 
 ### Archivar:
 ```bash
-bun run cli archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
 - La memoria pasa a estado `state: "archived"`.
 - Desaparece por completo de las búsquedas normales (`search`).
@@ -201,11 +211,11 @@ bun run cli archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 
 ### Restaurar:
 ```bash
-bun run cli restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
 - La memoria vuelve al estado activo (`state: "active"`).
 - Vuelve a aparecer inmediatamente en las búsquedas.
-- Ni archivar ni restaurar alteran el contenido de la nota, no incrementan el número de versión ni modifican la fecha `updatedAt`.
+- **Importante:** Ni archivar ni restaurar alteran el contenido de la nota, no revierten textos modificados, no incrementan el número de versión ni modifican la fecha `updatedAt`. Únicamente conmutan la visibilidad de búsqueda.
 
 ---
 
@@ -214,7 +224,7 @@ bun run cli restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 El motor FTS5 estándar utiliza fragmentos de tres caracteres (trigramas). Si buscas una palabra de menos de 3 letras (como `"UI"`, `"DB"` o `"Go"`), el sistema activa automáticamente el **modo de búsqueda literal**:
 
 ```bash
-bun run cli search --project demo --query "UI árbol"
+forge614-engram search --project demo --query "UI árbol"
 ```
 
 ### Características del modo literal:

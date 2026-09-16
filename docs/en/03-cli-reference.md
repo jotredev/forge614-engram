@@ -1,8 +1,8 @@
-# Terminal Command Reference (CLI)
+# 03. Terminal CLI Command Reference
 
 > **Stage:** Stage 1 — Local Memory  
 > **Status:** Current & Active  
-> **Sister translation:** [Versión en español](../es/03-referencia-03-cli-reference.md)
+> **Sister translation:** [03. Referencia Completa de Terminal (CLI)](../es/03-referencia-cli.md)
 
 This reference documents the command-line interface (CLI) for Forge614 Engram.
 
@@ -10,8 +10,10 @@ This reference documents the command-line interface (CLI) for Forge614 Engram.
 
 ## 1. General Command-Line Rules
 
-1. **Strict Syntax Order:** The subcommand must appear immediately after `cli`:
+1. **Strict Syntax Order:** The subcommand must appear immediately after the executable:
    ```bash
+   forge614-engram <command> [options...]
+   # or inside repository during development:
    bun run cli <command> [options...]
    ```
 2. **Option Spacing:** Each flag (`--option`) must be followed by a space and its value. The `--option=value` syntax is not accepted.
@@ -32,7 +34,7 @@ These options apply to **all data subcommands**:
 | Option | Required | Default | Description and Behavior |
 | :--- | :--- | :--- | :--- |
 | `--project <name>` | **Yes** | *(None)* | Target project scope. Whitespace is trimmed and characters are lowercased (`My Project` $\rightarrow$ `my project`). |
-| `--db <path>` | No | `.forge614/memory.sqlite` | File path to SQLite database. Relative to current working directory. Automatically created if missing. |
+| `--db <path>` | No | `~/.forge614/engram.db` | File path to SQLite database. Defaults to the centralized user storage database. Automatically created if missing on valid operations. |
 
 ---
 
@@ -40,20 +42,34 @@ These options apply to **all data subcommands**:
 
 ---
 
-### 3.1. `help`
+### 3.1. `--version`
+Displays package name and installed version.
+
+```bash
+forge614-engram --version
+```
+- **Output:** `forge614-engram 0.1.0`
+- **Options:** Accepts no additional options.
+- **Side effects:** Does not touch filesystem or open SQLite.
+
+---
+
+### 3.2. `help`
 Displays built-in quick reference manual.
 
 ```bash
-bun run cli help
+forge614-engram help
 ```
-
 - **Options:** Accepts no additional arguments.
 - **Side effects:** Does not touch disk or create folders.
 
 ---
 
-### 3.2. `save`
+### 3.3. `save`
 Stores a new memory card or saves a new revision to an existing topic.
+
+> [!NOTE]
+> `save` is an explicit manual operation in Stage 1. Automated assistant-driven recording via MCP is planned for Stage 2.
 
 #### Specific Options:
 | Option | Required | Default | Description |
@@ -68,7 +84,7 @@ Stores a new memory card or saves a new revision to an existing topic.
 
 #### Example 1: Initial save with topic and request key
 ```bash
-bun run cli save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
+forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
 ```
 
 **Output (stdout):**
@@ -89,28 +105,12 @@ bun run cli save --project demo --title "Base de datos" --content "Usamos SQLite
 
 #### Example 2: Update topic to revision 2
 ```bash
-bun run cli save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
-```
-
-**Output (stdout):**
-```json
-{
-  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-  "project": "demo",
-  "topicKey": "architecture/database",
-  "type": "decision",
-  "title": "Base de datos",
-  "content": "Usamos SQLite y conservamos revisiones",
-  "pinned": false,
-  "version": 2,
-  "createdAt": "2026-09-16T16:19:51.746Z",
-  "updatedAt": "2026-09-16T16:20:31.248Z"
-}
+forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
 ```
 
 ---
 
-### 3.3. `search`
+### 3.4. `search`
 Finds active memories in the specified project.
 
 #### Specific Options:
@@ -121,80 +121,35 @@ Finds active memories in the specified project.
 
 #### Example:
 ```bash
-bun run cli search --project demo --query SQLite --limit 5
-```
-
-**Output (stdout):**
-```json
-[
-  {
-    "memory": {
-      "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-      "project": "demo",
-      "topicKey": "architecture/database",
-      "type": "decision",
-      "title": "Base de datos",
-      "content": "Usamos SQLite y conservamos revisiones",
-      "pinned": false,
-      "version": 2,
-      "state": "active",
-      "createdAt": "2026-09-16T16:19:51.746Z",
-      "updatedAt": "2026-09-16T16:20:31.248Z"
-    },
-    "explanation": {
-      "mode": "fts5",
-      "bm25": -0.000001,
-      "multiplier": 1.0599996,
-      "orderScore": -0.00000105999
-    }
-  }
-]
+forge614-engram search --project demo --query SQLite --limit 5
 ```
 
 ---
 
-### 3.4. `get`
+### 3.5. `get`
 Retrieves the current record of a specific memory by ID.
 
-#### Specific Options:
-| Option | Required | Description |
-| :--- | :--- | :--- |
-| `--id <uuid>` | **Yes** | Target memory UUID. |
-
-#### Example:
 ```bash
-bun run cli get --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram get --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
 
 ---
 
-### 3.5. `history`
+### 3.6. `history`
 Returns chronological array of all historical content snapshots for the memory.
 
-#### Specific Options:
-| Option | Required | Description |
-| :--- | :--- | :--- |
-| `--id <uuid>` | **Yes** | Target memory UUID. |
-
-#### Example:
 ```bash
-bun run cli history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
 
 ---
 
-### 3.6. `archive`
-Hides memory from search results without destroying version snapshots.
-
-```bash
-bun run cli archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
-```
-
----
-
-### 3.7. `restore`
-Restores an archived memory back to `active` search visibility.
-
-```bash
-bun run cli restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
-```
+### 3.7. `archive` and `restore`
+- `archive`: Hides memory from search results without destroying version snapshots.
+  ```bash
+  forge614-engram archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+  ```
+- `restore`: Restores an archived memory back to active search visibility.
+  ```bash
+  forge614-engram restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+  ```
