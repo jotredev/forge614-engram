@@ -3,6 +3,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, copyFileSync,
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { MemoryStore } from "../src/store";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 const installer = resolve(import.meta.dir,"../scripts/install.sh");
 const dirs: string[] = [];
@@ -64,6 +67,32 @@ test("installer help and invalid options create no destination", () => {
   expect(install(dir,["--bin-dir",bin,"--unknown"]).code).not.toBe(0);
   expect(existsSync(bin)).toBe(false);
 });
+
+test("installed compiled binary executes progressive MCP session reads and writes",async()=>{
+  const dir=workspace(),bin=join(dir,"bin"),home=join(dir,"isolated-home"),project=join(dir,"project");mkdirSync(project);
+  expect(install(dir,["--bin-dir",bin]).code).toBe(0);
+  const executable=join(bin,"forge614-engram"),env={PATH:`${bin}:/usr/bin:/bin`,HOME:home};
+  expect(Bun.spawnSync([executable,"sessions-enable"],{cwd:dir,env}).exitCode).toBe(0);
+  const transport=new StdioClientTransport({command:executable,args:["mcp"],cwd:project,env,stderr:"pipe"});
+  const client=new Client({name:"installed-session-test",version:"1"},{capabilities:{}});await client.connect(transport);
+  const call=async(name:string,args:Record<string,unknown>={})=>await client.callTool({name,arguments:args}) as CallToolResult;
+  const json=(result:CallToolResult)=>JSON.parse((result.content.find(block=>block.type==="text") as {text:string}).text);
+  try{
+    const session=json(await call("memory_session_start",{directory:project,sessionId:"installed-chat"}));
+    const saveInput={directory:project,title:"Installed",content:"Progressive context",type:"decision",sessionId:"installed-chat",requestKey:"installed-save-1"};
+    const saved=json(await call("memory_save",saveInput));
+    expect(saved).toMatchObject({projectId:session.projectId,sessionId:"installed-chat",sessionSource:"explicit"});
+    expect(json(await call("memory_search",{directory:project,query:"Progressive"}))).toMatchObject({format:2,results:[{memory:{id:saved.id}}]});
+    expect(json(await call("memory_get",{directory:project,id:saved.id}))).toMatchObject({memory:{content:"Progressive context"},currentVersion:1});
+    expect(json(await call("memory_timeline",{directory:project,sessionId:"installed-chat",id:saved.id,version:1,before:0,after:0}))).toMatchObject({before:[],after:[]});
+    expect(json(await call("memory_context",{directory:project,compact:true}))).toMatchObject({format:1,recent:expect.any(Array)});
+    const summary=json(await call("memory_session_summary",{directory:project,sessionId:"installed-chat",requestKey:"installed-summary-1",summary:{goal:"Verify installed workflow",instructions:"",discoveries:"Compiled MCP works",accomplishments:"Exercised all progressive reads",nextSteps:"Close explicitly",files:[]}}));
+    expect(summary).toMatchObject({memory:{type:"procedure",topicKey:"session/installed-chat/summary",version:1},sessionId:"installed-chat",sessionSource:"explicit"});
+    const ended=json(await call("memory_session_end",{directory:project,sessionId:"installed-chat"}));
+    expect(ended).toMatchObject({sessionId:"installed-chat",projectId:session.projectId,kind:"runtime",endedAt:expect.any(String)});
+    expect(json(await call("memory_save",saveInput))).toEqual(saved);
+  }finally{await client.close();}
+},30000);
 
 test("missing Bun reports prerequisite without creating destination", () => {
   const dir = workspace();

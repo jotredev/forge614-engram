@@ -22,6 +22,8 @@ export function postgresOptions(input:string): SQL.PostgresOrMySQLOptions {
   } catch { throw new MemoryError("POSTGRES_URL","POSTGRES_URL: conexión inválida. Usa una URL PostgreSQL completa; TLS verificado es obligatorio fuera de loopback."); }
 }
 
+// state.format versions this replica schema, not payload.format. Snapshot 2
+// promotion changes only the head payload; historical revisions remain intact.
 const DDL=`CREATE SCHEMA forge614_sync;
 CREATE TABLE forge614_sync.revisions (
  hash text PRIMARY KEY CHECK (length(hash) = 64), payload text NOT NULL
@@ -90,6 +92,7 @@ export class PostgresReplica {
     try {
       const rows=await this.db.unsafe("SELECT r.hash,r.payload FROM forge614_sync.state s JOIN forge614_sync.revisions r ON r.hash=s.head WHERE s.id=1");
       if(rows.length!==1) syncError("POSTGRES_SCHEMA");
+      if(Buffer.byteLength(rows[0].payload)>8*1024*1024) syncError("SYNC_TOO_LARGE");
       const snapshot:unknown=JSON.parse(rows[0].payload);validateSnapshot(snapshot);
       if(snapshotHash(snapshot)!==rows[0].hash) syncError("SYNC_INVALID");
       return {hash:rows[0].hash,snapshot};

@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSyn
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { MemoryStore } from "../src/store";
-import { bindProjectContext, resolveProjectContext, saveProjectMemory } from "../src/project-context";
+import { bindProjectContext, resolveProjectContext, saveProjectMemory, startProjectSession } from "../src/project-context";
 
 const directories: string[] = [];
 const stores: MemoryStore[] = [];
@@ -80,6 +80,36 @@ test("nested Git directories and linked worktrees share the Git common-directory
   expect(resolveProjectContext(value, linked, false).projectId).toBe(first.projectId);
   expect(first.directory).toBe(realpathSync(join(repo, ".git")));
   expect(value.listProjects()).toHaveLength(1);
+});
+
+test("sessions share project identity across worktrees but retain distinct runtime roots", () => {
+  const path = join(temporary(),"sessions.db"); const value = store(path); value.enableSessions();
+  const repo = repository(); const child = join(repo,"src"); mkdirSync(child);
+  const linked = temporary("forge614-session-worktree-"); rmSync(linked,{recursive:true});
+  git(repo,"worktree","add","--quiet","-b","session-worktree",linked);
+  const first = startProjectSession(value,child,"conversation-main");
+  const replay = startProjectSession(value,repo,"conversation-main");
+  const second = startProjectSession(value,linked,"conversation-linked");
+  expect(replay).toEqual(first);
+  expect(second.projectId).toBe(first.projectId);
+  expect(first.sessionId).not.toBe(second.sessionId);
+  const db = new Database(path,{readonly:true});
+  expect(db.query("SELECT sessionId,directory FROM local_session_bindings ORDER BY sessionId").all()).toEqual([
+    {sessionId:"conversation-linked",directory:realpathSync(linked)},
+    {sessionId:"conversation-main",directory:realpathSync(repo)},
+  ]);
+  db.close();
+});
+
+test("non-Git session roots are explicit and a failed start rolls back project and binding", () => {
+  const value = store(); value.enableSessions();
+  const owner = value.createProject("Owner"); value.startSession(owner.projectId,"occupied");
+  const directory = temporary("forge614-nongit-session-");
+  expect(() => startProjectSession(value,directory,"occupied")).toThrow("no está disponible");
+  expect(value.listProjects().map(project => project.projectId)).toEqual([owner.projectId]);
+  expect(resolveProjectContext(value,directory,false).projectId).toBeNull();
+  const started = startProjectSession(value,directory,"available");
+  expect(startProjectSession(value,join(directory,"."),"available")).toEqual(started);
 });
 
 test("inherited Git redirection variables cannot replace the explicit repository", () => {

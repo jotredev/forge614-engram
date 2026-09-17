@@ -63,7 +63,9 @@ test("stdio initializes and advertises exactly the bounded memory tool surface",
   const { client, transport } = await connect({ cwd: root, userDirectory });
   expect(client.getInstructions()).toContain("memory_current_project");
   expect((await client.listTools()).tools.map(tool => tool.name).sort()).toEqual([
-    "memory_current_project", "memory_get", "memory_history", "memory_save", "memory_search",
+    "memory_context", "memory_current_project", "memory_get", "memory_history",
+    "memory_save", "memory_search", "memory_session_end", "memory_session_start",
+    "memory_session_summary", "memory_timeline",
   ]);
   await client.close();
   expect(transport.pid).toBeNull();
@@ -100,11 +102,12 @@ test("stdio save, search, get, history, update and request replay persist across
     directory: project, title: "Database decision", content: "Use SQLite locally", type: "decision",
     topicKey: "architecture/database", requestKey: "save-1",
   };
-  const saved = data(await call(connection.client, "memory_save", input)) as { id: string; projectId: string; version: number };
+  const saved = data(await call(connection.client, "memory_save", input)) as { id: string; projectId: string; version: number;sessionId:null;sessionSource:null };
   expect(saved.version).toBe(1);
+  expect(saved).toMatchObject({sessionId:null,sessionSource:null});
   expect(data(await call(connection.client, "memory_save", input))).toEqual(saved);
-  expect((data(await call(connection.client, "memory_search", { directory: project, query: "SQLite" })) as unknown[])).toHaveLength(1);
-  expect(data(await call(connection.client, "memory_get", { directory: project, id: saved.id }))).toMatchObject({ id: saved.id });
+  expect((data(await call(connection.client, "memory_search", { directory: project, query: "SQLite" })) as {format:number;results:unknown[]}).results).toHaveLength(1);
+  expect(data(await call(connection.client, "memory_get", { directory: project, id: saved.id }))).toMatchObject({ memory:{id: saved.id},currentVersion:1 });
   const updated = data(await call(connection.client, "memory_save", {
     ...input, requestKey: "save-2", content: "Use SQLite with WAL", expectedVersion: 1,
   })) as { version: number };
@@ -113,8 +116,8 @@ test("stdio save, search, get, history, update and request replay persist across
   await connection.client.close();
 
   connection = await connect({ cwd: project, userDirectory });
-  const persisted = data(await call(connection.client, "memory_search", { directory:project,query: "SQLite WAL" })) as Array<{memory:{id:string}}>;
-  expect(persisted[0]?.memory.id).toBe(saved.id);
+  const persisted = data(await call(connection.client, "memory_search", { directory:project,query: "SQLite WAL" })) as {results:Array<{memory:{id:string}}>};
+  expect(persisted.results[0]?.memory.id).toBe(saved.id);
 });
 
 test("shared saves require explicit scope and a nonempty global-intent explanation", async () => {
@@ -153,7 +156,7 @@ test("compiled executable completes the official SDK stdio handshake without use
   ], { cwd: root, env: environment(userDirectory), stderr: "pipe" });
   expect(built.exitCode).toBe(0);
   const { client } = await connect({ cwd: root, userDirectory, command: binary, args: ["mcp"] });
-  expect((await client.listTools()).tools).toHaveLength(5);
+  expect((await client.listTools()).tools).toHaveLength(10);
   expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
 });
 
@@ -192,3 +195,48 @@ test("raw stdin EOF cancels an unanswered roots request and exits promptly", asy
     child.kill("SIGKILL"); await child.exited; await reader.cancel().catch(() => {});
   }
 },5000);
+
+test("MCP session contracts support parallel chats, exact versions, replay, summary ordering and private shared origins",async()=>{
+  const root=temporary(),userDirectory=join(root,"user"),project=temporary();
+  expect(runCli(root,userDirectory,"sessions-enable").code).toBe(0);
+  const {client}=await connect({cwd:root,userDirectory,roots:[project]});
+  const one=data(await call(client,"memory_session_start",{sessionId:"chat-one"})) as {projectId:string};
+  expect((await call(client,"memory_session_start",{sessionId:"chat-two"})).isError).not.toBe(true);
+  const saveOne={title:"Choice",content:"First",type:"decision",topicKey:"choice",requestKey:"save-1",sessionId:"chat-one"};
+  const saved=data(await call(client,"memory_save",saveOne)) as {id:string;sessionId:string;sessionSource:string};
+  expect(saved).toMatchObject({sessionId:"chat-one",sessionSource:"explicit"});
+  const updated=data(await call(client,"memory_save",{title:"Choice",content:"Second",type:"decision",topicKey:"choice",expectedVersion:1,requestKey:"save-2",sessionId:"chat-two"})) as {version:number};
+  expect(updated.version).toBe(2);
+  expect(data(await call(client,"memory_get",{id:saved.id,version:1}))).toMatchObject({memory:{content:"First",version:1},currentVersion:2});
+  expect(data(await call(client,"memory_timeline",{sessionId:"chat-one",id:saved.id,version:1,before:0,after:0}))).toMatchObject({sessionId:"chat-one",before:[],after:[]});
+  expect((await call(client,"memory_timeline",{sessionId:"chat-two",id:saved.id,version:1})).isError).toBe(true);
+  expect((await call(client,"memory_session_summary",{sessionId:"chat-one",requestKey:"sum-1",summary:{goal:"Ship"}})).isError).toBe(true);
+  const summary={goal:"Ship",instructions:"Keep",discoveries:"Found",accomplishments:"Done",nextSteps:"Close",files:[]};
+  const first=data(await call(client,"memory_session_summary",{sessionId:"chat-one",requestKey:"sum-1",summary}));
+  expect(data(await call(client,"memory_session_summary",{sessionId:"chat-one",requestKey:"sum-1",summary}))).toEqual(first);
+  const badUpdate=await call(client,"memory_session_summary",{sessionId:"chat-one",requestKey:"sum-bad",expectedVersion:99,summary:{...summary,goal:"Changed"}});
+  expect(badUpdate.isError).toBe(true);
+  expect(data(await call(client,"memory_get",{id:(first as any).memory.id}))).toMatchObject({memory:{version:1,content:expect.stringContaining("Goal:\nShip")}});
+  expect(data(await call(client,"memory_session_end",{sessionId:"chat-one"}))).toMatchObject({endedAt:expect.any(String)});
+  expect(data(await call(client,"memory_save",saveOne))).toEqual(saved);
+  expect(data(await call(client,"memory_save",{title:"Inferred",content:"One open runtime",type:"fact"}))).toMatchObject({sessionId:"chat-two",sessionSource:"inferred"});
+  expect((await call(client,"memory_session_start",{sessionId:"chat-one"})).isError).toBe(true);
+  const shared=data(await call(client,"memory_save",{scope:"shared",globalIntent:"Explicit cross-project rule",title:"Shared",content:"Private origin",type:"preference",sessionId:"chat-two",sessionProjectId:one.projectId})) as {id:string};
+  expect(JSON.stringify(data(await call(client,"memory_get",{scope:"shared",id:shared.id})))).not.toContain("chat-two");
+  expect((await call(client,"memory_save",{scope:"shared",globalIntent:"Explicit",title:"Bad",content:"Missing owner",type:"fact",sessionId:"chat-two"})).isError).toBe(true);
+  expect(data(await call(client,"memory_context",{}))).toMatchObject({format:1,pinned:expect.any(Array),recent:expect.any(Array),summaries:expect.any(Array)});
+});
+
+test("MCP accepts the SDK session identifier boundary and reports ambiguous assistant inference",async()=>{
+  const root=temporary(),userDirectory=join(root,"user"),project=temporary();
+  expect(runCli(root,userDirectory,"sessions-enable").code).toBe(0);
+  const {client}=await connect({cwd:root,userDirectory,roots:[project]});
+  expect(data(await call(client,"memory_save",{title:"Manual",content:"No runtime yet",type:"fact"}))).toMatchObject({sessionId:expect.any(String),sessionSource:"manual"});
+  const longId="🧠".repeat(200);
+  expect((await call(client,"memory_session_start",{sessionId:longId})).isError).not.toBe(true);
+  expect((await call(client,"memory_session_start",{sessionId:"x".repeat(201)})).isError).toBe(true);
+  expect((await call(client,"memory_session_start",{sessionId:" chat"})).isError).toBe(true);
+  expect((await call(client,"memory_session_start",{sessionId:"chat-two"})).isError).not.toBe(true);
+  const result=await call(client,"memory_save",{title:"Ambiguous",content:"Two chats",type:"fact"});
+  expect(result.isError).toBe(true);expect(data(result)).toMatchObject({code:"AMBIGUOUS_SESSION"});
+});

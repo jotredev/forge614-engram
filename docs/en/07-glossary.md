@@ -1,82 +1,61 @@
 # 07 (EN). Plain-Language Glossary
 
-> **Stage:** Local MCP, Assistant TUI Menu, Local Memory & Optional PostgreSQL Synchronization
-> **Release Versions:** Program 0.5.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings)
-> **Status:** Current & Active (Verified with 191 tests on macOS with Bun 1.3.8)
+> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
+> **Status:** Current & Active (Verified with 250 tests across 18 files on macOS with Bun 1.3.8)
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
-This glossary explains every technical concept using real-world analogies and everyday language, followed by its formal technical term in parentheses.
+This glossary explains every technical concept using everyday real-world analogies first, immediately followed by the formal technical term in parentheses.
 
 ---
 
-### Model Context Protocol (MCP)
-An open communication standard allowing artificial intelligence models to safely connect to external tools and data sources. In Forge614 Engram, it operates locally via computer standard input/output (`stdio`).
+### Progressive Memory Session (Progressive Memory Session / `Session`)
+Like a dedicated shift in a workshop: a bounded period of focus where a developer or an AI assistant collaborates on a specific task within a project, logging technical decisions and steps as they happen.
 
-### Terminal User Interface (TUI / `tui`)
-An interactive full-screen panel inside the terminal where a human navigates using arrow keys and the spacebar, previews configuration changes, runs server self-tests, and confirms updates without manually editing configuration files.
+### Runtime Work Session (Runtime Session / `kind: "runtime"`)
+Like punching a clock at the start and end of a task: an active session initiated deliberately via `session-start` that records a start timestamp (`startedAt`), is associated with a working folder, and remains open until formally concluded with `session-end` (`endedAt`).
 
-### MCP Server Self-Test
-An automated asynchronous test executed by the TUI menu against Engram's installed binary. It uses the official MCP SDK to spawn the server over stdio, verifies that it identifies as `forge614-engram`, and confirms that it exposes the 5 expected memory tools within a strict 5-second deadline. **It never tests live AI client sessions**, which must be verified inside each editor.
+### Manual Fallback Session (Manual Fallback Session / `kind: "manual"` / `local_manual_sessions`)
+Like a desktop scratchpad that never leaves your desk: a permanent local fallback ledger that exists on your computer for each project. If you save a memory from the terminal without specifying an active session, Engram automatically files it here so its temporal context is preserved.
 
-### Machine-Local Project Binding (`project_bindings` / Schema 5)
-A record in local SQLite storage associating a physical directory path on this machine with a project UUID (`projectId`). It is machine-specific and is never synchronized across devices.
+### Session Event Timeline (Session Timeline / `timeline` / `memory_timeline`)
+Like reviewing the photos taken immediately before and after a key picture on a camera roll: a feature that centers on a specific memory (`focus`) and displays the notes recorded immediately before (`before`) and after (`after`) within that same work session.
 
-### Git Common Directory (`--git-common-dir`)
-The canonical physical location of the primary Git repository. Allows nested subdirectories and linked worktrees to automatically recognize that they belong to the same software project, accessing the same memories.
+### Ranked Context Dossier (Ranked Context / `context` / `memory_context`)
+Like an executive briefing folder neatly organized into labeled tabs: a synthesized report that groups memories into three essential sections: pinned essential rules (`pinned`), recent project agreements (`recent`), and past session summaries (`summaries`).
 
-### Linked Worktree (`git worktree add`)
-An advanced Git feature allowing multiple branches of a single repository to be checked out simultaneously in separate folders. Thanks to Engram's canonical Git resolver, all linked worktrees share the exact same memories.
+### Lightweight Memory Preview (Memory Preview / `MemoryPreview`)
+Like reading a newspaper headline and lead paragraph before buying the paper: an abbreviated version of a memory whose body text is capped at **300 Unicode code points** with a flag indicating whether it was trimmed (`truncated: true`). Allows an AI model to browse dozens of notes without saturating its context window.
 
-### Preflight Safety Check
-A rigorous inspection executed before modifying any client configuration file. Validates permissions, rejects symlinks, and ensures files do not exceed safety size thresholds.
+### Strict Serialization Byte Budget (`maxBytes`)
+Like the maximum weight allowance for airline carry-on luggage: a strict numerical limit (between 1024 and 65536 bytes) that measures **the exact UTF-8 byte payload size of the resulting JSON transmission**. **This is not an LLM token budget**, but a physical inter-process communication boundary.
 
-### UUID-Suffixed Private Backup
-A backup file created automatically before modifying client configurations (e.g., `~/.claude.json.3a8f...bak`). Written with private permissions (`0600`) and containing the exact prior bytes for reliable rollback.
+### Structured Session Summary (Structured Session Summary / `session-summary`)
+Like an official project handover report: a standardized document containing exactly six required sections: target goal (`goal`), key directives (`instructions`), lessons learned (`discoveries`), completed milestones (`accomplishments`), next steps (`nextSteps`), and modified files (`files`). Stored under the reserved topic `session/<id>/summary`.
 
-### Published Unverified (`PUBLISHED_UNVERIFIED`)
-A safety notice emitted when Engram successfully applies configuration changes, but immediate byte verification reveals that another process or editor modified the file concurrently. Engram retains the backup file and avoids destructive blind rollbacks.
+### Session Inference (Session Inference)
+Like an attentive colleague who knows which project you are tackling: when an AI model saves a note without passing a session ID, Engram checks whether exactly one active session was started in the last 7 days on that folder. If found, it automatically links the note (`sessionSource: "inferred"`). If two or more exist, it halts to avoid mistakes (`AMBIGUOUS_SESSION`).
 
-### Native Assistant Hook (`memory-hook`)
-An adapter command invoked by developer clients on lifecycle triggers (such as session start or prompt submission). Injects contextual reminders prompting models to search memory before re-investigating, without saving memories directly.
+### Atomic Replica Format 2 Promotion (Format 2 Promotion / `sync --upgrade-format`)
+Like adding an extra lane to an existing highway without halting traffic: an explicit, CAS-protected upgrade that promotes a remote PostgreSQL replica from Format 1 to Format 2 (enabling the synchronization of sessions and summaries). Must be invoked deliberately via `sync --upgrade-format`.
 
-### Explicit Global Intent (`globalIntent`)
-Mandatory text justification required when saving a shared memory (`scope: "shared"`). Formally explains why a decision or preference applies universally across all projects on the machine.
+### OpenCode Plugin Conflict (`CONFLICT`)
+Like noticing a lock has been rekeyed and choosing not to force it: a safety mechanism where Engram detects that `plugins/forge614-engram.js` already contains divergent code and halts immediately without overwriting it, allowing the developer to reconcile it manually.
 
-### Detected vs Configured vs Tested Session
-Three distinct states recognized by the system:
-1. **Detected:** The client executable exists in system PATH.
-2. **Configured:** Client configuration files contain Engram launch commands.
-3. **Tested Session:** The live interactive client session was launched and verified calling MCP tools.
+### Model Context Protocol (Model Context Protocol / MCP)
+An open standard protocol enabling AI models to interact uniformly with tools. In Forge614 Engram, it exposes 10 local memory tools over standard I/O streams (`stdio`).
 
-### Codex Trust Policy (`/hooks`)
-A native Codex security requirement where newly installed hooks must be reviewed and approved explicitly by the user via the `/hooks` command inside Codex before they are allowed to execute.
+### Terminal User Interface (Terminal User Interface / TUI / `tui`)
+A full-screen interactive dashboard inside your command console where you can navigate options using keyboard arrows and the spacebar, preview changes, run self-tests, and confirm assistant configurations.
 
-### Interactive Terminal (TTY / `isTTY`)
-A direct console channel where a human types answers and views prompt outputs. If absent, `setup` and `tui` halt with `INTERACTIVE_REQUIRED`.
+### MCP Server Self-Test (MCP Server Self-Test)
+An automated asynchronous test executed by the TUI menu against the installed binary, ensuring that it responds in under 5 seconds and exposes all 10 official memory tools.
 
-### User Cancellation Exit Code (Exit Code 130)
-The standard numerical code returned to the operating system when an interactive operation (`setup`, `tui`, `sync-watch`, or `mcp`) is canceled via `Ctrl+C`, `Escape`, or `q`.
+### Machine-Local Project Binding (Project Binding / `project_bindings`)
+A database record that maps a local filesystem directory path on this computer to a project ID (`projectId`). It is exclusive to this machine and is never synced across the network.
 
-### Central User Storage Directory (`~/.forge614/`)
-The private user folder housing configuration and the single database, guarded by owner-only permissions (`0700`).
+### Git Common Directory (Git Common Directory / `--git-common-dir`)
+The canonical root of a Git repository that allows multiple subdirectories and linked worktrees (`git worktree add`) to share identical project identity and memory without duplication.
 
-### Master Relational Database (`engram.db`)
-The single SQLite database file storing all projects, memories, versions, requests, and machine-local project bindings.
-
-### Stable Project Identity (`projectId`)
-A permanent UUIDv4 assigned to each project upon creation, ensuring that updating cosmetic display names never breaks memory access.
-
-### Memory Scope (`scope`)
-Property dictating whether a memory applies strictly to one project (`project`) or universally across all projects (`shared`).
-
-### Topic Exception Override (*Topic Override*)
-SQL logic where an active project memory shadows a universal shared memory sharing the exact same `topicKey` during project searches.
-
-### BM25 Ranking Formula
-A probabilistic retrieval algorithm scoring keyword matches against term and document frequencies, rewarding rare terms and concise notes.
-
-### Optional PostgreSQL Replica (Direct Sync)
-A remote database configured by the operator to mirror workspace snapshots across developer machines without third-party cloud intermediaries.
-
-### Deterministic 3-Way Snapshot Merge
-An algorithm comparing the base checkpoint, local state, and remote state to cleanly merge non-conflicting changes from independent projects.
+### BM25 Algorithm and Recency Multiplier
+A mathematical formula (*Best Matching 25*) evaluating search relevance by combining term frequencies, manual pinning priority (`pinned`), and progressive temporal recency decay.

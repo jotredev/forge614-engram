@@ -1,11 +1,12 @@
 # 01. Instalación, Configuración y Primeros Pasos
 
-> **Etapa:** MCP Local, Menú TUI de Asistentes, Memoria Local y Sincronización PostgreSQL Opcional
-> **Versiones de esta entrega:** Programa 0.5.0 | Formato de configuración 2 (local) / 3 (con sync) | Esquema SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales)
-> **Estado:** Vigente y Verificado (191 pruebas totales en 16 archivos: 187 superadas y 4 omitidas sin binarios PG; 191 superadas, 0 fallos, 1133 aserciones con PostgreSQL aislado en macOS con Bun 1.3.8)
+> **Etapa:** Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y resúmenes estructurados) | Réplica PostgreSQL Formato 1 / Formato 2
+> **Habilitaciones:** Explícitas y aditivas (`integration-enable` para Esquema 5; `sessions-enable` para Esquema 6; `sync --upgrade-format` para réplica Formato 2). La apertura de base y los comandos ordinarios nunca migran automáticamente.
+> **Estado:** Vigente y Verificado (250 pruebas totales en 18 archivos: 243 superadas y 7 omitidas sin binarios PG; 250 superadas, 0 fallos, 1506 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
 > **Traducción hermana:** [01 (EN). Installation, Setup, and Getting Started](../en/01-installation-and-getting-started.md)
 
-Esta guía explica paso a paso cómo preparar las dependencias, compilar e instalar el comando `forge614-engram` en tu computadora, los requisitos indispensables (incluyendo Git obligatorio), cómo funciona la detección post-instalación de asistentes, el asistente interactivo `setup` para el espacio central y la habilitación de la integración local con asistentes y el Esquema 5.
+Esta guía explica paso a paso cómo preparar las dependencias, compilar e instalar el comando `forge614-engram` en tu computadora, los requisitos indispensables (incluyendo Git obligatorio), cómo funciona la detección post-instalación de asistentes, el asistente interactivo `setup` para el espacio central, y la habilitación explícita de la integración de asistentes (Esquema 5) y del ciclo de sesiones progresivas (Esquema 6) junto con la coordinación entre equipos pares.
 
 ---
 
@@ -121,9 +122,11 @@ Uso: forge614-engram <comando> [opciones]
 setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
 tui             Asistentes: flechas, Espacio, vista previa y confirmación explícita.
 init            Inicializa una sola configuración y base local, sin borrar datos.
-sync            Sincroniza todo el espacio local con PostgreSQL configurado.
+sync [--upgrade-format]
+                Sincroniza todo; --upgrade-format promueve explícitamente una réplica formato 1.
 sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
 integration-enable  Habilita explícitamente MCP y asociaciones locales (esquema 5).
+sessions-enable Habilita explícitamente sesiones (esquema 6).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
 memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
@@ -135,16 +138,27 @@ project-bind    --directory <carpeta> --project-id <UUID>
 Recuerdos: --project-id <UUID> (scope project por defecto) O --scope shared.
 save     --title <título> --content <texto> [--type fact|decision|procedure|warning|preference]
          [--topic <tema>] [--expected-version <versión>] [--request-key <clave>]
-         [--pinned true|false]
-get      --id <recuerdo>
+         [--pinned true|false] [--session-id <id>] [--session-project-id <UUID>]
+         type=fact por defecto; un save shared con sesión requiere --session-project-id.
+get      --id <recuerdo> [--version <n>]
 history  --id <recuerdo>
 archive  --id <recuerdo>
 restore  --id <recuerdo>
 
-search   --query <texto> [--limit <1..100>]
+search   --query <texto> [--limit <1..100>] [--preview]
          --project-id <UUID> [--scope all|project|shared]
          O --scope shared (sin proyecto)
-         Con proyecto, all es el valor por defecto: proyecto + shared.
+         limit=10; con proyecto, scope=all: proyecto + shared.
+
+Sesiones (requieren antes sessions-enable; la habilitación y promoción nunca son automáticas):
+session-start --directory <carpeta> --session-id <id>
+session-end --project-id <UUID> --session-id <id>
+session-summary --project-id <UUID> --session-id <id> --summary-json <json>
+                --request-key <clave> [--expected-version <n>]
+timeline --project-id <UUID> --session-id <id> --id <recuerdo> --version <n>
+         [--before <0..20>] [--after <0..20>] (ambos por defecto 5)
+context [--project-id <UUID> | --scope shared] [--compact] [--max-bytes <1024..65536>]
+        compact=false y max-bytes=16384 por defecto.
 
 help      Muestra esta ayuda sin crear archivos.
 --version Muestra la versión instalada.
@@ -218,7 +232,7 @@ Antes de escribir un solo byte en el disco, el asistente muestra un resumen clar
 
 ---
 
-## 6. Habilitar la Integración de Asistentes y el Esquema 5
+## 6. Habilitar la Integración de Asistentes (Esquema 5)
 
 Para que los asistentes de inteligencia artificial puedan interactuar con la memoria y registrar asociaciones locales de carpetas a proyectos (`project_bindings`), la base de datos debe encontrarse en **Esquema 5**.
 
@@ -228,7 +242,7 @@ Existen dos vías para habilitar el Esquema 5:
 Ejecutando `forge614-engram tui`, al seleccionar y confirmar los asistentes deseados, el menú valida los planes de configuración, inicializa el espacio global y ejecuta internamente la migración aditiva a Esquema 5 antes de aplicar los archivos de los clientes.
 
 ### Vía B: Comando Explícito (`integration-enable`)
-Si deseas preparar el espacio y habilitar el Esquema 5 sin alterar archivos de configuración de ningún cliente (modo enrollment explícito):
+Si deseas preparar el espacio y habilitar el Esquema 5 sin alterar archivos de configuración de ningún cliente:
 
 ```bash
 forge614-engram integration-enable
@@ -242,12 +256,49 @@ Salida esperada (en JSON puro):
 }
 ```
 
-> [!IMPORTANT]
-> El servidor MCP (`forge614-engram mcp`) **no migra la base de datos al arrancar**. Debe habilitarse previamente mediante `forge614-engram tui` o `forge614-engram integration-enable`. Si el servidor MCP detecta una base sin el Esquema 5, requerirá habilitarlo antes de operar.
+---
+
+## 7. Habilitar el Ciclo de Sesiones Progresivas (Esquema 6)
+
+Para que los asistentes y la terminal puedan crear sesiones de trabajo (`session-start`), consultar líneas temporales (`timeline`), ensamblar contextos clasificados (`context`) y registrar resúmenes estructurados (`session-summary`), la base de datos debe encontrarse en **Esquema 6**.
+
+### Comando Explícito (`sessions-enable`)
+```bash
+forge614-engram sessions-enable
+```
+
+Salida esperada (en JSON puro):
+```json
+{
+  "enabled": true,
+  "schema": 6
+}
+```
+
+### Reglas Críticas de Habilitación y Migración:
+1. **Nunca hay migración automática:**
+   El comando del servidor MCP (`forge614-engram mcp`), la apertura normal de la base de datos (`workspace.open()`), la inicialización (`init`), el listado de proyectos o las búsquedas y lecturas ordinarias **jamás migran automáticamente la base de datos local**. Si intentas usar comandos de sesión en una base sin Esquema 6, el sistema se detiene arrojando el error `MIGRATION_REQUIRED`.
+2. **Tablas incorporadas por el Esquema 6:**
+   Crea aditivamente las tablas relacionales:
+   - `sessions`: Registro inmutable de sesiones de ejecución (*runtime*) y manuales.
+   - `session_entries`: Tira cronológica que asocia versiones de recuerdos a sesiones.
+   - `session_summaries`: Punteros a los resúmenes estructurados de cada sesión.
+   - `local_session_bindings`: Asociaciones locales entre sesiones y carpetas en disco.
+   - `local_manual_sessions`: Cuadernos de sesión manual exclusiva por proyecto para este equipo.
+3. **Coordinación entre Equipos Pares (*Peer Devices*):**
+   Si sincronizas tu memoria con otras computadoras mediante PostgreSQL:
+   - Las otras computadoras **deben instalar una versión compatible** de Forge614 Engram.
+   - En cada equipo par debe ejecutarse explícitamente `forge614-engram sessions-enable` para preparar su SQLite local antes de sincronizar datos con sesiones.
+4. **Promoción de Réplica PostgreSQL (Formato 1 a Formato 2):**
+   Si la réplica de PostgreSQL fue creada previamente en Formato 1 (solo proyectos y recuerdos), **no se promueve de forma automática**. Para promoverla explícitamente a Formato 2 (con sesiones) se debe ejecutar conscientemente:
+   ```bash
+   forge614-engram sync --upgrade-format
+   ```
+   *(Nota: `sync-watch --upgrade-format` es rechazado; la promoción requiere confirmación en una sola ronda y está protegida por validación optimista CAS).*
 
 ---
 
-## 7. Inspección de Asistentes en JSON (`assistant-list`)
+## 8. Inspección de Asistentes en JSON (`assistant-list`)
 
 Para auditar qué asistentes tienes instalados, qué rutas de configuración utilizan y qué nivel de cobertura de memoria ofrecen sin escribir archivos ni abrir menús interactivos:
 
@@ -281,38 +332,13 @@ Salida representativa en JSON (ideal para scripts de automatización o diagnóst
         "Managed policies and runtime trust can restrict MCP or hooks; this preview does not change them."
       ]
     }
-  },
-  {
-    "id": "codex",
-    "label": "Codex",
-    "detected": {
-      "installed": true,
-      "executable": "/usr/local/bin/codex",
-      "configFound": true,
-      "evidence": ["executable-found", "config-found"]
-    },
-    "configuration": {
-      "status": "configured",
-      "paths": [
-        "/Users/usuario/.codex/config.toml",
-        "/Users/usuario/.codex/hooks.json"
-      ]
-    },
-    "automation": {
-      "coverage": "session-and-prompt",
-      "warnings": [
-        "Configuration does not prove a client connection or model compliance. Durable saves depend on the assistant; abrupt termination cannot guarantee a final save.",
-        "Review and trust new hooks in Codex /hooks before they can run.",
-        "Managed policies and runtime trust can restrict MCP or hooks; this preview does not change them."
-      ]
-    }
   }
 ]
 ```
 
 ---
 
-## 8. Inicialización Programática Alternativa (`init`)
+## 9. Inicialización Programática Alternativa (`init`)
 
 Si estás configurando un entorno automatizado donde no deseas interacción humana con el asistente `setup`, puedes inicializar el espacio local básico directamente:
 
@@ -336,7 +362,7 @@ Este comando:
 
 ---
 
-## 9. Primer Proyecto y Primer Recuerdo Manual
+## 10. Primer Proyecto y Primer Recuerdo Manual
 
 ### Crear un Proyecto
 El identificador de proyecto es un identificador único e inmutable (UUID). El nombre visible es puramente descriptivo:

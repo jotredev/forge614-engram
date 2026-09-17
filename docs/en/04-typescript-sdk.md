@@ -1,23 +1,24 @@
 # 04 (EN). TypeScript SDK Guide (MemoryStore)
 
-> **Stage:** Local MCP, Assistant TUI Menu, Local Memory & Optional PostgreSQL Synchronization
-> **Release Versions:** Program 0.5.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings)
-> **Status:** Current & Active (Verified with 191 tests on macOS with Bun 1.3.8)
+> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
+> **Status:** Current & Active (Verified with 250 tests across 18 files on macOS with Bun 1.3.8)
 > **Sister translation:** [04. Guía de Integración con el SDK de TypeScript](../es/04-sdk-typescript.md)
 
-This guide documents the public TypeScript API of Forge614 Engram, how to utilize the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes in your own applications, Schema 5 extensions for machine-local project bindings, and the architectural boundary between public APIs and internal infrastructure modules.
+This guide documents the public TypeScript API of Forge614 Engram, how to integrate the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes into custom developer tools, the Schema 6 progressive session lifecycle, ranked context retrieval, and architectural module boundaries.
 
 > [!NOTE]
-> **Developer-Facing SDK:** This SDK is intended for software engineers embedding structured personal memory into TypeScript applications or agent runtimes. End users interact with the terminal binary `forge614-engram`. There is no public package on npm; imports are resolved directly from `./src/index`.
+> **Developer Focus:** This SDK is intended for developers creating custom AI agents or TypeScript tooling. End users running terminal commands only require the compiled `forge614-engram` binary. There is no public npm package; imports reference `./src/index`.
 
 ---
 
-## 1. Exported Modules & Core SDK Principles
+## 1. Exported Modules and SDK Philosophy
 
-The primary public entry point is `src/index.ts`:
+The primary entry point is `src/index.ts`:
 
 ```typescript
 import {
+  // Core classes and configuration
   MemoryWorkspace,
   WorkspaceConfig,
   type WorkspaceSettings,
@@ -25,6 +26,8 @@ import {
   MemoryError,
   memoryTypes,
   defaultDatabasePath,
+
+  // Domain types
   type Project,
   type SaveInput,
   type Memory,
@@ -32,129 +35,204 @@ import {
   type SearchResult,
   type MemoryScope,
   type SearchScope,
+
+  // Progressive session types (Schema 6)
+  type Session,
+  type SessionEntry,
+  type SessionSummary,
+  type SessionSaveOptions,
+  type SessionSaveResult,
+  type SummaryFields,
+
+  // Retrieval and context types
+  type MemoryPreview,
+  type PreviewResult,
+  type VersionRead,
+  type TimelineInput,
+  type TimelineRow,
+  type TimelineResult,
+  type ContextInput,
+  type ContextRow,
+  type ContextResult,
+
+  // Project context utilities
+  saveProjectMemoryWithSession,
+  startProjectSession,
 } from "./src/index";
 ```
 
-### Core SDK Principle: Fully Synchronous Local Operation
-- **The SQLite SDK is 100% Synchronous:** All read, write, search, and directory binding operations on `MemoryStore` and `MemoryWorkspace` execute synchronously in real time on SQLite without asynchronous promises (`async`/`await`).
-- **MCP, Assistant Configuration, and Sync Modules are Internal Infrastructure:**
-  - The MCP stdio server (`src/mcp.ts`)
-  - The Git project resolver (`src/project-context.ts`)
-  - Assistant configuration adapters (`src/assistants/*`)
-  - The terminal UI engine (`src/assistant-tui.ts`)
-  - The server self-test runner (`src/assistant-self-test.ts`)
-  - PostgreSQL replica synchronization engines (`src/sync-*.ts`)
-  These are specialized internal components and **are not re-exported in `src/index.ts`**.
-- **Do Not Invent an `AsyncMemoryWorkspace`:** There is no asynchronous wrapper class. Applications interact with the local synchronous store, while assistant integration occurs via the standard MCP protocol or CLI commands.
+### SDK Operating Principle: Synchronous Local SQLite
+- **Synchronous SQLite API:** All read, write, search, session, timeline, and context operations on `MemoryStore` and `MemoryWorkspace` execute directly and synchronously without async promises.
+- **Internal Infrastructure Boundaries:**
+  - The MCP server (`src/mcp.ts`, `src/mcp-tools.ts`)
+  - The assistant configuration suite (`src/assistants/*`)
+  - The terminal UI menu (`src/assistant-tui.ts`)
+  - The asynchronous self-tester (`src/assistant-self-test.ts`)
+  - The replication sync engine (`src/sync-*.ts`)
+  These are internal infrastructure components and **are not re-exported as public SDK API in `src/index.ts`**.
 
 ---
 
-## 2. SDK Class Architecture
+## 2. Core SDK Classes
 
-1. **`MemoryWorkspace` (High-Level Manager):**
-   Manages user central storage (`~/.forge614/`), initializes the environment, manages project lifecycles (`createProject`, `listProjects`, `renameProject`), and opens verified database connections (`open()`).
+1. **`MemoryWorkspace` (High-Level Workspace Manager):**
+   Manages the user's central space (`~/.forge614/`), initializes storage (`init()`), handles project lifecycles (`createProject`, `listProjects`, `renameProject`), and opens store connections (`open()`).
 2. **`WorkspaceConfig` (Configuration Manager):**
-   Controls atomic reading and writing of `~/.forge614/.env`. Enforces file permissions (`0700` directory, `0600` file), supports format version 2 (local) and format version 3 (with `postgresUrl`), and coordinates setup concurrency using `.config-lock`.
-3. **`MemoryStore` (Low-Level Storage Engine):**
-   Executes direct SQLite operations (`save`, `get`, `history`, `search`, `archive`, `restore`, `enableAssistantIntegration`, `bindProjectDirectory`, `resolveProjectDirectory`, `saveForProjectDirectory`).
+   Manages atomic reading and writing of `~/.forge614/.env`. Enforces file permissions (`0700` directory, `0600` file) and prevents race conditions via `.config-lock`.
+3. **`MemoryStore` (SQLite Database Engine):**
+   Executes direct database queries (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, etc.).
 
 ---
 
-## 3. `MemoryWorkspace` API Methods
+## 3. Methods of `MemoryWorkspace`
 
 ```typescript
 const workspace = new MemoryWorkspace();
 ```
 
 ### `workspace.init(): void`
-Initializes `.env` and `engram.db` with secure permissions. If files already exist and are valid, leaves data intact.
+Prepares `.env` and `engram.db` with secure permissions (`0700`/`0600`). If already valid, preserves existing data.
 
 ### `workspace.createProject(name: string): Project`
-Registers a new project in the database, generating a unique lowercase UUIDv4 `projectId`.
+Creates and registers a new project, assigning an immutable UUIDv4 `projectId`.
 
 ### `workspace.listProjects(): Project[]`
-Returns all registered projects in the central database, ordered chronologically.
+Returns all registered projects ordered chronologically.
 
 ### `workspace.renameProject(projectId: string, name: string): Project`
-Updates a project's cosmetic display name while preserving `projectId`, ownership, and history intact.
+Updates the cosmetic display name while preserving `projectId` and memories.
 
 ### `workspace.open(readonly = false): MemoryStore`
-Validates workspace configuration and opens `MemoryStore`. If `readonly` is `true`, opens in read-only mode for non-mutating inspection.
+Opens a `MemoryStore` instance after validating permissions and schema version.
 
 ---
 
-## 4. `MemoryStore` API Methods (Including Schema 5)
+## 4. Methods of `MemoryStore` (Schemas 5 & 6)
 
-### `store.enableAssistantIntegration(): void`
-Explicitly enables assistant integration and machine-local directory bindings by applying an additive migration to **Schema 5** (creates the `project_bindings` table and index). This is a safe, additive, irreversible operation that never drops memories or alters existing records.
+### Schema Management & Bindings
 
-### `store.bindProjectDirectory(directory: string, projectId: string): Project`
-Associates a local directory path with an existing `projectId` in `project_bindings`. If the path is already bound to a different project, it throws `PROJECT_BINDING_CONFLICT`.
+#### `store.enableAssistantIntegration(): void`
+Explicitly migrates the database to **Schema 5** (creates `project_bindings`).
 
-### `store.resolveProjectDirectory(directory: string, name: string, create: boolean, bindingAvailable?: (dir: string) => boolean): { project: Project | null; created: boolean }`
-Resolves project association for a given directory path:
-- If the directory is already bound, returns the associated project (`created: false`).
-- If `create` is `false` and the directory is unbound, returns `project: null`.
-- If `create` is `true`:
-  - If a project with the same name exists, throws `PROJECT_BINDING_REQUIRED`.
-  - If any recorded directory for any project is missing on disk (`bindingAvailable`), throws `PROJECT_BINDING_REQUIRED` to avoid creating orphan duplicates.
-  - Otherwise, atomically creates the project, registers the binding in `project_bindings`, and returns the project (`created: true`).
+#### `store.enableSessions(): void`
+Explicitly migrates the database to **Schema 6** (creates `sessions`, `session_entries`, `session_summaries`, `local_session_bindings`, and `local_manual_sessions`).
 
-### `store.saveForProjectDirectory(directory: string, name: string, input: Omit<SaveInput, "projectId" | "scope">, bindingAvailable?: (dir: string) => boolean): MemoryVersion`
-Resolves the directory (creating the project and binding atomically if saving for the first time) and saves the memory under `scope: "project"`.
+#### `store.sessionsEnabled(): boolean`
+Returns `true` if the database has Schema 6 applied (`PRAGMA user_version === 6`).
 
-### `store.save(input: SaveInput): MemoryVersion`
-Stores a new memory or evolves an existing topic memory:
-- Requires `title`, `content`, and `type`.
-- If `scope` is `'project'`, requires `projectId`.
-- If `scope` is `'shared'`, `projectId` must be strictly `null`.
-- If updating an existing topic, requires `expectedVersion` matching current version to prevent blind overwrites.
-- Supports `requestKey` for idempotency replay protection.
+#### `store.bindProjectDirectory(directory: string, projectId: string): Project`
+Associates a local directory to an existing `projectId`.
 
-### `store.search(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[]`
-Executes explainable FTS5 retrieval:
-- When passing `projectId`, defaults to `all` (project + shared memories, applying topic overrides).
-- Returns each memory alongside its `explanation` (`bm25`, `multiplier`, `orderScore`).
+#### `store.resolveProjectDirectory(directory: string, name: string, create: boolean, bindingAvailable?: (dir: string) => boolean): { project: Project | null; created: boolean }`
+Resolves a directory binding or creates the project atomically.
 
-### `store.get(projectId: string | null, id: string): Memory | null`
-Retrieves an active or archived memory card by UUID.
+---
 
-### `store.history(projectId: string | null, id: string): MemoryVersion[]`
-Returns the chronological list of immutable past revisions for a memory.
+### Progressive Session Lifecycle (Schema 6)
 
-### `store.archive(projectId: string | null, id: string): Memory`
-Retires an active memory from standard searches while preserving complete history.
+#### `store.startSession(projectId: string, sessionId: string, runtimeDirectory?: string): Session`
+Starts a runtime work session (`kind: "runtime"`). If `runtimeDirectory` is supplied, registers a local binding in `local_session_bindings`.
 
-### `store.restore(projectId: string | null, id: string): Memory`
-Restores an archived memory back to the active state.
+#### `store.endSession(projectId: string, sessionId: string): Session`
+Closes a runtime session, recording its ISO 8601 completion timestamp. Manual sessions cannot be closed (`SESSION_KIND`).
+
+#### `store.saveSessionSummary(projectId: string, sessionId: string, fields: SummaryFields, request: { requestKey: string; expectedVersion?: number }): SessionSaveResult`
+Persists a structured session summary (with mandatory fields `goal`, `instructions`, `discoveries`, `accomplishments`, `nextSteps`, `files`) under reserved topic `session/<sessionId>/summary` with type `procedure`. Updates `session_summaries`.
+
+---
+
+### Memory Persistence & Session Tracking
+
+#### `store.save(input: SaveInput): MemoryVersion`
+Persists a standard memory. On Schema 6, project memories automatically attach to the local manual fallback session.
+
+#### `store.saveWithSession(input: SaveInput, options?: SessionSaveOptions): SessionSaveResult`
+Persists a memory with session tracking:
+- `options.sessionId`: Explicit session ID.
+- `options.mode`: `"independent"` (CLI) or `"assistant"` (MCP).
+- Auto-infers active runtime sessions in assistant mode when exactly 1 was active in the last 7 days; halts with `AMBIGUOUS_SESSION` if multiple exist.
+- Shared memories with session require explicit `options.projectId`; stored with `projectId: null` and private session metadata stripped from external responses.
+
+---
+
+### Progressive Retrieval & Ranked Context
+
+#### `store.search(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[]`
+FTS5 trigram search with BM25 and recency ranking.
+
+#### `store.searchPreviews(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): PreviewResult[]`
+Lightweight retrieval returning `MemoryPreview` records with content truncated to **300 Unicode code points** and boolean `truncated` flag.
+
+#### `store.getVersion(projectId: string | null, id: string, version?: number): VersionRead | null`
+Retrieves a specific historical revision or current version of a memory.
+
+#### `store.timeline(projectId: string, input: TimelineInput): TimelineResult`
+Reconstructs the chronological event window of a session surrounding a focus memory.
+
+#### `store.context(projectId: string | null, input?: ContextInput): ContextResult`
+Assembles prioritized context in three sections (`pinned`, `recent`, `summaries`) respecting `maxBytes` UTF-8 serialized byte cap (1024..65536, default 16384).
 
 ---
 
 ## 5. Production-Ready Code Examples
 
-### Example 1: Workspace Initialization, Schema 5, and Directory Binding
+### Example 1: Schema 6 Enablement, Session Lifecycle, and Memory Save
 
 ```typescript
-import { MemoryWorkspace } from "./src/index";
+import { MemoryWorkspace, type SummaryFields } from "./src/index";
 
-// 1. Initialize central storage (~/.forge614/)
 const workspace = new MemoryWorkspace();
 workspace.init();
 
-// 2. Open writable database connection
 const store = workspace.open();
 try {
-  // 3. Enable assistant integration (Schema 5)
-  store.enableAssistantIntegration();
+  // 1. Ensure Schema 6 is enabled
+  if (!store.sessionsEnabled()) {
+    store.enableSessions();
+  }
 
-  // 4. Create formal project record
-  const project = workspace.createProject("Payment Gateway");
-  console.log(`Created project: ${project.name} (${project.projectId})`);
-
-  // 5. Bind local repository path
-  const localDir = "/Users/usuario/Projects/payment-gateway";
+  // 2. Create project and bind local directory
+  const project = workspace.createProject("Payments Service");
+  const localDir = "/Users/usuario/Projects/payments-service";
   store.bindProjectDirectory(localDir, project.projectId);
-  console.log(`Directory bound successfully: ${localDir}`);
+
+  // 3. Start a runtime work session
+  const sessionId = "ses-payments-migration-v2";
+  const session = store.startSession(project.projectId, sessionId, localDir);
+  console.log(`Session started: ${session.sessionId} at ${session.startedAt}`);
+
+  // 4. Save a memory bound to the active session
+  const result = store.saveWithSession(
+    {
+      scope: "project",
+      projectId: project.projectId,
+      title: "Idempotent Webhook Implementation",
+      content: "Redis keys used for idempotency tracking with 24h TTL.",
+      type: "decision",
+      topicKey: "webhook-idempotency",
+    },
+    { sessionId: session.sessionId }
+  );
+
+  console.log(`Saved memory ${result.memory.id} (Source: ${result.sessionSource})`);
+
+  // 5. Save structured session summary
+  const summary: SummaryFields = {
+    goal: "Implement idempotent payment webhooks",
+    instructions: "Use Redis SETNX with 86400s TTL",
+    discoveries: "Stripe retries caused duplicate credit attempts",
+    accomplishments: "Idempotency filter tested and deployed",
+    nextSteps: "Monitor collision rates in production",
+    files: ["src/payments/webhooks.ts", "src/redis/client.ts"],
+  };
+
+  store.saveSessionSummary(project.projectId, sessionId, summary, {
+    requestKey: "req-summary-pay-01",
+  });
+
+  // 6. Close the session cleanly
+  const closedSession = store.endSession(project.projectId, sessionId);
+  console.log(`Session closed at ${closedSession.endedAt}`);
 } finally {
   store.close();
 }
@@ -162,28 +240,48 @@ try {
 
 ---
 
-### Example 2: Atomic Save Resolving Project from Directory
+### Example 2: Progressive Retrieval (Previews, Timeline, and Ranked Context)
 
 ```typescript
 import { MemoryWorkspace } from "./src/index";
 
 const workspace = new MemoryWorkspace();
-const store = workspace.open();
+const store = workspace.open(true); // Read-only connection
 
 try {
-  // Save memory resolving directory automatically
-  const version = store.saveForProjectDirectory(
-    "/Users/usuario/Projects/payment-gateway",
-    "Payment Gateway",
-    {
-      title: "Gateway Provider Decision",
-      content: "Stripe Connect selected with idempotent webhook handling.",
-      type: "decision",
-      topicKey: "payment-gateway-provider",
-    }
-  );
+  const projectId = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 
-  console.log(`Saved memory ID: ${version.memoryId}, Version: ${version.version}`);
+  // 1. Progressive search previews (bounded to 300 code points)
+  const previews = store.searchPreviews(projectId, "webhooks", 5);
+  for (const item of previews) {
+    console.log(`- [${item.memory.type}] ${item.memory.title}: "${item.memory.preview}" (Truncated: ${item.memory.truncated})`);
+  }
+
+  // 2. Timeline inspection surrounding a memory in a session
+  if (previews.length > 0) {
+    const memoryId = previews[0]!.memory.id;
+    const version = previews[0]!.memory.version;
+    const timeline = store.timeline(projectId, {
+      sessionId: "ses-payments-migration-v2",
+      memoryId,
+      version,
+      before: 2,
+      after: 2,
+    });
+
+    console.log(`Timeline for session ${timeline.sessionId}:`);
+    console.log(`  Focus: ${timeline.focus.memory.title}`);
+    console.log(`  Prior entries: ${timeline.before.length}, Subsequent entries: ${timeline.after.length}`);
+  }
+
+  // 3. Ranked context retrieval with byte budget
+  const context = store.context(projectId, {
+    compact: false,
+    maxBytes: 16384, // 16 KiB serialized UTF-8 payload limit
+  });
+
+  console.log(`Ranked context: ${context.pinned.length} pinned, ${context.recent.length} recent, ${context.summaries.length} summaries.`);
+  console.log(`Omitted by byte cap:`, context.omitted);
 } finally {
   store.close();
 }
@@ -191,16 +289,13 @@ try {
 
 ---
 
-### Example 3: Consuming the Stdio MCP Server via Official Client SDK
-
-To connect to Engram's MCP server from an external tool or agent:
+### Example 3: Client MCP Tool Interaction (10 Tools)
 
 ```typescript
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 async function main() {
-  // Configure stdio transport targeting installed binary
   const transport = new StdioClientTransport({
     command: "forge614-engram",
     args: ["mcp"],
@@ -208,32 +303,22 @@ async function main() {
   });
 
   const client = new Client(
-    { name: "ai-assistant-agent", version: "1.0.0" },
+    { name: "custom-coding-agent", version: "1.0.0" },
     { capabilities: {} }
   );
 
   await client.connect(transport);
 
-  // 1. List available tools
+  // 1. List all 10 MCP tools
   const tools = await client.listTools();
-  console.log("Available MCP tools:", tools.tools.map(t => t.name));
+  console.log("Exposed MCP tools:", tools.tools.map(t => t.name));
 
-  // 2. Resolve current project
-  const currentProject = await client.callTool({
-    name: "memory_current_project",
+  // 2. Fetch ranked context on agent startup
+  const contextRes = await client.callTool({
+    name: "memory_context",
     arguments: { directory: process.cwd() },
   });
-  console.log("Current project:", currentProject.content);
-
-  // 3. Search relevant memories
-  const searchResult = await client.callTool({
-    name: "memory_search",
-    arguments: {
-      query: "stripe webhook",
-      limit: 3,
-    },
-  });
-  console.log("Search matches:", searchResult.content);
+  console.log("Context dossier:", contextRes.content);
 
   await client.close();
 }
