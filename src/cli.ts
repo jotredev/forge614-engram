@@ -2,6 +2,7 @@ import { MemoryWorkspace, MemoryError, memoryTypes, type SaveInput, type SearchS
 import { projectIdentity } from "./identity";
 import { version } from "../package.json";
 import { setupTerminal } from "./setup-terminal";
+import { syncWorkspace, watchSync } from "./sync-runner";
 
 const HELP = `Forge614 Engram — una base, recuerdos por proyecto y compartidos
 
@@ -9,6 +10,8 @@ Uso: forge614-engram <comando> [opciones]
 
 setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
 init            Inicializa una sola configuración y base local, sin borrar datos.
+sync            Sincroniza todo el espacio local con PostgreSQL configurado.
+sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
@@ -36,7 +39,10 @@ No hay conexiones, carpetas .env ni bases diferentes por proyecto.
 project-create inicializa el espacio si aún no existe configuración.
 Para guardar shared sin crear un proyecto, ejecuta init primero.
 No se migran ni borran bases o configuraciones antiguas automáticamente.
-PostgreSQL todavía no está disponible. No hay copia local alternativa ni sincronización.
+SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada en setup.
+sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
+sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
+setup puede añadir metadatos de sincronización al esquema 3 sin borrar recuerdos.
 Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
@@ -48,7 +54,7 @@ save es manual/programático; la integración memory_save con asistentes está p
 
 const MEMORY_OPTIONS = ["project-id", "scope"];
 const OPTIONS: Record<string, readonly string[]> = {
-  setup: [], init: [], "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"],
+  setup: [], init: [], sync: [], "sync-watch": ["interval"], "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"],
   save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned"],
   search: [...MEMORY_OPTIONS,"query","limit"],
   get: [...MEMORY_OPTIONS,"id"], history: [...MEMORY_OPTIONS,"id"],
@@ -83,6 +89,8 @@ async function main(args: string[]): Promise<void> {
   }
   const need = (key: string): string => values.get(key) ?? invalid(`Falta --${key}.`);
   if (command === "setup") { await setupTerminal(); return; }
+  if (command === "sync") {console.log(JSON.stringify(await syncWorkspace(),null,2));return;}
+  if (command === "sync-watch") {await watchSync(values.has("interval")?integer(need("interval"),"interval",3600):30);return;}
   const workspace = new MemoryWorkspace();
   if (command === "init" || command.startsWith("project-")) {
     let result: unknown;

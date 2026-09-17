@@ -29,10 +29,17 @@ test("terminal EOF and Ctrl+C cancel without initializing storage", () => {
 });
 
 test("terminal retries pasted invalid answers then initializes without creating projects", () => {
-  const { result, config } = terminal("maybe\nsi\n");
+  const { result, config } = terminal("no\nmaybe\nsi\n");
   expect(result.exitCode).toBe(0);
   expect(result.stderr.toString()).toBe("");
   const projects = new MemoryWorkspace(config).listProjects();
   expect(projects).toEqual([]);
   expect(existsSync(config.databasePath)).toBe(true);
+});
+
+test("terminal never echoes a pasted PostgreSQL credential even before the secret prompt",()=>{
+  const {result,config}=terminal("si\npostgresql://u:SECRET_MARKER@127.0.0.1:1/db?sslmode=disable\nno\n");
+  expect(result.exitCode).toBe(130);
+  expect(result.stdout.toString()+result.stderr.toString()).not.toContain("SECRET_MARKER");
+  expect(existsSync(config.root)).toBe(false);
 });

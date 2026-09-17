@@ -33,11 +33,11 @@ test("setup cancellation leaves a fresh workspace absent", async () => {
   }
 });
 
-test("setup initializes global storage with one confirmation and no project", async () => {
+test("setup defaults to no PostgreSQL and initializes global storage without a project", async () => {
   const { config, workspace } = fixture();
-  const { io, output, questions } = conversation(["sí"], () => expect(existsSync(config.root)).toBe(false));
+  const { io, output, questions } = conversation(["", "sí"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(1);
+  expect(questions).toHaveLength(2);
   expect(workspace.listProjects()).toEqual([]);
   expect(readFileSync(join(config.root, ".env"), "utf8")).toBe('FORMAT_VERSION="2"\nSTORAGE="sqlite"\n');
   expect(output.join("\n")).toContain(config.databasePath);
@@ -51,9 +51,9 @@ test("setup preserves existing projects and memories without asking which projec
   try { id = store.save({ projectId: project.projectId, title: "Keep", content: "SQLite", type: "fact" }).id; }
   finally { store.close(); }
   const before = readFileSync(join(config.root, ".env"));
-  const { io, output, questions } = conversation(["yes"]);
+  const { io, output, questions } = conversation(["no", "yes"]);
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(1);
+  expect(questions).toHaveLength(2);
   expect(workspace.listProjects()).toEqual([project]);
   expect(readFileSync(join(config.root, ".env"))).toEqual(before);
   const reopened = workspace.open(true);
@@ -65,10 +65,18 @@ test("setup preserves existing projects and memories without asking which projec
 
 test("setup retries invalid confirmation without interpreting old project menu choices", async () => {
   const { config, workspace } = fixture();
-  const { io, questions } = conversation(["1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
+  const { io, questions } = conversation(["no", "1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(6);
+  expect(questions).toHaveLength(7);
   expect(workspace.listProjects()).toEqual([]);
+});
+
+test("setup cancels PostgreSQL before connecting or publishing credentials", async()=>{
+  const {config}=fixture();
+  const {io,output}=conversation(["si","postgresql://u:SECRET@127.0.0.1:1/db?sslmode=disable","no"]);
+  expect(await runSetup(io,config)).toEqual({cancelled:true});
+  expect(existsSync(config.root)).toBe(false);
+  expect(output.join("\n")).not.toContain("SECRET");
 });
 
 test("setup cancellation preserves existing project records", async () => {

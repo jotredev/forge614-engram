@@ -3,7 +3,9 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { MemoryError, memoryTypes, type Memory, type MemoryVersion, type SaveInput, type SearchResult, type Project, type SearchScope } from "./domain";
-import { initialize } from "./schema";
+import { initialize, enableSynchronization } from "./schema";
+import { exportSnapshot, applySnapshot, checkpoint } from "./sync-local";
+import type { SyncSnapshot } from "./sync-snapshot";
 import { defaultDatabasePath } from "./paths";
 import { projectIdentity } from "./identity";
 
@@ -194,4 +196,9 @@ export class MemoryStore {
   close(): void {
     if (!this.closed) { this.db.close(); this.closed = true; }
   }
+
+  enableSync(): void { enableSynchronization(this.db); }
+  syncSnapshot(): SyncSnapshot { return exportSnapshot(this.db); }
+  syncCheckpoint(replica: string): SyncSnapshot { return checkpoint(this.db,replica); }
+  applySync(expected: SyncSnapshot, next: SyncSnapshot, replica: string): void { applySnapshot(this.db,expected,next,replica); }
 }

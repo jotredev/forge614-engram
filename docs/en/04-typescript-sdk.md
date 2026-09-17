@@ -1,25 +1,26 @@
-# 04. TypeScript SDK Integration Guide
+# 04 (EN). TypeScript SDK Guide (MemoryStore)
 
-> **Stage:** Stage 1 — Local Memory (Interactive Setup and Single Database)
-> **Release Versions:** Program 0.3.0 | Configuration Format 2 | SQLite Schema 3
-> **Status:** Current & Active
+> **Stage:** Local Memory & Optional PostgreSQL Synchronization
+> **Release Versions:** Program 0.4.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync)
+> **Status:** Current & Active (Verified with 90 tests on macOS with Bun 1.3.8)
 > **Sister translation:** [04. Guía de Integración con el SDK de TypeScript](../es/04-sdk-typescript.md)
 
-This guide documents how to use the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes in your own TypeScript applications, automation scripts, and test suites within this repository.
+This guide documents how to utilize the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes in your own TypeScript applications, integration suites, and developer scripts.
 
 > [!NOTE]
-> **For Software Engineers:** This SDK is intended for developers embedding structured memory into TypeScript applications. End users of the terminal only need to run the `forge614-engram` CLI. There is no npm package; import directly from `./src/index`.
+> **Developer-Facing SDK:** This SDK is intended for engineers embedding structured personal memory into TypeScript applications. End users interact with the terminal CLI `forge614-engram`. There is no public package on npm; imports are resolved directly from `./src/index`.
 
 ---
 
-## 1. Exported Modules and Class Architecture
+## 1. Exported Modules & Core SDK Principles
 
-The main entry point is `src/index.ts`:
+The primary public entry point is `src/index.ts`:
 
 ```typescript
 import {
   MemoryWorkspace,
   WorkspaceConfig,
+  type WorkspaceSettings,
   MemoryStore,
   MemoryError,
   memoryTypes,
@@ -34,162 +35,179 @@ import {
 } from "./src/index";
 ```
 
-### Class Architecture:
+### Core SDK Principle: Fully Synchronous Local Operation
+- **The SQLite SDK is 100% Synchronous:** All read, write, and search operations on `MemoryStore` and `MemoryWorkspace` execute synchronously in real time on SQLite without asynchronous promises (`async`/`await`).
+- **Sync Modules are Internal Infrastructure:** Modules such as `sync-runner.ts`, `synchronize.ts`, `sync-postgres.ts`, `sync-snapshot.ts`, and `sync-local.ts` are internal network transport and reconciliation machinery. **They are not re-exported as public APIs in `src/index.ts`**.
+- **Do Not Invent an `AsyncMemoryWorkspace`:** There is no asynchronous wrapper class. Applications interact with the local synchronous store, while PostgreSQL synchronization is coordinated via terminal commands (`sync`, `sync-watch`) or internal runner processes.
+- **Internal Synchronization Store Hooks:** The helper methods `store.enableSync()`, `store.syncSnapshot()`, `store.syncCheckpoint()`, and `store.applySync()` exist for synchronization runners. They are not intended for arbitrary manual JSON injection or ad-hoc conflict manipulation.
+
+---
+
+## 2. SDK Class Architecture
+
 1. **`MemoryWorkspace` (High-Level Manager):**
-   Manages the global user storage lifecycle (`~/.forge614/`). This is the recommended class for initialization, project management (`createProject`, `listProjects`, `renameProject`), and opening validated database connections (`open()`).
-2. **`WorkspaceConfig` (Configuration Reader):**
-   Handles atomic reads and writes of `~/.forge614/.env`. Validates file modes (`0700` directory, `0600` file) and rejects legacy project configurations (`projects/`) with `LEGACY_CONFIG`.
+   Manages the lifecycle of user storage (`~/.forge614/`). The recommended interface for bootstrapping the environment, managing projects (`createProject`, `listProjects`, `renameProject`), and opening verified database connections (`open()`).
+2. **`WorkspaceConfig` (Configuration Manager):**
+   Controls atomic reading and writing of `~/.forge614/.env`. Enforces file permissions (`0700` directory, `0600` file), supports format version 2 (pure local) and format version 3 (with `postgresUrl`), and coordinates setup concurrency using `.config-lock`.
 3. **`MemoryStore` (Low-Level Storage Engine):**
    Executes direct SQLite operations (`save`, `get`, `history`, `search`, `archive`, `restore`).
 
 ---
 
-## 2. Methods of `MemoryWorkspace`
+## 3. `MemoryWorkspace` API Methods
 
 ```typescript
 const workspace = new MemoryWorkspace();
 ```
 
 ### `workspace.init(): void`
-Prepares `.env` and `engram.db` in secure mode. If already existing and valid, performs no destructive changes.
+Initializes `.env` and `engram.db` with secure permissions. If files already exist and are valid, leaves data intact.
 
 ### `workspace.createProject(name: string): Project`
-Registers a new project, assigning a lowercase UUIDv4 `projectId`.
-⚠️ **Best Practice:** Do not invoke `createProject()` on every application boot, as this creates a new identity every time. Register projects once and reuse their `projectId` via `listProjects()`.
+Registers a new project, generating a unique lowercase UUIDv4 `projectId`.
+⚠️ **Best Practice:** Do not call `createProject()` on every application boot, as this creates a new identity each time. Register the project once and reuse its `projectId` by looking it up with `listProjects()`.
 
 ### `workspace.listProjects(): Project[]`
-Returns all registered projects from the database, sorted by name. If storage is uninitialized, returns `[]`.
+Returns all registered projects ordered alphabetically by name. Returns `[]` if storage is uninitialized.
 
 ### `workspace.renameProject(projectId: string, name: string): Project`
-Updates a project's display name while preserving its `projectId`, history, and memories.
+Updates a project's display name while preserving `projectId`, ownership, and history intact.
 
 ### `workspace.open(readonly = false): MemoryStore`
-Validates configuration and returns an active `MemoryStore` instance. Pass `readonly = true` for read-only connections (used, for example, to validate compatibility without mutating files).
+Validates workspace configuration and opens `MemoryStore`. If `readonly` is `true`, opens in read-only mode for non-mutating inspection.
 
 ---
 
-## 3. Methods of `MemoryStore`
+## 4. `MemoryStore` API Methods
 
-### `store.save(input: SaveInput): Memory`
-Saves a new memory or creates a new revision of an existing topic:
+Once opened via `workspace.open()` or `new MemoryStore()`:
+
+### `store.save(input: SaveInput): MemoryVersion`
+Stores a new memory or evolves an existing topic memory:
 - Requires `title`, `content`, and `type`.
 - If `scope` is `'project'`, requires `projectId`.
-- If `scope` is `'shared'`, `projectId` must be `null`.
-- If updating an existing topic, requires `expectedVersion` to prevent concurrent overwrite collisions.
-- Accepts `requestKey` for idempotency protection.
+- If `scope` is `'shared'`, `projectId` must be strictly `null`.
+- If updating an existing topic, requires `expectedVersion` matching current version to prevent blind overwrites.
+- Supports `requestKey` for idempotency replay protection.
 
 ### `store.search(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[]`
-Executes full-text explainable search using SQLite FTS5:
-- When given a `projectId`, `scope` defaults to `"all"` (returns project-scoped plus shared memories, honoring topic overrides).
-- Returns each memory alongside an `explanation` object (`bm25`, `multiplier`, `orderScore`).
+Executes explainable FTS5 retrieval:
+- When passing `projectId`, defaults to `all` (project + shared memories, applying topic overrides).
+- Returns each memory alongside its `explanation` (`bm25`, `multiplier`, `orderScore`).
 
 ### `store.get(projectId: string | null, id: string): Memory`
-Retrieves a memory record by UUID in the specified scope.
+Retrieves an active or archived memory card by ID.
 
 ### `store.history(projectId: string | null, id: string): MemoryVersion[]`
-Returns the chronological array of immutable version snapshots.
+Returns the immutable chronological array of historical version snapshots.
 
 ### `store.archive(projectId: string | null, id: string): Memory`
-Hides a memory from standard search results while preserving its full audit history.
+Hides a memory from default search results without deleting its historical records.
 
 ### `store.restore(projectId: string | null, id: string): Memory`
-Restores search visibility for an archived memory.
+Restores an archived memory back into active search results.
+
+### `store.close(): void`
+Closes the underlying SQLite connection.
 
 ---
 
-## 4. Complete Integration Example
+## 5. Practical Code Examples
 
+### Example 1: Initializing Workspace and Registering a Project
 ```typescript
 import { MemoryWorkspace } from "./src/index";
 
-// 1. Instantiate workspace manager
 const workspace = new MemoryWorkspace();
 
-// 2. Safely initialize storage (idempotent)
+// Initialize global storage if absent
 workspace.init();
 
-// 3. Retrieve or create project
-const projects = workspace.listProjects();
-let project = projects.find(p => p.name === "My Application");
-
+// Find or create project
+let project = workspace.listProjects().find(p => p.name === "Developer Platform");
 if (!project) {
-  project = workspace.createProject("My Application");
-  console.log("Created project with ID:", project.projectId);
+  project = workspace.createProject("Developer Platform");
+  console.log(`Created project with ID: ${project.projectId}`);
 } else {
-  console.log("Reusing existing project:", project.projectId);
+  console.log(`Found existing project: ${project.projectId}`);
 }
+```
 
-// 4. Open memory store
+### Example 2: Saving Project & Shared Memories
+```typescript
 const store = workspace.open();
 
 try {
-  // A. Save project-scoped memory
-  const memProject = store.save({
+  // 1. Save project-specific memory
+  const docMemory = store.save({
+    scope: "project",
     projectId: project.projectId,
-    title: "Database Engine",
-    content: "We use SQLite in WAL mode",
+    title: "API Documentation",
+    content: "We use OpenAPI 3.1 to document HTTP endpoints",
     type: "decision",
-    topicKey: "architecture/storage",
+    topicKey: "api/docs",
+    requestKey: "req-api-01",
   });
-  console.log("Saved project memory:", memProject.id);
+  console.log(`Saved memory ID: ${docMemory.id}, Version: ${docMemory.version}`);
 
-  // B. Save shared universal guideline
-  const memShared = store.save({
+  // 2. Save universal shared preference (projectId must be null)
+  const langMemory = store.save({
     scope: "shared",
     projectId: null,
-    title: "Language Preference",
-    content: "I prefer clear explanations in English",
+    title: "Response Language",
+    content: "Explain technical concepts in English",
     type: "preference",
     topicKey: "preferences/language",
+    requestKey: "req-lang-01",
   });
-  console.log("Saved shared memory:", memShared.id);
-
-  // C. Combined search from project
-  console.log("\n--- Combined Search ---");
-  const results = store.search(project.projectId, "English");
-  for (const r of results) {
-    console.log(`[${r.memory.scope.toUpperCase()}] ${r.memory.title}: ${r.memory.content}`);
-    console.log(`Ranking Order Score: ${r.explanation.orderScore}`);
-  }
-
-  // D. Exclusive shared search
-  console.log("\n--- Exclusive Shared Search ---");
-  const sharedMatches = store.search(null, "English", 5, "shared");
-  console.log("Shared matches count:", sharedMatches.length);
-
+  console.log(`Saved shared memory ID: ${langMemory.id}`);
 } finally {
-  // 5. Always close to release locks
   store.close();
 }
 ```
 
----
-
-## 5. Interactive Setup Module (`src/setup.ts`)
-
-For custom terminal user interfaces, alternative CLI adapters, or test automation, the repository provides `runSetup`:
-
+### Example 3: Combined Search with Scoring Breakdown
 ```typescript
-import { runSetup, type SetupIO, type SetupResult } from "./src/setup";
-import { WorkspaceConfig } from "./src/workspace-config";
+const store = workspace.open();
 
-// Custom I/O adapter
-const customIO: SetupIO = {
-  write: (message: string) => console.log(message),
-  ask: async (question: string) => {
-    // Return user answer or null if cancelled
-    return "yes";
-  },
-};
+try {
+  // Combined search: returns project and shared notes
+  const results = store.search(project.projectId, "OpenAPI English", 5, "all");
 
-const result: SetupResult = await runSetup(customIO, new WorkspaceConfig());
-
-if (result.cancelled) {
-  console.log("Setup was cancelled without applying changes.");
-} else {
-  console.log("Global storage initialized:", result.storage);
+  for (const { memory, explanation } of results) {
+    console.log(`[${memory.scope.toUpperCase()}] ${memory.title}`);
+    console.log(`  Content: ${memory.content}`);
+    console.log(`  Score: ${explanation.orderScore} (BM25: ${explanation.bm25}, Multiplier: ${explanation.multiplier})`);
+  }
+} finally {
+  store.close();
 }
 ```
 
-> [!IMPORTANT]
-> **Always wrap `store` operations in `try ... finally { store.close(); }`** to ensure file descriptors and SQLite write locks are properly released.
+### Example 4: Concurrency-Safe Update with `expectedVersion`
+```typescript
+const store = workspace.open();
+
+try {
+  const updated = store.save({
+    scope: "project",
+    projectId: project.projectId,
+    title: "API Documentation",
+    content: "Migrated from OpenAPI 3.1 to TypeSpec for contract generation",
+    type: "decision",
+    topicKey: "api/docs",
+    expectedVersion: 1, // Asserts current active version is 1
+    requestKey: "req-api-02",
+  });
+
+  console.log(`Updated memory version: ${updated.version}`);
+} catch (error: any) {
+  if (error.code === "VERSION_CONFLICT") {
+    console.error("Conflict: the active memory version changed before update.");
+  } else {
+    throw error;
+  }
+} finally {
+  store.close();
+}
+```
