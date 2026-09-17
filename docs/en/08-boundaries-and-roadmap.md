@@ -1,8 +1,8 @@
 # 08 (EN). Stage Boundaries and Evolutionary Roadmap
 
-> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Verified (250 total tests across 18 files: 243 passed and 7 skipped without PostgreSQL test binaries; 250 passed, 0 failures, 1506 assertions with isolated PostgreSQL on macOS with Bun 1.3.8)
+> **Status:** Current & Verified (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
 > **Sister translation:** [08. Límites de la Etapa y Hoja de Ruta Futura](../es/08-limites-y-roadmap.md)
 
 This document declares with complete transparency which capabilities are implemented and verified in the current release, active technical and operational boundaries, the distinction between synthetic test fixtures and live assistant sessions, and pending development phases on the official roadmap.
@@ -44,7 +44,15 @@ The following development phases are **100% implemented and verified**:
 - [x] **10 Native MCP Tools:** Full suite of memory tools exposed over stdio.
 - [x] **Format 2 PostgreSQL Promotion:** Replicating sessions and summaries promoted exclusively via `sync --upgrade-format` under atomic CAS locking on `forge614_sync.state`.
 - [x] **OpenCode Plugin Conflict Safety:** Halts with `CONFLICT` if `plugins/forge614-engram.js` contains divergent code, requiring manual reconciliation.
-- [x] **250 Automated Tests across 18 Files:** Exhaustive test suite on macOS with Bun 1.3.8 (1506 assertions).
+
+### Phase 4.1: Feature-Oriented Modular Monolith & Colocated Tests — COMPLETED
+- [x] **Feature-oriented modular monolith:** Clean separation of responsibilities into `app/` (workflow coordination), `modules/` (pure business rules & types, zero I/O), `infrastructure/` (concrete SQLite, PostgreSQL, filesystem, git, and assistant adapters), `interfaces/` (CLI, MCP, TUI, and terminal delivery), and `shared/` (`errors.ts`).
+- [x] **Compatible `MemoryStore` facade:** Full preservation of historical SDK signatures and methods in `src/app/memory-store.ts`, delegating to specialized SQLite persistence modules.
+- [x] **Removal of deprecated internal flat paths:** Complete removal of legacy root files from `src/`, routing all external consumers strictly through `src/index.ts`.
+- [x] **Automated TypeScript AST architecture auditor:** Strict compile-time AST validation (`tests/architecture/import-rules.ts`) enforcing layer import rules, prohibiting cross-component cycles, and preventing domain leaks.
+- [x] **Colocated sibling tests:** 1:1 sibling test pairing (`<file>.test.ts`) for all 46 logic-bearing implementation files, accompanied by local collaboration suites in `__tests__` subdirectories.
+- [x] **Composite outer transactions:** Persistence writes coordinated through `infrastructure/sqlite/writes.ts` under a single shared transaction (`BEGIN IMMEDIATE ... COMMIT`).
+- [x] **369 automated tests across 69 files:** 361 passed and 8 skipped without isolated PostgreSQL binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured (30.69s).
 
 ---
 
@@ -75,13 +83,13 @@ To maintain strictly realistic expectations, the following boundaries are declar
 11. **No Heuristic Automatic Conflict Resolution:**
     Concurrent incompatible modifications to the same entity trigger `SYNC_CONFLICT`.
 12. **Literal Trigram BM25 Search:**
-    Search relies on exact term and trigram matches in SQLite FTS5; it does not perform semantic vector embedding search.
+    Search relies on exact term and trigram matches in SQLite FTS5; it does not perform semantic vector embedding search. The current modular architecture defines clean extension boundaries in `modules/search/` and `infrastructure/`, but does not implement embedding providers in this phase.
 
 ---
 
 ## 3. Evolutionary Roadmap: Pending Phases
 
-With Phases 1 through 4 completed, future development focuses on the following phases:
+With Phases 1 through 4.1 completed, future development focuses on the following phases:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -98,6 +106,10 @@ With Phases 1 through 4 completed, future development focuses on the following p
                            ▼
 ┌────────────────────────────────────────────────────────┐
 │ [x] Phase 4: Progressive Sessions & Ranked Context     │ (Completed v0.5.0)
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ [x] Phase 4.1: Modular Monolith & Colocated Tests      │ (Completed v0.5.0)
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐

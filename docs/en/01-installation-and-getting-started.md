@@ -1,8 +1,8 @@
 # 01 (EN). Installation, Setup, and Getting Started
 
-> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Verified (250 total tests across 18 files: 243 passed and 7 skipped without PostgreSQL test binaries; 250 passed, 0 failures, 1506 assertions with isolated PostgreSQL on macOS with Bun 1.3.8)
+> **Status:** Current & Verified (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
 > **Sister translation:** [01. Instalación, Configuración y Primeros Pasos](../es/01-instalacion-y-primeros-pasos.md)
 
 This guide walks you step-by-step through preparing dependencies, compiling, and installing the `forge614-engram` CLI command on your computer, understanding the mandatory Git requirement, assistant discovery, the interactive `setup` wizard for central storage, enabling progressive sessions with Schema 6, peer device coordination, and PostgreSQL replica promotion.

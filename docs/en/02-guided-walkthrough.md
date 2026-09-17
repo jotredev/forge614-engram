@@ -1,8 +1,8 @@
 # 02 (EN). Guided System Walkthrough
 
-> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Active (Verified with 250 tests on macOS with Bun 1.3.8)
+> **Status:** Current & Active (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
 > **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
 This practical walkthrough guides you step-by-step through the complete lifecycle of Forge614 Engram: setting up global storage with `setup`, configuring developer coding assistants using the terminal UI menu `tui`, managing progressive memory sessions, inspecting timelines, querying ranked context, interacting via the native stdio Model Context Protocol (MCP) server across 10 tools, safe OpenCode plugin conflict resolution, and promoting PostgreSQL replicas to Format 2.

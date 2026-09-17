@@ -1,8 +1,8 @@
 # 04 (EN). TypeScript SDK Guide (MemoryStore)
 
-> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Active (Verified with 250 tests across 18 files on macOS with Bun 1.3.8)
+> **Status:** Current & Active (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
 > **Sister translation:** [04. Guía de Integración con el SDK de TypeScript](../es/04-sdk-typescript.md)
 
 This guide documents the public TypeScript API of Forge614 Engram, how to integrate the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes into custom developer tools, the Schema 6 progressive session lifecycle, ranked context retrieval, and architectural module boundaries.
@@ -61,15 +61,19 @@ import {
 } from "./src/index";
 ```
 
-### SDK Operating Principle: Synchronous Local SQLite
-- **Synchronous SQLite API:** All read, write, search, session, timeline, and context operations on `MemoryStore` and `MemoryWorkspace` execute directly and synchronously without async promises.
-- **Internal Infrastructure Boundaries:**
-  - The MCP server (`src/mcp.ts`, `src/mcp-tools.ts`)
-  - The assistant configuration suite (`src/assistants/*`)
-  - The terminal UI menu (`src/assistant-tui.ts`)
-  - The asynchronous self-tester (`src/assistant-self-test.ts`)
-  - The replication sync engine (`src/sync-*.ts`)
-  These are internal infrastructure components and **are not re-exported as public SDK API in `src/index.ts`**.
+### Core SDK Architecture Principles
+
+- **Synchronous SQLite Engine:** All read, write, search, session, timeline, and context operations in `MemoryStore` and `MemoryWorkspace` execute directly and synchronously over SQLite without async promises.
+- **Compatible `MemoryStore` Facade:** The `MemoryStore` class (located in `src/app/memory-store.ts`) implements the Facade pattern: it preserves 100% of the public interface and method signatures expected by SDK consumers while delegating persistence to specialized partitioned modules in `src/infrastructure/sqlite/` (`memory.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`).
+- **Removal of Legacy Internal Paths:** Historical flat files in the root of `src/` (`src/domain.ts`, `src/store.ts`, `src/identity.ts`, `src/sessions.ts`, `src/retrieval.ts`, `src/schema.ts`, `src/paths.ts`, etc.) have been **completely removed**. External tools must import exclusively from `src/index.ts`. Internal codebase imports into `src/index.ts` are strictly forbidden and enforced by the TypeScript AST auditor (`tests/architecture/import-rules.ts`).
+- **Internal Infrastructure and Interface Boundaries:**
+  - The MCP server (`src/interfaces/mcp/`)
+  - Assistant hooks and terminal commands (`src/interfaces/terminal/` and `src/modules/assistants/`)
+  - The interactive terminal UI menu (`src/interfaces/tui/`)
+  - The asynchronous self-tester (`src/infrastructure/assistants/self-test.ts`)
+  - The replication sync engine (`src/infrastructure/postgres/` and `src/app/synchronization.ts`)
+  These components are internal and are never re-exported through the public SDK entry point.
+- **No `AsyncMemoryWorkspace`:** There is no asynchronous wrapper class. Applications interact synchronously with the local SQLite engine, and remote assistant communication uses the standard MCP protocol or CLI commands.
 
 ---
 

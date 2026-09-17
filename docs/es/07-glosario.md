@@ -1,8 +1,8 @@
 # 07. Glosario de Conceptos en Lenguaje Cotidiano
 
-> **Etapa:** Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
+> **Etapa:** Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
 > **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
-> **Estado:** Vigente y Activo (Verificado con 250 pruebas en 18 archivos en macOS con Bun 1.3.8)
+> **Estado:** Vigente y Activo (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
 > **Traducción hermana:** [07 (EN). Plain-Language Glossary](../en/07-glossary.md)
 
 Este glosario explica cada concepto técnico utilizando analogías y metáforas de la vida cotidiana, seguidas inmediatamente de su término técnico formal entre paréntesis.
@@ -59,3 +59,23 @@ Ubicación canónica del repositorio Git principal que permite a múltiples subc
 
 ### Algoritmo BM25 y Multiplicador de Recencia
 Fórmula matemática (*Best Matching 25*) que calcula la relevancia de búsqueda combinando la frecuencia de palabras clave, la prioridad manual (`pinned`) y la frescura temporal de la nota mediante un decaimiento progresivo.
+
+---
+
+### Monolito Modular por Funcionalidad (Feature-Oriented Modular Monolith)
+Como una caja de herramientas profesional donde cada compartimento tiene una función clara y ordenada, pero todo viaja en un único maletín portátil: un diseño de software que compila un único programa ejecutable autónomo para tu sistema operativo, organizando su código interno por conceptos del mundo real (`memory`, `sessions`, `projects`, `search`) con fronteras claras y puertas de entrada explícitas (`index.ts`), sin dispersarse en servicios remotos de red.
+
+### Fachada Compatible (Compatible Facade Pattern / `MemoryStore`)
+Como el mostrador de recepción de un hotel elegante: una cara visible amigable y familiar que atiende a los clientes exactamente como siempre lo ha hecho, mientras detrás del mostrador un equipo de especialistas coordina las tareas sin que el cliente tenga que aprender un protocolo nuevo ni cambiar su forma de interactuar.
+
+### Auditor AST de Arquitectura (Abstract Syntax Tree Architecture Auditor / `import-rules`)
+Como un inspector aduanero infatigable que revisa el equipaje de cada paquete antes de permitirle la entrada: una herramienta automática de análisis de código fuente basada en el compilador de TypeScript que rastrea todos los `import` del proyecto, detecta si alguna capa intenta comunicarse con quien no debe y evita la formación de callejones sin salida o bucles infinitos (*cycles*).
+
+### Pruebas Colocadas Hermanas (Colocated Sibling Tests / `<archivo>.test.ts`)
+Como tener el extintor de incendios exactamente al lado de la máquina que podría calentarse, en lugar de guardarlo en una bodega lejana al final del pasillo: la práctica de colocar el archivo de pruebas unitarias directamente junto al archivo de código fuente que implementa esa lógica (ej. `memory.test.ts` junto a `memory.ts`), garantizando que cada pieza tenga un responsable inmediato de calidad.
+
+### Transacción Exterior Compuesta (Composite Outer Transaction / `writes.ts`)
+Como firmar una escritura notarial donde o se completan todos los sellos, firmas y pagos al mismo tiempo, o el trámite se cancela por completo sin dejar documentos a medias: una operación indivisible de base de datos (`BEGIN IMMEDIATE ... COMMIT`) donde se registran el proyecto, la nota, su versión inmutable, el evento histórico, el hash de solicitud idempotente y la entrada de sesión en un solo parpadeo seguro.
+
+### Bloqueo Optimista CAS (Compare-and-Swap / CAS)
+Como dos personas que intentan sellar el mismo documento numerado: cada una revisa primero qué número tiene el sello actual; la primera que llega estampa el nuevo sello avanzando la numeración, mientras que la segunda, al notar que el número ya no coincide con el que vio, se detiene amablemente sin arruinar el trabajo de la primera.
