@@ -1,157 +1,167 @@
-# 08. Stage Boundaries and Evolutionary Roadmap
+# 08 (EN). Stage Boundaries and Evolutionary Roadmap
 
-> **Stage:** Stage 1 — Local Memory (Single Database, Shared Memories, and Interactive Setup)
-> **Release Versions:** Program 0.3.0 | Configuration Format 2 | SQLite Schema 3
-> **Status:** Current & Verified (75 tests passed, 0 failures on macOS with Bun 1.3.8)
+> **Stage:** Local Memory & Optional PostgreSQL Synchronization
+> **Release Versions:** Program 0.4.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync)
+> **Status:** Current & Verified (90 total tests: 86 passed and 4 skipped without PostgreSQL test binaries; 90 passed, 0 failures, 645 assertions with isolated PostgreSQL 17.6 on macOS with Bun 1.3.8)
 > **Sister translation:** [08. Límites de la Etapa y Hoja de Ruta Futura](../es/08-limites-y-roadmap.md)
 
-This document declares with complete transparency which capabilities are fully implemented in this release (including the new interactive `setup` wizard), active technical boundaries, the approved future policy for intelligent assistants, architectural comparisons with Gentleman Programming and Softmax Data, and the official 4-stage evolutionary roadmap pending implementation.
+This document declares with absolute transparency which capabilities are fully implemented in this delivery (including the interactive `setup` wizard and optional direct PostgreSQL sync), what technical boundaries currently exist, the approved future policy for AI assistants, an architectural comparison against Gentleman Programming and Softmax Data, and the official roadmap for the 3 remaining development phases.
 
 ---
 
-## 1. Completed and Verified Capabilities (Current Delivery)
+## 1. Verified & Completed Capabilities (Current Delivery)
 
-The following capabilities are 100% implemented in `src/` and verified by the automated test suite of 75 tests:
+The following capabilities are 100% implemented in `src/`, tested, and verified across the 90 automated test specifications:
 
-- [x] **Interactive Onboarding Setup Wizard (`setup`):** Step-by-step console guide for first-time users running on an interactive terminal (TTY), displaying global target paths (`~/.forge614/.env` and `~/.forge614/engram.db`), prompting for explicit confirmation (`¿Confirmar? [si/NO]:`), returning standard exit code `130` on cancellation, and halting non-interactive environments with `INTERACTIVE_REQUIRED` (code `1`).
-- [x] **Robust SQLite WAL Journal Initialization:** An empty immediate transaction (`BEGIN IMMEDIATE; COMMIT;`) executed upon enabling WAL mode (`PRAGMA journal_mode=WAL;`), materializing auxiliary header files on disk so read-only connections (`workspace.open(true)`) succeed immediately on Bun 1.3.8 on macOS even before any project is registered.
-- [x] **Single Configuration and Single Database:** Central user storage in `~/.forge614/` with a single `.env` file (mode `0600`) and a single SQLite database `engram.db` (mode `0600`) inside a private directory (mode `0700`).
-- [x] **Stable Project Identity (`projectId`):** Registered projects in the `projects` table using lowercase UUIDv4 identifiers. Display name is cosmetic; renaming via `project-rename` never affects identity or memories.
-- [x] **Two Memory Scopes (`scope`):** Clear logical separation between project memories (`scope: "project"`, linked to `projectId`) and universal shared memories (`scope: "shared"`, with `projectId: null`, stored once).
-- [x] **Combined Search with Smart Topic Overrides:** Project queries (`search --project-id <UUID>`) default to `--scope all`. If the project possesses an active memory with the identical `topicKey` as a shared guideline, the project decision overrides the shared rule for that project.
-- [x] **Reversible Topic Overrides:** Archiving the project's exception re-exposes the shared guideline; restoring the exception re-applies project priority.
-- [x] **Immutable History and Auditing:** Snapshot copies saved in `memory_versions` upon each topic update, with audit records logged in `events`.
-- [x] **Optimistic Concurrency Control:** Enforced `--expected-version` on topic updates, guarding against stale overwrites.
-- [x] **Idempotency and Duplicate Prevention:** Native support for `--request-key` with SHA-256 payload hashing and partial unique indexes.
-- [x] **Explainable SQLite FTS5 Search:** Trigram index with field weighting (title 5.0, topic 3.0, content 1.0), priority boost (`pinned`), and recency decay curve (30-day half-life).
-- [x] **Literal Search Fallback:** Transparent Unicode-folded iteration for queries shorter than 3 characters.
-- [x] **Robust Terminal CLI:** Commands `setup`, `init`, `project-create`, `project-list`, `project-rename`, `save`, `search`, `get`, `history`, `archive`, `restore`, with argument validation before database access and structured JSON outputs (except `setup` which uses conversational plain text).
-- [x] **TypeScript SDK:** Module `runSetup` and classes `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` ready for source code integration.
-- [x] **Atomic Security Hardening:** Rejection of symlinks, hard links, non-owner permissions, legacy `projects/` directories (`LEGACY_CONFIG`), and obsolete schema versions (`MIGRATION_REQUIRED`).
-
----
-
-## 2. Active Technical Boundaries and Limits
-
-To maintain realistic expectations, keep in mind these operational boundaries:
-
-1. **`setup` is strictly for global initialization (does not manage projects):**
-   The `setup` command does not list, create, rename, or link local directories to project IDs. Associating workspaces with a `projectId` is performed exclusively via `init` and `project-create`.
-2. **`setup` requires an interactive terminal (TTY):**
-   It cannot be invoked inside unix pipes, redirected standard input (`cat | forge614-engram setup`), or unattended CI pipelines. For headless automation, use `forge614-engram init`.
-3. **Manual or Code-Driven Saving (No Background Daemon):**
-   The engine saves only when you execute `forge614-engram save` or call `store.save(...)`. No background process or daemon passively records conversations.
-4. **Literal Keyword Search (No AI Vector Embeddings):**
-   The search engine matches exact character sequences using trigrams and BM25. It lacks semantic understanding (e.g., searching for *"car"* will not locate notes about *"automobile"*).
-5. **No Context Token Budgeting:**
-   The `search` command returns complete matching notes without truncating or budgeting them to fit specific LLM context window token limits.
-6. **No MCP Server or Network Socket:**
-   No MCP (*Model Context Protocol*) or local HTTP daemon exists yet for connecting external desktop tools via sockets.
-7. **No Multi-User Authentication:**
-   The `projectId` organizes memories within the database but is not a user password or security barrier. Any process executed by your local OS user can access the database.
-8. **No Destructive Erasure:**
-   There is no destructive `delete` command; obsolete notes are retired using `archive` to preserve full audit traceability.
-9. **No Automatic In-Place Schema Migration:**
-   Databases with schema version 1 or 2 halt with `MIGRATION_REQUIRED`. No automatic destructive transformation is applied to existing data.
+- [x] **Interactive Onboarding Setup Assistant (`setup`):** Human-facing console walkthrough for interactive terminals (TTY), explaining global paths (`~/.forge614/.env` and `~/.forge614/engram.db`), offering optional PostgreSQL sync with exact choices `No` and `Sí, configurar PostgreSQL`, accepting connection URLs via masked hidden input (`[oculto]`), warning about full workspace scope, requesting confirmation (`¿Confirmar? [si/NO]:`), returning exit code `130` on cancellation, and safely rejecting non-interactive environments with `INTERACTIVE_REQUIRED` (code `1`).
+- [x] **Direct & Optional PostgreSQL Synchronization:** Replicates the entire workspace to an operator-controlled PostgreSQL database without requiring vendor cloud subscriptions, middle tiers, or telemetry.
+- [x] **Safe Synchronization Commands:** On-demand single-round command `sync` with structured JSON output, and foreground continuous watcher `sync-watch` with configurable interval (`--interval <1..3600>`, default 30 seconds) and clean `Ctrl+C` interruption (code `130`).
+- [x] **Offline Resilience:** SQLite and FTS5 remain 100% local. All save, get, search, and history operations execute locally in SQLite with zero network latency; a PostgreSQL outage never blocks local writes or degrades local CLI operations.
+- [x] **Additive Local Schema Migration (Schema 4):** Validated addition of `sync_checkpoints` upon enabling sync in `setup`, without dropping, truncating, or rewriting existing memory tables. Disabling PostgreSQL sync retains schema 4 and local checkpoints intact.
+- [x] **Dedicated Remote Schema & Verification (`forge614_sync`):** Creates and verifies canonical `revisions` and `state` tables, acquires transaction advisory locking (`pg_advisory_xact_lock`) during DDL creation, and strictly verifies absence of foreign triggers, procedures, or rewrite rules.
+- [x] **CAS Concurrency Control & Immutable Revisions:** Protects head publications in PostgreSQL using `SELECT head ... FOR UPDATE` (Compare-And-Swap) to prevent concurrent write collisions, storing immutable snapshots keyed by SHA-256 hash (`ON CONFLICT (hash) DO NOTHING`).
+- [x] **Deterministic 3-Way Snapshot Merge Protocol:** Reconciles the base checkpoint (`base`), local state (`local`), and remote head (`remote`), cleanly merging changes across distinct projects and memories, while asserting via `assertExtension` that history is never truncated or rewritten.
+- [x] **Single Configuration and Single Database:** Global storage in `~/.forge614/` with one configuration file `.env` (format 2 local, format 3 with sync, permissions `0600`) and one SQLite database `engram.db` (permissions `0600`) under a private directory (`0700`).
+- [x] **Stable Project Identity (`projectId`):** Registered projects in the `projects` table keyed by lowercase UUIDv4. Renaming a project never alters identity, history, or access to memories.
+- [x] **Two Memory Scopes (`scope`):** Clean separation between project-scoped memories (`scope: "project"`, linked to `projectId`) and universal shared preferences (`scope: "shared"`, with null `projectId`, stored once).
+- [x] **Combined Search with Smart Topic Overrides:** Searching from a project (`search --project-id <UUID>`) defaults to `--scope all`. If a project defines an active memory with the identical `topicKey` as a shared guideline, the project decision overrides the shared rule.
+- [x] **Reversible Topic Overrides:** Archiving a project override re-exposes the shared rule; restoring it reinstates the project's exception.
+- [x] **Immutable Version Audit Tree:** JSON snapshots in `memory_versions` for every topic update, along with auditable lifecycle events (`events`).
+- [x] **Optimistic Concurrency Control:** Mandatory `--expected-version` for updating topic memories, preventing blind overwrites.
+- [x] **Idempotency Protection:** Replay protection using `--request-key` with SHA-256 fingerprinting of normalized payloads.
+- [x] **Local Explainable FTS5 Retrieval:** Trigram index with column weighting (title 5.0, topic 3.0, content 1.0), priority multiplier (`pinned`), and 30-day half-life recency decay.
+- [x] **Fallback Literal Search:** Substring search with Unicode case-folding for queries under 3 characters.
+- [x] **Synchronous TypeScript SDK:** Clean synchronous `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes, keeping synchronization modules as internal infrastructure.
 
 ---
 
-## 3. Architecture Comparison: Gentleman, Softmax, and Forge614
+## 2. Active Technical Boundaries and Current Limits
+
+To maintain realistic expectations, the following boundaries remain active in the current implementation:
+
+1. **8 MiB Snapshot Size Limit:**
+   Full workspace snapshots are constrained to a strict 8 MiB boundary (`SYNC_TOO_LARGE`). Workspaces exceeding this size cannot synchronize until older notes are archived or future incremental streaming protocols are implemented.
+2. **No Automated Conflict Resolution:**
+   If two machines make conflicting modifications to the same entity relative to their common base, the system raises `SYNC_CONFLICT` and halts the round. **There is no automated text-merging heuristic or interactive 3-way editor in this release**. Never delete tables or checkpoints to force a sync.
+3. **Full Snapshot Transport Cost:**
+   Synchronization transfers complete workspace snapshots rather than streaming per-event deltas. It does not include in-flight gzip compression or application-layer end-to-end encryption beyond connection TLS.
+4. **`sync-watch` is a Foreground Terminal Process:**
+   Does not install background system daemons (*systemd*, *launchd*) or cron entries. If the terminal window running `sync-watch` is closed, polling stops. Local data remains safe in SQLite and will sync on the next run.
+5. **SQLite & FTS5 are Strictly Local:**
+   PostgreSQL does not maintain a `tsvector` column, `ts_rank_cd` queries, or a `postgres-fts` mode. Full-text search always runs **locally in SQLite**.
+6. **No Semantic Vector Embeddings:**
+   The search engine relies on exact character trigrams and BM25 ranking. It does not perform semantic synonym matching.
+7. **No Context Token Budgeting:**
+   The `search` command returns full memory cards without truncation or automated token-window fitting.
+8. **No Proactive Assistant Integration / MCP Server:**
+   There is no background MCP (*Model Context Protocol*) daemon or automatic capture hook. Saving memories is strictly manual or programmatic.
+9. **No Multi-User Authorization Within Storage:**
+   The `projectId` provides logical data separation, not multi-user security. Any process running under your local operating system user account can access the local database.
+
+---
+
+## 3. Architectural Comparison: Gentleman, Softmax, and Forge614
 
 <table header-row="true">
 <tr>
 <td>Criterion</td>
 <td>🎩 Gentleman Programming</td>
 <td>🧩 Softmax Data</td>
-<td>🧠 Forge614 Engram</td>
+<td>🧠 Forge614 Engram (Current Delivery)</td>
 </tr>
 <tr>
 <td>**Data Location**</td>
-<td>Per-project SQLite databases or local folders.</td>
-<td>Central cloud server.</td>
-<td>**Single database (`~/.forge614/engram.db`) and single `.env` in user home directory.**</td>
+<td>SQLite files or folders per project.</td>
+<td>Proprietary cloud database server.</td>
+<td>**Single local database (`~/.forge614/engram.db`) with optional direct PostgreSQL sync replica.**</td>
 </tr>
 <tr>
 <td>**Initial Setup**</td>
 <td>Manual or ad-hoc scripts.</td>
-<td>Cloud sign-up and provisioning.</td>
-<td>**Friendly interactive wizard (`setup`) with explicit confirmation and standard cancellation.**</td>
+<td>Cloud provisioning and sign-up.</td>
+<td>**Friendly interactive assistant (`setup`) with optional PostgreSQL configuration.**</td>
 </tr>
 <tr>
 <td>**Shared Memories**</td>
-<td>Not native (project-isolated).</td>
-<td>Cloud organization workspaces.</td>
-<td>**Native (`scope: shared`): stored once, accessible across all projects.**</td>
+<td>Not native (isolated per project).</td>
+<td>Cloud workspaces.</td>
+<td>**Native (`scope: shared`): stored once, accessible from all projects, synchronized across replicas.**</td>
 </tr>
 <tr>
-<td>**Rule Override**</td>
-<td>Manual user instructions in prompts.</td>
+<td>**Rule Overrides**</td>
+<td>Manual prompt engineering.</td>
 <td>Vector weight adjustments.</td>
-<td>**SQL Topic Overrides with immediate reversibility via archive/restore.**</td>
+<td>**Deterministic SQL Topic Overrides with instant reversible archival.**</td>
+</tr>
+<tr>
+<td>**Multi-Device Sync**</td>
+<td>Unavailable (isolated disks).</td>
+<td>Centralized on vendor servers.</td>
+<td>**Direct to your own PostgreSQL (`sync` / `sync-watch`) without intermediate cloud vendors.**</td>
 </tr>
 <tr>
 <td>**Who Decides What to Save?**</td>
-<td>AI assistant via skills and `mem_save` tool.</td>
+<td>Assistant via skills and `mem_save`.</td>
 <td>Background extraction model (*Reflector*).</td>
-<td>**Current:** Manual / SDK.<br>**Future:** Proactive assistant capture via `memory_save` with strict scoping policy.</td>
+<td>**Current:** Manual / TypeScript SDK.<br>**Future:** Proactive assistant integration via `memory_save` with strict scoping.</td>
 </tr>
 <tr>
-<td>**Cost and Privacy**</td>
-<td>0 USD storage; consumes chat tokens.</td>
-<td>Requires paid cloud API calls (OpenAI embeddings).</td>
-<td>**0 USD:** 100% local, zero tokens, zero network requests, zero telemetry.</td>
+<td>**Cost & Privacy**</td>
+<td>$0 storage; consumes chat tokens.</td>
+<td>Consumes paid API calls (OpenAI embeddings).</td>
+<td>**$0:** 100% local, zero tokens, no vendor lock-in or telemetry.</td>
 </tr>
 </table>
 
 ---
 
-## 4. Approved Future Policy for Intelligent Assistants
+## 4. Approved Future Assistant Integration Policy
 
 > [!IMPORTANT]
 > **STATUS: APPROVED POLICY PENDING IMPLEMENTATION.**
-> When AI coding assistants (Claude Code, Cursor, Antigravity) gain autonomous tool access (`memory_save` / MCP), they must follow these strict operational rules to avoid memory contamination:
+> When proactive assistant integrations (Claude Code, Cursor, Antigravity) are connected via `memory_save` / MCP, they must adhere to the following operational invariants:
 
-1. **Project Scope by Default (`scope: "project"`):**
-   Any technical discovery, architectural choice, build command, file path, or bug workaround discovered during a session must be stored under the `projectId` of the active workspace.
-2. **Promotion to Shared (`scope: "shared"`) Exclusively on Clear Global Intent:**
-   A memory may only be recorded as shared if the user explicitly indicates cross-project or universal validity (evaluated in conversation context, never by isolated keyword matches such as *"always"* or by mere repetition).
-3. **No Blind Fallback on Ambiguity:**
-   If the assistant cannot determine the active `projectId` or whether a rule should be universal, it is strictly forbidden to fall back to `scope: "shared"`. The assistant must prompt the user for clarification before persisting.
+1. **Default Project Scope (`scope: "project"`):**
+   Technical decisions, architectural agreements, build instructions, and bug fixes discovered during a session are bound to the active project's `projectId`.
+2. **Promotion to Shared (`scope: "shared"`) Requires Explicit Global Intent:**
+   A memory may only be stored as shared if the user explicitly specifies that the directive applies universally across projects, evaluated within full conversational context.
+3. **No Automatic Fallback to Shared on Ambiguity:**
+   If an assistant cannot determine the active `projectId`, it must prompt the user for clarification rather than defaulting to `scope: "shared"`.
 
 ---
 
-## 5. Official Evolutionary Roadmap (4 Pending Phases)
+## 5. Evolutionary Roadmap (3 Remaining Phases)
 
 > [!NOTE]
-> The previous milestone **Interactive setup wizard** was successfully completed in version **0.3.0**. The following 4 milestones define the strict chronological development sequence for upcoming releases:
+> Prior stages **Interactive Setup Assistant** (v0.3.0) and **PostgreSQL Synchronization** (v0.4.0) are **COMPLETED**. The remaining 3 phases represent the official implementation sequence:
 
 ```mermaid
 flowchart LR
-    E1["Stage 1: Single DB,<br>shared memories & setup<br>(IMPLEMENTED v0.3.0)"] --> P1["1. Global PostgreSQL<br>storage"]
-    P1 --> P2["2. Assistant integration<br>(memory_save / MCP)"]
-    P2 --> P3["3. Advanced retrieval<br>& scoring"]
-    P3 --> P4["4. Terminal TUI<br>interface"]
+    E1["Stage 1: Local Memory & Setup<br>(IMPLEMENTED v0.3.0)"] --> E2["Stage 2: PostgreSQL Synchronization<br>(IMPLEMENTED v0.4.0)"]
+    E2 --> P1["1. Assistant Integration<br>(memory_save / MCP)"]
+    P1 --> P2["2. Advanced Retrieval<br>& Scoring Enhancements"]
+    P2 --> P3["3. Terminal User<br>Interface (TUI)"]
 ```
 
-### 1. Global PostgreSQL Storage Option
-An option to configure a centralized PostgreSQL connection string via `DATABASE_URL` in `~/.forge614/.env` to replace local SQLite for teams requiring shared network storage.
+### 1. Proactive Assistant Integration via `memory_save`
+Building Model Context Protocol (MCP) servers and runtime hooks allowing artificial intelligence assistants (Claude Code, Cursor, Antigravity) to proactively record project decisions under the approved scoping policy.
 
-### 2. Assistant Integration via `memory_save`
-Implementation of Model Context Protocol (MCP) server endpoints and hooks enabling AI assistants (Claude Code, Cursor, Antigravity) to proactively extract and record learnings under the approved scoping policy.
+### 2. Advanced Retrieval and Scoring Enhancements
+Context pruning heuristics, LLM token budget management, dictionary-backed synonym expansion, and refined mathematical ranking formulas.
 
-### 3. Advanced Retrieval and Scoring Enhancements
-Mathematical context pruning algorithms, token budgeting, dictionary synonym mapping, and ranking score refinements.
-
-### 4. Terminal User Interface (TUI)
-A keyboard-navigable console application (*Text User Interface*) for visually exploring projects, inspecting memories, and auditing revisions without typing commands.
+### 3. Terminal User Interface (TUI)
+An interactive terminal interface to browse projects, inspect memory cards, audit version trees, and manage archival states via keyboard navigation without leaving the console.
 
 ---
 
 ## 6. Official Test Verification Report
 
-This release is verified by automated integration tests on **macOS with Bun 1.3.8**:
+This release is backed by reproducible automated test suites on **macOS with Bun 1.3.8**:
 
-- **Unit & Integration Suite:** **75 tests passed (0 failures)** across **563 assertions** in 9 test files (`store.test.ts`, `install.test.ts`, `workspace.test.ts`, `projects.test.ts`, `setup-terminal.test.ts`, `shared.test.ts`, `cli.test.ts`, `setup.test.ts`, `workspace-config.test.ts`).
-- **Static Type Checking (TypeScript):** `bun run typecheck` completed with **0 errors**.
-- **Code Cleanliness:** `git diff --check` passed cleanly without whitespace anomalies.
-- **Concurrency & File Safety:** Multi-round concurrent tests on real SQLite instances, verifying atomic creation, lock timeouts, WAL journal header initialization, interactive cancellation (code 130), non-TTY rejection (code 1), and rejection of symlinks and legacy directories.
+- **Unit & Integration Suite:** **90 total tests** across 11 test files:
+  - **86 passed and 4 skipped** under standard invocation (the 4 skipped tests require real PostgreSQL binaries configured via `FORGE614_TEST_POSTGRES_BIN`).
+  - **90 passed (0 failures) and 645 assertions** when executed against an isolated loopback PostgreSQL 17.6 cluster.
+- **Verified Test Files:** `store.test.ts`, `install.test.ts`, `sync.test.ts`, `workspace.test.ts`, `projects.test.ts`, `setup-terminal.test.ts`, `shared.test.ts`, `postgres-sync.test.ts`, `cli.test.ts`, `setup.test.ts`, `workspace-config.test.ts`.
+- **TypeScript Type Verification:** `bun run typecheck` (`tsc --noEmit`) exited with **0 errors**.
+- **Code Consistency:** `git diff --check` clean with zero trailing whitespace or format errors.
+- **Disconnection & Concurrency Verification:** Verified that `sync-watch` handles network outages gracefully, enables uninterrupted local SQLite operations, and terminates cleanly on `Ctrl+C` with exit code 130.

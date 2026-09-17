@@ -3,6 +3,10 @@ import { MemoryError } from "./domain";
 
 const APPLICATION_ID = 1177956660;
 const SCHEMA_VERSION = 3;
+const SYNC_SCHEMA = `CREATE TABLE sync_checkpoints (
+  replica TEXT PRIMARY KEY NOT NULL,
+  snapshot TEXT NOT NULL CHECK(json_valid(snapshot))
+);`;
 const SCHEMA = `
 CREATE TABLE projects (
   projectId TEXT PRIMARY KEY NOT NULL,
@@ -76,16 +80,28 @@ END;
 function definition(db: Database): string {
   return JSON.stringify(db.query("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name").all());
 }
-let expectedDefinition: string | undefined;
-function validate(db: Database): void {
-  if (!expectedDefinition) {
+const expectedDefinitions = new Map<boolean,string>();
+function validate(db: Database, sync = false): void {
+  if (!expectedDefinitions.has(sync)) {
     const reference = new Database(":memory:");
-    try { reference.exec(SCHEMA); expectedDefinition = definition(reference); }
+    try { reference.exec(SCHEMA + (sync ? SYNC_SCHEMA : "")); expectedDefinitions.set(sync,definition(reference)); }
     finally { reference.close(); }
   }
-  if (definition(db) !== expectedDefinition) {
+  if (definition(db) !== expectedDefinitions.get(sync)) {
     throw new MemoryError("DATABASE_SCHEMA", "La estructura no es compatible. No se modificó ni reparó la base.");
   }
+}
+
+/** Explicit, additive enrollment; normal opens never migrate a local database. */
+export function enableSynchronization(db: Database): void {
+  db.transaction(() => {
+    const { user_version } = db.query("PRAGMA user_version").get() as {user_version:number};
+    if(user_version===4) { validate(db,true); return; }
+    if(user_version!==3) throw new MemoryError("MIGRATION_REQUIRED","No se puede habilitar sincronización en este formato.");
+    validate(db);
+    db.exec(SYNC_SCHEMA);
+    db.exec("PRAGMA user_version=4");
+  }).immediate();
 }
 
 export function initialize(db: Database, allowCreate = true, readonly = false): void {
@@ -98,6 +114,7 @@ export function initialize(db: Database, allowCreate = true, readonly = false): 
       throw new MemoryError("MIGRATION_REQUIRED", "Formato anterior detectado. Conserva el archivo: no se modificó la base y se necesita una migración explícita, aún no disponible.");
     }
     if (version === SCHEMA_VERSION && app === APPLICATION_ID) { validate(db); return; }
+    if (version === 4 && app === APPLICATION_ID) { validate(db,true); return; }
     if (version !== 0 || app !== 0) throw new MemoryError("DATABASE_VERSION", "Base incompatible: no se puede abrir con esta versión.");
     const objects = db.query("SELECT count(*) AS n FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'").get() as { n: number };
     if (objects.n !== 0) throw new MemoryError("DATABASE_OWNER", "La base contiene una estructura ajena; usa una base vacía y dedicada.");

@@ -1,85 +1,106 @@
-# 07. Plain-Language Glossary
+# 07 (EN). Plain-Language Glossary
 
-> **Stage:** Stage 1 — Local Memory (Interactive Setup and Single Database)
-> **Release Versions:** Program 0.3.0 | Configuration Format 2 | SQLite Schema 3
-> **Status:** Current & Active
+> **Stage:** Local Memory & Optional PostgreSQL Synchronization
+> **Release Versions:** Program 0.4.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync)
+> **Status:** Current & Active (Verified with 90 tests on macOS with Bun 1.3.8)
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
-This glossary explains every technical concept using everyday real-world analogies, followed by its formal technical terminology in parentheses.
+This glossary explains every technical concept using real-world analogies and everyday language, followed by its formal technical term in parentheses.
 
 ---
 
-### Interactive onboarding assistant (Interactive Setup Wizard / `setup`)
-A human-facing command that explains system storage paths, validates existing setups in read-only mode, and asks for a single confirmation before creating global storage, without asking for, creating, or selecting projects.
+### Interactive Onboarding Wizard (`setup` / Interactive TTY Assistant)
+A human-facing command that explains storage paths, checks compatibility in read-only mode, offers optional PostgreSQL synchronization configuration, and requests explicit confirmation before initializing storage, without prompting for, creating, or selecting projects.
 
-### Interactive terminal channel (Interactive TTY / `isTTY`)
-A direct terminal connection allowing a human to type answers on the keyboard and view formatted text on screen. If absent (e.g. in pipes or automated scripts), `setup` halts with `INTERACTIVE_REQUIRED`.
+### Interactive Terminal (TTY / `isTTY`)
+A direct keyboard console channel where a human types answers and views prompt outputs. If absent (e.g. in non-interactive shell scripts or CI pipelines), `setup` halts with `INTERACTIVE_REQUIRED` to preserve safety invariants.
 
-### Voluntary cancellation exit code (Exit Code 130 / User Interruption)
-The standard numerical code returned to the operating system when an interactive operation is aborted or cancelled by the user (`no`, `cancelar`, `q`, `Ctrl+C`, or EOF).
+### User Cancellation Exit Code (Exit Code 130 / SIGINT / EOF)
+The standard numerical status returned to the operating system when an interactive operation or continuous watcher (`sync-watch`) is voluntarily canceled by the operator (`no`, `cancelar`, `q`, `Ctrl+C`, or EOF `Ctrl+D`).
 
-### Central user storage directory (User storage directory / `~/.forge614/`)
-The private folder located in your computer's personal home directory where configuration and memory databases reside, protected with strict owner-only access permissions (`0700`).
+### Central User Storage Directory (`~/.forge614/` / Global Root)
+The private folder located in your user home directory housing the system's global configuration and single database, guarded by strict private owner-only permissions (`0700`).
 
-### Single global configuration file (Global configuration file / `.env`)
-The sole system settings file (`~/.forge614/.env`), generated automatically in private mode (`0600`). Defines format version and storage engine without scattering configurations across projects.
+### Single Global Configuration File (`.env` / Workspace Settings)
+The lone configuration file (`~/.forge614/.env`), generated in private mode (`0600`). Encodes storage backend format (format 2 for pure local SQLite, format 3 for PostgreSQL sync) without scattering configuration files across individual project repositories.
 
-### Single central SQLite database (Single SQLite database / `engram.db`)
-The relational database file (`~/.forge614/engram.db`) that holds all projects, memories, revision snapshots, and idempotency request logs in a unified schema.
+### Master Relational Database (`engram.db` / Local SQLite)
+The primary SQLite database file (`~/.forge614/engram.db`) storing all project registrations, active memories, version trees, and request keys in a single cohesive schema.
 
-### Immutable project identifier (`projectId`)
-A permanent, unchangeable alphanumeric code (lowercase UUIDv4) assigned to each registered project. It definitively links all memories to that project, ensuring that changing the display name never alters project identity or severs access to memories.
+### Stable Project Identity (`projectId` / UUIDv4)
+The permanent, lowercase UUIDv4 assigned to each project upon creation. Irrevocably ties all memories to that project, ensuring that updating the cosmetic display name never alters identity or breaks memory access.
 
-### Descriptive project display name (`name`)
-A human-readable text label (e.g. *"Online Store"*). Purely cosmetic; multiple projects may share the same display name without conflict because their true identity is defined by `projectId`.
+### Cosmetic Project Name (`name` / Display Label)
+A descriptive, human-readable label (e.g. *"Online Store"*). Distinct projects can share identical display names without colliding because internal relational mapping relies strictly on `projectId`.
 
-### Scope of a note (`scope`)
-The property determining where a saved memory applies. Can be project-scoped (`project`), applying strictly to a specific project; or shared (`shared`), applying as universal knowledge across all projects.
+### Memory Scope (`scope`)
+The architectural property dictating where a memory applies. Either restricted to a single project (`project`) or universal across all projects (`shared`).
 
-### Universal shared memory (Shared memory)
-A note or preference stored once in the database with null `projectId` (e.g. *"I prefer clear explanations in English"*), immediately available to guide AI assistants across all projects without duplicating storage.
+### Universal Shared Memory (`scope: shared`)
+A preference, coding convention, or developer guideline stored once with null `projectId`, immediately accessible across all projects without duplicating records on disk.
 
-### Topic exception / substitution (Topic override)
-A mathematical and logical rule triggered when a project stores an active memory with the exact same topic key (`topicKey`) as a shared memory. In the project's combined search, the project's decision substitutes for the shared rule, temporarily concealing the general rule for that project.
+### Topic Exception Override (*Topic Override* / Dynamic Rule Shadowing)
+The SQL query invariant triggered when an active project memory shares the exact same `topicKey` as a universal shared memory. In the project's combined search, the project's specific exception shadows the shared guideline. Archiving the exception instantly restores the shared rule's visibility.
 
-### Combined search (`scope: all`)
-The default search mode when querying from a project (`search --project-id <UUID>`), returning both project-specific notes and relevant universal shared memories while respecting topic overrides.
+### Combined Search (`scope: all`)
+The default search mode when querying from a project (`search --project-id <UUID>`), seamlessly returning project-specific notes and universal shared preferences while applying topic override rules.
 
-### Immutable historical snapshot (Snapshot / Version)
-An exact, unalterable digital copy (stored in JSON) of a memory's text and metadata at the precise moment it was saved. Allows auditing earlier decisions before revisions occurred.
+### Immutable Version Snapshot (Snapshot / `memory_versions`)
+A byte-for-byte JSON snapshot of a memory's content, title, and metadata captured at the exact moment of a revision write, forming an append-only audit trail over time.
 
-### Optimistic revision check (`expectedVersion`)
-A safety requirement demanding that you declare which version number you previously read before updating a topic, preventing concurrent processes from overwriting changes without reviewing intermediate revisions.
+### Optimistic Concurrency Assertion (`expectedVersion`)
+A concurrency safeguard requiring callers to state the active version number they previously read before saving a new revision, preventing blind overwrites and stale updates.
 
-### Duplicate prevention stamp (Idempotency / `requestKey`)
-A mechanism ensuring that submitting the same command multiple times with the same dispatch key returns the existing record without generating duplicate notes or polluting history.
+### Request Idempotency Stamp (`requestKey` / Replay Protection)
+A client-provided key ensuring that re-submitting an identical save operation does not create duplicate memories or clutter the historical record.
 
-### Full-text search engine (SQLite FTS5 / `memories_fts`)
-An internal high-speed indexing engine that organizes all words across your notes to find matches in milliseconds without AI token costs or cloud dependencies.
+### Full-Text Search Engine (SQLite FTS5 / `memories_fts`)
+An embedded, high-performance virtual table indexing memory text into tokens for sub-millisecond retrieval without token costs or network dependencies. Runs locally even when replica sync is enabled.
 
-### Three-letter fragment search (Trigram tokenizer)
-A technique splitting words into consecutive three-letter chunks (e.g., `sqlite` splits into `sql`, `qli`, `lit`, `ite`), allowing searches to locate notes even when matching substrings.
+### Trigram Tokenizer (FTS5 Trigram Tokenization)
+A text indexing strategy that splits words into overlapping 3-character slices, allowing substring and partial-word matches without requiring language-specific stemmers.
 
-### Textual relevance scoring (BM25 algorithm)
-The classic ranking formula (*Best Matching 25*) that scores document relevance by balancing term frequency, rarity, and document length. In SQLite FTS5, it produces negative numbers where more negative values denote higher relevance.
+### Relevance Ranking Formula (BM25 Algorithm)
+The industry-standard *Best Matching 25* probabilistic ranking function that scores term frequency against inverse document frequency. Evaluates negative scores in SQLite FTS5 where more negative values indicate stronger relevance.
 
-### Pinned priority note (`pinned`)
-A flag (`pinned: true`) that awards a fixed ranking boost in the scoring formula so high-priority notes appear at the top of search results.
+### Pinned Priority Boost (`pinned: true`)
+A categorical flag granting a fixed priority bonus in the ranking formula, elevating critical architectural directives to top search ranking.
 
-### Recency decay curve ($r$)
-A mathematical factor with a 30-day half-life that gently boosts newly updated notes, ensuring fresh decisions take precedence over dated records.
+### Recency Decay Curve ($r$ / Temporal Multiplier)
+A mathematical scoring bonus favoring recently updated notes over older records, modeled with a 30-day half-life.
 
-### Write-Ahead Logging (WAL mode)
-An SQLite storage mode where writes append to a secondary journal (`engram.db-wal`), allowing readers to query data without being blocked by active writers.
+### Write-Ahead Logging (WAL Mode / `PRAGMA journal_mode=WAL`)
+An SQLite concurrency mode redirecting writes to an append-only log (`engram.db-wal`), enabling non-blocking simultaneous readers while writes proceed.
 
-### WAL header materialization (Empty immediate transaction)
-A technique that flushes physical WAL bookkeeping structures to disk via `BEGIN IMMEDIATE; COMMIT;`, allowing read-only connections to open a fresh database immediately in Bun/macOS without projects.
+### WAL Header Materialization (Empty Immediate Transaction)
+Executing `BEGIN IMMEDIATE; COMMIT;` upon WAL initialization to physically write and synchronize WAL/SHM file headers, ensuring read-only connections work reliably on Bun/macOS without existing data.
 
-### Reversible archival and restoration (`archive` and `restore`)
-Operations that hide a note from standard searches without deleting data, with the ability to reactivate it at any time while preserving complete version history.
+### Reversible Archival (`archive` and `restore`)
+Safe soft-deletion that removes obsolete notes from default search queries while preserving their full version audit tree for future inspection or reinstatement.
 
-### High-level workspace manager (`MemoryWorkspace`)
-The TypeScript SDK class responsible for initializing global configuration, administering projects, and opening secure database connections.
+### Optional PostgreSQL Replica (PostgreSQL Sync Replica)
+A dedicated PostgreSQL database configured by the operator acting as an external replica for Forge614 Engram. Enables syncing workspace memories across multiple developer machines without third-party hosted cloud services.
 
-### Low-level storage engine (`MemoryStore`)
-The TypeScript SDK class interacting directly with SQLite to perform save, search, history, and archival operations.
+### Deterministic 3-Way Snapshot Merge (3-Way Reconciliation Protocol)
+An algorithm comparing the last agreed checkpoint (`base`), current local state (`local`), and active remote database state (`remote`) to cleanly merge non-conflicting changes from independent projects or memories.
+
+### Synchronization Checkpoint Table (`sync_checkpoints` / Schema 4)
+An internal SQLite table added during migration that records the exact snapshot hash and payload agreed upon with a given remote replica, serving as the baseline for the next 3-way merge.
+
+### Compare-And-Swap Head Locking (CAS / `SELECT FOR UPDATE`)
+A concurrency pattern in PostgreSQL ensuring that publishing a new revision succeeds only if the remote head still matches the local expectation, preventing conflicting concurrent writes.
+
+### Foreground Continuous Watcher (`sync-watch`)
+An interactive terminal command running an immediate synchronization round and polling periodically (default 30 seconds) while kept open. Does not install background system daemons or cron jobs.
+
+### Offline Resilience (Local Operation Continuity)
+The architectural principle ensuring that local Forge614 Engram operations (`save`, `get`, `search`, `archive`) never block or fail when PostgreSQL is offline or network connectivity is lost.
+
+### Synchronization Conflict (`SYNC_CONFLICT`)
+A safety abort triggered when two replicas make conflicting changes to the same memory or project, or when a previously observed record disappears. Halts the sync round without altering either database.
+
+### Snapshot Size Limit (8 MiB Boundary / `SYNC_TOO_LARGE`)
+A strict 8 MiB constraint on full workspace snapshot payloads to ensure memory safety and network stability in this release.
+
+### Synchronization Schema (`forge614_sync`)
+A dedicated namespace within PostgreSQL containing exclusively the canonical `revisions` and `state` tables.

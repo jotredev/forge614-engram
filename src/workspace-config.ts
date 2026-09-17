@@ -1,9 +1,11 @@
-import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { createHash } from "node:crypto";
+import { postgresOptions } from "./sync-postgres";
 import { isAbsolute, join, resolve } from "node:path";
 import { MemoryError } from "./domain";
 import { userStorageDirectory } from "./paths";
 
-export interface WorkspaceSettings { storage: "sqlite" }
+export interface WorkspaceSettings { storage: "sqlite"; postgresUrl?: string }
 function failure(code = "CONFIG_INVALID"): never {
   throw new MemoryError(code, "Configuración global inválida o inaccesible. Comprueba su formato, propietario y permisos (carpeta 700, archivo 600), sin compartir su contenido.");
 }
@@ -69,12 +71,47 @@ export class WorkspaceConfig {
         if (typeof value !== "string") failure();
         values.set(match[1]!, value);
       }
+      if(values.size===3 && values.get("FORMAT_VERSION")==="3" && values.get("STORAGE")==="sqlite" && values.has("POSTGRES_URL")) {
+        const postgresUrl=values.get("POSTGRES_URL")!;postgresOptions(postgresUrl);return {storage:"sqlite",postgresUrl};
+      }
       if (values.size !== 2 || values.get("FORMAT_VERSION") !== "2" || values.get("STORAGE") !== "sqlite") failure();
       return { storage: "sqlite" };
     } catch (error) {
       if (errno(error, "ENOENT")) failure("CONFIG_NOT_FOUND");
       return failure();
     } finally { if (fd !== undefined) closeSync(fd); }
+  }
+
+  revision(): string | null {
+    if(!this.exists()) return null;
+    this.read();
+    const fd=openSync(join(this.root,".env"),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+    try {
+      const stat=fstatSync(fd);if(!stat.isFile()||!privateOwned(stat)||stat.size>16384) failure();
+      return createHash("sha256").update(readFileSync(fd)).digest("hex");
+    } finally {closeSync(fd);}
+  }
+
+  /** Explicit setup-only replacement, protected from concurrent setup writers. */
+  configurePostgres(url:string|null,expected:string|null):void {
+    if(url!==null) postgresOptions(url);
+    this.prepare();
+    const lock=join(this.root,".config-lock");let lockFd:number;
+    try {lockFd=openSync(lock,"wx",0o600);} catch {throw new MemoryError("CONFIG_BUSY","Otra configuración está en curso. No se reemplazó el archivo.");}
+    const temporary=join(this.root,`.env-${crypto.randomUUID()}.tmp`);let ownsTemporary=false;
+    try {
+      if(this.revision()!==expected) throw new MemoryError("CONFIG_CHANGED","La configuración cambió mientras respondías. Vuelve a ejecutar setup.");
+      const current=expected!==null?this.read():null;
+      if(current && (current.postgresUrl??null)===url) return;
+      const content=url===null?'FORMAT_VERSION="2"\nSTORAGE="sqlite"\n':`FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL=${JSON.stringify(url)}\n`;
+      const fd=openSync(temporary,"wx",0o600);ownsTemporary=true;
+      try {writeFileSync(fd,content);fsyncSync(fd);} finally {closeSync(fd);}
+      if(expected===null) linkSync(temporary,join(this.root,".env"));
+      else renameSync(temporary,join(this.root,".env"));
+    } finally {
+      if(ownsTemporary) {try {unlinkSync(temporary);} catch(error) {if(!errno(error,"ENOENT")) throw error;}}
+      closeSync(lockFd);unlinkSync(lock);
+    }
   }
 
   save(): void {

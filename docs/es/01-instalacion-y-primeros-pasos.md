@@ -1,11 +1,11 @@
 # 01. Instalación, Configuración y Primeros Pasos
 
-> **Etapa:** Etapa 1 — Memoria Local (Configuración Interactiva y Base Única)
-> **Versiones de esta entrega:** Programa 0.3.0 | Formato de configuración 2 | Esquema SQLite 3
-> **Estado:** Vigente y Verificado (75 pruebas superadas, 0 fallos en macOS con Bun 1.3.8)
+> **Etapa:** Memoria Local y Sincronización PostgreSQL Opcional
+> **Versiones de esta entrega:** Programa 0.4.0 | Formato de configuración 2 (local) / 3 (con sync) | Esquema SQLite 3 (local) / 4 (con sync)
+> **Estado:** Vigente y Verificado (90 pruebas totales: 86 superadas y 4 omitidas sin binarios PG; 90 superadas, 0 fallos, 645 aserciones con PostgreSQL 17.6 aislado en macOS con Bun 1.3.8)
 > **Traducción hermana:** [01 (EN). Installation, Setup, and Getting Started](../en/01-installation-and-getting-started.md)
 
-Esta guía te explica paso a paso cómo compilar e instalar el comando `forge614-engram` en tu computadora, cómo funciona el asistente interactivo `setup`, el espacio único de configuración y base de datos del usuario, y cómo registrar tus primeros recuerdos (tanto de proyecto como compartidos) en menos de tres minutos.
+Esta guía te explica paso a paso cómo compilar e instalar el comando `forge614-engram` en tu computadora, cómo funciona el asistente interactivo `setup` con la opción de sincronización PostgreSQL, el espacio único de configuración y base de datos del usuario, y cómo registrar tus primeros recuerdos (tanto de proyecto como compartidos) en menos de tres minutos.
 
 ---
 
@@ -18,13 +18,15 @@ Forge614 Engram es un sistema de memoria personal y local para modelos de lengua
 
 ### Requisitos del Sistema
 1. **Bun (versión estable >= 1.3.8):**
-   Requisito exclusivo para **compilar e instalar** el programa desde el código fuente.
+   Requisito exclusivo para **compilar e instalar** el programa desde el código fuente o ejecutar la suite de pruebas.
    ```bash
    bun --version
    ```
    Si no lo tienes instalado, descárgalo desde [bun.sh](https://bun.sh).
 2. **Sistema Operativo:**
    Esta entrega documental se encuentra verificada y probada en **macOS**. El script de instalación admite entornos compatibles con Bash y sistemas tipo Unix.
+3. **Servidor PostgreSQL (Opcional):**
+   Únicamente si decides habilitar la sincronización de réplica. Se requiere PostgreSQL 14 o superior (verificado con versión 17.6). El rol o usuario de PostgreSQL debe tener privilegios para crear el esquema `forge614_sync` (si aún no existe) y leer/escribir en él. Debe emplearse una base de datos vacía y dedicada o una ya compatible con Forge614.
 
 ---
 
@@ -78,7 +80,7 @@ Una vez configurado el PATH, comprueba la versión instalada y consulta la ayuda
 ```bash
 # Comprobar la versión instalada
 forge614-engram --version
-# Salida esperada: forge614-engram 0.3.0
+# Salida esperada: forge614-engram 0.4.0
 
 # Consultar el manual de ayuda de la terminal
 forge614-engram help
@@ -92,6 +94,8 @@ Uso: forge614-engram <comando> [opciones]
 
 setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
 init            Inicializa una sola configuración y base local, sin borrar datos.
+sync            Sincroniza todo el espacio local con PostgreSQL configurado.
+sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
@@ -119,7 +123,10 @@ No hay conexiones, carpetas .env ni bases diferentes por proyecto.
 project-create inicializa el espacio si aún no existe configuración.
 Para guardar shared sin crear un proyecto, ejecuta init primero.
 No se migran ni borran bases o configuraciones antiguas automáticamente.
-PostgreSQL todavía no está disponible. No hay copia local alternativa ni sincronización.
+SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada en setup.
+sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
+sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
+setup puede añadir metadatos de sincronización al esquema 3 sin borrar recuerdos.
 Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
@@ -148,17 +155,28 @@ Forge614 Engram utiliza un **único espacio central de almacenamiento** ubicado 
 
 ### Reglas Clave de Almacenamiento
 1. **Un solo archivo de configuración (`~/.forge614/.env`):**
-   No existen archivos `.env` dispersos por proyecto ni carpetas `projects/<ID>`. Su contenido se genera automáticamente:
-   ```dotenv
-   FORMAT_VERSION="2"
-   STORAGE="sqlite"
-   ```
-   El lector interno acepta exactamente esas dos claves entre comillas dobles (con escapes JSON), líneas vacías y comentarios que comiencen con `#`. No evalúa órdenes de terminal (*shell*), no expande variables y no carga estas claves en `process.env`.
-2. **Permisos y Seguridad Estricta:**
+   No existen archivos `.env` dispersos por proyecto ni carpetas `projects/<ID>`.
+   - **Formato 2 (Uso exclusivamente local en SQLite):**
+     ```dotenv
+     FORMAT_VERSION="2"
+     STORAGE="sqlite"
+     ```
+   - **Formato 3 (Con réplica de sincronización PostgreSQL habilitada):**
+     ```dotenv
+     FORMAT_VERSION="3"
+     STORAGE="sqlite"
+     POSTGRES_URL="postgres://usuario:secreto@servidor:5432/basedatos"
+     ```
+   *Nota de seguridad:* Nunca copies ni publiques credenciales reales. El parser interno rechaza configuraciones malformadas, comentarios no estándar o variables de conexión de entorno silentes.
+2. **Esquemas SQLite y Migración Aditiva:**
+   - Si se opera en modo exclusivamente local, SQLite conserva el **esquema 3**.
+   - Al habilitar la sincronización con PostgreSQL en `setup`, el sistema ejecuta una migración aditiva y segura que añade la tabla `sync_checkpoints` y avanza a **esquema 4**. Esta migración jamás destruye ni reconstruye tablas existentes.
+   - Si posteriormente decides deshabilitar PostgreSQL en `setup`, el esquema 4 se conserva intacto sin borrar datos ni checkpoints locales.
+3. **Permisos y Seguridad Estricta:**
    La carpeta `~/.forge614/` se crea con permisos `0700` (acceso exclusivo para el usuario propietario). El archivo `.env` y la base de datos `engram.db` se crean en modo `0600` (lectura y escritura solo para el dueño). Antes de abrir SQLite, el programa comprueba el propietario y rechaza enlaces simbólicos (*symlinks*), enlaces duros (*hard links*) y tipos especiales de archivo.
-3. **Independencia del directorio de trabajo:**
+4. **Independencia del directorio de trabajo:**
    No importa si ejecutas el comando desde el escritorio, desde la raíz del sistema o desde cualquier carpeta de código: el programa siempre se comunica con el mismo espacio central `~/.forge614/`.
-4. **Banderas descartadas:**
+5. **Banderas descartadas:**
    Las opciones `--db`, `--project` y `--id-project` **no existen**. El identificador único de proyecto se llama exactamente `projectId`.
 
 ---
@@ -175,36 +193,53 @@ El comando `setup` te guía en la terminal antes de escribir en el disco:
 forge614-engram setup
 ```
 
-**Flujo en la terminal:**
+**Flujo interactivo en la terminal:**
 ```text
 Forge614 Engram — configuración guiada
 Escribe cancelar o q, o pulsa Ctrl+C, para salir antes de confirmar.
 Una configuración global: "/Users/usuario/.forge614/.env"
 Una base SQLite para todos los proyectos: "/Users/usuario/.forge614/engram.db"
-SQLite guarda tus recuerdos en este equipo. PostgreSQL todavía no está disponible. No se pedirán credenciales ni se conectarán asistentes en este paso.
+SQLite y FTS5 siempre guardan y buscan en este equipo, incluso sin conexión. PostgreSQL permite sincronizar una copia; no reemplaza SQLite.
 Se preparará el espacio global al confirmar. Una base existente solo se reutilizará si es compatible; nunca se borrará ni reemplazará.
+¿Quieres habilitar la sincronización con una base de datos PostgreSQL?
+No
+Sí, configurar PostgreSQL
+Elige [si/NO]: si
+URL PostgreSQL (entrada oculta): [oculto]
+Se sincronizará el espacio completo: todos los proyectos, recuerdos shared e historial. Usa una base PostgreSQL dedicada, vacía o ya compatible. Los equipos con acceso a esa base podrán recibir estos datos. No se transmite nada antes de confirmar.
 Resumen: configurar el almacenamiento global SQLite. No se crearán ni seleccionarán proyectos y no se borrarán datos.
 ¿Confirmar? [si/NO]: si
 Configuración global lista. No necesitas elegir un proyecto para configurar Engram.
+Ejecuta forge614-engram sync para sincronizar ahora, o forge614-engram sync-watch para reintentar automáticamente mientras esté abierto. No se instaló un servicio permanente.
 La identificación de proyectos y el guardado automático con asistentes siguen pendientes de integración.
 ```
 
 #### Reglas de Funcionamiento de `setup`:
-1. **Confirmación Única:** Muestra el resumen y pregunta únicamente `¿Confirmar? [si/NO]:`.
-2. **Respuestas aceptadas:** Acepta `si`, `sí`, `s`, `yes`, `y` (sin distinguir mayúsculas de minúsculas).
-3. **Cancelación segura:** Presionar Enter (respuesta vacía), `no`, `n`, `q`, `cancelar`, `Ctrl+C` o fin de archivo (EOF / `Ctrl+D`) cancela la operación con **código de salida 130** sin crear carpetas ni archivos en un entorno limpio.
-4. **Sin Administración de Proyectos:** `setup` **no pregunta, no lista, no crea ni selecciona ningún proyecto**. La configuración global sirve a cualquier proyecto desde cualquier directorio de trabajo.
-5. **Validación en Solo Lectura:** Si el espacio ya existe, lo valida en modo de solo lectura antes de preguntar, garantizando que se conservarán tu configuración y recuerdos. Tras confirmar, ejecuta la inicialización segura.
-6. **Requisito de Terminal Interactiva (TTY):** Si se ejecuta sin terminal interactiva (por ejemplo, redirigido en un script o tubería), falla de inmediato con código de salida 1 y emite el error JSON `INTERACTIVE_REQUIRED` en stderr:
-   ```json
-   {"error":{"code":"INTERACTIVE_REQUIRED","message":"setup necesita una terminal interactiva. Para scripts utiliza init y project-create --name <nombre>."}}
-   ```
+1. **Opciones Exactas de Sincronización:**
+   Pregunta: `¿Quieres habilitar la sincronización con una base de datos PostgreSQL?`.
+   Muestra exactamente las opciones: `No` (predeterminada) y `Sí, configurar PostgreSQL`.
+   No utiliza los términos ambiguos «remoto» ni «Cloud».
+2. **Entrada Oculta de URL (`{ secret: true }`):**
+   Si eliges configurar PostgreSQL, la terminal solicita la URL de conexión en modo silencioso (`[oculto]`). Las pulsaciones del teclado y el texto pegado no se imprimen en pantalla para proteger tus contraseñas ante miradas indiscretas o grabaciones de sesión.
+3. **Advertencia de Alcance Completo:**
+   Antes de confirmar, `setup` te advierte explícitamente que la sincronización replicará el **espacio completo**: todos los proyectos registrados, recuerdos compartidos universales, historial de versiones, peticiones y eventos de auditoría.
+4. **No Transmite Recuerdos al Terminar:**
+   Al finalizar exitosamente, `setup` prepara la conexión y la estructura en PostgreSQL si es necesario, pero **no transmite tus recuerdos inmediatamente**. Al terminar, la terminal te indica los comandos para sincronizar cuando estés listo (`sync` o `sync-watch`).
+5. **Confirmación Final:**
+   Solicita una confirmación explícita mediante `¿Confirmar? [si/NO]:`.
+   Acepta `si`, `sí`, `s`, `yes`, `y` (sin distinguir mayúsculas de minúsculas).
+6. **Cancelación Segura:**
+   Presionar Enter (respuesta vacía), `no`, `n`, `q`, `cancelar`, `Ctrl+C` o fin de archivo (EOF / `Ctrl+D`) cancela la operación con **código de salida 130** sin alterar archivos. Si se cancela, no se establece conexión de red ni se envían credenciales.
+7. **Sin Administración de Proyectos:**
+   `setup` **no pregunta, no lista, no crea ni selecciona ningún proyecto**.
+8. **Requisito de Terminal Interactiva (TTY):**
+   Si se ejecuta sin terminal interactiva (por ejemplo, en tuberías o scripts desatendidos), falla con código de salida 1 y emite el error JSON `INTERACTIVE_REQUIRED` en stderr.
 
 ---
 
 ### Alternativa para Automatización: Inicialización Silenciosa (`init`)
 
-Para scripts, tuberías o entornos no interactivos, utiliza `init`. Este comando no hace preguntas y responde en formato JSON:
+Para scripts, tuberías o entornos no interactivos que operen en modo puramente local, utiliza `init`:
 
 ```bash
 forge614-engram init
@@ -223,7 +258,7 @@ forge614-engram init
 
 ### Paso 2: Registrar tu Primer Proyecto (`project-create`)
 
-Los proyectos se registran cuando tú lo decidas mediante `project-create`. No son parte obligatoria del asistente `setup`:
+Los proyectos se registran cuando tú lo decidas mediante `project-create`:
 
 ```bash
 forge614-engram project-create --name "Mi aplicación"
@@ -302,6 +337,32 @@ forge614-engram save --scope shared --title "Idioma preferido" --content "Prefie
   "updatedAt": "2026-09-16T20:02:00.000Z"
 }
 ```
+
+---
+
+### Paso 5: Sincronizar tu Espacio con PostgreSQL (`sync` o `sync-watch`)
+
+Si configuraste una base PostgreSQL durante el `setup`, puedes ejecutar tu primera sincronización manual:
+
+```bash
+forge614-engram sync
+```
+
+**Respuesta JSON:**
+```json
+{
+  "synchronized": true,
+  "projects": 1,
+  "memories": 2
+}
+```
+
+Y si quieres mantener sincronizados tus cambios periódicamente en primer plano mientras trabajas en esa computadora:
+
+```bash
+forge614-engram sync-watch
+```
+*(Para detenerlo, pulsa `Ctrl+C`. Si la base de datos PostgreSQL está apagada o sin internet, tus datos locales en SQLite nunca se bloquean).*
 
 ---
 

@@ -1,11 +1,11 @@
 # 02. Recorrido Guiado del Sistema
 
-> **Etapa:** Etapa 1 — Memoria Local (Configuración Interactiva y Base Única)
-> **Versiones de esta entrega:** Programa 0.3.0 | Formato de configuración 2 | Esquema SQLite 3
-> **Estado:** Vigente y Activo
+> **Etapa:** Memoria Local y Sincronización PostgreSQL Opcional
+> **Versiones de esta entrega:** Programa 0.4.0 | Formato de configuración 2 (local) / 3 (con sync) | Esquema SQLite 3 (local) / 4 (con sync)
+> **Estado:** Vigente y Activo (Verificado con 90 pruebas en macOS con Bun 1.3.8)
 > **Traducción hermana:** [02 (EN). Guided System Walkthrough](../en/02-guided-walkthrough.md)
 
-Este recorrido práctico te guiará paso a paso por el ciclo de vida completo de Forge614 Engram: desde configurar el espacio global interactivamente con `setup` y registrar proyectos, hasta guardar recuerdos propios y compartidos, realizar búsquedas combinadas, aplicar sustituciones temáticas (*topic overrides*), auditar el historial inmutable y gestionar el archivo reversible.
+Este recorrido práctico te guiará paso a paso por el ciclo de vida completo de Forge614 Engram: desde configurar el espacio global interactivamente con `setup` (con o sin sincronización PostgreSQL) y registrar proyectos, hasta guardar recuerdos propios y compartidos, realizar búsquedas combinadas, aplicar sustituciones temáticas (*topic overrides*), sincronizar réplicas con `sync` y `sync-watch`, auditar el historial inmutable y gestionar el archivo reversible.
 
 > [!NOTE]
 > Todos los ejemplos utilizan el ejecutable binario instalado `forge614-engram`. Si estás trabajando directamente en el repositorio de código fuente con Bun, puedes sustituir `forge614-engram` por `bun run cli`.
@@ -47,28 +47,36 @@ Un recuerdo compartido se guarda **una sola vez en la base de datos**; no se clo
 
 ### Paso 1: Configurar el Espacio Global (`setup` o `init`)
 
-Para personas frente a la terminal, el comando interactivo `setup` explica las rutas y solicita confirmación antes de modificar el disco:
+Para personas frente a la terminal, el comando interactivo `setup` explica las rutas, te ofrece la opción de configurar una réplica en PostgreSQL y solicita confirmación antes de modificar el disco:
 
 ```bash
 forge614-engram setup
 ```
 
-**Flujo en la terminal:**
+**Flujo interactivo en la terminal:**
 ```text
 Forge614 Engram — configuración guiada
 Escribe cancelar o q, o pulsa Ctrl+C, para salir antes de confirmar.
 Una configuración global: "/Users/usuario/.forge614/.env"
 Una base SQLite para todos los proyectos: "/Users/usuario/.forge614/engram.db"
-SQLite guarda tus recuerdos en este equipo. PostgreSQL todavía no está disponible. No se pedirán credenciales ni se conectarán asistentes en este paso.
+SQLite y FTS5 siempre guardan y buscan en este equipo, incluso sin conexión. PostgreSQL permite sincronizar una copia; no reemplaza SQLite.
 Se preparará el espacio global al confirmar. Una base existente solo se reutilizará si es compatible; nunca se borrará ni reemplazará.
+¿Quieres habilitar la sincronización con una base de datos PostgreSQL?
+No
+Sí, configurar PostgreSQL
+Elige [si/NO]: si
+URL PostgreSQL (entrada oculta): [oculto]
+Se sincronizará el espacio completo: todos los proyectos, recuerdos shared e historial. Usa una base PostgreSQL dedicada, vacía o ya compatible. Los equipos con acceso a esa base podrán recibir estos datos. No se transmite nada antes de confirmar.
 Resumen: configurar el almacenamiento global SQLite. No se crearán ni seleccionarán proyectos y no se borrarán datos.
 ¿Confirmar? [si/NO]: si
 Configuración global lista. No necesitas elegir un proyecto para configurar Engram.
+Ejecuta forge614-engram sync para sincronizar ahora, o forge614-engram sync-watch para reintentar automáticamente mientras esté abierto. No se instaló un servicio permanente.
 La identificación de proyectos y el guardado automático con asistentes siguen pendientes de integración.
 ```
 
-- Si decides cancelar escribiendo `no`, `cancelar`, `q`, pulsando Enter o con `Ctrl+C`, la terminal finaliza con **código 130** y no se crea ningún archivo.
-- `setup` **no administra proyectos**: no pregunta, no lista, no crea ni selecciona proyectos.
+- Si eliges `No` (pulsando Enter directamente), el sistema opera en modo exclusivamente local con formato `.env` versión 2 y esquema SQLite versión 3.
+- Si eliges `Sí, configurar PostgreSQL`, la URL se introduce de forma enmascarada (`[oculto]`), se prepara el esquema `forge614_sync` en PostgreSQL y se actualiza SQLite al esquema 4 con la tabla `sync_checkpoints`.
+- Si decides cancelar en cualquier momento antes de confirmar escribiendo `no`, `cancelar`, `q`, o con `Ctrl+C`, la terminal finaliza con **código 130** y no se aplica ningún cambio.
 - Para automatizaciones o scripts sin terminal interactiva, utiliza el comando silencioso `init`:
   ```bash
   forge614-engram init
@@ -315,3 +323,58 @@ forge614-engram project-rename --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7
 ```
 
 El nombre se actualiza inmediatamente. Como el `projectId` se mantiene idéntico, **no se pierde ni un solo recuerdo, versión ni clave de petición**.
+
+---
+
+## 7. Ciclo de Vida de Sincronización con PostgreSQL (`sync` y `sync-watch`)
+
+Si durante `setup` habilitaste la réplica en PostgreSQL, cuentas con dos modos de sincronización seguros y deterministas:
+
+### Modo 1: Ronda Única Bajo Demanda (`sync`)
+Cuando desees sincronizar tus cambios deliberadamente tras una sesión de trabajo:
+
+```bash
+forge614-engram sync
+```
+
+**Respuesta JSON exitosa:**
+```json
+{
+  "synchronized": true,
+  "projects": 1,
+  "memories": 2
+}
+```
+
+#### ¿Qué ocurre internamente durante `sync`?
+1. **Lectura remota:** Se conecta a PostgreSQL y lee la última fotografía publicada (*head revision*).
+2. **Fotografía local:** Exporta el estado actual de tu SQLite (`projects`, `memories`, versiones, peticiones y eventos).
+3. **Punto de control base:** Lee el último estado acordado guardado en `sync_checkpoints`.
+4. **Fusión de tres vías (*3-Way Merge*):** Combina los cambios locales y remotos si corresponden a proyectos o recuerdos distintos.
+5. **Publicación remota (CAS):** Si hay novedades locales, las publica en PostgreSQL mediante bloqueo de cabecera (*Compare-And-Swap*).
+6. **Aplicación atómica local:** Si hubo novedades remotas, las aplica dentro de una transacción inmediata en SQLite, actualizando simultáneamente el índice FTS5 mediante los triggers existentes y guardando el nuevo checkpoint.
+
+---
+
+### Modo 2: Observador en Primer Plano (`sync-watch`)
+Si estás trabajando de forma continua en tu equipo y deseas que los cambios se transmitan automáticamente cada cierto tiempo sin escribir comandos manuales:
+
+```bash
+forge614-engram sync-watch
+# O especificando un intervalo en segundos (entre 1 y 3600):
+forge614-engram sync-watch --interval 60
+```
+
+#### Reglas de Operación de `sync-watch`:
+- **Ejecución en primer plano:** Permanece activo en la ventana de tu consola. **No instala demonios en segundo plano**, agentes del sistema (*launchd*, *systemd*) ni entradas de *cron*.
+- **Salida continua:**
+  - En cada ronda exitosa emite por `stdout`:
+    ```json
+    {"synchronized":true,"projects":1,"memories":2}
+    ```
+  - Si PostgreSQL no está disponible o se pierde la red, emite un aviso por `stderr` y continúa esperando la siguiente ronda:
+    ```json
+    {"code":"POSTGRES_UNAVAILABLE","error":"Sincronización pendiente; los datos locales se conservan."}
+    ```
+- **Resiliencia fuera de línea:** Si la base de datos PostgreSQL se apaga o estás de viaje sin internet, **ningún comando local de Forge614 Engram (`save`, `search`, `get`, `archive`) se bloquea ni arroja errores**. Tus recuerdos se guardan y buscan inmediatamente en SQLite local, y se sincronizarán en la siguiente ronda que encuentre PostgreSQL disponible.
+- **Finalización limpia:** Para detener el observador, presiona `Ctrl+C` en cualquier momento. El proceso finaliza con código estándar `130` y los cambios no transmitidos permanecen seguros en SQLite.

@@ -17,6 +17,21 @@ test("missing config inspection does not create files", () => {
   expect(() => f.config.read()).toThrow(); expect(existsSync(f.root)).toBe(false);
 });
 
+test("PostgreSQL synchronization config stays global and rejects stale replacements", () => {
+  const f=fixture();f.config.save();
+  const revision=f.config.revision();
+  f.config.configurePostgres("postgresql://u:SECRET@127.0.0.1/db?sslmode=disable",revision);
+  expect(f.config.read()).toEqual({storage:"sqlite",postgresUrl:"postgresql://u:SECRET@127.0.0.1/db?sslmode=disable"});
+  expect(statSync(f.path).mode&0o777).toBe(0o600);
+  const before=readFileSync(f.path);
+  expect(()=>f.config.configurePostgres(null,revision)).toThrow();
+  expect(readFileSync(f.path)).toEqual(before);
+  f.config.save();expect(readFileSync(f.path)).toEqual(before);
+  f.config.configurePostgres(null,f.config.revision());
+  expect(f.config.read()).toEqual({storage:"sqlite"});
+  expect(readFileSync(f.path,"utf8")).not.toContain("SECRET");
+});
+
 test("one private config contains no project identity or project-specific database path", () => {
   const f = fixture(); f.config.save();
   expect(f.config.read()).toEqual({ storage: "sqlite" });
