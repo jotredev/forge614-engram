@@ -1,8 +1,8 @@
 # Forge614 Engram — Official Documentation (English)
 
-> **Stage:** Stage 1 — Local Memory (Single Database and Shared Memory)
-> **Release Versions:** Program 0.2.0 | Configuration Format 2 | SQLite Schema 3
-> **Status:** Current & Verified (65 tests passed, 0 failures, 483 assertions on macOS with Bun 1.3.8)
+> **Stage:** Stage 1 — Local Memory (Interactive Setup and Single Database)
+> **Release Versions:** Program 0.3.0 | Configuration Format 2 | SQLite Schema 3
+> **Status:** Current & Verified (75 tests passed, 0 failures, 563 assertions on macOS with Bun 1.3.8)
 > **Sister translation:** [Documentación en Español](../es/README.md)
 > **Build Runtime:** Bun >= 1.3.8 | SQLite (`bun:sqlite` with FTS5 trigram) | Strict TypeScript 5.9
 > **Standalone Binary:** `forge614-engram` in `$HOME/.local/bin/` (does not require Bun in PATH for daily execution)
@@ -63,11 +63,11 @@ Imagine hiring a meticulous office archivist to manage knowledge across all your
 
 Follow this chronological study path to master Forge614 Engram:
 
-1. [**01. Installation, Setup, and Getting Started (`01-installation-and-getting-started.md`)**](01-installation-and-getting-started.md): Compiling with Bun, PATH configuration, initialization with `init`, registering projects, and first saves.
-2. [**02. Guided System Walkthrough (`02-guided-walkthrough.md`)**](02-guided-walkthrough.md): End-to-end lifecycle tutorial: `init`, project creation, saves, combined search, topic overrides, auditing, and archival.
-3. [**03. Terminal CLI Command Reference (`03-cli-reference.md`)**](03-cli-reference.md): Exhaustive command reference (`init`, `project-create`, `project-list`, `project-rename`, `save`, `search`, `get`, `history`, `archive`, `restore`) with exact syntax and JSON outputs.
-4. [**04. TypeScript SDK Guide (`04-typescript-sdk.md`)**](04-typescript-sdk.md): Programmatic integration using `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` with executable examples.
-5. [**05. Internal Architecture, FTS5, and Ranking Formulas (`05-internal-architecture-and-formulas.md`)**](05-internal-architecture-and-formulas.md): SQLite schema v3, triggers, trigram tokenizer, BM25 breakdown, recency multiplier, and topic override SQL logic.
-6. [**06. Troubleshooting and Error Diagnostics (`06-troubleshooting.md`)**](06-troubleshooting.md): Error code reference table (`CONFIG_INVALID`, `LEGACY_CONFIG`, `MIGRATION_REQUIRED`, `DATABASE_MISSING`, `PROJECT_NOT_FOUND`, etc.) with root causes and fixes.
+1. [**01. Installation, Setup, and Getting Started (`01-installation-and-getting-started.md`)**](01-installation-and-getting-started.md): Compiling with Bun, PATH configuration, interactive onboarding with `setup`, scriptable initialization with `init`, registering projects, and first saves.
+2. [**02. Guided System Walkthrough (`02-guided-walkthrough.md`)**](02-guided-walkthrough.md): End-to-end lifecycle tutorial: interactive setup (`setup`), project creation, saves, combined search, topic overrides, auditing, and archival.
+3. [**03. Terminal CLI Command Reference (`03-cli-reference.md`)**](03-cli-reference.md): Exhaustive command reference (`setup`, `init`, `project-create`, `project-list`, `project-rename`, `save`, `search`, `get`, `history`, `archive`, `restore`) with exact syntax, exit codes, and output modes.
+4. [**04. TypeScript SDK Guide (`04-typescript-sdk.md`)**](04-typescript-sdk.md): Programmatic integration using `MemoryWorkspace`, `runSetup`, `WorkspaceConfig`, and `MemoryStore` with executable examples.
+5. [**05. Internal Architecture, FTS5, and Ranking Formulas (`05-internal-architecture-and-formulas.md`)**](05-internal-architecture-and-formulas.md): SQLite schema v3, WAL initialization adjustment, triggers, trigram tokenizer, BM25 breakdown, recency multiplier, and topic override SQL logic.
+6. [**06. Troubleshooting and Error Diagnostics (`06-troubleshooting.md`)**](06-troubleshooting.md): Error code reference table (`INTERACTIVE_REQUIRED`, `CONFIG_INVALID`, `LEGACY_CONFIG`, `MIGRATION_REQUIRED`, `DATABASE_MISSING`, `PROJECT_NOT_FOUND`, etc.) with root causes and fixes.
 7. [**07. Plain-Language Glossary (`07-glossary.md`)**](07-glossary.md): Everyday explanations of technical terms with formal names in parentheses.
-8. [**08. Stage Boundaries and Evolutionary Roadmap (`08-boundaries-and-roadmap.md`)**](08-boundaries-and-roadmap.md): Verified delivery features, active boundaries, comparison with Gentleman and Softmax, and the 5-phase pending backlog.
+8. [**08. Stage Boundaries and Evolutionary Roadmap (`08-boundaries-and-roadmap.md`)**](08-boundaries-and-roadmap.md): Verified delivery features, active boundaries, approved future assistant policy, and the 4-phase pending backlog.

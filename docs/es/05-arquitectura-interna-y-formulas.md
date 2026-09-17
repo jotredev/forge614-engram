@@ -1,15 +1,15 @@
 # 05. Arquitectura Interna, SQLite FTS5 y Fórmulas Matemáticas
 
-> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
-> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Etapa:** Etapa 1 — Memoria Local (Configuración Interactiva y Base Única)
+> **Versiones de esta entrega:** Programa 0.3.0 | Formato de configuración 2 | Esquema SQLite 3
 > **Estado:** Vigente y Verificado
 > **Traducción hermana:** [05 (EN). Internal Architecture, FTS5, and Ranking Formulas](../en/05-internal-architecture-and-formulas.md)
 
-Este documento expone a máximo rigor técnico la arquitectura interna de Forge614 Engram: parámetros del motor SQLite, esquema relacional de tablas en su versión 3, disparadores reactivos, el mecanismo SQL de sustitución por tema (*topic override*) y el desglose matemático exhaustivo del algoritmo **BM25**, la curva de recencia y las fórmulas de ordenamiento explicable.
+Este documento expone a máximo rigor técnico la arquitectura interna de Forge614 Engram: parámetros del motor SQLite, esquema relacional de tablas en su versión 3, ajuste de inicialización WAL, disparadores reactivos, el mecanismo SQL de sustitución por tema (*topic override*) y el desglose matemático exhaustivo del algoritmo **BM25**, la curva de recencia y las fórmulas de ordenamiento explicable.
 
 ---
 
-## 1. Parámetros del Motor SQLite (Pragmas) y Concurrencia
+## 1. Parámetros del Motor SQLite (Pragmas), Concurrencia e Inicialización WAL
 
 Forge614 Engram opera sobre el motor nativo de SQLite integrado en Bun (`bun:sqlite`), inicializado con directivas estrictas de seguridad e integridad:
 
@@ -25,6 +25,18 @@ Forge614 Engram opera sobre el motor nativo de SQLite integrado en Bun (`bun:sql
    - En modo WAL, los procesos lectores leen del archivo principal mientras las escrituras se añaden a un diario auxiliar rápido (`engram.db-wal`).
    - Los lectores no bloquean a los escritores y los escritores no bloquean a los lectores.
    - **Nota de concurrencia:** Las escrituras continúan estando serializadas (un único proceso puede escribir a la vez).
+
+### Ajuste de Inicialización WAL (Transacción Inmediata Vacía)
+Al inicializar una nueva base de datos, el motor ejecuta:
+```sql
+PRAGMA journal_mode=WAL;
+BEGIN IMMEDIATE;
+COMMIT;
+```
+- **Justificación técnica:** En Bun 1.3.8 bajo macOS, abrir inmediatamente una base SQLite recién creada en modo de solo lectura (`readonly: true`, como realiza `workspace.open(true)` en el comando `setup` para validar sin mutar) fallaba si el archivo WAL nunca había tenido una transacción física materializada en disco.
+- La ejecución de una transacción vacía e inmediata (`BEGIN IMMEDIATE; COMMIT;`) fuerza la sincronización de cabeceras en `engram.db-wal` y `engram.db-shm`, garantizando que conexiones de solo lectura posteriores funcionen al instante, incluso en una base recién creada sin proyectos ni recuerdos.
+- **Aclaración sobre migraciones:** Este ajuste no modifica tablas, columnas ni índices, por lo que **no constituye un cambio de esquema ni una nueva versión de migración** (el esquema se mantiene en `user_version = 3`).
+- **Naturaleza de los archivos auxiliares:** Los archivos `engram.db-wal` y `engram.db-shm` son auxiliares del motor; no son bases de datos independientes. Inspeccionar la base existente puede generar actividad normal del sistema operativo sobre ellos.
 
 ---
 

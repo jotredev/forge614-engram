@@ -107,5 +107,7 @@ export function initialize(db: Database, allowCreate = true, readonly = false): 
     created = true;
   });
   if (readonly) check.deferred(); else check.immediate();
-  if (created) db.exec("PRAGMA journal_mode=WAL;");
+  // Materialize WAL bookkeeping on the initializing writable connection. Bun's
+  // SQLite on macOS cannot open a never-used WAL database read-only otherwise.
+  if (created) db.exec("PRAGMA journal_mode=WAL; BEGIN IMMEDIATE; COMMIT;");
 }

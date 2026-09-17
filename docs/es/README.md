@@ -1,8 +1,8 @@
 # Forge614 Engram — Documentación Oficial (Español)
 
-> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
-> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
-> **Estado:** Vigente y Verificado (65 pruebas superadas, 0 fallos, 483 aserciones en macOS con Bun 1.3.8)
+> **Etapa:** Etapa 1 — Memoria Local (Configuración Interactiva y Base Única)
+> **Versiones de esta entrega:** Programa 0.3.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Estado:** Vigente y Verificado (75 pruebas superadas, 0 fallos, 563 aserciones en macOS con Bun 1.3.8)
 > **Traducción hermana:** [Official English Documentation](../en/README.md)
 > **Entorno de compilación:** Bun >= 1.3.8 | SQLite (`bun:sqlite` con FTS5 trigram) | TypeScript 5.9 estricto
 > **Ejecutable autónomo:** `forge614-engram` en `$HOME/.local/bin/` (no requiere Bun en ejecución diaria)
@@ -63,11 +63,11 @@ Imagina que contratas a un archivero muy ordenado para gestionar la memoria de t
 
 Para aprender a utilizar y dominar Forge614 Engram, sigue esta secuencia cronológica de lectura:
 
-1. [**01. Instalación, Configuración y Primeros Pasos (`01-instalacion-y-primeros-pasos.md`)**](01-instalacion-y-primeros-pasos.md): Compilación con Bun, instalación en PATH, inicialización con `init`, creación de tu primer proyecto y primeros recuerdos de proyecto y compartidos.
-2. [**02. Recorrido Guiado del Sistema (`02-recorrido-guiado.md`)**](02-recorrido-guiado.md): Tutorial paso a paso del ciclo de vida completo: inicialización, creación de proyectos, guardado, búsqueda combinada, sustitución por tema (*topic override*), auditoría y archivo.
-3. [**03. Manual Exhaustivo de Terminal (`03-referencia-cli.md`)**](03-referencia-cli.md): Catálogo completo comando por comando (`init`, `project-create`, `project-list`, `project-rename`, `save`, `search`, `get`, `history`, `archive`, `restore`) con opciones exactas y salidas JSON.
-4. [**04. Guía del SDK de TypeScript (`04-sdk-typescript.md`)**](04-sdk-typescript.md): Integración mediante `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` con ejemplos prácticos ejecutables.
-5. [**05. Arquitectura Interna, SQLite FTS5 y Fórmulas (`05-arquitectura-interna-y-formulas.md`)**](05-arquitectura-interna-y-formulas.md): Esquema relacional v3, disparadores automáticos, tokenizador trigram, desglose matemático de BM25, recencia y consulta SQL de sustitución por tema.
-6. [**06. Resolución de Problemas y Catálogo de Errores (`06-resolucion-de-errores.md`)**](06-resolucion-de-errores.md): Tabla completa con todos los códigos de error (`CONFIG_INVALID`, `LEGACY_CONFIG`, `MIGRATION_REQUIRED`, `DATABASE_MISSING`, `PROJECT_NOT_FOUND`, etc.) y sus soluciones directas.
+1. [**01. Instalación, Configuración y Primeros Pasos (`01-instalacion-y-primeros-pasos.md`)**](01-instalacion-y-primeros-pasos.md): Compilación con Bun, instalación en PATH, asistente interactivo `setup` con confirmación única, comando programático `init`, creación de tu primer proyecto y primeros recuerdos.
+2. [**02. Recorrido Guiado del Sistema (`02-recorrido-guiado.md`)**](02-recorrido-guiado.md): Tutorial paso a paso del ciclo de vida completo: configuración interactiva (`setup`), creación de proyectos, guardado, búsqueda combinada, sustitución por tema (*topic override*), auditoría y archivo.
+3. [**03. Manual Exhaustivo de Terminal (`03-referencia-cli.md`)**](03-referencia-cli.md): Catálogo completo comando por comando (`setup`, `init`, `project-create`, `project-list`, `project-rename`, `save`, `search`, `get`, `history`, `archive`, `restore`) con opciones exactas, códigos de salida y salidas en texto/JSON.
+4. [**04. Guía del SDK de TypeScript (`04-sdk-typescript.md`)**](04-sdk-typescript.md): Integración mediante `MemoryWorkspace`, `runSetup`, `WorkspaceConfig` y `MemoryStore` con ejemplos prácticos ejecutables.
+5. [**05. Arquitectura Interna, SQLite FTS5 y Fórmulas (`05-arquitectura-interna-y-formulas.md`)**](05-arquitectura-interna-y-formulas.md): Esquema relacional v3, inicialización WAL, disparadores automáticos, tokenizador trigram, desglose matemático de BM25, recencia y consulta SQL de sustitución por tema.
+6. [**06. Resolución de Problemas y Catálogo de Errores (`06-resolucion-de-errores.md`)**](06-resolucion-de-errores.md): Tabla completa con todos los códigos de error (`INTERACTIVE_REQUIRED`, `CONFIG_INVALID`, `LEGACY_CONFIG`, `MIGRATION_REQUIRED`, `DATABASE_MISSING`, `PROJECT_NOT_FOUND`, etc.) y sus soluciones directas.
 7. [**07. Glosario de Conceptos en Lenguaje Cotidiano (`07-glosario.md`)**](07-glosario.md): Términos técnicos explicados de manera sencilla y cotidiana con su término formal entre paréntesis.
-8. [**08. Límites de la Etapa y Hoja de Ruta Futura (`08-limites-y-roadmap.md`)**](08-limites-y-roadmap.md): Capacidades implementadas en esta entrega, límites vigentes, comparativa frente a Gentleman Programming y Softmax Data, y la hoja de ruta oficial de 5 etapas pendientes.
+8. [**08. Límites de la Etapa y Hoja de Ruta Futura (`08-limites-y-roadmap.md`)**](08-limites-y-roadmap.md): Capacidades implementadas en esta entrega, límites vigentes, política aprobada para la integración futura con asistentes, y la hoja de ruta oficial de 4 fases pendientes.
