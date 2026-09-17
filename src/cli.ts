@@ -1,11 +1,13 @@
 import { MemoryWorkspace, MemoryError, memoryTypes, type SaveInput, type SearchScope } from "./index";
 import { projectIdentity } from "./identity";
 import { version } from "../package.json";
+import { setupTerminal } from "./setup-terminal";
 
 const HELP = `Forge614 Engram — una base, recuerdos por proyecto y compartidos
 
 Uso: forge614-engram <comando> [opciones]
 
+setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
 init            Inicializa una sola configuración y base local, sin borrar datos.
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
@@ -39,13 +41,14 @@ Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
 Actualizar un tema requiere --expected-version. Archivar conserva el historial.
-Los resultados son JSON; errores a stderr y código de salida 1, sin conexiones privadas.
+setup muestra texto y requiere terminal; cancelar devuelve código 130.
+Los demás resultados son JSON; errores a stderr y código de salida 1, sin conexiones privadas.
 save es manual/programático; la integración memory_save con asistentes está pendiente.
 `;
 
 const MEMORY_OPTIONS = ["project-id", "scope"];
 const OPTIONS: Record<string, readonly string[]> = {
-  init: [], "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"],
+  setup: [], init: [], "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"],
   save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned"],
   search: [...MEMORY_OPTIONS,"query","limit"],
   get: [...MEMORY_OPTIONS,"id"], history: [...MEMORY_OPTIONS,"id"],
@@ -59,7 +62,7 @@ function integer(value: string, field: string, max = Number.MAX_SAFE_INTEGER): n
   return n;
 }
 
-function main(args: string[]): void {
+async function main(args: string[]): Promise<void> {
   const command = args[0] ?? "help";
   if (command === "--version") {
     if (args.length > 1) invalid("--version no acepta opciones.");
@@ -79,6 +82,7 @@ function main(args: string[]): void {
     values.set(key,value.trim());
   }
   const need = (key: string): string => values.get(key) ?? invalid(`Falta --${key}.`);
+  if (command === "setup") { await setupTerminal(); return; }
   const workspace = new MemoryWorkspace();
   if (command === "init" || command.startsWith("project-")) {
     let result: unknown;
@@ -145,7 +149,7 @@ function main(args: string[]): void {
 }
 
 if (import.meta.main) {
-  try { main(process.argv.slice(2)); }
+  try { await main(process.argv.slice(2)); }
   catch (error) {
     console.error(JSON.stringify(error instanceof MemoryError
       ? { code: error.code, error: error.message }

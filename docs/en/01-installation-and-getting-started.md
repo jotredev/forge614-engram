@@ -1,11 +1,11 @@
 # 01. Installation, Setup, and Getting Started
 
-> **Stage:** Stage 1 — Local Memory (Single Database and Shared Memory)
-> **Release Versions:** Program 0.2.0 | Configuration Format 2 | SQLite Schema 3
-> **Status:** Current & Verified (65 tests passed, 0 failures on macOS with Bun 1.3.8)
+> **Stage:** Stage 1 — Local Memory (Interactive Setup and Single Database)
+> **Release Versions:** Program 0.3.0 | Configuration Format 2 | SQLite Schema 3
+> **Status:** Current & Verified (75 tests passed, 0 failures on macOS with Bun 1.3.8)
 > **Sister translation:** [01. Instalación, Configuración y Primeros Pasos](../es/01-instalacion-y-primeros-pasos.md)
 
-This guide walks you through compiling and installing `forge614-engram` on your computer, understanding the single user storage architecture, and recording your first memories (both project-scoped and shared) in under three minutes.
+This guide walks you through compiling and installing `forge614-engram` on your computer, using the interactive `setup` onboarding wizard, understanding the single user storage architecture, and recording your first memories (both project-scoped and shared) in under three minutes.
 
 ---
 
@@ -78,7 +78,7 @@ Once PATH is set, verify the installed version and check help text without touch
 ```bash
 # Check installed version
 forge614-engram --version
-# Expected output: forge614-engram 0.2.0
+# Expected output: forge614-engram 0.3.0
 
 # Print command help
 forge614-engram help
@@ -90,6 +90,7 @@ Forge614 Engram — una base, recuerdos por proyecto y compartidos
 
 Uso: forge614-engram <comando> [opciones]
 
+setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
 init            Inicializa una sola configuración y base local, sin borrar datos.
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
@@ -123,7 +124,8 @@ Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
 Actualizar un tema requiere --expected-version. Archivar conserva el historial.
-Los resultados son JSON; errores a stderr y código de salida 1, sin conexiones privadas.
+setup muestra texto y requiere terminal; cancelar devuelve código 130.
+Los demás resultados son JSON; errores a stderr y código de salida 1, sin conexiones privadas.
 save es manual/programático; la integración memory_save con asistentes está pendiente.
 ```
 
@@ -161,10 +163,48 @@ Forge614 Engram uses a **single central storage directory** located in your pers
 
 ---
 
-## 6. Getting Started: Initialize, Create a Project, and Save Memories
+## 6. Getting Started: Interactive Setup (`setup`) or Scriptable Init (`init`)
 
-### Step 1: Initialize the Storage Space (`init`)
-The `init` command atomically prepares configuration and database files:
+Forge614 Engram provides two paths to initialize central user storage in `~/.forge614/`: an interactive terminal assistant for humans (`setup`), and a silent command for automation and scripts (`init`).
+
+### Step 1: Configure Global Storage with the Interactive Wizard (`setup`)
+
+The `setup` command explains system paths and awaits confirmation before modifying your disk:
+
+```bash
+forge614-engram setup
+```
+
+**Terminal Session Flow:**
+```text
+Forge614 Engram — configuración guiada
+Escribe cancelar o q, o pulsa Ctrl+C, para salir antes de confirmar.
+Una configuración global: "/Users/user/.forge614/.env"
+Una base SQLite para todos los proyectos: "/Users/user/.forge614/engram.db"
+SQLite guarda tus recuerdos en este equipo. PostgreSQL todavía no está disponible. No se pedirán credenciales ni se conectarán asistentes en este paso.
+Se preparará el espacio global al confirmar. Una base existente solo se reutilizará si es compatible; nunca se borrará ni reemplazará.
+Resumen: configurar el almacenamiento global SQLite. No se crearán ni seleccionarán proyectos y no se borrarán datos.
+¿Confirmar? [si/NO]: si
+Configuración global lista. No necesitas elegir un proyecto para configurar Engram.
+La identificación de proyectos y el guardado automático con asistentes siguen pendientes de integración.
+```
+
+#### Operational Rules for `setup`:
+1. **Single Confirmation:** Displays paths and a summary, asking exclusively `¿Confirmar? [si/NO]:`.
+2. **Accepted Answers:** Accepts `si`, `sí`, `s`, `yes`, `y` (case-insensitive).
+3. **Safe Cancellation:** Pressing Enter (empty response), `no`, `n`, `q`, `cancelar`, `Ctrl+C`, or sending EOF (`Ctrl+D`) cancels execution with **exit code 130**, leaving a fresh workspace completely absent.
+4. **Zero Project Management:** `setup` **does not ask for, list, create, or select projects**. The global database serves all projects from any working directory.
+5. **Read-Only Pre-Validation:** If global configuration already exists, it validates compatibility in read-only mode prior to prompting, guaranteeing that existing memories and settings remain intact. Upon confirmation, it executes atomic initialization.
+6. **Interactive TTY Requirement:** When invoked without an interactive terminal (e.g. redirected through a pipeline or non-interactive script), it fails immediately with exit code 1 and outputs structured JSON `INTERACTIVE_REQUIRED` to stderr:
+   ```json
+   {"error":{"code":"INTERACTIVE_REQUIRED","message":"setup necesita una terminal interactiva. Para scripts utiliza init y project-create --name <nombre>."}}
+   ```
+
+---
+
+### Automation Alternative: Non-Interactive Initialization (`init`)
+
+For automated scripts, CI/CD pipelines, or silent setups, use `init`. It asks no questions and responds in JSON:
 
 ```bash
 forge614-engram init
@@ -177,12 +217,13 @@ forge614-engram init
   "storage": "sqlite"
 }
 ```
-*(Note: `init` is idempotent. If the space is already initialized and valid, it confirms readiness without modifying or resetting existing data).*
+*(Note: `init` is idempotent and safe. If storage is already configured and the database is valid, it confirms readiness without modifying or resetting existing data).*
 
 ---
 
 ### Step 2: Register Your First Project (`project-create`)
-Create a project by giving it a display name:
+
+Projects are created when you choose to register them with `project-create`. They are not mandatory steps in `setup`:
 
 ```bash
 forge614-engram project-create --name "My Application"
@@ -209,6 +250,7 @@ forge614-engram project-list
 ---
 
 ### Step 3: Save a Project-Scoped Memory (`scope: project`)
+
 By default, the `save` command targets a project scope (requires `--project-id`):
 
 ```bash
@@ -236,6 +278,7 @@ forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "
 ---
 
 ### Step 4: Save a Shared Universal Memory (`scope: shared`)
+
 To record a preference or guideline that applies across all projects, save it with `--scope shared` (forbids `--project-id`):
 
 ```bash
@@ -262,13 +305,15 @@ forge614-engram save --scope shared --title "Preferred language" --content "I pr
 
 ---
 
-## 7. Crucial Distinction: Manual Saving vs. Automated AI Assistant Capture
+## 7. Manual Saving vs. Future AI Assistant Policy
 
 <callout icon="ℹ️" color="blue_bg">
 **Current Stage 1 Status:** The system saves **exclusively upon explicit command**. Today that command comes from typing `forge614-engram save` or invoking `store.save(...)` via the TypeScript SDK.
 </callout>
 
-### When will AI assistants save automatically?
-Enabling artificial intelligence assistants (such as Claude Code, Cursor, or Antigravity) to proactively detect learnings and save them through MCP (*Model Context Protocol*) tools via `memory_save` is scheduled for **Stage 3 of the pending roadmap**.
-
-In this stage, manual commands are designed for direct inspection, test verification, initialization, and explicit knowledge recording. Do not assume or configure invisible background listeners in this release.
+### Approved Policy for Future AI Assistant Integration (Pending Implementation)
+When proactive assistant capture is integrated through MCP (*Model Context Protocol*) tools via `memory_save`:
+- **Default Scope:** The assistant will save under the active project identified by its `projectId`.
+- **Requirement for `shared`:** Storing universal shared memories requires an explicit user intent of global scope (e.g. *"in all my projects"* or *"global guideline"*), evaluated across the complete conversational context (questions, authorship, confirmed decisions), rather than basic keyword triggers.
+- **No False Promotions:** Words like *"always"* within a project, repeated occurrences, or apparent utility will never promote a note to shared status.
+- **No Inferred Fallback:** If no project is identified, the assistant must seek clarification from the user rather than defaulting to `shared`.

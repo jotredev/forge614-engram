@@ -1,7 +1,7 @@
 # 06. Resolución de Problemas y Catálogo de Errores
 
-> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
-> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Etapa:** Etapa 1 — Memoria Local (Configuración Interactiva y Base Única)
+> **Versiones de esta entrega:** Programa 0.3.0 | Formato de configuración 2 | Esquema SQLite 3
 > **Estado:** Vigente y Activo
 > **Traducción hermana:** [06 (EN). Troubleshooting and Error Diagnostics](../en/06-troubleshooting.md)
 
@@ -21,13 +21,14 @@ Esta guía te permite diagnosticar rápidamente cualquier código de error devue
 
 | Código de Error | Mensaje Habitual | Causa Raíz Explicada | Solución Recomendada |
 | :--- | :--- | :--- | :--- |
+| `INTERACTIVE_REQUIRED` | *"setup necesita una terminal interactiva. Para scripts utiliza init y project-create --name <nombre>."* | Se ejecutó el comando interactivo `setup` desde un script, tubería (`\|`), redirección (`<`) o entorno donde no hay una terminal interactiva disponible (`isTTY` es falso). | En scripts de automatización, tareas en segundo plano o entornos CI/CD, utiliza el comando no interactivo `forge614-engram init`. |
 | `INVALID_INPUT` | *"El campo [campo] debe ser texto no vacío..."* o *"scope shared no acepta --project-id..."* | Se omitió una opción obligatoria, se pasaron textos vacíos, caracteres nulos (`\0`), números fuera de rango (`limit`), o se combinaron banderas incompatibles. | Revisa los argumentos del comando. Si operas un recuerdo compartido, no incluyas `--project-id`. Si operas un recuerdo de proyecto, indica su UUID con `--project-id`. |
 | `PROJECT_NOT_FOUND` | *"Proyecto no encontrado."* | El `projectId` proporcionado no existe en la tabla `projects` de la base central `~/.forge614/engram.db`. | Ejecuta `forge614-engram project-list` para verificar los identificadores UUID de tus proyectos registrados. |
 | `VERSION_CONFLICT` | *"La versión esperada no coincide. Lee el tema antes de actualizarlo."* | Se intentó actualizar un recuerdo temático pero el valor de `--expected-version` no es igual a la versión que la base tiene registrada actualmente. | Ejecuta `get` o `history` sobre ese recuerdo para comprobar su versión actual y actualiza indicando el número de versión correcto. |
 | `REQUEST_CONFLICT` | *"La clave de petición ya corresponde a otro contenido."* | Se reutilizó un `--request-key` previo pero enviando un título, contenido, tema o tipo diferente. | Si deseas guardar una nueva revisión o nota distinta, utiliza una nueva clave (ej. `--request-key req-02`) o prescinde de ella. |
 | `ARCHIVED` | *"Restaura el recuerdo antes de actualizar su tema."* | Se intentó actualizar un tema cuya memoria se encuentra actualmente en estado archivado. | Ejecuta `restore` sobre ese recuerdo antes de guardar la nueva versión temática. |
 | `NOT_FOUND` | *"Recuerdo no encontrado en el alcance seleccionado."* | El identificador del recuerdo (`--id`) no existe en la base o no pertenece al proyecto/alcance indicado. | Comprueba si el recuerdo era de un proyecto específico o compartido, y verifica que el UUID no tenga errores tipográficos. |
-| `CONFIG_NOT_FOUND` | *"Configuración global inválida o inaccesible..."* | No se encuentra el archivo `~/.forge614/.env` al intentar realizar una operación que requiere configuración previa. | Ejecuta `forge614-engram init` para crear la configuración global de forma segura. |
+| `CONFIG_NOT_FOUND` | *"Configuración global inválida o inaccesible..."* | No se encuentra el archivo `~/.forge614/.env` al intentar realizar una operación que requiere configuración previa. | Ejecuta `forge614-engram init` o `forge614-engram setup` para preparar la configuración global. |
 | `CONFIG_INVALID` | *"Configuración global inválida o inaccesible. Comprueba su formato, propietario y permisos..."* | El archivo `~/.forge614/.env` tiene permisos distintos a `0600`, la carpeta no es `0700`, pertenece a otro usuario, o su contenido no contiene exactamente las claves válidas. | Asegura que la carpeta `~/.forge614` tenga permisos `0700` (`chmod 700 ~/.forge614`) y el archivo `.env` tenga permisos `0600` (`chmod 600 ~/.forge614/.env`). |
 | `LEGACY_CONFIG` | *"Se detectó configuración antigua por proyecto. No se modificó. Su conversión debe ser explícita..."* | Existe un directorio antiguo `projects/` dentro de `~/.forge614/` proveniente de diseños preliminares descartados. | El sistema no toca ni borra esa carpeta automáticamente. Si contiene datos que necesitas conservar, revísala y respalda su contenido antes de retirarla manualmente. |
 | `MIGRATION_REQUIRED` | *"Formato anterior detectado. Conserva el archivo: no se modificó la base..."* | La base `engram.db` tiene esquema 1 o 2 (versión preliminar con esquemas antiguos). | El software actual requiere el esquema 3. Conserva tu archivo de respaldo; no se aplica migración destructiva automática sobre datos reales. |
@@ -36,7 +37,7 @@ Esta guía te permite diagnosticar rápidamente cualquier código de error devue
 | `DATABASE_SCHEMA` | *"La estructura no es compatible. No se modificó ni reparó la base."* | Las tablas, disparadores o índices de SQLite no coinciden exactamente con la definición canónica del esquema versión 3. | El sistema no repara ni modifica bases ajenas. Asegúrate de estar apuntando a la base legítima de Forge614 Engram. |
 | `DATABASE_VERSION` | *"Base incompatible: no se puede abrir con esta versión."* | El `user_version` de SQLite es mayor o incompatible con la versión actual del software. | Actualiza el binario `forge614-engram` a la versión más reciente del código. |
 | `DATABASE_OWNER` | *"La base contiene una estructura ajena; usa una base vacía y dedicada."* | El archivo SQLite contiene tablas creadas por otro software ajeno a Forge614. | Utiliza una base vacía y dedicada para Forge614. |
-| `DATABASE_UNINITIALIZED`| *"La base no está inicializada. Conectar no crea tablas."* | Se intentó abrir la base en modo de solo lectura o sin permiso de creación antes de inicializarla. | Ejecuta `forge614-engram init` para crear las tablas correspondientes. |
+| `DATABASE_UNINITIALIZED`| *"La base no está inicializada. Conectar no crea tablas."* | Se intentó abrir la base en modo de solo lectura o sin permiso de creación antes de inicializarla. | Ejecuta `forge614-engram init` o confirma en `setup` para crear las tablas correspondientes. |
 | `STORAGE_ERROR` | *"No se pudo completar la operación. Comprueba permisos, configuración..."* | Fallo general de entrada/salida a nivel de sistema operativo (disco lleno, bloqueo permanente o error de hardware). | Verifica el espacio libre en el disco duro y los permisos generales del sistema. |
 
 ---
@@ -49,8 +50,12 @@ Esta guía te permite diagnosticar rápidamente cualquier código de error devue
 
 ### 2. La base de datos no existe y aparece `DATABASE_MISSING`
 - **Causa:** Tienes el archivo `~/.forge614/.env` pero borraste o moviste `engram.db`.
-- **Por qué no se crea sola:** Si el programa creara una base vacía automáticamente en silencio, un usuario cuya base fue renombrada por accidente creería que perdió todos sus recuerdos pasados. El error te avisa para que recuperes tu archivo `engram.db`.
+- **Por qué no se crea sola:** Si el programa creara una base vacía automáticamente en silencio (tanto en `init` como en `setup`), un usuario cuya base fue renombrada por accidente creería que perdió todos sus recuerdos pasados. El error te avisa para que recuperes tu archivo `engram.db`.
 
-### 3. La terminal tarda unos segundos en responder al escribir
+### 3. Cancelación en `setup` vs. interrupción posterior
+- **Antes de confirmar:** Cancelar con `no`, `cancelar`, `q`, Enter, `Ctrl+C` o EOF termina con código de salida `130`. En una instalación limpia, no se crea la carpeta ni ningún archivo.
+- **Después de confirmar:** Si ocurre un fallo del sistema o una interrupción una vez que el usuario confirmó, la base puede haber comenzado su inicialización. No existe una transacción que abarque todo el sistema de archivos y no se borran datos por compensación. Pulsar `Ctrl+C` después de confirmar **no es una operación de deshacer**.
+
+### 4. La terminal tarda unos segundos en responder al escribir
 - **Causa:** Hay otro proceso escribiendo en la base de datos simultáneamente.
 - **Comportamiento:** SQLite serializa las escrituras. Gracias a `busy_timeout = 5000`, la terminal esperará pacientemente hasta 5 segundos a que el otro proceso termine antes de arrojar un error.

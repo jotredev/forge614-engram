@@ -1,7 +1,7 @@
 # 04. Guía de Integración con el SDK de TypeScript
 
-> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
-> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Etapa:** Etapa 1 — Memoria Local (Configuración Interactiva y Base Única)
+> **Versiones de esta entrega:** Programa 0.3.0 | Formato de configuración 2 | Esquema SQLite 3
 > **Estado:** Vigente y Activo
 > **Traducción hermana:** [04 (EN). TypeScript SDK Guide (MemoryStore)](../en/04-typescript-sdk.md)
 
@@ -64,7 +64,7 @@ Devuelve la lista de todos los proyectos registrados en la base central, ordenad
 Actualiza el nombre visible del proyecto manteniendo intactos su `projectId` y sus recuerdos.
 
 ### `workspace.open(readonly = false): MemoryStore`
-Valida la configuración global y abre el almacén `MemoryStore`. Si `readonly` es `true`, abre la base en modo de solo lectura.
+Valida la configuración global y abre el almacén `MemoryStore`. Si `readonly` es `true`, abre la base en modo de solo lectura (utilizado por ejemplo para validar compatibilidad sin modificar archivos).
 
 ---
 
@@ -73,49 +73,49 @@ Valida la configuración global y abre el almacén `MemoryStore`. Si `readonly` 
 Una vez abierto el almacén con `workspace.open()` o `new MemoryStore()`:
 
 ### `store.save(input: SaveInput): Memory`
-Guarda un recuerdo. La estructura de `SaveInput` exige definir el alcance:
-- **Para un proyecto:**
-  `{ projectId: string, title: string, content: string, type: MemoryType, ... }`
-- **Para un recuerdo compartido:**
-  `{ scope: "shared", projectId: null, title: string, content: string, type: MemoryType, ... }`
+Guarda un nuevo recuerdo o crea una nueva versión de un tema existente:
+- Requiere `title`, `content` y `type`.
+- Si `scope` es `'project'`, requiere `projectId`.
+- Si `scope` es `'shared'`, `projectId` debe ser `null`.
+- Si el tema ya existe, exige `expectedVersion` con la versión actual para prevenir sobreescrituras ciegas.
+- Admite `--request-key` para idempotencia (evitar duplicados).
 
 ### `store.search(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[]`
-Ejecuta la búsqueda explicable.
-- Si se indica un `projectId`, `scope` puede ser `"all"` (por defecto, combina proyecto + compartidos aplicando sustituciones por tema), `"project"` o `"shared"`.
-- Si `projectId` es `null`, **debe especificarse explícitamente `scope: "shared"`**.
+Ejecuta la búsqueda explicable en SQLite FTS5:
+- Si se especifica `projectId`, por defecto busca en `all` (recuerdos del proyecto + compartidos, aplicando la sustitución de temas).
+- Devuelve cada recuerdo junto con su objeto `explanation` (`bm25`, `multiplier`, `orderScore`).
 
-### `store.get(projectId: string | null, id: string): Memory | null`
-Recupera el recuerdo por su UUID. Requiere el `projectId` correspondiente o `null` si es compartido.
+### `store.get(projectId: string | null, id: string): Memory`
+Recupera la ficha activa o archivada de un recuerdo.
 
 ### `store.history(projectId: string | null, id: string): MemoryVersion[]`
-Devuelve todas las versiones históricas inmutables del recuerdo.
+Devuelve el histórico cronológico inmutable de fotos (snapshots) de cada versión del recuerdo.
 
 ### `store.archive(projectId: string | null, id: string): Memory`
-Marca el recuerdo como archivado (`state: "archived"`).
+Oculta el recuerdo de las búsquedas normales sin borrar su historial ni sus versiones.
 
 ### `store.restore(projectId: string | null, id: string): Memory`
-Reactiva un recuerdo previamente archivado (`state: "active"`).
-
-### `store.close(): void`
-Cierra la conexión SQLite y libera los descriptores de archivo.
+Reactiva un recuerdo archivado y devuelve su visibilidad en las búsquedas.
 
 ---
 
-## 4. Ejemplo Completo y Funcional
+## 4. Ejemplo Práctico de Integración Completo
 
 Crea un archivo de prueba llamado `ejemplo-sdk.ts` en la raíz del repositorio y ejecútalo con `bun run ejemplo-sdk.ts`:
 
 ```typescript
 import { MemoryWorkspace } from "./src/index";
 
-// 1. Instanciamos el espacio de trabajo global
+// 1. Instanciamos el gestor del espacio
 const workspace = new MemoryWorkspace();
 
-// 2. Inicializamos el espacio de forma segura (idempotente)
+// 2. Inicializamos el entorno seguro (idempotente)
 workspace.init();
 
-// 3. Obtenemos un proyecto existente o creamos uno nuevo
-let project = workspace.listProjects().find((p) => p.name === "Mi Aplicación");
+// 3. Obtenemos o creamos nuestro proyecto
+const proyectos = workspace.listProjects();
+let project = proyectos.find(p => p.name === "Mi Aplicación");
+
 if (!project) {
   project = workspace.createProject("Mi Aplicación");
   console.log("Nuevo proyecto creado con ID:", project.projectId);
@@ -164,6 +164,34 @@ try {
 } finally {
   // 5. Cierre obligatorio para liberar SQLite
   store.close();
+}
+```
+
+---
+
+## 5. Módulo de Configuración Interactiva (`src/setup.ts`)
+
+Para interfaces de usuario, adaptadores de terminal personalizados o suites de prueba, el repositorio incluye la función `runSetup`:
+
+```typescript
+import { runSetup, type SetupIO, type SetupResult } from "./src/setup";
+import { WorkspaceConfig } from "./src/workspace-config";
+
+// Adaptador de entrada/salida personalizado
+const miTerminalIO: SetupIO = {
+  write: (mensaje: string) => console.log(mensaje),
+  ask: async (pregunta: string) => {
+    // Proporcionar la respuesta o null si se cancela
+    return "si";
+  },
+};
+
+const resultado: SetupResult = await runSetup(miTerminalIO, new WorkspaceConfig());
+
+if (resultado.cancelled) {
+  console.log("Configuración cancelada sin cambios.");
+} else {
+  console.log("Almacenamiento global inicializado:", resultado.storage);
 }
 ```
 

@@ -1,11 +1,11 @@
 # 02. Guided System Walkthrough
 
-> **Stage:** Stage 1 — Local Memory (Single Database and Shared Memory)
-> **Release Versions:** Program 0.2.0 | Configuration Format 2 | SQLite Schema 3
+> **Stage:** Stage 1 — Local Memory (Interactive Setup and Single Database)
+> **Release Versions:** Program 0.3.0 | Configuration Format 2 | SQLite Schema 3
 > **Status:** Current & Active
 > **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
-This walkthrough guides you step by step through the complete lifecycle of Forge614 Engram: from initializing the global user space and registering projects to recording project-scoped and shared memories, executing combined searches, applying topic overrides, auditing version history, and managing reversible archival.
+This walkthrough guides you step by step through the complete lifecycle of Forge614 Engram: from setting up global storage interactively with `setup` and registering projects, to recording project-scoped and shared memories, executing combined searches, applying topic overrides, auditing version history, and managing reversible archival.
 
 > [!NOTE]
 > All examples use the installed standalone binary `forge614-engram`. If working directly from the source repository with Bun, replace `forge614-engram` with `bun run cli`.
@@ -45,20 +45,35 @@ A shared memory is stored **once in the database**; it is never duplicated acros
 
 ## 3. Step-by-Step Lifecycle Walkthrough
 
-### Step 1: Initialize the Storage Space (`init`)
-Prepare the configuration and database files:
+### Step 1: Configure Global Storage (`setup` or `init`)
+
+For human users in a terminal, the interactive `setup` command explains global storage paths and asks for confirmation before touching the disk:
 
 ```bash
-forge614-engram init
+forge614-engram setup
 ```
 
-**JSON Response:**
-```json
-{
-  "initialized": true,
-  "storage": "sqlite"
-}
+**Terminal Session Flow:**
+```text
+Forge614 Engram — configuración guiada
+Escribe cancelar o q, o pulsa Ctrl+C, para salir antes de confirmar.
+Una configuración global: "/Users/user/.forge614/.env"
+Una base SQLite para todos los proyectos: "/Users/user/.forge614/engram.db"
+SQLite guarda tus recuerdos en este equipo. PostgreSQL todavía no está disponible. No se pedirán credenciales ni se conectarán asistentes en este paso.
+Se preparará el espacio global al confirmar. Una base existente solo se reutilizará si es compatible; nunca se borrará ni reemplazará.
+Resumen: configurar el almacenamiento global SQLite. No se crearán ni seleccionarán proyectos y no se borrarán datos.
+¿Confirmar? [si/NO]: si
+Configuración global lista. No necesitas elegir un proyecto para configurar Engram.
+La identificación de proyectos y el guardado automático con asistentes siguen pendientes de integración.
 ```
+
+- If you decide to cancel by typing `no`, `cancelar`, `q`, pressing Enter, or hitting `Ctrl+C`, the process exits with **code 130** and no storage files are created in a clean environment.
+- `setup` **does not manage projects**: it never asks for, lists, creates, or selects projects.
+- For scripts, automation, or non-interactive environments, use the silent `init` command:
+  ```bash
+  forge614-engram init
+  # JSON Output: {"initialized":true,"storage":"sqlite"}
+  ```
 
 ---
 

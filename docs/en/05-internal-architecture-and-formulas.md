@@ -1,15 +1,15 @@
 # 05. Internal Architecture, FTS5, and Ranking Formulas
 
-> **Stage:** Stage 1 — Local Memory (Single Database and Shared Memory)
-> **Release Versions:** Program 0.2.0 | Configuration Format 2 | SQLite Schema 3
+> **Stage:** Stage 1 — Local Memory (Interactive Setup and Single Database)
+> **Release Versions:** Program 0.3.0 | Configuration Format 2 | SQLite Schema 3
 > **Status:** Current & Verified
 > **Sister translation:** [05. Arquitectura Interna, SQLite FTS5 y Fórmulas](../es/05-arquitectura-interna-y-formulas.md)
 
-This document provides a comprehensive technical breakdown of Forge614 Engram: SQLite engine configuration parameters, relational schema version 3, reactive triggers, SQL topic override logic, and the mathematical formulas governing **BM25**, recency decay, and ranking order.
+This document provides a comprehensive technical breakdown of Forge614 Engram: SQLite engine configuration parameters, relational schema version 3, WAL initialization adjustment, reactive triggers, SQL topic override logic, and the mathematical formulas governing **BM25**, recency decay, and ranking order.
 
 ---
 
-## 1. SQLite Engine Configuration (Pragmas) and Concurrency
+## 1. SQLite Engine Configuration (Pragmas), Concurrency, and WAL Initialization
 
 Forge614 Engram operates on Bun's embedded SQLite engine (`bun:sqlite`), initialized with strict integrity directives:
 
@@ -25,6 +25,18 @@ Forge614 Engram operates on Bun's embedded SQLite engine (`bun:sqlite`), initial
    - Readers access the main database file while writes append to `engram.db-wal`.
    - Readers and writers do not block each other.
    - **Concurrency Note:** SQLite writes remain serialized (one active writer at a time).
+
+### WAL Initialization Adjustment (Empty Immediate Transaction)
+Upon initializing a fresh database, the engine executes:
+```sql
+PRAGMA journal_mode=WAL;
+BEGIN IMMEDIATE;
+COMMIT;
+```
+- **Technical Rationale:** In Bun 1.3.8 on macOS, opening a newly initialized SQLite database immediately in read-only mode (`readonly: true`, as used by `workspace.open(true)` during `setup` to validate storage without mutating) failed if the WAL file had never had a physical transaction written to disk.
+- Executing an empty, immediate transaction (`BEGIN IMMEDIATE; COMMIT;`) materializes internal WAL bookkeeping headers on disk immediately, ensuring subsequent read-only connections succeed reliably even on fresh databases without projects or memories.
+- **No Schema Change:** This operational adjustment changes no tables, columns, or triggers; **it is not a schema migration or version bump** (the schema remains `user_version = 3`).
+- **Auxiliary Files:** The `engram.db-wal` and `engram.db-shm` files are auxiliary runtime journals; they are not independent databases. Inspecting storage may cause normal operating system file activity on these files.
 
 ---
 

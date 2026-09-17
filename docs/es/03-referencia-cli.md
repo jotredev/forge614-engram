@@ -1,11 +1,11 @@
 # 03. Manual Exhaustivo de Terminal (CLI)
 
-> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
-> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Etapa:** Etapa 1 — Memoria Local (Configuración Interactiva y Base Única)
+> **Versiones de esta entrega:** Programa 0.3.0 | Formato de configuración 2 | Esquema SQLite 3
 > **Estado:** Vigente y Activo
 > **Traducción hermana:** [03 (EN). Terminal CLI Command Reference](../en/03-cli-reference.md)
 
-Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sintaxis y formatos de respuesta JSON de la interfaz de línea de comandos (CLI) de Forge614 Engram.
+Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sintaxis, códigos de salida y formatos de respuesta de la interfaz de línea de comandos (CLI) de Forge614 Engram.
 
 ---
 
@@ -23,8 +23,8 @@ Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sin
 3. **Comillas obligatorias para textos con espacios:** Todo título, texto o nombre con espacios debe encerrarse entre comillas dobles (`"..."`).
 4. **Validación estricta previa:** Si pasas una opción desconocida, repites una opción, o envías argumentos incompatibles (por ejemplo combinar `--scope shared` con `--project-id` en operaciones de recuerdo), el programa termina inmediatamente con error de sintaxis **antes de leer la configuración o abrir SQLite**.
 5. **Canales de salida y códigos de salida:**
-   - **Éxito:** La respuesta se emite en formato **JSON estructurado** a través del canal estándar (`stdout`) con código de salida `0`.
-   - **Error:** La descripción del fallo se emite en formato JSON a través del canal de errores (`stderr`) con código de salida `1`.
+   - **Comando interactivo (`setup`):** Emite texto comprensible para personas a través de `stdout`. Devuelve código de salida `0` si el usuario confirma; código `130` si el usuario cancela voluntariamente (`cancelar`, `q`, `Ctrl+C`, EOF o `no`/Enter); y código `1` si ocurre un error o si se invoca sin terminal interactiva (`isTTY` falso).
+   - **Comandos de datos y automatización (`init`, `project-*`, `save`, `search`, etc.):** Emiten respuestas en formato **JSON estructurado** a través de `stdout` con código de salida `0` en caso de éxito. En caso de error, emiten un objeto JSON de error a través de `stderr` con código de salida `1`.
 6. **Banderas eliminadas que NO se admiten:**
    - `--db`: No se admite. La base de datos es fija: `~/.forge614/engram.db`.
    - `--project` (por nombre): No se admite. El identificador es estrictamente `--project-id <UUID>`.
@@ -42,7 +42,7 @@ Muestra el nombre del programa y la versión actual instalada.
 ```bash
 forge614-engram --version
 ```
-- **Salida:** `forge614-engram 0.2.0`
+- **Salida:** `forge614-engram 0.3.0`
 - **Opciones:** No acepta ninguna opción adicional.
 - **Efectos secundarios:** Ninguno. No lee ni crea archivos en disco.
 
@@ -59,14 +59,37 @@ forge614-engram help
 
 ---
 
-### 2.3. `init`
-Inicializa el espacio de almacenamiento central del usuario (`~/.forge614/`) creando el archivo de configuración global `.env` (modo `0600`) y la base de datos SQLite `engram.db` (modo `0600`).
+### 2.3. `setup`
+Asistente interactivo guiado para personas. Explica las rutas globales (`~/.forge614/.env` y `~/.forge614/engram.db`), valida instalaciones existentes en modo de solo lectura, y solicita una confirmación explícita antes de inicializar el almacenamiento.
+
+```bash
+forge614-engram setup
+```
+- **Opciones:** No acepta banderas ni parámetros (rechaza `--project`, `--yes`, rutas, etc.).
+- **Requisito:** Requiere una terminal interactiva para entrada y salida (`process.stdin.isTTY` y `process.stdout.isTTY`). Si se invoca sin terminal (en tuberías, scripts o segundo plano), falla con código de salida 1 y emite el error JSON `INTERACTIVE_REQUIRED` en stderr:
+  ```json
+  {"error":{"code":"INTERACTIVE_REQUIRED","message":"setup necesita una terminal interactiva. Para scripts utiliza init y project-create --name <nombre>."}}
+  ```
+- **Pregunta única:** Presenta las explicaciones y pregunta únicamente:
+  ```text
+  ¿Confirmar? [si/NO]:
+  ```
+- **Confirmación:** Acepta `si`, `sí`, `s`, `yes`, `y` (sin distinguir mayúsculas de minúsculas).
+- **Cancelación:** Si respondes `no`, `n`, presionas Enter (respuesta vacía), escribes `q`, `cancelar`, pulsas `Ctrl+C` o envías fin de archivo (EOF / `Ctrl+D`), la ejecución se cancela con **código de salida 130**. En un entorno limpio, no se crea la carpeta ni archivos.
+- **Sin Gestión de Proyectos:** `setup` **no pregunta, no lista, no crea ni selecciona ningún proyecto**.
+- **Salida estándar:** Texto plano legible para personas.
+
+---
+
+### 2.4. `init`
+Inicializa silenciosamente el espacio de almacenamiento central del usuario (`~/.forge614/`), creando el archivo `.env` (modo `0600`) y la base de datos `engram.db` (modo `0600`).
 
 ```bash
 forge614-engram init
 ```
 - **Opciones:** No requiere opciones.
-- **Comportamiento:** Es una operación idempotente (repetible sin riesgo). Si la configuración y la base ya existen y son válidas, confirma el estado sin reiniciar ni alterar tus datos.
+- **Uso ideal:** Scripts, integración continua (CI/CD) o entornos automatizados sin terminal interactiva.
+- **Comportamiento:** Operación idempotente. Si la configuración y la base ya existen y son válidas, confirma el estado sin reiniciar ni alterar tus datos.
 - **Salida estándar (JSON):**
 ```json
 {
@@ -77,7 +100,7 @@ forge614-engram init
 
 ---
 
-### 2.4. `project-create`
+### 2.5. `project-create`
 Registra un nuevo proyecto en la tabla `projects` de la base de datos central.
 
 ```bash
@@ -102,7 +125,7 @@ forge614-engram project-create --name "Mi aplicación"
 
 ---
 
-### 2.5. `project-list`
+### 2.6. `project-list`
 Lista todos los proyectos registrados en la base de datos central.
 
 ```bash
@@ -124,7 +147,7 @@ forge614-engram project-list
 
 ---
 
-### 2.6. `project-rename`
+### 2.7. `project-rename`
 Actualiza el nombre visual de un proyecto existente.
 
 ```bash

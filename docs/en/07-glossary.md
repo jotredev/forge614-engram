@@ -1,13 +1,22 @@
 # 07. Plain-Language Glossary
 
-> **Stage:** Stage 1 — Local Memory (Single Database and Shared Memory)
-> **Release Versions:** Program 0.2.0 | Configuration Format 2 | SQLite Schema 3
+> **Stage:** Stage 1 — Local Memory (Interactive Setup and Single Database)
+> **Release Versions:** Program 0.3.0 | Configuration Format 2 | SQLite Schema 3
 > **Status:** Current & Active
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
 This glossary explains every technical concept using everyday real-world analogies, followed by its formal technical terminology in parentheses.
 
 ---
+
+### Interactive onboarding assistant (Interactive Setup Wizard / `setup`)
+A human-facing command that explains system storage paths, validates existing setups in read-only mode, and asks for a single confirmation before creating global storage, without asking for, creating, or selecting projects.
+
+### Interactive terminal channel (Interactive TTY / `isTTY`)
+A direct terminal connection allowing a human to type answers on the keyboard and view formatted text on screen. If absent (e.g. in pipes or automated scripts), `setup` halts with `INTERACTIVE_REQUIRED`.
+
+### Voluntary cancellation exit code (Exit Code 130 / User Interruption)
+The standard numerical code returned to the operating system when an interactive operation is aborted or cancelled by the user (`no`, `cancelar`, `q`, `Ctrl+C`, or EOF).
 
 ### Central user storage directory (User storage directory / `~/.forge614/`)
 The private folder located in your computer's personal home directory where configuration and memory databases reside, protected with strict owner-only access permissions (`0700`).
@@ -62,6 +71,9 @@ A mathematical factor with a 30-day half-life that gently boosts newly updated n
 
 ### Write-Ahead Logging (WAL mode)
 An SQLite storage mode where writes append to a secondary journal (`engram.db-wal`), allowing readers to query data without being blocked by active writers.
+
+### WAL header materialization (Empty immediate transaction)
+A technique that flushes physical WAL bookkeeping structures to disk via `BEGIN IMMEDIATE; COMMIT;`, allowing read-only connections to open a fresh database immediately in Bun/macOS without projects.
 
 ### Reversible archival and restoration (`archive` and `restore`)
 Operations that hide a note from standard searches without deleting data, with the ability to reactivate it at any time while preserving complete version history.

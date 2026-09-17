@@ -1,13 +1,22 @@
 # 07. Glosario de Conceptos en Lenguaje Cotidiano
 
-> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
-> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Etapa:** Etapa 1 — Memoria Local (Configuración Interactiva y Base Única)
+> **Versiones de esta entrega:** Programa 0.3.0 | Formato de configuración 2 | Esquema SQLite 3
 > **Estado:** Vigente y Activo
 > **Traducción hermana:** [07 (EN). Plain-Language Glossary](../en/07-glossary.md)
 
 Este glosario explica cada concepto técnico utilizando analogías y lenguaje de la vida cotidiana, seguido de su término técnico formal entre paréntesis.
 
 ---
+
+### Asistente interactivo guiado (Interactive Setup Wizard / `setup`)
+Comando para personas que explica las rutas del sistema, comprueba compatibilidad en modo de solo lectura y pide una confirmación única antes de crear el almacenamiento global, sin preguntar, crear ni seleccionar proyectos.
+
+### Terminal interactiva con soporte de teclado (Interactive TTY / `isTTY`)
+Canal de consola interactivo donde una persona puede ingresar respuestas directamente por teclado y recibir texto en pantalla. Si no está presente (como en tuberías o scripts), `setup` falla con `INTERACTIVE_REQUIRED` para proteger el flujo.
+
+### Código de salida por cancelación del usuario (Exit Code 130 / User Interruption)
+Valor numérico estándar devuelto al sistema operativo cuando una operación interactiva es cancelada o interrumpida voluntariamente por el usuario (`no`, `cancelar`, `q`, `Ctrl+C` o fin de archivo EOF).
 
 ### Espacio central de usuario (User storage directory / `~/.forge614/`)
 La carpeta privada ubicada en el directorio personal de tu computadora donde residen la configuración y la base de datos de memoria, protegida con permisos estrictos de acceso exclusivo para tu usuario (`0700`).
@@ -62,6 +71,9 @@ Factor matemático suave que otorga una pequeña bonificación a las notas actua
 
 ### Diario de transacciones rápidas (WAL / Write-Ahead Logging)
 Modo de operación en SQLite donde los cambios se escriben primero en un diario auxiliar (`engram.db-wal`), permitiendo que los lectores consulten la base sin ser bloqueados por los escritores.
+
+### Materialización de cabeceras WAL (Transacción inmediata vacía)
+Técnica que sincroniza inmediatamente la estructura física del archivo WAL en el disco mediante `BEGIN IMMEDIATE; COMMIT;`, permitiendo que conexiones de solo lectura abran la base al instante en Bun/macOS sin proyectos.
 
 ### Archivo y restauración reversible (`archive` y `restore`)
 Operaciones que permiten ocultar una nota de las búsquedas habituales sin borrarla de la base de datos, con la capacidad de reactivarla íntegramente en cualquier momento conservando todo su historial.

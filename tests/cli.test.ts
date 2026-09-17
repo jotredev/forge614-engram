@@ -34,6 +34,27 @@ test("help, version and empty project list create no storage", () => {
   expect(JSON.parse(run(dir,"project-list").stdout)).toEqual([]);
 });
 
+test("setup requires a terminal and leaves automation commands noninteractive", () => {
+  const dir = workspace();
+  const result = run(dir, "setup");
+  expect(result.code).toBe(1);
+  expect(JSON.parse(result.stderr).code).toBe("INTERACTIVE_REQUIRED");
+  expect(result.stdout).toBe("");
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+  expect(run(dir, "init").code).toBe(0);
+  expect(JSON.parse(run(dir, "project-list").stdout)).toEqual([]);
+  expect(run(dir, "search", "--scope", "shared", "--query", "anything").code).toBe(0);
+});
+
+test("setup rejects unknown flags without entering prompts or creating files", () => {
+  const dir = workspace();
+  const result = run(dir, "setup", "--db", "PRIVATE_VALUE");
+  expect(JSON.parse(result.stderr).code).toBe("INVALID_INPUT");
+  expect(result.stderr).not.toContain("PRIVATE_VALUE");
+  expect(result.stdout).toBe("");
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+});
+
 test("all projects and working directories share exactly one workspace configuration", () => {
   const a = workspace(); const b = workspace(); const id = create(a);
   create(a,"Another"); const user = join(a,"user");
