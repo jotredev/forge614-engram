@@ -1,12 +1,12 @@
 # 01. Instalación, Configuración y Primeros Pasos
 
-> **Etapa:** Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
-> **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y resúmenes estructurados) | Réplica PostgreSQL Formato 1 / Formato 2
-> **Habilitaciones:** Explícitas y aditivas (`integration-enable` para Esquema 5; `sessions-enable` para Esquema 6; `sync --upgrade-format` para réplica Formato 2). La apertura de base y los comandos ordinarios nunca migran automáticamente.
-> **Estado:** Vigente y Verificado (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
+> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas) / 7 (confirmaciones inmutables y orden reforzado) | Réplica PostgreSQL Formatos 1, 2 y 3 (promoción explícita con `sync --upgrade-format`; tabla física remota `state.format = 1`)
+> **Habilitaciones:** Explícitas y aditivas (`integration-enable` para Esquema 5; `sessions-enable` para Esquema 6; `reinforcement-enable` para Esquema 7; `sync --upgrade-format` para réplica Formato 2 o Formato 3). La apertura de base y los comandos ordinarios nunca migran automáticamente.
+> **Estado:** Vigente y Verificado (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
 > **Traducción hermana:** [01 (EN). Installation, Setup, and Getting Started](../en/01-installation-and-getting-started.md)
 
-Esta guía explica paso a paso cómo preparar las dependencias, compilar e instalar el comando `forge614-engram` en tu computadora, los requisitos indispensables (incluyendo Git obligatorio), cómo funciona la detección post-instalación de asistentes, el asistente interactivo `setup` para el espacio central, y la habilitación explícita de la integración de asistentes (Esquema 5) y del ciclo de sesiones progresivas (Esquema 6) junto con la coordinación entre equipos pares.
+Esta guía explica paso a paso cómo preparar las dependencias, compilar e instalar el comando `forge614-engram` en tu computadora, los requisitos indispensables (incluyendo Git obligatorio), cómo funciona la detección post-instalación de asistentes, el asistente interactivo `setup` con la oferta de refuerzo de búsqueda, la habilitación explícita de integración de asistentes (Esquema 5), sesiones progresivas (Esquema 6) y confirmaciones inmutables de FTS5 (Esquema 7), junto con la coordinación entre equipos pares.
 
 ---
 
@@ -123,10 +123,12 @@ setup           Asistente interactivo; confirma antes de guardar. Cancelar no ap
 tui             Asistentes: flechas, Espacio, vista previa y confirmación explícita.
 init            Inicializa una sola configuración y base local, sin borrar datos.
 sync [--upgrade-format]
-                Sincroniza todo; --upgrade-format promueve explícitamente una réplica formato 1.
+                Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
 sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
 integration-enable  Habilita explícitamente MCP y asociaciones locales (esquema 5).
 sessions-enable Habilita explícitamente sesiones (esquema 6).
+reinforcement-enable
+                Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
 memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
@@ -171,16 +173,8 @@ Para guardar shared sin crear un proyecto, ejecuta init primero.
 No se migran ni borran bases o configuraciones antiguas automáticamente.
 SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada en setup.
 sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
+Antes de sync --upgrade-format, actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
 sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
-setup puede añadir metadatos de sincronización al esquema 3 sin borrar recuerdos.
-Las consultas son literales; todas las palabras deben coincidir.
-En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
-El recuerdo compartido se conserva y se puede consultar con --scope shared.
-Actualizar un tema requiere --expected-version. Archivar conserva el historial.
-setup y tui muestran texto y requieren terminal; cancelar devuelve código 130.
-Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
-MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
-La resolución de directorios de proyecto requiere Git disponible, incluso para carpetas sin Git.
 ```
 
 ---
@@ -203,30 +197,41 @@ Este asistente configurará el espacio de trabajo local en:
   Base de datos : /Users/usuario/.forge614/engram.db
 
 ¿Quieres habilitar la sincronización con una base de datos PostgreSQL?
-> 1. No
-  2. Sí, configurar PostgreSQL
-
-Opción [1]:
+No
+Sí, configurar PostgreSQL
+Elige [si/NO]:
 ```
 
 ### Opciones de Sincronización
-- **Opción 1: `No` (Predeterminada):**
-  Presionar Enter selecciona `No`. El sistema opera de manera 100% local e independiente. Se genera un archivo de configuración en **Formato 2** sin variables de PostgreSQL.
-- **Opción 2: `Sí, configurar PostgreSQL`:**
-  Si eliges `2`, el asistente solicita la URL de conexión de forma confidencial con **entrada oculta en pantalla** (`{ secret: true }`). La contraseña que escribas no se mostrará ni en texto claro ni con asteriscos, protegiendo tus credenciales de miradas indiscretas.
+- **Opción `No` (Predeterminada):**
+  Presionar Enter o escribir `no` opera de manera 100% local e independiente. Si PostgreSQL ya estaba configurado, elegir `No` lo desactiva sin borrar ninguna copia previa.
+- **Opción `Sí, configurar PostgreSQL`:**
+  Si eliges `sí`, el asistente solicita la URL de conexión de forma confidencial con **entrada oculta en pantalla** (`{ secret: true }`). La contraseña que escribas no se mostrará ni en texto claro ni con asteriscos, protegiendo tus credenciales de miradas indiscretas.
+
+### Oferta de Refuerzo de Búsqueda FTS5 (Esquema 7)
+A continuación, el asistente pregunta si deseas activar el refuerzo de búsqueda por repeticiones:
+
+```text
+registrar repeticiones mejora el orden; no verifica la verdad.
+sincronizar esta función requiere actualizar todos los equipos.
+¿Quieres habilitar el refuerzo de recuerdos? [si/NO]
+```
+
+- **Por defecto es `NO`:** Presionar Enter no activa el refuerzo.
+- **Si respondes `sí`:** Se registrará para habilitar el Esquema 7 tras la confirmación final.
+- **Si el refuerzo ya estaba activo:** El asistente informa: *"El refuerzo de recuerdos ya está habilitado. Se conservará habilitado; esta configuración no ofrece una degradación."* y no ofrece un desmantelamiento ficticio.
 
 ### Resumen y Confirmación Previa
 Antes de escribir un solo byte en el disco, el asistente muestra un resumen claro del plan y pide confirmación explícita:
 
 ```text
-¿Deseas guardar esta configuración e inicializar la base de datos?
-> 1. Sí, aplicar cambios
-  2. Cancelar y salir
+Resumen: configurar el almacenamiento global SQLite y mantener habilitado el refuerzo de recuerdos. No se crearán ni seleccionarán proyectos y no se borrarán datos.
+¿Confirmar? [si/NO]:
 ```
 
 > [!NOTE]
-> Si eliges `Cancelar y salir` o presionas `Ctrl+C` en cualquier punto:
-> - El comando termina con código de salida **130**.
+> Si eliges `no` o presionas `Ctrl+C` en cualquier punto:
+> - El comando termina con código de salida **130** (*Cancelled*).
 > - **No se escribe ningún archivo.** Si la carpeta `~/.forge614/` no existía, permanecerá inexistente.
 > - Si ya existía una base de datos con recuerdos previos, estos se preservan intactos sin alteraciones.
 
@@ -275,7 +280,7 @@ Salida esperada (en JSON puro):
 }
 ```
 
-### Reglas Críticas de Habilitación y Migración:
+### Reglas Críticas de Habilitación de Sesiones:
 1. **Nunca hay migración automática:**
    El comando del servidor MCP (`forge614-engram mcp`), la apertura normal de la base de datos (`workspace.open()`), la inicialización (`init`), el listado de proyectos o las búsquedas y lecturas ordinarias **jamás migran automáticamente la base de datos local**. Si intentas usar comandos de sesión en una base sin Esquema 6, el sistema se detiene arrojando el error `MIGRATION_REQUIRED`.
 2. **Tablas incorporadas por el Esquema 6:**
@@ -285,20 +290,51 @@ Salida esperada (en JSON puro):
    - `session_summaries`: Punteros a los resúmenes estructurados de cada sesión.
    - `local_session_bindings`: Asociaciones locales entre sesiones y carpetas en disco.
    - `local_manual_sessions`: Cuadernos de sesión manual exclusiva por proyecto para este equipo.
-3. **Coordinación entre Equipos Pares (*Peer Devices*):**
-   Si sincronizas tu memoria con otras computadoras mediante PostgreSQL:
-   - Las otras computadoras **deben instalar una versión compatible** de Forge614 Engram.
-   - En cada equipo par debe ejecutarse explícitamente `forge614-engram sessions-enable` para preparar su SQLite local antes de sincronizar datos con sesiones.
-4. **Promoción de Réplica PostgreSQL (Formato 1 a Formato 2):**
-   Si la réplica de PostgreSQL fue creada previamente en Formato 1 (solo proyectos y recuerdos), **no se promueve de forma automática**. Para promoverla explícitamente a Formato 2 (con sesiones) se debe ejecutar conscientemente:
-   ```bash
-   forge614-engram sync --upgrade-format
-   ```
-   *(Nota: `sync-watch --upgrade-format` es rechazado; la promoción requiere confirmación en una sola ronda y está protegida por validación optimista CAS).*
 
 ---
 
-## 8. Inspección de Asistentes en JSON (`assistant-list`)
+## 8. Habilitar el Refuerzo de Búsqueda FTS5 (Esquema 7)
+
+Para que el motor de búsqueda SQLite FTS5 incorpore factores de repetición inmutable y estabilidad temporal sin embeddings, la base de datos debe encontrarse en **Esquema 7**.
+
+### Comando Explícito (`reinforcement-enable`)
+```bash
+forge614-engram reinforcement-enable
+```
+
+Salida esperada (en JSON puro):
+```json
+{
+  "enabled": true,
+  "schema": 7
+}
+```
+
+### Reglas Críticas del Refuerzo FTS5:
+1. **Habilitación Aditiva y Transaccional:**
+   Añade las tablas `confirmations` (con clave primaria UUID `confirmationId`, versión referenciada, fecha UTC y sesión opcional) y `confirmation_requests` (para deduplicación idempotente de peticiones por clave). Si la base de datos se encontraba en Esquemas 3, 4 o 5, encadena automáticamente las migraciones previas en una única transacción atómica (`BEGIN IMMEDIATE ... COMMIT`).
+2. **Idempotencia y Protección ante Bases Desaparecidas:**
+   Ejecutar `reinforcement-enable` en una base que ya tiene Esquema 7 es una operación segura que devuelve de inmediato el mismo JSON. Sin embargo, si existe un archivo `.env` configurado cuya base `engram.db` fue eliminada del disco, el comando **falla de forma segura** con error; jamás crea una base vacía silenciosa que oculte la pérdida de datos.
+3. **No Configura Asistentes Automáticamente:**
+   Habilitar el refuerzo no modifica los archivos de configuración de tus asistentes ni sus ganchos. Para actualizar las instrucciones de los asistentes previamente configurados, utiliza el menú interactivo `forge614-engram tui` con su mecanismo seguro de previsualización y respaldo.
+4. **Coordinación entre Equipos Pares (*Peer Devices*):**
+   Si sincronizas tu memoria con otras computadoras mediante PostgreSQL:
+   - Todas las computadoras deben actualizarse a la versión 0.5.0 compatible.
+   - En cada equipo par debe ejecutarse `forge614-engram reinforcement-enable` antes de sincronizar datos con confirmaciones. Si un cliente sin refuerzo recibe un snapshot con confirmaciones, aborta con `REINFORCEMENT_REQUIRED`.
+5. **Promoción de Réplica PostgreSQL (Formato 1 o 2 a Formato 3):**
+   La habilitación local no promueve automáticamente la réplica remota. Para promover la réplica en PostgreSQL y sincronizar eventos de confirmación, se debe ejecutar conscientemente:
+   ```bash
+   forge614-engram sync --upgrade-format
+   ```
+   > [!WARNING]
+   > `sync-watch` rechaza terminantemente la opción `--upgrade-format`. La promoción debe realizarse mediante el comando puntual `sync` para asegurar la confirmación consciente del usuario. Distingue claramente:
+   > - **Esquema SQLite 7:** Estructura física local en `engram.db`.
+   > - **Payload Formato 3:** Estructura serializada de sincronización con confirmaciones.
+   > - **PostgreSQL `state.format = 1`:** Estructura física relacional de la réplica remota (que no cambia).
+
+---
+
+## 9. Inspección de Asistentes en JSON (`assistant-list`)
 
 Para auditar qué asistentes tienes instalados, qué rutas de configuración utilizan y qué nivel de cobertura de memoria ofrecen sin escribir archivos ni abrir menús interactivos:
 
@@ -338,7 +374,7 @@ Salida representativa en JSON (ideal para scripts de automatización o diagnóst
 
 ---
 
-## 9. Inicialización Programática Alternativa (`init`)
+## 10. Inicialización Programática Alternativa (`init`)
 
 Si estás configurando un entorno automatizado donde no deseas interacción humana con el asistente `setup`, puedes inicializar el espacio local básico directamente:
 
@@ -362,7 +398,7 @@ Este comando:
 
 ---
 
-## 10. Primer Proyecto y Primer Recuerdo Manual
+## 11. Primer Proyecto y Primer Recuerdo Manual
 
 ### Crear un Proyecto
 El identificador de proyecto es un identificador único e inmutable (UUID). El nombre visible es puramente descriptivo:

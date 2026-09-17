@@ -22,7 +22,7 @@ export function listProjects(db: Database): Project[] {
 
 export function requireAssistantIntegration(db: Database): void {
     const version = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
-    if (version !== 5 && version !== 6) {
+    if (version !== 5 && version !== 6 && version !== 7) {
       throw new MemoryError("MIGRATION_REQUIRED", "Habilita primero la integración de asistentes con integration-enable.");
     }
   }

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { MemoryError } from "../../shared/errors";
-import { memoryTypes, type Memory, type MemoryVersion } from "../memory";
+import { memoryTypes, type Confirmation, type ConfirmationRequest, type Memory, type MemoryVersion } from "../memory";
 import { projectIdentity, type Project } from "../projects";
 import type { Session, SessionEntry, SessionSummary } from "../sessions";
 import { sessionIdentity } from "../sessions";
+import { assertConfirmationExtension,assertConfirmationRequestExtension,confirmationRequestIdentity,requestOwnerKey,validateConfirmationCollections } from "./confirmations";
 
 export interface MemoryBundle {
   memory: Memory;
@@ -13,10 +14,11 @@ export interface MemoryBundle {
 }
 export interface SyncSnapshotV1 { format: 1; projects: Project[]; memories: MemoryBundle[] }
 export interface SyncSnapshotV2 { format: 2; projects: Project[]; memories: MemoryBundle[]; sessions: Session[]; sessionEntries: SessionEntry[]; sessionSummaries: SessionSummary[] }
-export type SyncSnapshot = SyncSnapshotV1 | SyncSnapshotV2;
+export interface SyncSnapshotV3 { format: 3; projects: Project[]; memories: MemoryBundle[]; sessions: Session[]; sessionEntries: SessionEntry[]; sessionSummaries: SessionSummary[]; confirmations: Confirmation[]; confirmationRequests: ConfirmationRequest[] }
+export type SyncSnapshot = SyncSnapshotV1 | SyncSnapshotV2 | SyncSnapshotV3;
 export const emptySnapshot = (): SyncSnapshotV1 => ({ format:1,projects:[],memories:[] });
-export function normalizeSnapshot(value: SyncSnapshot): SyncSnapshotV2 {
-  return value.format === 2 ? value : { ...value, format: 2, sessions: [], sessionEntries: [], sessionSummaries: [] };
+export function normalizeSnapshot(value: SyncSnapshot): SyncSnapshotV2|SyncSnapshotV3 {
+  return value.format !== 1 ? value : { ...value, format: 2, sessions: [], sessionEntries: [], sessionSummaries: [] };
 }
 export function syncError(code = "SYNC_INVALID"): never {
   throw new MemoryError(code, `${code}: sincronización detenida; se conservan los datos locales y remotos.`);
@@ -44,13 +46,14 @@ function version(v: unknown): asserts v is MemoryVersion {
 export function validateSnapshot(value: unknown): asserts value is SyncSnapshot {
   if(Buffer.byteLength(JSON.stringify(value) ?? "")>8*1024*1024) syncError("SYNC_TOO_LARGE");
   const format=(value as {format?:unknown}|null)?.format;
-  keys(value,format===2?"format,projects,memories,sessions,sessionEntries,sessionSummaries":"format,projects,memories");
-  if((value.format!==1&&value.format!==2) || !Array.isArray(value.projects) || !Array.isArray(value.memories)) syncError();
+  keys(value,format===3?"format,projects,memories,sessions,sessionEntries,sessionSummaries,confirmations,confirmationRequests":format===2?"format,projects,memories,sessions,sessionEntries,sessionSummaries":"format,projects,memories");
+  if((value.format!==1&&value.format!==2&&value.format!==3) || !Array.isArray(value.projects) || !Array.isArray(value.memories)) syncError();
+  const snapshot=value as SyncSnapshot;
   const projects=new Set<string>();const ids=new Set<string>();const topics=new Set<string>();const requests=new Set<string>();
-  for(const p of value.projects) {
+  for(const p of snapshot.projects) {
     keys(p,"projectId,name,createdAt,updatedAt");projectIdentity(p.projectId);text(p.name);date(p.createdAt);date(p.updatedAt);unique(projects,p.projectId);
   }
-  for(const b of value.memories) {
+  for(const b of snapshot.memories) {
     keys(b,"memory,versions,requests,events");keys(b.memory,"id,projectId,scope,topicKey,type,title,content,pinned,version,createdAt,updatedAt,state");
     const {state,...v}=b.memory;version(v);if(state!=="active"&&state!=="archived") syncError();
     unique(ids,v.id);if(v.projectId!==null&&!projects.has(v.projectId)) syncError();
@@ -63,7 +66,7 @@ export function validateSnapshot(value: unknown): asserts value is SyncSnapshot 
     for(const r of b.requests) {
       keys(r,"request_key,payload_hash,version");text(r.request_key);
       if(typeof r.payload_hash!=="string"||!/^[a-f0-9]{64}$/.test(r.payload_hash)||!Number.isInteger(r.version)||r.version<1||r.version>v.version) syncError();
-      unique(requests,canonical([v.projectId,r.request_key]));
+      unique(requests,requestOwnerKey(v.scope,v.projectId,r.request_key));
       const saved=b.versions[r.version-1] as MemoryVersion;
       const expected=createHash("sha256").update(JSON.stringify([saved.scope,saved.projectId,saved.title,saved.content,saved.type,saved.topicKey,saved.pinned,saved.version===1?null:saved.version-1])).digest("hex");
       if(r.payload_hash!==expected) syncError();
@@ -73,7 +76,8 @@ export function validateSnapshot(value: unknown): asserts value is SyncSnapshot 
       keys(e,"action,version,created_at");date(e.created_at);
       if(!["save","archive","restore"].includes(e.action)||!Number.isInteger(e.version)||e.version<1||e.version>v.version) syncError();
       if(e.action==="save") {
-        if(e.version!==eventVersion+1||eventState!=="active"||e.created_at!==b.versions[e.version-1].updatedAt) syncError();
+        const saved=b.versions[e.version-1];
+        if(!saved||e.version!==eventVersion+1||eventState!=="active"||e.created_at!==saved.updatedAt) syncError();
         eventVersion=e.version;
       } else {
         if(eventVersion===0||e.version!==eventVersion) syncError();
@@ -83,11 +87,18 @@ export function validateSnapshot(value: unknown): asserts value is SyncSnapshot 
     }
     if(eventVersion!==v.version||eventState!==state) syncError();
   }
-  if(value.format===2) validateSessions(value as SyncSnapshotV2,projects);
+  if(snapshot.format!==1) validateSessions(snapshot,projects);
+  if(snapshot.format===3) {
+    validateConfirmationCollections(snapshot.confirmations,snapshot.confirmationRequests,{
+      memories:new Map(snapshot.memories.map(bundle=>[bundle.memory.id,bundle])),
+      sessions:new Map(snapshot.sessions.map(session=>[session.sessionId,session])),requestKeys:requests,
+      invalid:syncError,validateVersion:version,canonical,
+    });
+  }
 }
 
-function entryKey(entry: {memoryId:string;version:number}):string { return canonical([entry.memoryId,entry.version]); }
-function validateSessions(snapshot:SyncSnapshotV2,projects:Set<string>):void {
+export function sessionEntryIdentity(entry: {memoryId:string;version:number}):string { return canonical([entry.memoryId,entry.version]); }
+function validateSessions(snapshot:SyncSnapshotV2|SyncSnapshotV3,projects:Set<string>):void {
   if(!Array.isArray(snapshot.sessions)||!Array.isArray(snapshot.sessionEntries)||!Array.isArray(snapshot.sessionSummaries)) syncError();
   const sessions=new Map<string,Session>();const entries=new Map<string,SessionEntry>();const summaries=new Set<string>();
   const memories=new Map(snapshot.memories.map(b=>[b.memory.id,b]));
@@ -103,12 +114,12 @@ function validateSessions(snapshot:SyncSnapshotV2,projects:Set<string>):void {
     const s=sessions.get(e.sessionId);const v=memories.get(e.memoryId)?.versions[e.version-1];
     date(e.recordedAt);
     if(!s||!Number.isSafeInteger(e.version)||!v||v.version!==e.version||v.updatedAt!==e.recordedAt||
-      (v.scope!=="shared"&&v.projectId!==s.projectId)||entries.has(entryKey(e))) syncError();
-    entries.set(entryKey(e),e);
+      (v.scope!=="shared"&&v.projectId!==s.projectId)||entries.has(sessionEntryIdentity(e))) syncError();
+    entries.set(sessionEntryIdentity(e),e);
   }
   for(const p of snapshot.sessionSummaries) {
     keys(p,"sessionId,memoryId,version");
-    const s=sessions.get(p.sessionId);const v=memories.get(p.memoryId)?.versions[p.version-1];const e=entries.get(entryKey(p));
+    const s=sessions.get(p.sessionId);const v=memories.get(p.memoryId)?.versions[p.version-1];const e=entries.get(sessionEntryIdentity(p));
     if(!s||s.kind!=="runtime"||!Number.isSafeInteger(p.version)||!v||v.version!==p.version||!e||e.sessionId!==s.sessionId||
       v.scope!=="project"||v.projectId!==s.projectId||v.type!=="procedure"||v.topicKey!==`session/${s.sessionId}/summary`) syncError();
     unique(summaries,p.sessionId);
@@ -131,11 +142,19 @@ export function reconcile(base:SyncSnapshot,local:SyncSnapshot,remote:SyncSnapsh
   assertExtension(base,local);assertExtension(base,remote);
   const data={projects:merge(base.projects,local.projects,remote.projects,p=>p.projectId),memories:merge(base.memories,local.memories,remote.memories,b=>b.memory.id)};
   let result:SyncSnapshot={format:1,...data};
-  if([base,local,remote].some(s=>s.format===2)) {
+  if([base,local,remote].some(s=>s.format!==1)) {
     const [b,l,r]=[normalizeSnapshot(base),normalizeSnapshot(local),normalizeSnapshot(remote)] as const;
-    result={format:2,...data,sessions:mergeSessions(b.sessions,l.sessions,r.sessions),
-      sessionEntries:merge(b.sessionEntries,l.sessionEntries,r.sessionEntries,entryKey),
+    const sessions={sessions:mergeSessions(b.sessions,l.sessions,r.sessions),
+      sessionEntries:merge(b.sessionEntries,l.sessionEntries,r.sessionEntries,sessionEntryIdentity),
       sessionSummaries:merge(b.sessionSummaries,l.sessionSummaries,r.sessionSummaries,s=>s.sessionId)};
+    if([base,local,remote].some(snapshot=>snapshot.format===3)) {
+      const memories=new Map(data.memories.map(bundle=>[bundle.memory.id,bundle]));
+      const confirmations=(snapshot:SyncSnapshot):Confirmation[]=>snapshot.format===3?snapshot.confirmations:[];
+      const requests=(snapshot:SyncSnapshot):ConfirmationRequest[]=>snapshot.format===3?snapshot.confirmationRequests:[];
+      result={format:3,...data,...sessions,
+        confirmations:merge(confirmations(base),confirmations(local),confirmations(remote),item=>item.confirmationId),
+        confirmationRequests:merge(requests(base),requests(local),requests(remote),item=>confirmationRequestIdentity(memories,item))};
+    } else result={format:2,...data,...sessions};
   }
   try { validateSnapshot(result); } catch(error) {
     if(error instanceof MemoryError&&error.code==="SYNC_TOO_LARGE") throw error;
@@ -162,7 +181,7 @@ function mergeSessions(base:Session[],local:Session[],remote:Session[]):Session[
 
 /** A merge may add revisions but cannot erase or rewrite either participant. */
 export function assertExtension(current:SyncSnapshot,next:SyncSnapshot):void {
-  if(current.format===2 && next.format!==2) syncError("SYNC_CONFLICT");
+  if((current.format===2&&next.format===1)||(current.format===3&&next.format!==3)) syncError("SYNC_CONFLICT");
   const projects=new Map(next.projects.map(p=>[p.projectId,p]));
   const bundles=new Map(next.memories.map(b=>[b.memory.id,b]));
   for(const p of current.projects) if(!projects.has(p.projectId)||projects.get(p.projectId)!.createdAt!==p.createdAt) syncError("SYNC_CONFLICT");
@@ -173,12 +192,17 @@ export function assertExtension(current:SyncSnapshot,next:SyncSnapshot):void {
       canonical(n.events.slice(0,b.events.length))!==canonical(b.events)||
       b.requests.some(r=>!n.requests.some(s=>canonical(r)===canonical(s)))) syncError("SYNC_CONFLICT");
   }
-  if(current.format===2&&next.format===2) {
+  if(current.format!==1&&next.format!==1) {
     const sessions=new Map(next.sessions.map(s=>[s.sessionId,s]));
-    const entries=new Map(next.sessionEntries.map(e=>[entryKey(e),e]));
+    const entries=new Map(next.sessionEntries.map(e=>[sessionEntryIdentity(e),e]));
     const summaries=new Map(next.sessionSummaries.map(s=>[s.sessionId,s]));
     for(const s of current.sessions) {const n=sessions.get(s.sessionId);if(!n||!sessionExtends(s,n)) syncError("SYNC_CONFLICT");}
-    for(const e of current.sessionEntries) if(canonical(entries.get(entryKey(e)))!==canonical(e)) syncError("SYNC_CONFLICT");
+    for(const e of current.sessionEntries) if(canonical(entries.get(sessionEntryIdentity(e)))!==canonical(e)) syncError("SYNC_CONFLICT");
     for(const s of current.sessionSummaries) {const n=summaries.get(s.sessionId);if(!n||n.memoryId!==s.memoryId||n.version<s.version) syncError("SYNC_CONFLICT");}
+  }
+  if(current.format===3&&next.format===3) {
+    const memories=new Map(next.memories.map(bundle=>[bundle.memory.id,bundle]));
+    assertConfirmationExtension(current.confirmations,next.confirmations,canonical,()=>syncError("SYNC_CONFLICT"));
+    assertConfirmationRequestExtension(current.confirmationRequests,next.confirmationRequests,memories,canonical,()=>syncError("SYNC_CONFLICT"));
   }
 }

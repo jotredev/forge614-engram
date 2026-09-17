@@ -21,3 +21,10 @@ test("directory resolution reuses its binding and refuses same-name ambiguity", 
   expect(() => resolveProjectDirectory(db, "/other", "New", true)).toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
   expect(listProjects(db)).toHaveLength(1);
 }));
+
+test("schema 7 retains assistant integration without admitting future versions", () => withDatabase(db => {
+  enableAssistantIntegration(db); db.exec("PRAGMA user_version=7");
+  expect(resolveProjectDirectory(db,"/seven","Seven",true).project?.name).toBe("Seven");
+  db.exec("PRAGMA user_version=8");
+  expect(()=>projectForDirectory(db,"/seven")).toThrow(expect.objectContaining({code:"MIGRATION_REQUIRED"}));
+}));

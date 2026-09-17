@@ -32,3 +32,20 @@ test("shared saves require explicit intent and paired session ownership without 
     expect(h.store.listProjects()).toEqual([]);
   } finally {await h.close();}
 });
+
+test("enrolled MCP duplicate saves reinforce one project memory without creating a version or leaking another owner", async () => {
+  const h=await sdkHarness(registerMemoryTools);
+  try {
+    h.store.enableSearchReinforcement();
+    const first=(await h.call("memory_save",{title:"Ownership",content:"Keep isolated",type:"decision",topicKey:"owner",requestKey:"project-create"})).data;
+    const other=h.store.createProject("Other");
+    const foreign=h.store.save({projectId:other.projectId,title:"Ownership",content:"Keep isolated",type:"decision",topicKey:"owner",requestKey:"other-create"});
+    const repeated=(await h.call("memory_save",{title:"Ownership",content:"Keep isolated",type:"decision",topicKey:"owner",expectedVersion:1,requestKey:"project-observation"})).data;
+    expect(repeated).toMatchObject({id:first.id,projectId:first.projectId,version:1});
+    expect(repeated.id).not.toBe(foreign.id);
+    expect(h.store.history(first.projectId,first.id)).toHaveLength(1);
+    expect(h.store.search(first.projectId,"isolated",10,"project")[0]).toMatchObject({
+      memory:{id:first.id,version:1},explanation:{reinforcement:{duplicateCount:1}},
+    });
+  } finally {await h.close();}
+});

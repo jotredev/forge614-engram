@@ -23,3 +23,12 @@ test("closing a store is idempotent and prevents subsequent operations", () => {
   expect(() => store.close()).not.toThrow();
   expect(() => store.listProjects()).toThrow();
 });
+
+test("store facade explicitly reports and enables search reinforcement", () => {
+  const store=new MemoryStore(":memory:");
+  try {
+    expect(store.reinforcementEnabled()).toBe(false);
+    store.enableSearchReinforcement();
+    expect(store.reinforcementEnabled()).toBe(true);
+  } finally { store.close(); }
+});

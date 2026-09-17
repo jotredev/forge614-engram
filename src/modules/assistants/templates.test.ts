@@ -30,6 +30,11 @@ test('generated OpenCode plugin executes independently and preserves custom syst
   expect(system.system[0]).toStartWith('Original system');expect(system.system[0]).toContain('memory_search');expect(system.system[1]).toBe('Another original');
   expect(system.system[0]).toStartWith('Original system\n\n');
   expect(system.system[0]).toContain('memory_session_start');
+  expect(system.system[0]).toContain('stable requestKey');
+  expect(system.system[0]).toContain('new requestKey');
+  expect(system.system[0]).toContain('project scope by default');
+  expect(system.system[0]).toContain('Read the existing topic');
+  expect(system.system[0]).toContain('does not verify that it is true');
   const compact={context:['Existing recovery'],prompt:'Custom compaction prompt'};
   await hooks['experimental.session.compacting']({},compact);await hooks['experimental.session.compacting']({},compact);
   expect(compact.context).toHaveLength(2);expect(compact.context[0]).toBe('Existing recovery');expect(compact.prompt).toBe('Custom compaction prompt');

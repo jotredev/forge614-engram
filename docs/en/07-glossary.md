@@ -1,81 +1,101 @@
 # 07 (EN). Plain-Language Glossary
 
-> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Active (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
+> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
-This glossary explains every technical concept using everyday real-world analogies first, immediately followed by the formal technical term in parentheses.
+This glossary explains each technical concept using everyday life analogies and metaphors first, followed immediately by its formal technical term in parentheses.
 
 ---
 
-### Progressive Memory Session (Progressive Memory Session / `Session`)
-Like a dedicated shift in a workshop: a bounded period of focus where a developer or an AI assistant collaborates on a specific task within a project, logging technical decisions and steps as they happen.
+### Immutable Memory Confirmation (`Confirmation` / `confirmations`)
+Like making a pencil tally mark on the cover of a workshop manual every time you consult it, without tearing out pages or reprinting the whole book: a timestamped, immutable historical event recording that an existing active memory was observed again by an assistant, without creating artificial versions 2 or 3 or duplicating content. It denotes a repeated observation; it does not certify absolute truth or human verification.
 
-### Runtime Work Session (Runtime Session / `kind: "runtime"`)
-Like punching a clock at the start and end of a task: an active session initiated deliberately via `session-start` that records a start timestamp (`startedAt`), is associated with a working folder, and remains open until formally concluded with `session-end` (`endedAt`).
+### FTS5 Reinforced Search Without Embeddings
+Like an experienced librarian who organizes books on the front counter, giving priority to those frequently referenced and recently reviewed, without needing to X-ray them or run complex neural networks: a mathematical ranking mechanism that weights BM25 lexical matches by multiplying them by pinned boosts (`pinned`), 30-day recency boosts (`recencyBoost`), and cumulative stability boosts (`stabilityBoost`).
 
-### Manual Fallback Session (Manual Fallback Session / `kind: "manual"` / `local_manual_sessions`)
-Like a desktop scratchpad that never leaves your desk: a permanent local fallback ledger that exists on your computer for each project. If you save a memory from the terminal without specifying an active session, Engram automatically files it here so its temporal context is preserved.
+### 15-Minute Sliding Deduplication Window
+Like remembering what someone told you ten minutes ago in the same conversation without mixing it up with what they mentioned last month: a strict temporal rule for general memories without a topic (`topicKey: null`), where notes observed within the last 15 minutes (`now - 900,000 ms` to `now`) are treated as candidate duplicates. If more than 15 minutes elapse, Engram creates an independent new memory to keep distant facts separate.
 
-### Session Event Timeline (Session Timeline / `timeline` / `memory_timeline`)
-Like reviewing the photos taken immediately before and after a key picture on a camera roll: a feature that centers on a specific memory (`focus`) and displays the notes recorded immediately before (`before`) and after (`after`) within that same work session.
+### Idempotent Request Key Replay (`requestKey` / `Replay`)
+Like showing the same stamped ticket stub at the box office after a power outage: if a save operation is interrupted and re-attempted with the same key and identical content (matching SHA-256 cryptographic hash), the system immediately returns the cached response without altering revision histories or appending redundant confirmations.
 
-### Ranked Context Dossier (Ranked Context / `context` / `memory_context`)
-Like an executive briefing folder neatly organized into labeled tabs: a synthesized report that groups memories into three essential sections: pinned essential rules (`pinned`), recent project agreements (`recent`), and past session summaries (`summaries`).
+### Request Payload Conflict (`REQUEST_CONFLICT`)
+Like attempting to cash an already-issued check with a different amount or payee written in pen: a security error that aborts immediately when an existing request key (`requestKey`) is reused with differing title, content, scope, or type.
 
-### Lightweight Memory Preview (Memory Preview / `MemoryPreview`)
-Like reading a newspaper headline and lead paragraph before buying the paper: an abbreviated version of a memory whose body text is capped at **300 Unicode code points** with a flag indicating whether it was trimmed (`truncated: true`). Allows an AI model to browse dozens of notes without saturating its context window.
+### System Clock Skew (`CLOCK_SKEW`)
+Like looking at a slow wall clock that claims it is 2:00 PM when you already stamped a receipt at 3:00 PM: a chronological safeguard that rejects a confirmation when the local system clock reads earlier than the timestamp recorded on the confirmed memory version.
+
+### Asymptotic Stability Saturation ($\frac{n}{n+4}$)
+Like a student building mastery in a topic through practice: the first few review sessions yield major confidence boosts, but after many repetitions the incremental benefit smoothly levels off without expanding infinitely. In Engram, stability boost starts at 0.00, reaches halfway (0.02) at 4 cumulative observations, and converges toward an asymptotic ceiling of 0.04.
+
+### PostgreSQL Replica Format 3 Promotion (`sync --upgrade-format`)
+Like opening a new archival section in a shared bank vault: a deliberate procedure via `sync --upgrade-format` that updates the remote PostgreSQL replica to transfer immutable confirmations and cached requests, preserving the physical table schema unchanged (`state.format = 1`) and protecting peer clients that have not yet enabled Schema 7 (`REINFORCEMENT_REQUIRED`).
+
+---
+
+### Progressive Memory Session (`Session`)
+Like a dedicated shift in an artisan workshop: a bounded period of focused effort where a developer and an AI assistant collaborate on a specific task within a project, capturing technical decisions as they happen.
+
+### Runtime Session (`kind: "runtime"`)
+Like starting and stopping a project stopwatch: a session explicitly initiated via `session-start` that records a start timestamp (`startedAt`), the bound working folder, and remains active until formally concluded via `session-end` (`endedAt`).
+
+### Manual Fallback Session (`kind: "manual"` / `local_manual_sessions`)
+Like a persistent scratchpad sitting on your desk: a permanent, machine-local fallback notebook created automatically for each project. If you save a note from the CLI without specifying an active session, Engram logs it in this fallback notebook so context is never lost.
+
+### Session Event Timeline (`timeline` / `memory_timeline`)
+Like reviewing the photos taken immediately before and after a key picture in a photo album: a retrieval tool centered on a focus memory (`focus`) that chronologically reveals notes captured immediately before (`before`) and after (`after`) within the same work session.
+
+### Ranked Context Dossier (`context` / `memory_context`)
+Like an executive briefing folder neatly organized into tabs before entering an important meeting: a synthesized dossier grouping memories into three essential sections: critical pinned notes (`pinned`), recent working decisions (`recent`), and previous session logs (`summaries`).
+
+### Lightweight Memory Preview (`MemoryPreview`)
+Like reading a newspaper's headline and lead paragraph before buying the paper: a compact representation of a memory whose text is capped at **300 Unicode code points** with a boolean flag indicating truncation (`truncated: true`), allowing models to skim dozens of notes without context bloat.
 
 ### Strict Serialization Byte Budget (`maxBytes`)
-Like the maximum weight allowance for airline carry-on luggage: a strict numerical limit (between 1024 and 65536 bytes) that measures **the exact UTF-8 byte payload size of the resulting JSON transmission**. **This is not an LLM token budget**, but a physical inter-process communication boundary.
+Like the maximum baggage weight allowance on an aircraft: a strict numerical budget (1024 to 65536 bytes) measuring **the exact UTF-8 byte weight of the final serialized JSON payload**. **It is not an LLM token budget**, but a physical inter-process transport ceiling.
 
-### Structured Session Summary (Structured Session Summary / `session-summary`)
-Like an official project handover report: a standardized document containing exactly six required sections: target goal (`goal`), key directives (`instructions`), lessons learned (`discoveries`), completed milestones (`accomplishments`), next steps (`nextSteps`), and modified files (`files`). Stored under the reserved topic `session/<id>/summary`.
+### Structured Session Summary (`session-summary`)
+Like an official project handover document: a standardized log containing six mandatory fields: objectives (`goal`), rules (`instructions`), lessons learned (`discoveries`), milestones (`accomplishments`), pending tasks (`nextSteps`), and modified files (`files`), stored under reserved topic `session/<id>/summary`.
 
-### Session Inference (Session Inference)
-Like an attentive colleague who knows which project you are tackling: when an AI model saves a note without passing a session ID, Engram checks whether exactly one active session was started in the last 7 days on that folder. If found, it automatically links the note (`sessionSource: "inferred"`). If two or more exist, it halts to avoid mistakes (`AMBIGUOUS_SESSION`).
-
-### Atomic Replica Format 2 Promotion (Format 2 Promotion / `sync --upgrade-format`)
-Like adding an extra lane to an existing highway without halting traffic: an explicit, CAS-protected upgrade that promotes a remote PostgreSQL replica from Format 1 to Format 2 (enabling the synchronization of sessions and summaries). Must be invoked deliberately via `sync --upgrade-format`.
+### Session Contextual Inference (Session Inference)
+Like an attentive assistant who already knows what you are working on: when an AI model saves a note without an explicit session ID, Engram checks whether exactly one runtime session was started in the last 7 days for that folder. If found, it links the note automatically (`sessionSource: "inferred"`). If multiple candidates exist, it halts with `AMBIGUOUS_SESSION`.
 
 ### OpenCode Plugin Conflict (`CONFLICT`)
-Like noticing a lock has been rekeyed and choosing not to force it: a safety mechanism where Engram detects that `plugins/forge614-engram.js` already contains divergent code and halts immediately without overwriting it, allowing the developer to reconcile it manually.
+Like finding a lock replaced on a door you prefer not to force open: a safety safeguard where Engram, detecting that `plugins/forge614-engram.js` already exists with custom modifications, halts safely without overwriting it, allowing the developer to review and reconcile changes manually.
 
-### Model Context Protocol (Model Context Protocol / MCP)
-An open standard protocol enabling AI models to interact uniformly with tools. In Forge614 Engram, it exposes 10 local memory tools over standard I/O streams (`stdio`).
+### Model Context Protocol (MCP)
+An open standard protocol enabling AI models to interact uniformly with external tools. In Forge614 Engram, the native stdio server exposes 10 official memory tools.
 
-### Terminal User Interface (Terminal User Interface / TUI / `tui`)
-A full-screen interactive dashboard inside your command console where you can navigate options using keyboard arrows and the spacebar, preview changes, run self-tests, and confirm assistant configurations.
+### Terminal User Interface (TUI / `tui`)
+An interactive full-screen terminal dashboard where developers can navigate with arrow keys, select assistants, run MCP self-tests, preview configuration diffs, and apply changes cleanly.
 
-### MCP Server Self-Test (MCP Server Self-Test)
-An automated asynchronous test executed by the TUI menu against the installed binary, ensuring that it responds in under 5 seconds and exposes all 10 official memory tools.
+### MCP Server Self-Test
+An asynchronous automated test executed by the TUI on the installed binary, confirming that the server spawns, handshakes, and exposes all 10 tools within a strict 5-second deadline.
 
-### Machine-Local Project Binding (Project Binding / `project_bindings`)
-A database record that maps a local filesystem directory path on this computer to a project ID (`projectId`). It is exclusive to this machine and is never synced across the network.
+### Local Project Directory Binding (`project_bindings`)
+A machine-local database record binding a directory path on this computer to a `projectId`. It is strictly local to each machine and never replicated over the network.
 
-### Git Common Directory (Git Common Directory / `--git-common-dir`)
-The canonical root of a Git repository that allows multiple subdirectories and linked worktrees (`git worktree add`) to share identical project identity and memory without duplication.
-
-### BM25 Algorithm and Recency Multiplier
-A mathematical formula (*Best Matching 25*) evaluating search relevance by combining term frequencies, manual pinning priority (`pinned`), and progressive temporal recency decay.
+### Git Canonical Common Directory (`--git-common-dir`)
+The canonical root of a Git repository that allows subdirectories and linked worktrees (`git worktree add`) to share identical project identity and memories without duplicate records.
 
 ---
 
 ### Feature-Oriented Modular Monolith
-Like a master craftsman's portable toolbox where every drawer has a specific, labeled purpose, yet everything travels together in a single sturdy case: a software design where an entire application compiles into a single autonomous binary executable for your OS, while its internal codebase is partitioned cleanly by real-world business concepts (`memory`, `sessions`, `projects`, `search`) with explicit public interfaces (`index.ts`), avoiding network microservice overhead.
+Like a professional modular toolbox where each drawer serves a clean, dedicated purpose while traveling inside a single portable chest: a software architecture compiled into a single executable binary, partitioning internal logic by domain concepts (`memory`, `sessions`, `projects`, `search`) with explicit boundaries (`index.ts`) without distributed network microservices.
 
-### Compatible Facade Pattern (Compatible Facade / `MemoryStore`)
-Like an elegant hotel reception desk: a friendly, familiar counter that serves guests exactly as it always has, while behind the scenes a coordinated team of specialists handles storage, sessions, and queries without requiring guests to learn a new protocol.
+### Compatible Facade Pattern (`MemoryStore`)
+Like the reception desk of a grand hotel: a familiar, welcoming face providing an immutable public contract to SDK callers, while behind the desk specialized subsystems handle storage without breaking existing integration code.
 
-### AST Architecture Auditor (Abstract Syntax Tree Architecture Auditor / `import-rules`)
-Like a strict customs inspector inspecting cargo manifests at every checkpoint: an automated verification tool built using the TypeScript compiler API that analyzes every import and export across the project, ensuring architectural boundaries are respected and preventing deadlocks or circular dependency loops (*cycles*).
+### TypeScript AST Architecture Auditor (`import-rules`)
+Like a strict customs officer checking every parcel before admitting it across the border: an automated tool that parses the TypeScript Abstract Syntax Tree, analyzes all `import` declarations, enforces unidirectional flow, and fails tests if cyclical dependencies arise.
 
-### Colocated Sibling Tests (Colocated Sibling Tests / `<file>.test.ts`)
-Like keeping a fire extinguisher immediately next to the machine that could overheat, rather than locked away at the end of a long hallway: the software engineering practice of placing unit tests directly alongside the implementation file that owns that behavior (e.g., `memory.test.ts` next to `memory.ts`), ensuring immediate visibility and ownership.
+### Colocated Sibling Tests (`<file>.test.ts`)
+Like keeping the fire extinguisher directly beside the machine that could overheat: placing unit tests directly adjacent to the production implementation file they verify, ensuring every logical component has an immediate quality guardian.
 
-### Composite Outer Transaction (Composite Outer Transaction / `writes.ts`)
-Like signing a formal notary deed where all seals, signatures, and payments must be confirmed simultaneously or the entire transaction is cancelled without partial residue: an indivisible SQLite operation (`BEGIN IMMEDIATE ... COMMIT`) that records the project, memory, immutable version, audit event, request idempotency hash, and session entry in a single atomic commit.
+### Composite Outer Transaction (`writes.ts`)
+Like signing a formal deed where either all stamps, signatures, and payments register together, or the entire transaction is canceled cleanly without leaving partial records: an atomic SQLite transaction (`BEGIN IMMEDIATE ... COMMIT`) registering projects, memories, versions, audit events, request hashes, and session entries in a single step.
 
-### Compare-and-Swap (CAS / Optimistic Locking)
-Like two notaries stamping the next numbered page in an official ledger: each checks the current ledger number first; the first one to arrive stamps the new page and advances the number, while the second notices the number changed and respectfully halts without overwriting the first notary's work.
+### Optimistic Compare-and-Swap Locking (CAS)
+Like two notaries stamping a sequentially numbered ledger: each checks the current hash before stamping; the first to stamp advances the sequence, while the second notices the hash changed and halts safely without damaging the record.

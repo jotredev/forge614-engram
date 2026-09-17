@@ -1,9 +1,15 @@
 import type { Database } from "bun:sqlite";
 import { type Memory,type MemoryVersion,type SearchResult,type SearchScope } from "../../modules/memory";
+import {
+  rankingFactors,MILLISECONDS_PER_DAY,RANKING_CONTENT_WEIGHT,RANKING_PINNED_WEIGHT,
+  RANKING_RECENCY_DAYS,RANKING_RECENCY_WEIGHT,RANKING_STABILITY_BASE,RANKING_STABILITY_WEIGHT,
+  RANKING_TITLE_WEIGHT,RANKING_TOPIC_WEIGHT,
+} from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
 import type { ContextRow,MemoryPreview,TimelineRow } from "../../modules/search";
 import { searchTerms,validateSearchLimit,type ContextInput,type ContextResult,type PreviewResult,type TimelineInput,type TimelineResult,type VersionRead } from "../../modules/search";
 import { MemoryError } from "../../shared/errors";
+import { reinforcementEnabled } from "./confirmations";
 import { memory,owner,required,type Row } from "./memory";
 import { sessionsEnabled } from "./sessions";
 
@@ -45,11 +51,43 @@ function literalQuery(columns: string, selection: Selection): string {
     ORDER BY m.pinned DESC,m.updated_at DESC,m.id ASC`;
 }
 function ftsQuery(columns: string, selection: Selection): string {
-  return `SELECT ${columns},bm25(memories_fts,5.0,1.0,3.0) AS bm25,
+  return `SELECT ${columns},bm25(memories_fts,${RANKING_TITLE_WEIGHT},${RANKING_CONTENT_WEIGHT},${RANKING_TOPIC_WEIGHT}) AS bm25,
     (1 + 0.10*m.pinned + 0.06/(1+MAX(0,julianday('now')-julianday(m.updated_at))/30)) AS multiplier
     FROM memories_fts JOIN memories m ON m.rowid=memories_fts.rowid
     WHERE memories_fts MATCH ? AND ${selection.sql} AND m.state='active'
     ORDER BY bm25 * multiplier ASC,m.id ASC LIMIT ?`;
+}
+
+function reinforcedFtsQuery(columns: string, selection: Selection): string {
+  const multiplier = `(1 + ${RANKING_PINNED_WEIGHT}*candidate.pinned
+    + ${RANKING_RECENCY_WEIGHT}/(1+MAX(0,(request_clock.nowMs
+      -(unixepoch(candidate.lastSeenAt)*1000+CAST(substr(candidate.lastSeenAt,21,3) AS INTEGER)))/${MILLISECONDS_PER_DAY}.0)/${RANKING_RECENCY_DAYS})
+    + ${RANKING_STABILITY_WEIGHT}*(candidate.revisionCount+candidate.duplicateCount)
+      /(candidate.revisionCount+candidate.duplicateCount+${RANKING_STABILITY_BASE}))`;
+  return `WITH request_clock(nowMs) AS (VALUES (?)), candidate AS (
+    SELECT ${columns},bm25(memories_fts,${RANKING_TITLE_WEIGHT},${RANKING_CONTENT_WEIGHT},${RANKING_TOPIC_WEIGHT}) AS bm25,
+      m.version-1 AS revisionCount,
+      (SELECT count(*) FROM confirmations c WHERE c.memoryId=m.id) AS duplicateCount,
+      max(m.updated_at,coalesce((SELECT max(c.recordedAt) FROM confirmations c WHERE c.memoryId=m.id),m.updated_at)) AS lastSeenAt
+    FROM memories_fts JOIN memories m ON m.rowid=memories_fts.rowid
+    WHERE memories_fts MATCH ? AND ${selection.sql} AND m.state='active'
+  ), ranked AS (
+    SELECT candidate.*,${multiplier} AS multiplier FROM candidate CROSS JOIN request_clock
+  )
+  SELECT * FROM ranked ORDER BY bm25*multiplier ASC,id ASC LIMIT ?`;
+}
+
+type ReinforcedSearchRow = {
+  bm25:number; multiplier:number; revisionCount:number; duplicateCount:number; lastSeenAt:string; pinned:number;
+};
+
+function reinforcedExplanation(row: ReinforcedSearchRow, now: string): SearchResult["explanation"] {
+  const {multiplier:_jsMultiplier,...reinforcement}=rankingFactors({
+    revisionCount:row.revisionCount,
+    duplicateCount:row.duplicateCount,
+    lastSeenAt:row.lastSeenAt,
+  },row.pinned===1,now);
+  return {mode:"fts5",bm25:row.bm25,multiplier:row.multiplier,orderScore:row.bm25*row.multiplier,reinforcement};
 }
 
 function readSearchPreviews(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): PreviewResult[] {
@@ -66,6 +104,11 @@ function readSearchPreviews(db: Database, projectId: string | null, query: strin
       }
     } finally { statement.finalize(); }
     return result;
+  }
+  if (reinforcementEnabled(db)) {
+    const requestTime=new Date(),now=requestTime.toISOString();
+    const rows=db.query(reinforcedFtsQuery(PREVIEW_COLUMNS,selection)).all(requestTime.getTime(),parsed.match,...selection.args,limit) as (PreviewRow&ReinforcedSearchRow)[];
+    return rows.map(row=>({memory:preview(row),explanation:reinforcedExplanation(row,now)}));
   }
   const rows = db.query(ftsQuery(PREVIEW_COLUMNS, selection)).all(parsed.match, ...selection.args, limit) as (PreviewRow & {bm25:number;multiplier:number})[];
   return rows.map(row => ({ memory: preview(row), explanation: { mode: "fts5", bm25: row.bm25,
@@ -200,6 +243,11 @@ export function search(db: Database, projectId: string | null, query: string, li
         statement.finalize();
       }
       return result;
+    }
+    if (reinforcementEnabled(db)) {
+      const requestTime=new Date(),now=requestTime.toISOString();
+      const rows=db.query(reinforcedFtsQuery("m.*",selection)).all(requestTime.getTime(),parsed.match,...selection.args,limit) as (Row&ReinforcedSearchRow)[];
+      return rows.map(row=>({memory:memory(row),explanation:reinforcedExplanation(row,now)}));
     }
     const rows = db.query(ftsQuery("m.*", selection)).all(parsed.match,...selection.args,limit) as (Row & { bm25: number; multiplier: number })[];
     return rows.map(row => ({ memory: memory(row), explanation: { mode: "fts5", bm25: row.bm25,

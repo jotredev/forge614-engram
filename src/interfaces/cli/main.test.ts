@@ -28,6 +28,7 @@ test("help, version and empty project list create no storage", () => {
   for (const syntax of [
     "sync [--upgrade-format]",
     "sessions-enable",
+    "reinforcement-enable",
     "session-start --directory <carpeta> --session-id <id>",
     "session-end --project-id <UUID> --session-id <id>",
     "session-summary --project-id <UUID> --session-id <id> --summary-json <json>",
@@ -37,6 +38,8 @@ test("help, version and empty project list create no storage", () => {
     "search   --query <texto> [--limit <1..100>] [--preview]",
     "get      --id <recuerdo> [--version <n>]",
   ]) expect(help).toContain(syntax);
+  expect(help).toContain("--upgrade-format promueve al formato local habilitado (hasta 3).");
+  expect(help).toContain("todos deben entender el formato seleccionado; el refuerzo requiere formato 3.");
   expect(run(dir,"--version").stdout).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
   expect(JSON.parse(run(dir,"project-list").stdout)).toEqual([]);
 });

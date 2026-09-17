@@ -106,6 +106,24 @@ test("stdio save, search, get, history, update and request replay persist across
   expect(persisted.results[0]?.memory.id).toBe(saved.id);
 });
 
+test("stdio duplicate saves reinforce only the selected project without increasing its version", async () => {
+  const root=temporary();const userDirectory=join(root,"user");const a=temporary();const b=temporary();
+  expect(runCli(root,userDirectory,"reinforcement-enable").code).toBe(0);
+  const firstConnection=await connect({cwd:root,userDirectory,roots:[a]});
+  const input={title:"Runtime owner",content:"Project-local observation",type:"decision",topicKey:"runtime-owner"};
+  const first=data(await call(firstConnection.client,"memory_save",{...input,requestKey:"a-create"})) as {id:string;projectId:string;version:number};
+  const secondConnection=await connect({cwd:root,userDirectory,roots:[b]});
+  const foreign=data(await call(secondConnection.client,"memory_save",{...input,requestKey:"b-create"})) as {id:string;projectId:string};
+  const repeated=data(await call(firstConnection.client,"memory_save",{...input,expectedVersion:1,requestKey:"a-observation"})) as {id:string;projectId:string;version:number};
+  expect(repeated).toEqual(expect.objectContaining({id:first.id,projectId:first.projectId,version:1}));
+  expect(repeated.id).not.toBe(foreign.id);
+  const history=data(await call(firstConnection.client,"memory_history",{id:first.id})) as unknown[];
+  expect(history).toHaveLength(1);
+  const searched=data(await call(firstConnection.client,"memory_search",{query:"observation",scope:"project"})) as {results:Array<{memory:{id:string};explanation:{reinforcement:{duplicateCount:number}}}>};
+  expect(searched.results).toHaveLength(1);
+  expect(searched.results[0]).toMatchObject({memory:{id:first.id},explanation:{reinforcement:{duplicateCount:1}}});
+});
+
 test("shared saves require explicit scope and a nonempty global-intent explanation", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect(runCli(root, userDirectory, "integration-enable").code).toBe(0);

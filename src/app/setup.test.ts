@@ -35,12 +35,15 @@ test("setup cancellation leaves a fresh workspace absent", async () => {
 
 test("setup defaults to no PostgreSQL and initializes global storage without a project", async () => {
   const { config, workspace } = fixture();
-  const { io, output, questions } = conversation(["", "sí"], () => expect(existsSync(config.root)).toBe(false));
+  const { io, output, questions } = conversation(["", "", "sí"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(2);
+  expect(questions).toHaveLength(3);
   expect(workspace.listProjects()).toEqual([]);
   expect(readFileSync(join(config.root, ".env"), "utf8")).toBe('FORMAT_VERSION="2"\nSTORAGE="sqlite"\n');
   expect(output.join("\n")).toContain(config.databasePath);
+  const store = workspace.open(true);
+  try { expect(store.reinforcementEnabled()).toBe(false); }
+  finally { store.close(); }
 });
 
 test("setup preserves existing projects and memories without asking which project to use", async () => {
@@ -51,9 +54,9 @@ test("setup preserves existing projects and memories without asking which projec
   try { id = store.save({ projectId: project.projectId, title: "Keep", content: "SQLite", type: "fact" }).id; }
   finally { store.close(); }
   const before = readFileSync(join(config.root, ".env"));
-  const { io, output, questions } = conversation(["no", "yes"]);
+  const { io, output, questions } = conversation(["no", "no", "yes"]);
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(2);
+  expect(questions).toHaveLength(3);
   expect(workspace.listProjects()).toEqual([project]);
   expect(readFileSync(join(config.root, ".env"))).toEqual(before);
   const reopened = workspace.open(true);
@@ -65,9 +68,9 @@ test("setup preserves existing projects and memories without asking which projec
 
 test("setup retries invalid confirmation without interpreting old project menu choices", async () => {
   const { config, workspace } = fixture();
-  const { io, questions } = conversation(["no", "1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
+  const { io, questions } = conversation(["no", "no", "1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(7);
+  expect(questions).toHaveLength(8);
   expect(workspace.listProjects()).toEqual([]);
 });
 
@@ -93,4 +96,54 @@ test("setup refuses a missing configured database before prompting without recre
   await expect(runSetup(io, config)).rejects.toMatchObject({ code: "DATABASE_MISSING" });
   expect(questions).toEqual([]);
   expect(existsSync(config.databasePath)).toBe(false);
+});
+
+test("setup only enrolls reinforcement after the final confirmation", async () => {
+  const declined = fixture();
+  declined.workspace.init();
+  const declinedConfig = readFileSync(join(declined.config.root, ".env"));
+  expect(await runSetup(conversation(["no", "no", "si"]).io, declined.config))
+    .toEqual({ cancelled: false, storage: "sqlite" });
+  expect(readFileSync(join(declined.config.root, ".env"))).toEqual(declinedConfig);
+  let store = declined.workspace.open(true);
+  try { expect(store.reinforcementEnabled()).toBe(false); }
+  finally { store.close(); }
+
+  const cancelled = fixture();
+  cancelled.workspace.init();
+  const cancelledDatabase = readFileSync(cancelled.config.databasePath);
+  const cancelledConfig = readFileSync(join(cancelled.config.root, ".env"));
+  expect(await runSetup(conversation(["no", "si", "no"]).io, cancelled.config))
+    .toEqual({ cancelled: true });
+  expect(readFileSync(cancelled.config.databasePath)).toEqual(cancelledDatabase);
+  expect(readFileSync(join(cancelled.config.root, ".env"))).toEqual(cancelledConfig);
+  store = cancelled.workspace.open(true);
+  try { expect(store.reinforcementEnabled()).toBe(false); }
+  finally { store.close(); }
+
+  const accepted = fixture();
+  const { io, output } = conversation(["no", "si", "si"], () => expect(existsSync(accepted.config.root)).toBe(false));
+  expect(await runSetup(io, accepted.config)).toEqual({ cancelled: false, storage: "sqlite" });
+  store = accepted.workspace.open(true);
+  try { expect(store.reinforcementEnabled()).toBe(true); }
+  finally { store.close(); }
+  expect(output.join("\n")).toContain("registrar repeticiones mejora el orden; no verifica la verdad.");
+  expect(output.join("\n")).toContain("sincronizar esta función requiere actualizar todos los equipos.");
+  expect(output.join("\n")).toContain("sync --upgrade-format");
+});
+
+test("setup reports existing reinforcement without offering a downgrade", async () => {
+  const { config, workspace } = fixture();
+  workspace.init();
+  const store = workspace.open();
+  try { store.enableSearchReinforcement(); }
+  finally { store.close(); }
+  const { io, output, questions } = conversation(["no", "si"]);
+  expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
+  expect(questions).toHaveLength(2);
+  expect(output.join("\n")).toContain("El refuerzo de recuerdos ya está habilitado.");
+  expect(output.join("\n")).not.toContain("¿Quieres habilitar el refuerzo de recuerdos?");
+  const reopened = workspace.open(true);
+  try { expect(reopened.reinforcementEnabled()).toBe(true); }
+  finally { reopened.close(); }
 });

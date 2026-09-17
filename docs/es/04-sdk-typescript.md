@@ -1,11 +1,11 @@
 # 04. Guía de Integración con el SDK de TypeScript
 
-> **Etapa:** Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
-> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
-> **Estado:** Vigente y Activo (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
+> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
 > **Traducción hermana:** [04 (EN). TypeScript SDK Guide (MemoryStore)](../en/04-typescript-sdk.md)
 
-Esta guía documenta la API pública en TypeScript de Forge614 Engram, cómo utilizar las clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` en tus propias herramientas o extensiones, el soporte del Esquema 6 para sesiones progresivas y contexto clasificado, y los tipos formales de recuperación progresiva.
+Esta guía documenta la API pública en TypeScript de Forge614 Engram, cómo utilizar las clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` en tus propias herramientas o extensiones, el soporte del Esquema 7 para confirmaciones inmutables y refuerzo de búsqueda FTS5 sin embeddings, y los tipos formales de recuperación progresiva.
 
 > [!NOTE]
 > **Dirigido a desarrolladores:** Este SDK está orientado a programadores que desean integrar memoria estructurada dentro de herramientas o agentes TypeScript. Los usuarios finales de terminal solo necesitan el binario `forge614-engram`. No existe un paquete publicado en npm; las importaciones se realizan localmente desde `./src/index`.
@@ -27,12 +27,16 @@ import {
   memoryTypes,
   defaultDatabasePath,
 
-  // Tipos del dominio base
+  // Tipos del dominio base y refuerzo (Esquema 7)
   type Project,
   type SaveInput,
   type Memory,
   type MemoryVersion,
   type SearchResult,
+  type SearchExplanation,
+  type ReinforcementExplanation,
+  type Confirmation,
+  type ConfirmationRequest,
   type MemoryScope,
   type SearchScope,
 
@@ -63,8 +67,8 @@ import {
 
 ### Principios Fundamentales del SDK
 
-- **La API de SQLite permanece 100% síncrona:** Todas las operaciones de lectura, escritura, búsqueda, sesiones, línea temporal (`timeline`) y contexto (`context`) en `MemoryStore` y `MemoryWorkspace` se ejecutan de forma inmediata y directa sobre SQLite sin requerir llamadas asíncronas (`async`/`await`).
-- **Fachada Compatible `MemoryStore`:** La clase `MemoryStore` (ubicada en `src/app/memory-store.ts`) opera como un patrón de diseño Fachada (*facade pattern*): proporciona una interfaz pública estable, idéntica e inmutable a los consumidores del SDK, mientras delega internamente la persistencia a módulos especializados en `src/infrastructure/sqlite/` (`memory.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`).
+- **La API de SQLite permanece 100% síncrona:** Todas las operaciones de lectura, escritura, búsqueda, confirmaciones, sesiones, línea temporal (`timeline`) y contexto (`context`) en `MemoryStore` y `MemoryWorkspace` se ejecutan de forma inmediata y directa sobre SQLite sin requerir llamadas asíncronas (`async`/`await`).
+- **Fachada Compatible `MemoryStore`:** La clase `MemoryStore` (ubicada en `src/app/memory-store.ts`) opera como un patrón de diseño Fachada (*facade pattern*): proporciona una interfaz pública estable, idéntica e inmutable a los consumidores del SDK, mientras delega internamente la persistencia a módulos especializados en `src/infrastructure/sqlite/` (`memory.ts`, `confirmations.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`).
 - **Eliminación de Rutas Internas Anteriores:** Los archivos históricos en la raíz de `src/` (`src/domain.ts`, `src/store.ts`, `src/identity.ts`, `src/sessions.ts`, `src/retrieval.ts`, `src/schema.ts`, `src/paths.ts`, etc.) han sido **eliminados por completo**. Cualquier herramienta externa debe importar únicamente desde `src/index.ts`. El auditor de TypeScript AST (`tests/architecture/import-rules.ts`) prohíbe además que el código interno importe desde `src/index.ts` para evitar ciclos de importación.
 - **Los módulos de red, transporte e interfaz son internos:**
   - El servidor MCP (`src/interfaces/mcp/`)
@@ -84,7 +88,7 @@ import {
 2. **`WorkspaceConfig` (Gestor de Configuración):**
    Gestiona la lectura y escritura atómica del archivo `~/.forge614/.env`. Valida permisos (`0700` en carpeta, `0600` en archivo), formatos (Formato 2 local y Formato 3 con sincronización) y previene concurrencias con el cerrojo `.config-lock`.
 3. **`MemoryStore` (Motor de Base de Datos SQLite):**
-   Ejecuta las operaciones directas sobre las tablas de SQLite (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, etc.).
+   Ejecuta las operaciones directas sobre las tablas de SQLite (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, etc.).
 
 ---
 
@@ -111,7 +115,7 @@ Abre el almacén `MemoryStore` tras validar los permisos y el esquema de la base
 
 ---
 
-## 4. Métodos de `MemoryStore` (Esquemas 5 y 6)
+## 4. Métodos de `MemoryStore` (Esquemas 5, 6 y 7)
 
 ### Gestión de Esquemas y Asociaciones Locales
 
@@ -122,7 +126,13 @@ Habilita explícitamente el soporte de asistentes y asociaciones locales migrand
 Habilita explícitamente el soporte de sesiones progresivas y contexto clasificado migrando aditivamente SQLite al **Esquema 6** (crea las tablas `sessions`, `session_entries`, `session_summaries`, `local_session_bindings` y `local_manual_sessions`).
 
 #### `store.sessionsEnabled(): boolean`
-Comprueba de forma síncrona si la base de datos actual cuenta con el Esquema 6 (`PRAGMA user_version === 6`).
+Comprueba de forma síncrona si la base de datos actual cuenta con el Esquema 6 o superior (`PRAGMA user_version >= 6`).
+
+#### `store.enableSearchReinforcement(): void`
+Habilita explícitamente el registro de confirmaciones inmutables y el ranking reforzado migrando aditivamente SQLite al **Esquema 7** (crea las tablas `confirmations` y `confirmation_requests`).
+
+#### `store.reinforcementEnabled(): boolean`
+Comprueba de forma síncrona si la base de datos actual cuenta con el Esquema 7 (`PRAGMA user_version === 7`).
 
 #### `store.bindProjectDirectory(directory: string, projectId: string): Project`
 Asocia una ruta de directorio local a un `projectId` existente en la tabla `project_bindings`. Si la ruta ya estaba vinculada a otro proyecto, arroja `PROJECT_BINDING_CONFLICT`.
@@ -154,10 +164,13 @@ Persiste un resumen de sesión estructurado (con campos obligatorios `goal`, `in
 
 ---
 
-### Persistencia de Recuerdos y Asociaciones
+### Persistencia de Recuerdos, Idempotencia y Confirmaciones (Esquema 7)
 
 #### `store.save(input: SaveInput): MemoryVersion`
-Persiste un recuerdo estándar (de proyecto o compartido). Si la base cuenta con Esquema 6 y el alcance es `project`, asocia automáticamente la entrada a la sesión manual del proyecto en este equipo.
+Persiste un recuerdo estándar (de proyecto o compartido).
+- Si `input.requestKey` se repite con idéntica carga, devuelve la respuesta cacheada (*replay*). Si la carga difiere, arroja `REQUEST_CONFLICT`.
+- Si la base cuenta con Esquema 7 y se guarda una repetición idéntica con nueva clave (mismo título, contenido, tipo y fijado) dentro de la ventana de 15 minutos (si `topicKey` es nulo) o con el mismo tema, registra una confirmación inmutable en `confirmations` sin incrementar la versión.
+- Si el reloj local del sistema tiene desfase hacia el pasado respecto a la versión confirmada, arroja `CLOCK_SKEW`.
 
 #### `store.saveWithSession(input: SaveInput, options?: SessionSaveOptions): SessionSaveResult`
 Persiste un recuerdo asociándolo a una sesión específica:
@@ -171,10 +184,10 @@ Resuelve la carpeta del proyecto y guarda el recuerdo con asociación de sesión
 
 ---
 
-### Recuperación Progresiva y Contexto Clasificado
+### Recuperación Progresiva y Búsqueda Reforzada
 
 #### `store.search(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[]`
-Búsqueda explicable en SQLite FTS5 con tokenizador trigram y ordenación `bm25 * multiplier ASC`.
+Búsqueda explicable en SQLite FTS5 con tokenizador trigram y ordenación reforzada `orderScore = bm25 * multiplier ASC`. Cada resultado incluye `explanation: SearchExplanation`.
 
 #### `store.searchPreviews(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): PreviewResult[]`
 Búsqueda progresiva de bajo consumo que emite fichas `MemoryPreview` truncadas a **300 puntos de código Unicode** (*code points*) con bandera booleana `truncated`.
@@ -192,47 +205,93 @@ Construye una vista clasificada y ponderada en tres secciones (`pinned`, `recent
 
 ## 5. Ejemplos de Código Listos para Producción
 
-### Ejemplo 1: Habilitación de Esquema 6, Ciclo de Sesión y Guardado Asociado
+### Ejemplo 1: Habilitación de Esquema 7, Confirmaciones Inmutables y Búsqueda Reforzada
 
 ```typescript
-import { MemoryWorkspace, type SummaryFields } from "./src/index";
+import { MemoryWorkspace, type SearchResult } from "./src/index";
 
 const workspace = new MemoryWorkspace();
 workspace.init();
 
 const store = workspace.open();
 try {
-  // 1. Asegurar Esquema 6 para sesiones progresivas
-  if (!store.sessionsEnabled()) {
-    store.enableSessions();
+  // 1. Asegurar Esquema 7 para confirmaciones y ranking reforzado
+  if (!store.reinforcementEnabled()) {
+    store.enableSearchReinforcement();
   }
 
-  // 2. Crear proyecto y carpeta vinculada
-  const project = workspace.createProject("Servicio de Pagos");
-  const localDir = "/Users/usuario/Proyectos/servicio-pagos";
-  store.bindProjectDirectory(localDir, project.projectId);
+  const project = workspace.createProject("Motor de Búsqueda Reforzado");
 
-  // 3. Iniciar una sesión en ejecución (runtime session)
+  // 2. Guardar un recuerdo inicial con clave de petición idempotente
+  const v1 = store.save({
+    scope: "project",
+    projectId: project.projectId,
+    title: "Cache en Memoria para Colas",
+    content: "Usamos SQLite en modo WAL y transacciones diferidas para alta velocidad.",
+    type: "decision",
+    requestKey: "req-cola-01",
+  });
+  console.log(`Recuerdo creado: versión ${v1.version}, ID: ${v1.id}`);
+
+  // 3. Reintento idéntico con la misma clave (Replay) -> Devuelve caché sin cambios
+  const v1Replay = store.save({
+    scope: "project",
+    projectId: project.projectId,
+    title: "Cache en Memoria para Colas",
+    content: "Usamos SQLite en modo WAL y transacciones diferidas para alta velocidad.",
+    type: "decision",
+    requestKey: "req-cola-01",
+  });
+  console.log(`Replay detectado: versión ${v1Replay.version} (idéntica)`);
+
+  // 4. Observación repetida con nueva clave dentro de 15 min -> Confirmación inmutable
+  const v1Confirm = store.save({
+    scope: "project",
+    projectId: project.projectId,
+    title: "Cache en Memoria para Colas",
+    content: "Usamos SQLite en modo WAL y transacciones diferidas para alta velocidad.",
+    type: "decision",
+    requestKey: "req-cola-02",
+  });
+  console.log(`Confirmación registrada: sigue en versión ${v1Confirm.version} sin duplicar`);
+
+  // 5. Búsqueda reforzada: auditar explicaciones matemáticas y multiplicadores
+  const results: SearchResult[] = store.search(project.projectId, "sqlite colas wal");
+  for (const item of results) {
+    console.log(`- ${item.memory.title}`);
+    console.log(`  BM25: ${item.explanation.bm25}`);
+    console.log(`  Multiplicador: ${item.explanation.multiplier}`);
+    console.log(`  OrderScore: ${item.explanation.orderScore}`);
+    if (item.explanation.reinforcement) {
+      console.log(`  Confirmaciones registradas: ${item.explanation.reinforcement.duplicateCount}`);
+      console.log(`  Impulso de estabilidad: ${item.explanation.reinforcement.stabilityBoost}`);
+      console.log(`  Impulso de recencia: ${item.explanation.reinforcement.recencyBoost}`);
+    }
+  }
+} finally {
+  store.close();
+}
+```
+
+---
+
+### Ejemplo 2: Ciclo de Sesión Progresiva y Contexto Clasificado
+
+```typescript
+import { MemoryWorkspace, type SummaryFields } from "./src/index";
+
+const workspace = new MemoryWorkspace();
+const store = workspace.open();
+
+try {
+  const projectId = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
   const sessionId = "ses-pagos-migracion-v2";
-  const session = store.startSession(project.projectId, sessionId, localDir);
-  console.log(`Sesión iniciada: ${session.sessionId} a las ${session.startedAt}`);
 
-  // 4. Guardar un recuerdo asociado explícitamente a la sesión
-  const result = store.saveWithSession(
-    {
-      scope: "project",
-      projectId: project.projectId,
-      title: "Migración a Webhooks Idempotentes",
-      content: "Se registran llaves de idempotencia en Redis con expiración de 24h.",
-      type: "decision",
-      topicKey: "webhooks-idempotencia",
-    },
-    { sessionId: session.sessionId }
-  );
+  // Iniciar una sesión en ejecución (runtime session)
+  const session = store.startSession(projectId, sessionId);
+  console.log(`Sesión iniciada: ${session.sessionId}`);
 
-  console.log(`Recuerdo guardado con ID ${result.memory.id} (Fuente de sesión: ${result.sessionSource})`);
-
-  // 5. Guardar resumen estructurado al término de la sesión
+  // Guardar resumen estructurado al término de la sesión
   const summary: SummaryFields = {
     goal: "Implementar idempotencia en pasarela de pagos",
     instructions: "Usar Redis SETNX con TTL de 86400 segundos",
@@ -242,111 +301,21 @@ try {
     files: ["src/payments/webhooks.ts", "src/redis/client.ts"],
   };
 
-  store.saveSessionSummary(project.projectId, sessionId, summary, {
+  store.saveSessionSummary(projectId, sessionId, summary, {
     requestKey: "req-summary-pagos-01",
   });
 
-  // 6. Cerrar la sesión ordenadamente
-  const closedSession = store.endSession(project.projectId, sessionId);
-  console.log(`Sesión cerrada exitosamente a las ${closedSession.endedAt}`);
-} finally {
-  store.close();
-}
-```
+  // Cerrar la sesión
+  store.endSession(projectId, sessionId);
 
----
-
-### Ejemplo 2: Recuperación Progresiva (Previews, Timeline y Contexto Clasificado)
-
-```typescript
-import { MemoryWorkspace } from "./src/index";
-
-const workspace = new MemoryWorkspace();
-const store = workspace.open(true); // Conexión de solo lectura
-
-try {
-  const projectId = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
-
-  // 1. Búsqueda progresiva ligera (MemoryPreview con tope de 300 caracteres)
-  const previews = store.searchPreviews(projectId, "webhooks", 5);
-  for (const item of previews) {
-    console.log(`- [${item.memory.type}] ${item.memory.title}: "${item.memory.preview}" (Truncado: ${item.memory.truncated})`);
-  }
-
-  // 2. Inspección temporal de sucesos dentro de una sesión
-  if (previews.length > 0) {
-    const memoryId = previews[0]!.memory.id;
-    const version = previews[0]!.memory.version;
-    const timeline = store.timeline(projectId, {
-      sessionId: "ses-pagos-migracion-v2",
-      memoryId,
-      version,
-      before: 2,
-      after: 2,
-    });
-
-    console.log(`Timeline para sesión ${timeline.sessionId}:`);
-    console.log(`  En foco: ${timeline.focus.memory.title}`);
-    console.log(`  Vecinos previos: ${timeline.before.length}, Vecinos posteriores: ${timeline.after.length}`);
-  }
-
-  // 3. Ensamblaje de contexto clasificado con presupuesto estricto de bytes
+  // Ensamblar contexto clasificado respetando límite estricto de 16 KiB
   const context = store.context(projectId, {
     compact: false,
-    maxBytes: 16384, // 16 KiB en bytes serializados UTF-8
+    maxBytes: 16384,
   });
 
   console.log(`Contexto clasificado: ${context.pinned.length} fijados, ${context.recent.length} recientes, ${context.summaries.length} resúmenes.`);
-  console.log(`Omitidos por límite de bytes:`, context.omitted);
 } finally {
   store.close();
 }
-```
-
----
-
-### Ejemplo 3: Interacción con el Servidor MCP (10 Herramientas) desde un Cliente
-
-```typescript
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-
-async function main() {
-  const transport = new StdioClientTransport({
-    command: "forge614-engram",
-    args: ["mcp"],
-    stderr: "ignore",
-  });
-
-  const client = new Client(
-    { name: "agente-desarrollo", version: "1.0.0" },
-    { capabilities: {} }
-  );
-
-  await client.connect(transport);
-
-  // 1. Confirmar las 10 herramientas disponibles
-  const tools = await client.listTools();
-  console.log("Total herramientas expuestas:", tools.tools.length); // 10 herramientas
-
-  // 2. Obtener contexto clasificado al iniciar la tarea
-  const contextResponse = await client.callTool({
-    name: "memory_context",
-    arguments: { directory: process.cwd() },
-  });
-  console.log("Contexto clasificado recibido:", contextResponse.content);
-
-  // 3. Iniciar sesión de trabajo en el agente
-  await client.callTool({
-    name: "memory_session_start",
-    arguments: {
-      directory: process.cwd(),
-      sessionId: "ses-agente-tarea-42",
-    },
-  });
-
-  await client.close();
-}
-
-main().catch(console.error);
 ```

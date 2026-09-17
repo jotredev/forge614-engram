@@ -6,4 +6,12 @@ export type SaveInput = { title:string;content:string;type:MemoryType;topicKey?:
   & ({scope?:"project";projectId:string}|{scope:"shared";projectId:null});
 export interface MemoryVersion { id:string;projectId:string|null;scope:MemoryScope;topicKey:string|null;title:string;content:string;type:MemoryType;pinned:boolean;version:number;createdAt:string;updatedAt:string }
 export interface Memory extends MemoryVersion { state:"active"|"archived" }
-export interface SearchResult { memory:Memory;explanation:{mode:"fts5"|"literal";bm25:number|null;multiplier:number;orderScore:number|null} }
+export interface ReinforcementExplanation {
+  revisionCount:number;duplicateCount:number;lastSeenAt:string;ageDays:number;
+  pinnedBoost:number;recencyBoost:number;stabilityBoost:number;
+}
+export interface SearchExplanation {
+  mode:"fts5"|"literal";bm25:number|null;multiplier:number;orderScore:number|null;
+  reinforcement?:ReinforcementExplanation;
+}
+export interface SearchResult { memory:Memory;explanation:SearchExplanation }

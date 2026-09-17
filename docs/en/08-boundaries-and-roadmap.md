@@ -1,11 +1,11 @@
 # 08 (EN). Stage Boundaries and Evolutionary Roadmap
 
-> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Verified (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
+> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Verified (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
 > **Sister translation:** [08. Límites de la Etapa y Hoja de Ruta Futura](../es/08-limites-y-roadmap.md)
 
-This document declares with complete transparency which capabilities are implemented and verified in the current release, active technical and operational boundaries, the distinction between synthetic test fixtures and live assistant sessions, and pending development phases on the official roadmap.
+This document transparently defines implemented and verified capabilities in the current delivery, operational boundaries, distinctions between synthetic tests and live assistant sessions, and official pending roadmap phases.
 
 ---
 
@@ -13,83 +13,99 @@ This document declares with complete transparency which capabilities are impleme
 
 The following development phases are **100% implemented and verified**:
 
-### Phase 1: Interactive Setup Wizard (`setup`) — COMPLETED
-- [x] Step-by-step guidance in interactive terminals (`stdin` and `stdout` TTY).
-- [x] User-level central storage paths: `~/.forge614/.env` and `~/.forge614/engram.db`.
-- [x] Confidential PostgreSQL URL capture with masked input (`{ secret: true }`).
-- [x] Explicit confirmation before writing and standard exit code `130` on cancellation.
+### Phase 1: Interactive Initial Setup Wizard (`setup`) — COMPLETED
+- [x] Human-guided interactive CLI wizard (`stdin` and `stdout` TTY).
+- [x] Central file paths: `~/.forge614/.env` and `~/.forge614/engram.db`.
+- [x] Masked entry for PostgreSQL URL (`{ secret: true }`).
+- [x] Interactive prompt to enable search reinforcement (Schema 7).
+- [x] Explicit pre-confirmation and standard exit code `130` on cancellation.
 
-### Phase 2: Direct PostgreSQL Replica Synchronization (`sync` / `sync-watch`) — COMPLETED
-- [x] Direct workspace replication to PostgreSQL without cloud intermediaries.
-- [x] Commands `sync` (single on-demand JSON round) and `sync-watch` (foreground loop with configurable interval).
-- [x] Offline resilience: SQLite and FTS5 remain 100% local; if PostgreSQL is unavailable, local operations continue without error.
-- [x] Deterministic 3-way snapshot merge with strict conflict detection (`SYNC_CONFLICT`) and 8 MiB snapshot boundary (`SYNC_TOO_LARGE`).
+### Phase 2: Direct PostgreSQL Synchronization (`sync` / `sync-watch`) — COMPLETED
+- [x] Full workspace replication to PostgreSQL.
+- [x] CLI commands `sync` (single-shot JSON) and `sync-watch` (continuous polling).
+- [x] Offline resilience: SQLite and FTS5 remain 100% local; unavailability of PostgreSQL never blocks local operations.
+- [x] Deterministic 3-way merge snapshot synchronization with conflict detection (`SYNC_CONFLICT`) and 8 MiB size cap (`SYNC_TOO_LARGE`).
 
-### Phase 3: Local MCP Integration & Assistant TUI Menu — COMPLETED
-- [x] Stdio MCP server with clean JSON-RPC communication on `stdout`.
-- [x] Interactive terminal menu (`forge614-engram tui`) with keyboard navigation, zero-write preview, and safe confirmation.
-- [x] 5-second asynchronous MCP server self-test.
-- [x] Secure adapters for 5 clients (Claude Code, Codex, Cursor, OpenCode, Gemini CLI) with `0600`/UUID backups and post-publication byte verification.
-- [x] SQLite Schema 5 with `project_bindings` resolving canonical Git root identities.
+### Phase 3: Local MCP Server and Assistant TUI Menu — COMPLETED
+- [x] Native stdio MCP server with clean I/O channels (stdout reserved for JSON-RPC).
+- [x] Full-screen terminal UI menu (`forge614-engram tui`) with keyboard navigation and safe preview.
+- [x] Asynchronous MCP server self-test verifying binary and tools within a 5-second deadline.
+- [x] Safe adapters for 5 clients (Claude Code, Codex, Cursor, OpenCode, Gemini CLI) with `0600`/UUID backups and post-write verification.
+- [x] Schema 5 in SQLite with `project_bindings` resolving canonical repository identity via Git.
 
-### Phase 4: Progressive Memory Sessions & Ranked Context — COMPLETED
-- [x] **SQLite Schema 6:** Tables `sessions`, `session_entries`, `session_summaries`, `local_session_bindings`, and `local_manual_sessions`.
-- [x] **Explicit Migration (`sessions-enable`):** Additive, irreversible migration; standard opens, MCP, and init never auto-migrate existing databases.
-- [x] **Complete Session Lifecycle:** CLI commands `session-start`, `session-end`, `session-summary`, and corresponding MCP tools.
-- [x] **Structured Session Summaries:** Strict validation of 6 mandatory fields (`goal`, `instructions`, `discoveries`, `accomplishments`, `nextSteps`, `files`) under reserved topic `session/<id>/summary` with type `procedure`.
-- [x] **Ranked Context Retrieval (`context` / `memory_context`):** Structured dossier partitioned into `pinned`, `recent`, and `summaries` with omission tracking and boolean `truncated` flag.
-- [x] **Strict Byte Budgeting (`--max-bytes`):** Numerical boundary between 1024 and 65536 bytes of total serialized UTF-8 JSON.
-- [x] **Session Event Timeline (`timeline` / `memory_timeline`):** Chronological reconstruction surrounding a focus memory with prior and subsequent entries.
-- [x] **Progressive Previews (`--preview` and `searchPreviews`):** Content truncated to a maximum of 300 Unicode code points with truncation flags.
-- [x] **10 Native MCP Tools:** Full suite of memory tools exposed over stdio.
-- [x] **Format 2 PostgreSQL Promotion:** Replicating sessions and summaries promoted exclusively via `sync --upgrade-format` under atomic CAS locking on `forge614_sync.state`.
-- [x] **OpenCode Plugin Conflict Safety:** Halts with `CONFLICT` if `plugins/forge614-engram.js` contains divergent code, requiring manual reconciliation.
+### Phase 4: Progressive Memory Sessions and Ranked Context — COMPLETED
+- [x] **Schema 6 in SQLite:** Tables `sessions`, `session_entries`, `session_summaries`, `local_session_bindings`, and `local_manual_sessions`.
+- [x] **`sessions-enable` Command:** Additive irreversible migration; ordinary commands and `mcp` never auto-migrate databases.
+- [x] **Full Session Lifecycle:** CLI commands `session-start`, `session-end`, `session-summary` and matching MCP tools.
+- [x] **Structured Session Summaries:** Strict 6-field validation (`goal`, `instructions`, `discoveries`, `accomplishments`, `nextSteps`, `files`) under reserved topic `session/<id>/summary` with type `procedure`.
+- [x] **Ranked Context Dossier (`context` / `memory_context`):** Structured 3-partition dossiers (`pinned`, `recent`, `summaries`) with omission metrics and `truncated` boolean flag.
+- [x] **Strict Byte Budget (`--max-bytes`):** Enforces 1024..65536 UTF-8 JSON serialized byte limit.
+- [x] **Session Event Timeline (`timeline` / `memory_timeline`):** Chronological window around a focus memory with before/after neighbors.
+- [x] **Lightweight Previews (`--preview` and `searchPreviews`):** Cards truncated to 300 Unicode code points with truncation flag.
+- [x] **10 Native MCP Tools:** Full suite exposed to AI models.
+- [x] **Format 2 Promotion in PostgreSQL:** Replica support for sessions promoted via `sync --upgrade-format` under atomic CAS locking.
+- [x] **Safe OpenCode Conflict Resolution:** Halts with `CONFLICT` on divergent plugins, requiring manual reconciliation without silent overwrite.
 
-### Phase 4.1: Feature-Oriented Modular Monolith & Colocated Tests — COMPLETED
-- [x] **Feature-oriented modular monolith:** Clean separation of responsibilities into `app/` (workflow coordination), `modules/` (pure business rules & types, zero I/O), `infrastructure/` (concrete SQLite, PostgreSQL, filesystem, git, and assistant adapters), `interfaces/` (CLI, MCP, TUI, and terminal delivery), and `shared/` (`errors.ts`).
-- [x] **Compatible `MemoryStore` facade:** Full preservation of historical SDK signatures and methods in `src/app/memory-store.ts`, delegating to specialized SQLite persistence modules.
-- [x] **Removal of deprecated internal flat paths:** Complete removal of legacy root files from `src/`, routing all external consumers strictly through `src/index.ts`.
-- [x] **Automated TypeScript AST architecture auditor:** Strict compile-time AST validation (`tests/architecture/import-rules.ts`) enforcing layer import rules, prohibiting cross-component cycles, and preventing domain leaks.
-- [x] **Colocated sibling tests:** 1:1 sibling test pairing (`<file>.test.ts`) for all 46 logic-bearing implementation files, accompanied by local collaboration suites in `__tests__` subdirectories.
-- [x] **Composite outer transactions:** Persistence writes coordinated through `infrastructure/sqlite/writes.ts` under a single shared transaction (`BEGIN IMMEDIATE ... COMMIT`).
-- [x] **369 automated tests across 69 files:** 361 passed and 8 skipped without isolated PostgreSQL binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured (30.69s).
+### Phase 4.1: Feature-Oriented Modular Monolith and Colocated Tests — COMPLETED
+- [x] **Feature-Oriented Modular Monolith:** Strict boundary separation into `app/` (orchestration), `modules/` (pure rules & types without I/O), `infrastructure/` (SQLite, PostgreSQL, filesystem, git, assistants), `interfaces/` (CLI, MCP, TUI, terminal), and `shared/` (`errors.ts`).
+- [x] **Compatible Facade `MemoryStore`:** 100% preservation of SDK method signatures in `src/app/memory-store.ts`, delegating to partitioned SQLite operations.
+- [x] **Complete Removal of Legacy Root Files:** Flat root files eliminated in `src/`; public SDK consumed strictly from `src/index.ts`.
+- [x] **Automated AST Architecture Auditor:** TypeScript AST verification (`tests/architecture/import-rules.ts`) preventing cycles and cross-layer violations.
+- [x] **Colocated Sibling Tests:** 1:1 colocated sibling tests (`<name>.test.ts`) for all production logical components.
+- [x] **Composite Outer Transactions:** Persistence atomic transactions orchestrated in `infrastructure/sqlite/writes.ts` under a shared `BEGIN IMMEDIATE`.
 
----
-
-## 2. Active Boundaries and Operational Constraints
-
-To maintain strictly realistic expectations, the following boundaries are declared:
-
-1. **Byte Budget vs LLM Token Budget:**
-   The `--max-bytes` parameter bounds the total serialized UTF-8 JSON payload size transferred between processes. **It is not an internal token accounting system for LLM context windows**.
-2. **Previews in Unicode Code Points:**
-   Abbreviated notes are delimited by Unicode code points (300 in previews and context; 500 for focus and 150 for neighbors in timeline), preventing character corruption from byte splitting.
-3. **Voluntary Model Compliance:**
-   Configuring MCP servers and hooks does not guarantee that language models will invoke tools or save session summaries. Models are probabilistic and may skip tool calls.
-4. **No Guaranteed Save on Abrupt Process Kill:**
-   If a client terminal is forcibly killed (e.g. `kill -9` or hard window close), assistants cannot be guaranteed to record a final session summary.
-5. **No Conversational Transcript Capture:**
-   Engram stores curated, durable technical knowledge, **not raw chat transcripts, logs, or tool dumps**.
-6. **No Background LLM Daemon:**
-   Engram does not run an autonomous background language model; it never synthesizes notes without an explicit tool invocation.
-7. **Manual Trust Policy in Codex (`/hooks`):**
-   In Codex, newly installed hooks must be reviewed and trusted explicitly by the user via `/hooks` before they are permitted to run.
-8. **Synthetic Fixtures vs Live Assistant Sessions:**
-   The automated test suite exercises protocol compliance using synthetic fixtures and virtual PTY terminals. Live human sessions inside all 5 clients must be verified in their actual host applications.
-9. **Machine-Local Bindings Not Synced:**
-   Tables `project_bindings`, `local_session_bindings`, and `local_manual_sessions` are strictly local to each machine and are never replicated to PostgreSQL.
-10. **8 MiB Snapshot Payload Limit:**
-    Combined sync snapshots have a hard limit of 8 MiB (`8,388,608 bytes`), returning `SYNC_TOO_LARGE` if exceeded.
-11. **No Heuristic Automatic Conflict Resolution:**
-    Concurrent incompatible modifications to the same entity trigger `SYNC_CONFLICT`.
-12. **Literal Trigram BM25 Search:**
-    Search relies on exact term and trigram matches in SQLite FTS5; it does not perform semantic vector embedding search. The current modular architecture defines clean extension boundaries in `modules/search/` and `infrastructure/`, but does not implement embedding providers in this phase.
+### Phase 4.2: Reinforced FTS5 Search (No Embeddings) and Immutable Confirmations — COMPLETED
+- [x] **Schema 7 in SQLite:** Tables `confirmations` and `confirmation_requests` with indices.
+- [x] **`reinforcement-enable` Command:** Additive irreversible migration; ordinary commands never auto-migrate databases to Schema 7.
+- [x] **Immutable Memory Confirmations:** Records repeated observations without inflating memory versions or duplicating records.
+- [x] **Idempotent Request Key Replay (`requestKey` replay):** Returns cached response without adding confirmations or versions if the SHA-256 payload hash matches.
+- [x] **Payload Conflict Detection (`REQUEST_CONFLICT`):** Immediate halt when reusing a request key with modified payload content.
+- [x] **15-Minute Sliding Deduplication Window:** Bounded deduplication for notes without a topic (`topicKey: null`), discarding future timestamps and selecting by greatest `lastSeenAt` then `id ASC`.
+- [x] **Clock Skew Protection (`CLOCK_SKEW`):** Halts when local clock reads earlier than confirmed memory version timestamp.
+- [x] **Exact Mathematical Ranking Formula:** $\text{orderScore} = \text{BM25} \times \text{multiplier}$ with column weights $5.0 / 3.0 / 1.0$, factors $0.10$ (pinned), $0.06$ (30-day recency), and $0.04$ (asymptotic stability $\frac{n}{n+4}$), sorted ascending `orderScore ASC` and tie-broken by `id ASC`.
+- [x] **Deterministic Single Query Clock:** `request_clock(nowMs)` evaluated once per search query, applying ordering before `LIMIT`.
+- [x] **PostgreSQL Format 3 Promotion:** Replicates confirmations and requests under atomic CAS snapshot locking, preserving physical table schema `state.format = 1`.
+- [x] **Peer Client Compatibility Safeguard:** Unreinforced peer clients halt with `REINFORCEMENT_REQUIRED` when syncing Format 3 snapshots.
+- [x] **439 Automated Tests Across 76 Files:** 430 passed and 9 skipped without PostgreSQL binary; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured in 38.62s.
 
 ---
 
-## 3. Evolutionary Roadmap: Pending Phases
+## 2. Current Operational Boundaries
 
-With Phases 1 through 4.1 completed, future development focuses on the following phases:
+To maintain realistic expectations, the following boundaries are formally declared:
+
+1. **Confirmation Does Not Equal Absolute Truth:**
+   An immutable confirmation records that the assistant observed the same fact again; it does not certify ontological truth, infallibility, or human verification.
+2. **Reinforced Search Operates Without Embeddings:**
+   Does not use vector embeddings, neural networks, local transformers, or remote embedding APIs. It operates 100% on deterministic SQLite FTS5 trigrams with mathematical stability and recency multipliers.
+3. **No Autonomous LLM Arbitrator:**
+   Engram does not autonomously arbitrate contradictory statements across distinct notes; contradictions are resolved at the application level or through explicit topic overrides (`topicKey`).
+4. **Byte Budget vs. Token Budget:**
+   `--max-bytes` bounds the total UTF-8 JSON serialized payload weight transferred between processes. **It does not manage the LLM's internal token context window**.
+5. **Code Point Bounded Previews:**
+   Previews are truncated by Unicode code points (300 in previews and context; 500 for focus and 150 for neighbors in timeline), preventing broken multi-byte UTF-8 sequences.
+6. **Voluntary Model Compliance:**
+   Configuring MCP tools and hooks does not force an LLM to invoke them. AI models are probabilistic and may decline to call tools.
+7. **No Guaranteed Save on Abrupt Exit:**
+   If a client or terminal process terminates abruptly (`kill -9`, window close), a closing session summary cannot be guaranteed.
+8. **No Raw Transcript Ingestion:**
+   Engram does not capture full chat transcripts, raw conversation logs, or verbose tool dumps.
+9. **No Autonomous Background AI Model:**
+   Engram does not run a background LLM; it does not synthesize memories without an explicit user or assistant request.
+10. **Manual Hook Approval in Codex (`/hooks`):**
+    In Codex, newly installed hooks require explicit user approval via `/hooks`.
+11. **Machine-Local Unreplicated Paths:**
+    Tables `project_bindings`, `local_session_bindings`, and `local_manual_sessions` are strictly machine-local and never synced to PostgreSQL.
+12. **Snapshot Size Limit (8 MiB):**
+    Each synchronization snapshot is strictly capped at 8 MiB (`8,388,608 bytes`), halting with `SYNC_TOO_LARGE` if exceeded.
+13. **No Heuristic Auto-Merge in Sync:**
+    Concurrent modifications to the same entity trigger `SYNC_CONFLICT`. No heuristic three-way text merging is performed in this version.
+
+---
+
+## 3. Evolutionary Roadmap: Official Future Phases
+
+With Phases 1 through 4.2 completed, future development centers on the following roadmap:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -113,19 +129,23 @@ With Phases 1 through 4.1 completed, future development focuses on the following
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│ [ ] Phase 5: Semantic Search & Advanced Ranking        │ (Pending)
-│     - Local vector embedding generation                │
-│     - Hybrid retrieval (FTS5 BM25 + cosine similarity) │
-│     - Dynamic token-aware context allocation           │
+│ [x] Phase 4.2: Reinforced FTS5 Search (No Embeddings)  │ (Completed v0.5.0)
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│ [ ] Phase 6: Full Terminal Management Interface (TUI)  │ (Pending)
+│ [ ] Phase 5: Semantic Search & Vector Embeddings       │ (Pending)
+│     - Local vector embedding generation                │
+│     - Hybrid retrieval (FTS5 BM25 + cosine similarity) │
+│     - Adaptive token allocation for context dossiers   │
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ [ ] Phase 6: Full Management Terminal UI (TUI)         │ (Pending)
 │     - Interactive memory explorer in terminal          │
-│     - Visual editing of topics, versions, and sessions │
-│     - Interactive sync conflict resolution tool        │
-└────────────────────────────────────────────────────────┘
+│     - Visual topic, version, and session editor        │
+│     - Interactive replica conflict reconciliation      │
+└──────────────────────────┘
 ```
 
 > [!NOTE]
-> Following honest engineering practices, Phases 5 and 6 are documented as approved conceptual milestones pending implementation, without promising guaranteed release versions or deadlines.
+> Consistent with honest engineering guidelines, Phases 5 and 6 are documented as approved conceptual milestones awaiting implementation, without speculative deadlines or promised release numbers.

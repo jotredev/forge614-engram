@@ -6,10 +6,12 @@ setup           Asistente interactivo; confirma antes de guardar. Cancelar no ap
 tui             Asistentes: flechas, Espacio, vista previa y confirmación explícita.
 init            Inicializa una sola configuración y base local, sin borrar datos.
 sync [--upgrade-format]
-                Sincroniza todo; --upgrade-format promueve explícitamente una réplica formato 1.
+                Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
 sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
 integration-enable  Habilita explícitamente MCP y asociaciones locales (esquema 5).
 sessions-enable Habilita explícitamente sesiones (esquema 6).
+reinforcement-enable
+                Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
 memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
@@ -54,8 +56,10 @@ Para guardar shared sin crear un proyecto, ejecuta init primero.
 No se migran ni borran bases o configuraciones antiguas automáticamente.
 SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada en setup.
 sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
+Antes de sync --upgrade-format, actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
 sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
-setup puede añadir metadatos de sincronización al esquema 3 sin borrar recuerdos.
+setup ofrece el refuerzo explícitamente; registrar repeticiones mejora el orden, no verifica la verdad.
+La habilitación local no promueve la réplica: ejecuta sync --upgrade-format por separado.
 Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
@@ -65,4 +69,3 @@ Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, si
 MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
 La resolución de directorios de proyecto requiere Git disponible, incluso para carpetas sin Git.
 `;
-

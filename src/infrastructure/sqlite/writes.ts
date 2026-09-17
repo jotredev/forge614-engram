@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { memoryTypes,type Memory,type MemoryVersion,type SaveInput } from "../../modules/memory";
+import { memoryTypes,sameConfirmationPayload,type Memory,type MemoryVersion,type SaveInput } from "../../modules/memory";
 import { projectIdentity,type Project } from "../../modules/projects";
 import { sessionIdentity,summaryContent,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../../modules/sessions";
 import { MemoryError } from "../../shared/errors";
+import { confirmationCandidate,confirmationRequest,reinforcementEnabled } from "./confirmations";
 import { get,required,type Row } from "./memory";
 import { getProject,projectForDirectory,requireAssistantIntegration,resolveProjectDirectory as resolveProjectDirectoryInTransaction } from "./projects";
 import { endRuntimeSession,inferredSessions,manualSession,requireSessions,sessionsEnabled,startRuntimeSession,validateSelectedSession } from "./sessions";
@@ -107,7 +108,7 @@ export function saveSessionSummary(db: Database, projectId: string, sessionId: s
         throw new MemoryError("SUMMARY_TOPIC_CONFLICT","El tema reservado ya pertenece a otro recuerdo.");
       }
       const replay = db.query("SELECT 1 FROM requests WHERE scope='project' AND projectId=? AND request_key=?")
-        .get(project,requestKey) !== null;
+        .get(project,requestKey) !== null || (reinforcementEnabled(db) && confirmationRequest(db,"project",project,requestKey)!==null);
       const result = saveCore(db, {projectId:project,title:`Session summary: ${id}`,content,type:"procedure",topicKey,
         requestKey,...(request.expectedVersion === undefined ? {} : {expectedVersion:request.expectedVersion})},
         {sessionId:id},new Date().toISOString(),true);
@@ -120,6 +121,36 @@ export function saveSessionSummary(db: Database, projectId: string, sessionId: s
       return result;
     }).immediate();
   }
+
+function requestReplay(db: Database, input: {
+  scope:Memory["scope"];projectId:string|null;request:string;hash:string;explicit:string|null;optionProject:string|null;
+}): SessionSaveResult|null {
+  const previous=db.query("SELECT payload_hash,memory_id,version FROM requests WHERE scope=? AND projectId IS ? AND request_key=?")
+    .get(input.scope,input.projectId,input.request) as {payload_hash:string;memory_id:string;version:number}|null;
+  const confirmed=reinforcementEnabled(db) ? confirmationRequest(db,input.scope,input.projectId,input.request) : null;
+  if(previous && confirmed) throw new MemoryError("REQUEST_CONFLICT","La clave de petición tiene registros incompatibles.");
+  if(previous) {
+    if(previous.payload_hash!==input.hash) throw new MemoryError("REQUEST_CONFLICT","La clave de petición ya corresponde a otro contenido.");
+    const row=db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(previous.memory_id,previous.version) as {snapshot:string};
+    const memory=JSON.parse(row.snapshot) as MemoryVersion;
+    const origin=sessionsEnabled(db) ? db.query(`SELECT e.sessionId,s.kind,s.projectId FROM session_entries e
+      JOIN sessions s ON s.sessionId=e.sessionId WHERE e.memoryId=? AND e.version=?`).get(previous.memory_id,previous.version) as
+      {sessionId:string;kind:Session["kind"];projectId:string}|null : null;
+    if(input.explicit!==null && origin?.sessionId!==input.explicit) throw new MemoryError("REQUEST_CONFLICT","La petición ya tiene otra asociación de sesión.");
+    if(input.explicit!==null) validateSelectedSession(db,input.explicit,input.scope,input.projectId,input.optionProject,false);
+    const visible=input.scope==="project" || input.explicit!==null || (input.optionProject!==null && origin?.projectId===input.optionProject);
+    return {memory,sessionId:visible ? origin?.sessionId??null:null,
+      sessionSource:visible && origin ? (input.explicit ? "explicit" : origin.kind==="manual" ? "manual" : "inferred") : null};
+  }
+  if(!confirmed) return null;
+  if(confirmed.payloadHash!==input.hash) throw new MemoryError("REQUEST_CONFLICT","La clave de petición ya corresponde a otro contenido.");
+  const stored=confirmed.response;
+  if(input.explicit!==null && stored.sessionId!==input.explicit) throw new MemoryError("REQUEST_CONFLICT","La petición ya tiene otra asociación de sesión.");
+  if(input.explicit!==null) validateSelectedSession(db,input.explicit,input.scope,input.projectId,input.optionProject,false);
+  const origin=stored.sessionId===null ? null : db.query("SELECT projectId FROM sessions WHERE sessionId=?").get(stored.sessionId) as {projectId:string}|null;
+  const visible=input.scope==="project" || input.explicit!==null || (input.optionProject!==null && origin?.projectId===input.optionProject);
+  return {...stored,sessionId:visible?stored.sessionId:null,sessionSource:visible?stored.sessionSource:null};
+}
 
 function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, requestNow: string, summary = false): SessionSaveResult {
     const scope = input.scope === undefined ? "project" : input.scope;
@@ -144,21 +175,8 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
     const runtimeDirectory = options.runtimeDirectory === undefined ? null : required(options.runtimeDirectory,"runtimeDirectory");
       if (projectId !== null && !getProject(db, projectId)) throw new MemoryError("PROJECT_NOT_FOUND", "Crea el proyecto antes de guardar.");
       if (request !== null) {
-        const previous = db.query("SELECT * FROM requests WHERE scope=? AND projectId IS ? AND request_key=?").get(scope,projectId,request) as
-          { payload_hash: string; memory_id: string; version: number } | null;
-        if (previous) {
-          if (previous.payload_hash !== hash) throw new MemoryError("REQUEST_CONFLICT", "La clave de petición ya corresponde a otro contenido.");
-          const row = db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(previous.memory_id,previous.version) as { snapshot: string };
-          const memory = JSON.parse(row.snapshot) as MemoryVersion;
-          const origin = sessionsEnabled(db) ? db.query(`SELECT e.sessionId,s.kind,s.projectId FROM session_entries e
-            JOIN sessions s ON s.sessionId=e.sessionId WHERE e.memoryId=? AND e.version=?`).get(previous.memory_id,previous.version) as
-            {sessionId:string;kind:Session["kind"];projectId:string}|null : null;
-          if (explicit !== null && origin?.sessionId !== explicit) throw new MemoryError("REQUEST_CONFLICT","La petición ya tiene otra asociación de sesión.");
-          if (explicit !== null) validateSelectedSession(db, explicit,scope,projectId,optionProject,false);
-          const visible = scope === "project" || explicit !== null || (optionProject !== null && origin?.projectId === optionProject);
-          return {memory,sessionId:visible ? origin?.sessionId ?? null : null,
-            sessionSource:visible && origin ? (explicit ? "explicit" : origin.kind === "manual" ? "manual" : "inferred") : null};
-        }
+        const replay=requestReplay(db,{scope,projectId,request,hash,explicit,optionProject});
+        if(replay) return replay;
       }
       let selected: string|null = null;
       let source: SessionSaveResult["sessionSource"] = null;
@@ -180,16 +198,42 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
           .get(projectId,topic);
         if (reserved) throw new MemoryError("SUMMARY_TOPIC_RESERVED","El tema está reservado para un resumen de sesión.");
       }
-      const existing = topic === null ? null : db.query("SELECT * FROM memories WHERE scope=? AND projectId IS ? AND topic_key=?").get(scope,projectId,topic) as Row | null;
+      const existing = topic === null
+        ? (reinforcementEnabled(db) ? confirmationCandidate(db,{scope,projectId,title,content,type:input.type,topicKey:topic,pinned},requestNow) : null)
+        : db.query("SELECT * FROM memories WHERE scope=? AND projectId IS ? AND topic_key=?").get(scope,projectId,topic) as Row | null;
       if (existing?.state === "archived") throw new MemoryError("ARCHIVED", "Restaura el recuerdo antes de actualizar su tema.");
-      if (existing ? existing.version !== expected : expected !== null) {
+      if (topic!==null && (existing ? existing.version !== expected : expected !== null)) {
         throw new MemoryError("VERSION_CONFLICT", "La versión esperada no coincide. Lee el tema antes de actualizarlo.");
       }
       const now = requestNow;
+      if (reinforcementEnabled(db) && existing) {
+        const versionRow=db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(existing.id,existing.version) as {snapshot:string};
+        const confirmed=JSON.parse(versionRow.snapshot) as MemoryVersion;
+        if(sameConfirmationPayload(confirmed,{title,content,type:input.type,topicKey:topic,pinned})) {
+          if(Date.parse(now)<Date.parse(confirmed.updatedAt)) {
+            throw new MemoryError("CLOCK_SKEW","El reloj local es anterior a la versión confirmada; corrige la hora antes de registrar la confirmación.");
+          }
+          if(request!==null) {
+            const replay=requestReplay(db,{scope,projectId,request,hash,explicit,optionProject});
+            if(replay) return replay;
+          }
+          const confirmationId=crypto.randomUUID();
+          const response:SessionSaveResult={memory:confirmed,sessionId:selected,sessionSource:source};
+          db.query("INSERT INTO confirmations(confirmationId,memoryId,version,recordedAt,sessionId) VALUES(?,?,?,?,?)")
+            .run(confirmationId,confirmed.id,confirmed.version,now,selected);
+          if(request!==null) db.query(`INSERT INTO confirmation_requests(memoryId,requestKey,payloadHash,expectedVersion,confirmationId,response)
+            VALUES(?,?,?,?,?,?)`).run(confirmed.id,request,hash,expected,confirmationId,JSON.stringify(response));
+          return response;
+        }
+      }
       const id = existing?.id ?? crypto.randomUUID();
       const version = (existing?.version ?? 0) + 1;
       const snapshot: MemoryVersion = { id, projectId, scope, topicKey: topic, type: input.type, title, content, pinned, version,
         createdAt: existing?.created_at ?? now, updatedAt: now };
+      if(request!==null) {
+        const replay=requestReplay(db,{scope,projectId,request,hash,explicit,optionProject});
+        if(replay) return replay;
+      }
       if (existing) {
         db.query("UPDATE memories SET type=?,title=?,content=?,pinned=?,version=?,updated_at=? WHERE id=?").run(input.type,title,content,Number(pinned),version,now,id);
       } else {

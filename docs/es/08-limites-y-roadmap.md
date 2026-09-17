@@ -1,8 +1,8 @@
 # 08. Límites de la Etapa y Hoja de Ruta Futura
 
-> **Etapa:** Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
-> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
-> **Estado:** Vigente y Verificado (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con PostgreSQL aislado en macOS con Bun 1.3.8)
+> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Verificado (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
 > **Traducción hermana:** [08 (EN). Stage Boundaries and Evolutionary Roadmap](../en/08-boundaries-and-roadmap.md)
 
 Este documento declara con total transparencia qué capacidades se encuentran implementadas y verificadas en la entrega actual, los límites técnicos y operativos vigentes, la distinción entre pruebas sintéticas y sesiones reales de clientes, y las fases de desarrollo pendientes en la hoja de ruta oficial.
@@ -17,6 +17,7 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 - [x] Guía paso a paso para personas en terminal interactiva (`stdin` y `stdout` TTY).
 - [x] Rutas centrales del usuario: `~/.forge614/.env` y `~/.forge614/engram.db`.
 - [x] Captura confidencial de URL de PostgreSQL con entrada oculta (`{ secret: true }`).
+- [x] Pregunta interactiva para habilitar refuerzo de búsqueda (Esquema 7).
 - [x] Confirmación explícita previa y salida con código estándar `130` en caso de cancelación voluntaria.
 
 ### Fase 2: Sincronización Directa con PostgreSQL (`sync` / `sync-watch`) — COMPLETADA
@@ -50,9 +51,22 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 - [x] **Fachada compatible `MemoryStore`:** Preservación del 100% de firmas y contratos del SDK en `src/app/memory-store.ts`, delegando en operaciones SQLite particionadas.
 - [x] **Eliminación de rutas internas obsoletas:** Supresión definitiva de archivos planos en la raíz de `src/`, canalizando el SDK exclusivamente a través de `src/index.ts`.
 - [x] **Auditoría automática de arquitectura (AST):** Verificación estricta en TypeScript AST (`tests/architecture/import-rules.ts`) de reglas de importación, prohibición de ciclos entre componentes y restricción de dependencias externas en módulos de dominio.
-- [x] **Pruebas colocadas (*colocated sibling tests*):** Correspondencia 1:1 de pruebas hermanas (`<archivo>.test.ts`) para los 46 archivos de implementación que contienen lógica, más pruebas de colaboración en subcarpetas `__tests__/`.
+- [x] **Pruebas colocadas (*colocated sibling tests*):** Correspondencia 1:1 de pruebas hermanas (`<archivo>.test.ts`) para los archivos de implementación que contienen lógica, más pruebas de colaboración en subcarpetas `__tests__/`.
 - [x] **Transacciones exteriores compuestas:** Canalización atómica de persistencia a través de `infrastructure/sqlite/writes.ts` bajo una única transacción compartida (`BEGIN IMMEDIATE`).
-- [x] **369 pruebas automatizadas en 69 archivos:** 361 superadas y 8 omitidas sin binarios aislados de PostgreSQL; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado (30.69s).
+
+### Fase 4.2: Búsqueda FTS5 Reforzada (Sin Embeddings) y Confirmaciones Inmutables — COMPLETADA
+- [x] **Esquema 7 en SQLite:** Tablas `confirmations` y `confirmation_requests` con índices correspondientes.
+- [x] **Comando `reinforcement-enable`:** Migración aditiva irreversible a Esquema 7; los comandos ordinarios jamás auto-migran bases de datos existentes a Esquema 7.
+- [x] **Confirmaciones inmutables de recuerdos:** Registro histórico de observaciones repetidas sin fabricar versiones redundantes en el historial de notas.
+- [x] **Reintento idempotente por clave (`requestKey` replay):** Devuelve respuesta cacheada sin crear confirmaciones ni versiones si la carga coincide en su hash criptográfico SHA-256.
+- [x] **Detección de conflicto de carga (`REQUEST_CONFLICT`):** Bloqueo inmediato si se reutiliza una clave con contenido modificado.
+- [x] **Ventana móvil de deduplicación de 15 minutos:** Deduplicación estricta para recuerdos sin tema (`topicKey: null`), descartando marcas futuras y seleccionando por mayor `lastSeenAt` y desempate `id ASC`.
+- [x] **Protección de reloj local (`CLOCK_SKEW`):** Falla cerrada si el reloj local tiene desfase hacia el pasado respecto a la versión confirmada.
+- [x] **Fórmula matemática exacta de ranking reforzado:** $\text{orderScore} = \text{BM25} \times \text{multiplier}$ con ponderaciones $5.0 / 3.0 / 1.0$, factores $0.10$ (pinned), $0.06$ (recencia a 30 días) y $0.04$ (estabilidad saturada $\frac{n}{n+4}$), ordenación ascendente `orderScore ASC` y desempate `id ASC`.
+- [x] **Reloj único determinista de consulta:** `request_clock(nowMs)` evaluado una sola vez por búsqueda, aplicando ordenación antes de `LIMIT`.
+- [x] **Promoción a Formato 3 en PostgreSQL:** Replicación de confirmaciones y peticiones bajo bloqueo optimista CAS sobre la instantánea, manteniendo invariable la tabla física remota `state.format = 1`.
+- [x] **Guardaguardia en clientes pares:** Pares sin Esquema 7 abortan con `REINFORCEMENT_REQUIRED` ante paquetes en Formato 3.
+- [x] **439 pruebas automatizadas en 76 archivos:** 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en 38.62s.
 
 ---
 
@@ -60,36 +74,38 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 
 Para mantener expectativas estrictamente realistas, se declaran los siguientes límites:
 
-1. **Presupuesto de bytes vs Presupuesto de tokens:**
+1. **Confirmación no equivale a verdad absoluta:**
+   Una confirmación inmutable registra que el asistente observó nuevamente el mismo hecho; no certifica verdad ontológica, infalibilidad del dato ni reemplaza la verificación humana.
+2. **Búsqueda reforzada sin embeddings:**
+   No utiliza vectores, redes neuronales, transformers locales ni llamadas a APIs externas de embeddings. Opera 100% sobre SQLite FTS5 trigram determinista mediante multiplicadores matemáticos de estabilidad y actualidad.
+3. **Sin árbitro LLM automático:**
+   Engram no decide de forma autónoma qué hechos son contradictorios; las contradicciones entre notas distintas se resuelven a nivel de aplicación o mediante sobreescritura explícita de temas (`topicKey`).
+4. **Presupuesto de bytes vs Presupuesto de tokens:**
    El parámetro `--max-bytes` delimita el tamaño total del texto serializado en formato JSON (en bytes UTF-8) transferido entre procesos. **No es una gestión interna de la ventana de contexto de tokens del modelo de IA**.
-2. **Previsualizaciones en puntos de código:**
+5. **Previsualizaciones en puntos de código:**
    Las fichas abreviadas se delimitan en puntos de código Unicode (300 en vistas previas y contexto; 500 para el foco y 150 para vecinos en timeline), garantizando integridad de caracteres sin cortar secuencias UTF-8 a mitad de un byte.
-3. **Cumplimiento voluntario de los modelos de IA:**
+6. **Cumplimiento voluntario de los modelos de IA:**
    Tener configurado el servidor MCP y los ganchos no garantiza que el modelo de lenguaje llame a las herramientas de memoria ni que decida guardar resúmenes. Los modelos de IA son probabilísticos y pueden omitir llamadas a herramientas a su propio criterio.
-4. **Sin guardado garantizado ante cierre abrupto:**
+7. **Sin guardado garantizado ante cierre abrupto:**
    Si la terminal o el proceso del asistente se cierra bruscamente (por ejemplo, con `kill -9` o cierre forzado de ventana), no es posible garantizar que el asistente guarde un resumen final de la sesión.
-5. **Sin captura de transcripciones:**
+8. **Sin captura de transcripciones:**
    Engram no captura transcripciones completas, conversaciones crudas, registros de depuración (*logs*) ni salidas extensas de herramientas.
-6. **Sin modelo de IA en segundo plano:**
+9. **Sin modelo de IA en segundo plano:**
    Engram no ejecuta un modelo propio de lenguaje de forma autónoma en segundo plano; no sintetiza notas sin una petición explícita.
-7. **Política de confianza manual en Codex (`/hooks`):**
-   En Codex, los ganchos nuevos instalados por Engram deben ser aprobados explícitamente por el usuario mediante `/hooks`.
-8. **Pruebas sintéticas vs Sesiones Reales de Asistentes:**
-   La suite de pruebas automatizadas verifica el protocolo con fixtures sintéticos y terminales virtuales (PTY). Cada cliente de IA debe ser verificado en su propio entorno real.
-9. **Rutas locales no sincronizadas:**
-   Las tablas `project_bindings`, `local_session_bindings` y `local_manual_sessions` son exclusivas de cada máquina física y jamás se transmiten a la réplica PostgreSQL.
-10. **Límite de tamaño de instantánea (8 MiB):**
+10. **Política de confianza manual en Codex (`/hooks`):**
+    En Codex, los ganchos nuevos instalados por Engram deben ser aprobados explícitamente por el usuario mediante `/hooks`.
+11. **Rutas locales no sincronizadas:**
+    Las tablas `project_bindings`, `local_session_bindings` y `local_manual_sessions` son exclusivas de cada máquina física y jamás se transmiten a la réplica PostgreSQL.
+12. **Límite de tamaño de instantánea (8 MiB):**
     Cada instantánea combinada de sincronización tiene un tope estricto de 8 MiB (`8,388,608 bytes`), arrojando `SYNC_TOO_LARGE` si se excede.
-11. **Sin resolución automática de conflictos en sincronización:**
+13. **Sin resolución automática de conflictos en sincronización:**
     Modificaciones concurrentes sobre una misma entidad producen `SYNC_CONFLICT`. No existe fusión heurística de textos en conflicto en esta versión.
-12. **Búsqueda BM25 trigram literal:**
-    El buscador se basa en coincidencias de texto exacto y trigramas en SQLite FTS5; no realiza búsqueda semántica mediante vectores ni *embeddings*. La arquitectura modular actual prepara las fronteras de extensión en `modules/search/` e `infrastructure/`, pero no incorpora proveedores de embeddings en esta fase.
 
 ---
 
 ## 3. Hoja de Ruta: Fases Pendientes Oficiales
 
-Habiéndose completado las Fases 1 a 4.1, el desarrollo futuro se concentra en las siguientes fases:
+Habiéndose completado las Fases 1 a 4.2, el desarrollo futuro se concentra en las siguientes fases:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -110,6 +126,10 @@ Habiéndose completado las Fases 1 a 4.1, el desarrollo futuro se concentra en l
                            ▼
 ┌────────────────────────────────────────────────────────┐
 │ [x] Fase 4.1: Monolito Modular y Pruebas Colocadas     │ (Completada v0.5.0)
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ [x] Fase 4.2: Búsqueda FTS5 Reforzada (Sin Embeddings) │ (Completada v0.5.0)
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐

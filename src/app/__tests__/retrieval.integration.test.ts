@@ -68,6 +68,95 @@ test("FTS preview ordering and explanations exactly match full search", () => {
   } finally { store.close(); }
 });
 
+test("schema 7 search ranks pin, recency, and stability without mutating persisted state", () => {
+  const store = new MemoryStore(":memory:");
+  try {
+    setSystemTime(new Date("2026-08-18T12:00:00.000Z"));
+    const { projectId } = store.createProject("Reinforced ranking");
+    const other = store.createProject("Other project");
+    store.enableSearchReinforcement();
+
+    const old = store.save({ projectId, topicKey: "recent-a", title: "recency signal", content: "same body", type: "fact" });
+    const stable = store.save({ projectId, topicKey: "stable-a", title: "stability signal", content: "same body", type: "fact" });
+    const unstable = store.save({ projectId, topicKey: "stable-b", title: "stability signal", content: "same body", type: "fact" });
+    for (let i = 0; i < 4; i++) store.save({
+      projectId, topicKey: "stable-a", title: "stability signal", content: "same body", type: "fact", expectedVersion: 1,
+    });
+
+    setSystemTime(new Date("2026-09-17T12:00:00.000Z"));
+    const recent = store.save({ projectId, topicKey: "recent-b", title: "recency signal", content: "same body", type: "fact" });
+    const pinned = store.save({ projectId, topicKey: "pinned-a", title: "pinned signal", content: "same body", type: "fact", pinned: true });
+    const unpinned = store.save({ projectId, topicKey: "pinned-b", title: "pinned signal", content: "same body", type: "fact" });
+
+    const weak = store.save({ projectId, topicKey: "strong-a", title: "weak candidate", content: "strength signal", type: "fact", pinned: true });
+    for (let i = 0; i < 12; i++) store.save({
+      projectId, topicKey: "strong-a", title: "weak candidate", content: "strength signal", type: "fact", pinned: true, expectedVersion: 1,
+    });
+    const strong = store.save({
+      projectId, topicKey: "strong-b", title: "strength signal strength signal strength signal strength signal",
+      content: "plain body", type: "fact",
+    });
+
+    store.save({ projectId: other.projectId, topicKey: "private-x", title: "private isolation signal", content: "other", type: "fact" });
+    const shared = store.save({ projectId: null, scope: "shared", topicKey: "override-key", title: "override visibility signal", content: "shared", type: "fact" });
+    const local = store.save({ projectId, topicKey: "override-key", title: "override visibility signal", content: "local", type: "fact" });
+    const archived = store.save({ projectId, topicKey: "archived-x", title: "archived visibility signal", content: "hidden", type: "fact" });
+    store.archive(projectId, archived.id);
+    store.save({ projectId, topicKey: "unicode-x", title: "後🙂 exact title", content: "e\u0301 punctuation!", type: "fact" });
+    store.save({ projectId, topicKey: "preview-x", title: "previewtoken", content: "界".repeat(301), type: "fact" });
+
+    const recency = store.search(projectId, "recency signal");
+    expect(new Set(recency.map(row => row.memory.id)).size).toBe(2);
+    expect(recency.map(row => row.memory.id)).toEqual([recent.id, old.id]);
+    expect(recency[1]!.explanation.reinforcement).toMatchObject({ ageDays: 30, recencyBoost: 0.03 });
+
+    const pin = store.search(projectId, "pinned signal");
+    expect(new Set(pin.map(row => row.memory.id)).size).toBe(2);
+    expect(pin.map(row => row.memory.id)).toEqual([pinned.id, unpinned.id]);
+
+    const stability = store.search(projectId, "stability signal");
+    expect(new Set(stability.map(row => row.memory.id)).size).toBe(2);
+    expect(stability.map(row => row.memory.id)).toEqual([stable.id, unstable.id]);
+    expect(stability[0]!.explanation.reinforcement).toMatchObject({ duplicateCount: 4, stabilityBoost: 0.02 });
+
+    expect(store.search(projectId, "strength signal").map(row => row.memory.id).slice(0, 2)).toEqual([strong.id, weak.id]);
+    expect(store.search(projectId, "private isolation")).toEqual([]);
+    expect(store.search(projectId, "override visibility").map(row => row.memory.id)).toEqual([local.id]);
+    store.archive(projectId, local.id);
+    expect(store.search(projectId, "override visibility").map(row => row.memory.id)).toEqual([shared.id]);
+    expect(store.search(projectId, "archived visibility")).toEqual([]);
+
+    const before = store.syncSnapshot();
+    const unicode = store.search(projectId, "後")[0]!;
+    expect(unicode.memory).toMatchObject({ title: "後🙂 exact title", content: "e\u0301 punctuation!" });
+    expect(unicode.explanation).toEqual({ mode: "literal", bm25: null, multiplier: 1, orderScore: null });
+
+    const full = store.search(projectId, "stability signal");
+    const previews = store.searchPreviews(projectId, "stability signal");
+    expect(previews.map(row => row.memory.id)).toEqual(full.map(row => row.memory.id));
+    expect(previews.map(row => row.explanation)).toEqual(full.map(row => row.explanation));
+    const truncated = store.searchPreviews(projectId, "previewtoken")[0]!.memory;
+    expect(Array.from(truncated.preview)).toHaveLength(300);
+    expect(truncated.truncated).toBe(true);
+    expect(truncated).not.toHaveProperty("content");
+    expect(store.syncSnapshot()).toEqual(before);
+  } finally { store.close(); }
+});
+
+test("schema 7 preserves title, topic, and content BM25 weights", () => {
+  setSystemTime(new Date("2026-09-17T12:00:00.000Z"));
+  const store = new MemoryStore(":memory:");
+  try {
+    const { projectId } = store.createProject("Column weights");
+    store.enableSearchReinforcement();
+    const title = store.save({ projectId, topicKey: "weight-a", title: "weightedtoken", content: "filler", type: "fact" });
+    const topic = store.save({ projectId, topicKey: "weightedtoken", title: "filler", content: "filler", type: "fact" });
+    const content = store.save({ projectId, topicKey: "weight-b", title: "filler", content: "weightedtoken", type: "fact" });
+
+    expect(store.search(projectId, "weightedtoken").map(row => row.memory.id)).toEqual([title.id, topic.id, content.id]);
+  } finally { store.close(); }
+});
+
 test("version reads are exact, report current state, and enforce ownership", () => {
   const store = new MemoryStore(":memory:");
   try {

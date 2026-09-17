@@ -29,7 +29,7 @@ test("terminal EOF and Ctrl+C cancel without initializing storage", () => {
 });
 
 test("terminal retries pasted invalid answers then initializes without creating projects", () => {
-  const { result, config } = terminal("no\nmaybe\nsi\n");
+  const { result, config } = terminal("no\nno\nmaybe\nsi\n");
   expect(result.exitCode).toBe(0);
   expect(result.stderr.toString()).toBe("");
   const projects = new MemoryWorkspace(config).listProjects();
