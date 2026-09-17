@@ -1,69 +1,73 @@
 # 07. Plain-Language Glossary
 
-> **Stage:** Stage 1 — Local Memory  
-> **Status:** Current & Active  
+> **Stage:** Stage 1 — Local Memory (Single Database and Shared Memory)
+> **Release Versions:** Program 0.2.0 | Configuration Format 2 | SQLite Schema 3
+> **Status:** Current & Active
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
-This glossary explains every concept using everyday analogies, followed by the formal English technical term in parentheses.
+This glossary explains every technical concept using everyday real-world analogies, followed by its formal technical terminology in parentheses.
 
 ---
 
-### Centralized user storage (User storage / Global database)
-The SQLite file located at `~/.forge614/engram.db` that centralizes all memories across all your working folders on your machine.
+### Central user storage directory (User storage directory / `~/.forge614/`)
+The private folder located in your computer's personal home directory where configuration and memory databases reside, protected with strict owner-only access permissions (`0700`).
 
-### Project unique stable identifier (idProject)
-The permanent, immutable identifier assigned to each project to associate its private configuration (`~/.forge614/projects/<idProject>/.env`) and memories in the database. Independent of the display name (which can change or repeat without affecting data access). *Note: Approved design pending implementation.*
+### Single global configuration file (Global configuration file / `.env`)
+The sole system settings file (`~/.forge614/.env`), generated automatically in private mode (`0600`). Defines format version and storage engine without scattering configurations across projects.
 
-### Visual interface inside terminal (TUI / Text-based User Interface)
-An interactive application constructed with console text panels and status badges navigated using keyboard arrows and Enter directly within your terminal, providing a visual workflow without a web browser or heavy window managers.
+### Single central SQLite database (Single SQLite database / `engram.db`)
+The relational database file (`~/.forge614/engram.db`) that holds all projects, memories, revision snapshots, and idempotency request logs in a unified schema.
 
-### System executable search path (PATH variable)
-An environment variable listing directories where your operating system looks for command-line programs like `forge614-engram`.
+### Immutable project identifier (`projectId`)
+A permanent, unchangeable alphanumeric code (lowercase UUIDv4) assigned to each registered project. It definitively links all memories to that project, ensuring that changing the display name never alters project identity or severs access to memories.
 
-### Organized storage file (Database)
-A structured file on your storage drive designed to store, organize, and retrieve notes rapidly without mixing information between projects.
+### Descriptive project display name (`name`)
+A human-readable text label (e.g. *"Online Store"*). Purely cosmetic; multiple projects may share the same display name without conflict because their true identity is defined by `projectId`.
 
-### Text instruction window (Terminal / CLI / Command Line Interface)
-A window where you type direct text commands to control software without visual buttons or mouse clicks.
+### Scope of a note (`scope`)
+The property determining where a saved memory applies. Can be project-scoped (`project`), applying strictly to a specific project; or shared (`shared`), applying as universal knowledge across all projects.
 
-### Structured data format (JSON / JavaScript Object Notation)
-A clean and universal text format using key-value labels that both humans and computers can easily read.
+### Universal shared memory (Shared memory)
+A note or preference stored once in the database with null `projectId` (e.g. *"I prefer clear explanations in English"*), immediately available to guide AI assistants across all projects without duplicating storage.
 
-### Workspace drawer (Project scope)
-A required label (`--project`) that groups memories belonging to a single project inside the central database, preventing records from bleeding into other workspaces.
+### Topic exception / substitution (Topic override)
+A mathematical and logical rule triggered when a project stores an active memory with the exact same topic key (`topicKey`) as a shared memory. In the project's combined search, the project's decision substitutes for the shared rule, temporarily concealing the general rule for that project.
 
-### Historical snapshot (Version / Revision snapshot)
-An immutable digital photocopy of a memory's text exactly as it existed at the moment it was stored for audit and historical tracking.
+### Combined search (`scope: all`)
+The default search mode when querying from a project (`search --project-id <UUID>`), returning both project-specific notes and relevant universal shared memories while respecting topic overrides.
 
-### Quick lookup index (Full-text inverted index)
-An internal catalog created by the database listing every word across your notes, enabling sub-millisecond retrieval.
+### Immutable historical snapshot (Snapshot / Version)
+An exact, unalterable digital copy (stored in JSON) of a memory's text and metadata at the precise moment it was saved. Allows auditing earlier decisions before revisions occurred.
 
-### Three-letter fragment search (Trigram tokenization)
-A text processing technique that divides words into overlapping 3-character slices (e.g. `sqlite` becomes `sql`, `qli`, `lit`, `ite`), allowing partial word and substring matching.
+### Optimistic revision check (`expectedVersion`)
+A safety requirement demanding that you declare which version number you previously read before updating a topic, preventing concurrent processes from overwriting changes without reviewing intermediate revisions.
 
-### Text match scoring algorithm (BM25)
-A classic information retrieval formula (*Best Matching 25*) that balances term frequency saturation, keyword specificity, and document length. In SQLite FTS5, it produces negative numbers where more negative values indicate stronger relevance.
+### Duplicate prevention stamp (Idempotency / `requestKey`)
+A mechanism ensuring that submitting the same command multiple times with the same dispatch key returns the existing record without generating duplicate notes or polluting history.
 
-### Highlighted or prioritized note (Pinned memory)
-A flag (`pinned = true`) signaling that a memory is critically important, giving it a score multiplier boost to surface at the top of search rankings.
+### Full-text search engine (SQLite FTS5 / `memories_fts`)
+An internal high-speed indexing engine that organizes all words across your notes to find matches in milliseconds without AI token costs or cloud dependencies.
 
-### Freshness multiplier (Recency decay)
-A mathematical curve with a 30-day half-life that awards higher priority to recently modified notes and gradually lowers the ranking of neglected records.
+### Three-letter fragment search (Trigram tokenizer)
+A technique splitting words into consecutive three-letter chunks (e.g., `sqlite` splits into `sql`, `qli`, `lit`, `ite`), allowing searches to locate notes even when matching substrings.
 
-### Duplicate submission prevention (Idempotency / Request key)
-A safeguard ensuring that repeating the exact same command (e.g. after a script retry) returns the existing record without creating duplicate entries.
+### Textual relevance scoring (BM25 algorithm)
+The classic ranking formula (*Best Matching 25*) that scores document relevance by balancing term frequency, rarity, and document length. In SQLite FTS5, it produces negative numbers where more negative values denote higher relevance.
 
-### All-or-nothing operation (Database transaction / Atomic rollback)
-A safety boundary grouping multiple updates together. If any step fails midway, all changes are reverted to the original state.
+### Pinned priority note (`pinned`)
+A flag (`pinned: true`) that awards a fixed ranking boost in the scoring formula so high-priority notes appear at the top of search results.
+
+### Recency decay curve ($r$)
+A mathematical factor with a 30-day half-life that gently boosts newly updated notes, ensuring fresh decisions take precedence over dated records.
 
 ### Write-Ahead Logging (WAL mode)
-A high-throughput SQLite storage method where changes are recorded first in a fast append-only log (`engram.db-wal`). Readers and writers do not block each other, though writes remain serialized.
+An SQLite storage mode where writes append to a secondary journal (`engram.db-wal`), allowing readers to query data without being blocked by active writers.
 
-### Topic categorization key (Topic key)
-A label (e.g. `architecture/database`) that links related revisions of a single concept over time, ensuring a project maintains exactly one active version for that topic.
+### Reversible archival and restoration (`archive` and `restore`)
+Operations that hide a note from standard searches without deleting data, with the ability to reactivate it at any time while preserving complete version history.
 
-### Set-aside note (Archived state)
-A state that hides a note from active daily searches while preserving its complete history for audit or future reactivation.
+### High-level workspace manager (`MemoryWorkspace`)
+The TypeScript SDK class responsible for initializing global configuration, administering projects, and opening secure database connections.
 
-### Software Development Kit (SDK)
-A collection of code functions and TypeScript classes (`MemoryStore`) allowing programmers to integrate the memory system directly into custom software applications.
+### Low-level storage engine (`MemoryStore`)
+The TypeScript SDK class interacting directly with SQLite to perform save, search, history, and archival operations.

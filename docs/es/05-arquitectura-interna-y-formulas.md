@@ -1,207 +1,182 @@
 # 05. Arquitectura Interna, SQLite FTS5 y Fórmulas Matemáticas
 
-> **Etapa:** Etapa 1 — Memoria Local  
-> **Estado:** Vigente y Activo  
+> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
+> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Estado:** Vigente y Verificado
 > **Traducción hermana:** [05 (EN). Internal Architecture, FTS5, and Ranking Formulas](../en/05-internal-architecture-and-formulas.md)
 
-Este documento detalla a máximo rigor técnico el funcionamiento interno de Forge614 Engram: parámetros del motor SQLite, esquema relacional de tablas, disparadores automáticos, y el desglose matemático profundo del algoritmo **BM25**, la curva de recencia y las fórmulas de ordenamiento.
+Este documento expone a máximo rigor técnico la arquitectura interna de Forge614 Engram: parámetros del motor SQLite, esquema relacional de tablas en su versión 3, disparadores reactivos, el mecanismo SQL de sustitución por tema (*topic override*) y el desglose matemático exhaustivo del algoritmo **BM25**, la curva de recencia y las fórmulas de ordenamiento explicable.
 
 ---
 
-## 1. Configuración del Motor SQLite (Pragmas) y Concurrencia
+## 1. Parámetros del Motor SQLite (Pragmas) y Concurrencia
 
-Forge614 Engram utiliza el motor SQLite integrado en Bun (`bun:sqlite`), inicializado bajo estrictos estándares de integridad:
+Forge614 Engram opera sobre el motor nativo de SQLite integrado en Bun (`bun:sqlite`), inicializado con directivas estrictas de seguridad e integridad:
 
-1. **`PRAGMA foreign_keys = ON;`**  
-   Garantiza la integridad referencial en cascada. Por ejemplo, una fila en `memory_versions` no puede existir si no apunta a un identificador válido en `memories`.
-2. **`PRAGMA busy_timeout = 5000;`**  
-   Si dos procesos intentan escribir concurrentemente en la base de datos, SQLite no fallará de inmediato: **esperará pacientemente hasta 5,000 milisegundos (5 segundos)** a que el escritor activo termine su transacción antes de arrojar un error de base ocupada (`SQLITE_BUSY`).
-3. **`PRAGMA application_id = 1177956660;`**  
-   Número de identificación exclusivo de Forge614. Se valida al abrir el archivo para asegurar que no se manipulen bases ajenas.
-4. **`PRAGMA user_version = 1;`**  
-   Control de versión del esquema. Si en el futuro existe una versión `2`, el software de la versión `1` rechazará abrirla para evitar corrupciones.
-5. **`PRAGMA journal_mode = WAL;` (Write-Ahead Logging)**  
-   - En modo WAL, los lectores leen desde el archivo principal mientras las escrituras se añaden a un diario auxiliar rápido (`engram.db-wal`).
-   - **Aclaración de concurrencia:** En modo WAL los lectores no bloquean a los escritores y los escritores no bloquean a los lectores. Sin embargo, **las escrituras siguen estando serializadas** (SQLite solo permite un escritor activo a la vez).
-   - ⚠️ **Precaución de respaldo:** Nunca copies únicamente el archivo `.db` mientras haya procesos escribiendo; espera a que se cierren las conexiones para asegurar que el contenido del diario WAL se haya volcado al archivo principal.
-
-Ubicación centralizada: `~/.forge614/engram.db` (junto con `engram.db-wal` y `engram.db-shm`).
+1. **`PRAGMA foreign_keys = ON;`**
+   Garantiza la integridad referencial en todo momento. Por ejemplo, una fila en `memory_versions` no puede existir si no apunta a un `id` existente en `memories`, y un recuerdo no puede asociarse a un `projectId` que no esté registrado en la tabla `projects`.
+2. **`PRAGMA busy_timeout = 5000;`**
+   Si dos procesos intentan escribir al mismo tiempo en la base, SQLite no fallará de inmediato: **esperará hasta 5,000 milisegundos (5 segundos)** a que la transacción en curso termine antes de emitir un error de concurrencia.
+3. **`PRAGMA application_id = 1177956660;`**
+   Número identificador exclusivo de Forge614 Engram. Se comprueba antes de abrir cualquier archivo para asegurar que no se manipulen bases ajenas ni corruptas.
+4. **`PRAGMA user_version = 3;`**
+   Versión oficial del esquema relacional en esta entrega. Si una base contiene una versión 1 o 2 (diseños previos), el sistema rechaza abrirla con el error `MIGRATION_REQUIRED` para preservar tus datos intactos.
+5. **`PRAGMA journal_mode = WAL;` (Write-Ahead Logging)**
+   - En modo WAL, los procesos lectores leen del archivo principal mientras las escrituras se añaden a un diario auxiliar rápido (`engram.db-wal`).
+   - Los lectores no bloquean a los escritores y los escritores no bloquean a los lectores.
+   - **Nota de concurrencia:** Las escrituras continúan estando serializadas (un único proceso puede escribir a la vez).
 
 ---
 
-## 2. Esquema Relacional de Tablas
+## 2. Esquema Relacional de Tablas (Versión 3)
 
 ```text
-┌─────────────────────────────────┐       ┌─────────────────────────────────┐
-│            memories             │       │         memory_versions         │
-├─────────────────────────────────┤       ├─────────────────────────────────┤
-│ rowid (PK interno de SQLite)    │       │ memory_id (FK -> memories.id)   │◄──┐
-│ id (UUID texto único)           │◄──┐   │ version (Entero >= 1)           │   │
-│ project (Texto normalizado)     │   │   │ snapshot (JSON validado)        │   │
-│ topic_key (Tema único/opcional) │   │   └─────────────────────────────────┘   │
-│ type (Categoría)                │   │                     ▲                   │
-│ title (Título vigente)          │   │                     │                   │
-│ content (Cuerpo vigente)        │   │                     │                   │
-│ pinned (0 o 1)                  │   │   ┌─────────────────┴───────────────┐   │
-│ version (Entero vigente)        │   │   │            requests             │   │
-│ state ('active' | 'archived')   │   │   ├─────────────────────────────────┤   │
-│ created_at / updated_at         │   │   │ project (Texto)                 │   │
-└─────────────────────────────────┘   │   │ request_key (Texto)             │   │
-                 ▲                    │   │ payload_hash (SHA-256)          │   │
-                 │                    │   │ memory_id, version (FK) ────────┼───┘
-┌────────────────┴────────────────┐   │   └─────────────────────────────────┘
-│             events              │   │
-├─────────────────────────────────┤   │   ┌─────────────────────────────────┐
-│ id (Entero autoincremental)     │   │   │          memories_fts           │
-│ memory_id (FK -> memories.id)   ├───┘   ├─────────────────────────────────┤
+┌─────────────────────────────────┐
+│            projects             │
+├─────────────────────────────────┤
+│ projectId TEXT (PK UUIDv4)      │◄──┐
+│ name TEXT (No vacío)            │   │
+│ createdAt / updatedAt           │   │
+└─────────────────────────────────┘   │
+                 ▲                    │
+                 │ Clave foránea      │
+┌────────────────┴────────────────┐   │   ┌─────────────────────────────────┐
+│            memories             │   │   │         memory_versions         │
+├─────────────────────────────────┤   │   ├─────────────────────────────────┤
+│ rowid INTEGER (PK interno)      │   │   │ memory_id TEXT (FK memories.id) │◄──┐
+│ id TEXT (UUID único)            │◄──┼───┤ version INTEGER (>= 1)          │   │
+│ projectId TEXT (FK nullable)    ├───┘   │ snapshot TEXT (JSON válido)     │   │
+│ scope TEXT ('project'|'shared') │       └─────────────────────────────────┘   │
+│ topic_key TEXT (Opcional)       │                         ▲                   │
+│ type TEXT (Categoría)           │                         │                   │
+│ title / content TEXT            │       ┌─────────────────┴───────────────┐   │
+│ pinned INTEGER (0 o 1)          │       │            requests             │   │
+│ version INTEGER (>= 1)          │       ├─────────────────────────────────┤   │
+│ state ('active'|'archived')     │       │ projectId TEXT (FK nullable)    ├───┤
+│ created_at / updated_at         │       │ scope TEXT ('project'|'shared') │   │
+└─────────────────────────────────┘       │ request_key TEXT (No vacío)     │   │
+                 ▲                        │ payload_hash TEXT (SHA-256)     │   │
+                 │                        │ memory_id, version (FK) ────────┼───┘
+┌────────────────┴────────────────┐       └─────────────────────────────────┘
+│             events              │
+├─────────────────────────────────┤       ┌─────────────────────────────────┐
+│ id INTEGER (PK autoincrement)   │       │          memories_fts           │
+│ memory_id TEXT (FK memories.id) │       ├─────────────────────────────────┤
 │ action ('save'|'archive'|'rest')│       │ Tabla Virtual FTS5 (trigram)    │
-│ version (Entero)                │       │ title (5.0), topic_key (3.0),   │
-│ created_at (Timestamp ISO)      │       │ content (1.0)                   │
+│ version INTEGER                 │       │ title (5.0), topic_key (3.0),   │
+│ created_at TIMESTAMP            │       │ content (1.0)                   │
 └─────────────────────────────────┘       └─────────────────────────────────┘
 ```
 
-- **`memories`:** Ficha vigente de cada recuerdo. Restricción `UNIQUE(project, topic_key)` que garantiza un único recuerdo por tema en cada proyecto.
-- **`memory_versions`:** Copias fotográficas inmutables con `CHECK(json_valid(snapshot))` para auditoría y trazabilidad histórica.
-- **`requests`:** Registro de peticiones para idempotencia con huella criptográfica SHA-256 de los datos normalizados.
-- **`events`:** Registro cronológico de auditoría de cada acción ejecutada (`save`, `archive`, `restore`).
-- **`memories_fts`:** Tabla virtual FTS5 de texto completo con tokenizador `trigram`.
+### Restricciones de Coherencia en SQL:
+1. **Exclusión Mutua del Alcance (`scope`):**
+   La tabla `memories` impone a nivel de base de datos que si `scope = 'project'`, el campo `projectId` debe ser obligatorio; y si `scope = 'shared'`, el campo `projectId` debe ser estrictamente nulo:
+   ```sql
+   CHECK((scope='project' AND projectId IS NOT NULL) OR (scope='shared' AND projectId IS NULL))
+   ```
+2. **Índices Únicos Parciales por Tema:**
+   Garantizan que un proyecto no pueda tener dos recuerdos con el mismo tema, y que el espacio compartido no tenga temas repetidos:
+   ```sql
+   CREATE UNIQUE INDEX memories_project_topic ON memories(projectId, topic_key) WHERE scope='project';
+   CREATE UNIQUE INDEX memories_shared_topic ON memories(topic_key) WHERE scope='shared';
+   ```
+3. **Idempotencia Parcial en Peticiones:**
+   La tabla `requests` aplica la misma separación para que una clave de petición no colisione entre proyectos ni en el espacio compartido:
+   ```sql
+   CREATE UNIQUE INDEX requests_project_key ON requests(projectId, request_key) WHERE scope='project';
+   CREATE UNIQUE INDEX requests_shared_key ON requests(request_key) WHERE scope='shared';
+   ```
 
 ### Disparadores Automáticos (Triggers)
-La sincronización del índice FTS5 es 100% reactiva mediante disparadores internos de SQLite:
-- `memory_insert`: Al insertar en `memories`, añade la entrada en `memories_fts`.
-- `memory_delete`: Al eliminar en `memories`, purga la entrada en `memories_fts`.
-- `memory_update`: Al actualizar `title`, `content` o `topic_key`, reemplaza la entrada en `memories_fts` atómicamente.
+La sincronización del índice virtual FTS5 es completamente reactiva mediante tres disparadores:
+- `memory_insert`: Al insertar en `memories`, añade la fila en `memories_fts`.
+- `memory_delete`: Al eliminar en `memories`, elimina la entrada en `memories_fts`.
+- `memory_update`: Al modificar `title`, `content` o `topic_key`, reemplaza la entrada en `memories_fts` atómicamente.
 
 ---
 
-## 3. ¿Qué es BM25 y Cómo Funciona?
+## 3. Mecanismo SQL de Sustitución por Tema (*Topic Override*)
 
-**BM25** significa **"Best Matching 25"** (*Mejor Coincidencia, iteración 25*). Es el algoritmo probabilístico estándar de la industria desarrollado por Stephen Robertson y Karen Spärck Jones (Okapi BM25) para motores de búsqueda como Elasticsearch y SQLite FTS5.
+Cuando se realiza una búsqueda combinada desde un proyecto (`--scope all`), la consulta SQL utiliza una subconsulta correlacionada para decidir si una preferencia compartida debe mostrarse o si debe ceder el paso a una excepción del proyecto:
 
-### Los Tres Pilares Matemáticos de BM25
-1. **Saturación de Frecuencia de Término (TF):**  
-   Cuantas más veces aparece una palabra en un recuerdo, más relevante es. Sin embargo, BM25 aplica una curva asintótica: pasar de 0 a 1 mención da un gran salto de relevancia; pasar de 10 a 20 menciones aporta muy poca relevancia adicional, evitando que textos repetitivos dominen los resultados.
-2. **Frecuencia Inversa de Documento (IDF):**  
-   Mide la especificidad de una palabra. Palabras comunes que aparecen en muchos recuerdos reciben una puntuación muy baja; palabras raras o técnicas (como `"SQLite"`, `"idempotencia"`, `"WAL"`) reciben una ponderación muy alta.
-3. **Normalización por Longitud del Documento:**  
-   Evita que notas muy largas ganen injustamente solo por tener más palabras totales. Si un recuerdo de 10 palabras contiene 2 veces `"SQLite"` (20% de concentración), se considera mucho más relevante que un documento de 1,000 palabras donde `"SQLite"` aparece 2 veces dispersas.
-
-### ¿Por qué SQLite FTS5 devuelve Números Negativos?
-En la teoría matemática pura, BM25 produce un número positivo donde mayor es mejor.
-
-**Sin embargo, en SQLite FTS5 la función `bm25()` devuelve números negativos a propósito.**  
-La razón es la optimización nativa de SQL: las consultas en bases de datos se ordenan de menor a mayor (`ASC` / ascendente). Para que la mejor coincidencia quede en primer lugar sin cálculos extras, SQLite invierte el signo:
-- **Los números más negativos (más alejados del cero hacia la izquierda en la recta numérica) representan la mejor coincidencia.**
-- Una nota con BM25 de `-4.5` es **más relevante** que una con `-2.1` o `-0.3`.
-
----
-
-## 4. Desglose Matemático de las 4 Fórmulas de Búsqueda
-
-```
-[Búsqueda del Usuario]
-         │
-         ▼
-Fórmula 1: bm25(memories_fts, 5.0, 1.0, 3.0) ─────────► Valor BM25 negativo (ej. -2.00)
-         │
-         ▼
-Fórmula 2: r = 1 / (1 + max(0, días)/30) ─────────────► Factor de frescura r entre 0.0 y 1.0
-         │
-         ▼
-Fórmula 3: multiplicador = 1 + (0.10*pinned) + (0.06*r) ► Factor multiplicador entre 1.00 y 1.16
-         │
-         ▼
-Fórmula 4: orderScore = BM25 * multiplicador ──────────► Puntuación final (ordenada ASC)
-```
-
----
-
-### Fórmula 1: Ponderación de Columnas BM25
-$$\text{bm25}(\text{memories\_fts}, 5.0, 1.0, 3.0)$$
-
-En la tabla FTS5 de Forge614 Engram se ponderan las 3 columnas con pesos diferenciados:
-- **`title` (Título):** Peso **`5.0`** ($\times 5$). Si la palabra aparece en el título, es 5 veces más relevante porque el título define el tema central de la nota.
-- **`content` (Contenido):** Peso **`1.0`** ($\times 1$). Relevancia base del cuerpo de texto.
-- **`topic_key` (Tema):** Peso **`3.0`** ($\times 3$). Si la palabra coincide con la clave temática (ej. `architecture/database`), es 3 veces más relevante.
-
----
-
-### Fórmula 2: Curva de Decaimiento por Recencia ($r$)
-$$r = \frac{1}{1 + \frac{\max(0, \text{días})}{30}}$$
-
-Esta fórmula calcula el **factor de frescura** ($r$) de la nota en función del tiempo transcurrido desde su última modificación (`updatedAt`).
-
-- **El valor 30 es la "vida media" (en días):** A los 30 días, la frescura de la nota se reduce exactamente a la mitad ($0.5$).
-- **Valores concretos en el tiempo:**
-  - **Día 0 (Modificada hoy):**  
-    $\text{días} = 0 \rightarrow r = \frac{1}{1 + 0/30} = \frac{1}{1} = \mathbf{1.0}$ (frescura máxima).
-  - **Día 30 (1 mes de antigüedad):**  
-    $\text{días} = 30 \rightarrow r = \frac{1}{1 + 30/30} = \frac{1}{2} = \mathbf{0.5}$.
-  - **Día 60 (2 meses de antigüedad):**  
-    $\text{días} = 60 \rightarrow r = \frac{1}{1 + 60/30} = \frac{1}{3} \approx \mathbf{0.333}$.
-  - **Día 180 (6 meses de antigüedad):**  
-    $\text{días} = 180 \rightarrow r = \frac{1}{1 + 180/30} = \frac{1}{7} \approx \mathbf{0.142}$.
-- **`max(0, días)`:** Evita números negativos ante cualquier micro-desfase de reloj hacia el futuro.
-
----
-
-### Fórmula 3: Multiplicador de Prioridad y Frescura
-$$\text{multiplicador} = 1 + (0.10 \times \text{pinned}) + (0.06 \times r)$$
-
-Determina el factor de bonificación que recibirá la nota sobre su relevancia textual pura:
-
-1. **Base neutra `1.0`:** Toda nota parte de un factor base de 1.0.
-2. **Bono por Nota Prioritaria (`pinned`):**
-   - Si la nota fue guardada con `--pinned true`, `pinned = 1`. Recibe una bonificación fija de **`+0.10`** (un 10% de ventaja).
-   - Si no está fijada, `pinned = 0`, sumando `+0.00`.
-3. **Bono por Frescura ($r$):**
-   - Si la nota se actualizó hoy ($r=1.0$), suma un bono máximo de $0.06 \times 1.0 = \mathbf{+0.06}$ (un 6% de ventaja).
-   - Si tiene 30 días ($r=0.5$), suma $0.06 \times 0.5 = \mathbf{+0.03}$.
-   - Si es muy antigua ($r \approx 0$), suma prácticamente `+0.00`.
-
-**Rango del multiplicador:** Siempre se encuentra entre **`1.00`** (nota antigua sin prioridad) y **`1.16`** (nota fijada como prioritaria y modificada hoy).
-
----
-
-### Fórmula 4: Puntuación Final de Ordenamiento (`orderScore`)
-$$\text{orderScore} = \text{BM25} \times \text{multiplicador}$$
-
-Dado que el valor BM25 es **negativo** (ej. `-2.00`), al multiplicarlo por un factor mayor a 1 (ej. `1.16`), el resultado se vuelve **más negativo**:
-
-$$-2.00 \times 1.16 = \mathbf{-2.32}$$
-
-En la base de datos se ejecuta:
 ```sql
-ORDER BY bm25 * multiplier ASC, m.id ASC
+SELECT m.*, bm25(memories_fts, 5.0, 1.0, 3.0) AS bm25,
+  (1 + 0.10 * m.pinned + 0.06 / (1 + MAX(0, julianday('now') - julianday(m.updated_at)) / 30)) AS multiplier
+FROM memories_fts JOIN memories m ON m.rowid = memories_fts.rowid
+WHERE memories_fts MATCH ? AND (
+  m.projectId = ? OR (
+    m.scope = 'shared' AND NOT EXISTS (
+      SELECT 1 FROM memories p
+      WHERE p.projectId = ?
+        AND p.scope = 'project'
+        AND p.state = 'active'
+        AND p.topic_key = m.topic_key
+    )
+  )
+) AND m.state = 'active'
+ORDER BY bm25 * multiplier ASC, m.id ASC LIMIT ?;
 ```
 
-Como la consulta ordena en orden ascendente (`ASC`, de menor a mayor), en la recta numérica de los números negativos:
-$$\mathbf{-2.32} < -2.06$$
-
-Por lo tanto, **el número más negativo (-2.32) es menor y aparece en primer lugar**.
-
-#### Ejemplo Comparativo en Vivo:
-Imagina dos notas con idéntica coincidencia textual ($\text{BM25} = -2.00$):
-- **Nota A:** Marcada como prioritaria (`pinned = 1`) y modificada hoy ($r = 1.0$).  
-  $\text{multiplicador} = 1 + 0.10(1) + 0.06(1.0) = 1.16$  
-  $$\text{orderScore}_A = -2.00 \times 1.16 = \mathbf{-2.32}$$
-- **Nota B:** Nota normal (`pinned = 0`) modificada hace 30 días ($r = 0.5$).  
-  $\text{multiplicador} = 1 + 0.10(0) + 0.06(0.5) = 1.03$  
-  $$\text{orderScore}_B = -2.00 \times 1.03 = \mathbf{-2.06}$$
-
-**Resultado de la consulta:** La **Nota A (-2.32)** aparece antes que la **Nota B (-2.06)**.
+### ¿Cómo funciona la condición `NOT EXISTS`?
+1. Si el recuerdo evaluado pertenece al proyecto (`m.projectId = ?`), se incluye de inmediato.
+2. Si el recuerdo evaluado es compartido (`m.scope = 'shared'`), el motor revisa si existe algún recuerdo en el proyecto que cumpla tres condiciones simultáneas:
+   - Que pertenezca al mismo proyecto (`p.projectId = ?`).
+   - Que se encuentre activo (`p.state = 'active'`).
+   - Que tenga **exactamente la misma clave temática** (`p.topic_key = m.topic_key`).
+3. Si existe una excepción activa en el proyecto, la condición `NOT EXISTS` resulta falsa y **el recuerdo compartido se descarta silenciosamente de los resultados**.
+4. Si el proyecto archiva su excepción (`state = 'archived'`), la condición `NOT EXISTS` vuelve a ser verdadera y la regla compartida reaparece automáticamente.
 
 ---
 
-## 5. Modo Literal de Respaldo (Términos Cortos < 3 Caracteres)
+## 4. ¿Qué es BM25 y por qué devuelve Números Negativos?
 
-Si **cualquiera** de las palabras buscadas tiene menos de 3 caracteres (ej. `"UI"`, `"DB"`, `"Go"` o `"UI árbol"`):
-1. SQLite trigram no puede indexar fragmentos de 1 o 2 letras.
-2. El sistema conmuta automáticamente al **modo literal**: recorre las memorias activas del proyecto mediante un cursor preparado (`statement.iterate`).
-3. Compara en minúsculas Unicode nativas (`toLowerCase()`), admitiendo acentos y caracteres internacionales sin romperse.
-4. En este modo no se calcula BM25:
-   - `explanation.mode = "literal"`
-   - `explanation.bm25 = null`
-   - `explanation.multiplier = 1`
-   - `explanation.orderScore = null`
-5. Se ordenan colocando primero las notas prioritarias (`pinned DESC`), luego las más recientes (`updated_at DESC`) y finalmente por identificador (`id ASC`).
+**BM25** (*Best Matching 25*) es el algoritmo estándar de recuperación de información que pondera:
+1. **Frecuencia del Término (TF):** Cuántas veces aparece la palabra en la nota, aplicando una curva de saturación decreciente.
+2. **Frecuencia Inversa de Documento (IDF):** Cuán rara o específica es la palabra en el conjunto de recuerdos. Palabras comunes puntúan bajo; palabras técnicas puntúan alto.
+3. **Normalización por Longitud:** Premia notas breves y concisas donde la palabra buscada representa un porcentaje alto del texto total.
+
+### ¿Por qué la función `bm25()` de SQLite devuelve valores negativos?
+En bases de datos SQL, las ordenaciones por defecto son ascendentes (`ASC`, de menor a mayor). Para optimizar el rendimiento sin requerir transformaciones adicionales:
+- **SQLite FTS5 invierte el signo: los números más negativos representan la mayor relevancia.**
+- Una nota con un BM25 de `-3.8` es **más relevante** que una nota con `-1.2` o `-0.1`.
+
+---
+
+## 5. Las Fórmulas Matemáticas del Buscador
+
+### Fórmula 1: Ponderación de Campos en BM25
+Al evaluar coincidencias en FTS5, se asignan pesos diferentes a cada columna:
+$$\text{bm25}(\text{memories\_fts}, 5.0, 1.0, 3.0)$$
+- **Título (`title`):** Peso `5.0` (máxima prioridad textual).
+- **Contenido (`content`):** Peso `1.0` (peso base).
+- **Clave Temática (`topic_key`):** Peso `3.0` (alta prioridad de clasificación).
+
+---
+
+### Fórmula 2: Multiplicador de Prioridad y Recencia
+El multiplicador amplifica el valor de la nota combinando su condición de fijada (`pinned`) y su antigüedad en días ($r$):
+
+$$\text{multiplier} = 1 + (0.10 \times \text{pinned}) + \frac{0.06}{1 + \frac{\max(0, \text{julianday('now')} - \text{julianday}(\text{updated\_at}))}{30}}$$
+
+Donde:
+- $\text{pinned}$ vale `1` si la nota está fijada como prioritaria, o `0` si no lo está (aporta hasta $+10\%$ de bonificación).
+- $r = \max(0, \text{julianday('now')} - \text{julianday}(\text{updated\_at}))$ es la edad de la nota en días transcurridos.
+- El factor de juventud aporta un máximo de $+6\%$ cuando la nota es recién creada ($r = 0$) y se reduce suavemente a $+3\%$ a los 30 días.
+
+---
+
+### Fórmula 3: Puntuación Final de Ordenamiento (*orderScore*)
+$$\text{orderScore} = \text{bm25} \times \text{multiplier}$$
+
+Dado que `bm25` es un valor negativo, multiplicar por un factor mayor que `1` (por ejemplo `1.16`) hace que el número sea **aún más negativo** (alejándose hacia la izquierda en la recta numérica).
+Al ordenar por `ORDER BY bm25 * multiplier ASC`, las notas con mejor coincidencia, fijadas y recientes quedan en los primeros lugares.
+
+---
+
+### Fórmula 4: Modo Literal de Respaldo para Términos Cortos
+El tokenizador `trigram` de SQLite FTS5 requiere términos de al menos 3 caracteres. Si la consulta incluye palabras cortas (como `"UI"`, `"DB"` o `"Go"`):
+- El sistema cambia automáticamente a **modo literal (`mode: "literal"`)**.
+- Aplica plegado a minúsculas compatible con Unicode (`toLowerCase()`).
+- Recorre las notas activas del alcance mediante un iterador eficiente sin cargar la base completa en memoria RAM.
+- Asigna `bm25 = null`, `multiplier = 1`, `orderScore = null`.
+- Ordena los resultados por: `ORDER BY m.pinned DESC, m.updated_at DESC, m.id ASC`.

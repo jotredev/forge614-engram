@@ -1,204 +1,171 @@
 # 04. Guía de Integración con el SDK de TypeScript
 
-> **Etapa:** Etapa 1 — Memoria Local  
-> **Estado:** Vigente y Activo  
+> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
+> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Estado:** Vigente y Activo
 > **Traducción hermana:** [04 (EN). TypeScript SDK Guide (MemoryStore)](../en/04-typescript-sdk.md)
 
-Esta guía explica cómo importar y utilizar la clase `MemoryStore` en tus propias aplicaciones y scripts de TypeScript dentro de este repositorio.
+Esta guía documenta cómo utilizar las clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` en tus propias aplicaciones, pruebas automatizadas y scripts de TypeScript dentro de este repositorio.
 
 > [!NOTE]
-> **Dirigido a programadores:** `MemoryStore` es una herramienta para programadores que desean embeber memoria en sus aplicaciones. El usuario final de la terminal no necesita escribir código TypeScript para usar `forge614-engram`.
+> **Dirigido a programadores:** Este SDK es para desarrolladores que desean integrar memoria estructurada en aplicaciones TypeScript. Los usuarios finales de terminal solo necesitan utilizar la herramienta de comandos `forge614-engram`. No existe un paquete publicado en npm; las importaciones se realizan directamente desde `./src/index`.
 
 ---
 
-## 1. Importación y Opciones de Conexión
+## 1. Módulos Exportados e Inicialización
 
-Forge614 Engram exporta su interfaz principal directamente desde `src/index.ts`:
+El punto de entrada principal es `src/index.ts`:
 
 ```typescript
 import {
+  MemoryWorkspace,
+  WorkspaceConfig,
   MemoryStore,
   MemoryError,
-  defaultDatabasePath,
   memoryTypes,
+  defaultDatabasePath,
+  type Project,
   type SaveInput,
   type Memory,
   type MemoryVersion,
   type SearchResult,
+  type MemoryScope,
+  type SearchScope,
 } from "./src/index";
 ```
 
-### Inicialización de la Base de Datos
-
-```typescript
-// 1. Conexión estándar compartida: usa automáticamente ~/.forge614/engram.db
-const store = new MemoryStore();
-
-// 2. Ruta personalizada: para bases de datos aisladas o pruebas
-const customStore = new MemoryStore("./carpeta-aislada/pruebas.sqlite");
-
-// 3. Almacenamiento en memoria volátil: desaparece por completo al cerrar el proceso
-const memoryOnlyStore = new MemoryStore(":memory:");
-```
-
-> [!IMPORTANT]
-> **Cierre limpio de recursos:** La conexión con SQLite debe cerrarse al terminar de operar para liberar descriptores de archivo y sincronizar los registros del diario WAL. Utiliza siempre la estructura `try { ... } finally { store.close(); }`.
+### Arquitectura de Clases del SDK:
+1. **`MemoryWorkspace` (Gestor de Alto Nivel):**
+   Gestiona el ciclo de vida del espacio global del usuario (`~/.forge614/`). Es la interfaz recomendada para inicializar el entorno, administrar proyectos (`createProject`, `listProjects`, `renameProject`) y abrir conexiones seguras a la base (`open()`).
+2. **`WorkspaceConfig` (Lector de Configuración):**
+   Controla la lectura y escritura atómica del archivo global `~/.forge614/.env`. Verifica permisos (`0700` en carpeta, `0600` en archivo) y rechaza configuraciones antiguas (`projects/`) con el error `LEGACY_CONFIG`.
+3. **`MemoryStore` (Motor de Bajo Nivel):**
+   Maneja las operaciones directas de base de datos SQLite (`save`, `get`, `history`, `search`, `archive`, `restore`).
 
 ---
 
-## 2. Ejemplo Completo y Funcional
-
-Guarda este script en la raíz del repositorio (por ejemplo en `ejemplo.ts`) y ejecútalo con `bun run ejemplo.ts`:
+## 2. Métodos de `MemoryWorkspace`
 
 ```typescript
-import { MemoryStore, MemoryError, defaultDatabasePath } from "./src/index";
+const workspace = new MemoryWorkspace();
+```
 
-// Abre la conexión predeterminada del usuario (~/.forge614/engram.db)
-const store = new MemoryStore();
-console.log("Ruta de almacenamiento utilizada:", defaultDatabasePath());
+### `workspace.init(): void`
+Prepara el archivo `.env` y la base de datos `engram.db` en modo seguro. Si ya existen y son válidos, no realiza cambios ni reinicia datos.
+
+### `workspace.createProject(name: string): Project`
+Crea y registra un nuevo proyecto en la base, asignándole un `projectId` único (UUIDv4).
+⚠️ **Buenas prácticas:** No llames a `createProject()` en cada inicio de tu aplicación, ya que generaría una nueva identidad cada vez. Registra el proyecto una sola vez y reutiliza su `projectId` consultándolo mediante `listProjects()`.
+
+### `workspace.listProjects(): Project[]`
+Devuelve la lista de todos los proyectos registrados en la base central, ordenados por nombre. Si el espacio aún no ha sido inicializado, devuelve un arreglo vacío `[]`.
+
+### `workspace.renameProject(projectId: string, name: string): Project`
+Actualiza el nombre visible del proyecto manteniendo intactos su `projectId` y sus recuerdos.
+
+### `workspace.open(readonly = false): MemoryStore`
+Valida la configuración global y abre el almacén `MemoryStore`. Si `readonly` es `true`, abre la base en modo de solo lectura.
+
+---
+
+## 3. Métodos de `MemoryStore`
+
+Una vez abierto el almacén con `workspace.open()` o `new MemoryStore()`:
+
+### `store.save(input: SaveInput): Memory`
+Guarda un recuerdo. La estructura de `SaveInput` exige definir el alcance:
+- **Para un proyecto:**
+  `{ projectId: string, title: string, content: string, type: MemoryType, ... }`
+- **Para un recuerdo compartido:**
+  `{ scope: "shared", projectId: null, title: string, content: string, type: MemoryType, ... }`
+
+### `store.search(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[]`
+Ejecuta la búsqueda explicable.
+- Si se indica un `projectId`, `scope` puede ser `"all"` (por defecto, combina proyecto + compartidos aplicando sustituciones por tema), `"project"` o `"shared"`.
+- Si `projectId` es `null`, **debe especificarse explícitamente `scope: "shared"`**.
+
+### `store.get(projectId: string | null, id: string): Memory | null`
+Recupera el recuerdo por su UUID. Requiere el `projectId` correspondiente o `null` si es compartido.
+
+### `store.history(projectId: string | null, id: string): MemoryVersion[]`
+Devuelve todas las versiones históricas inmutables del recuerdo.
+
+### `store.archive(projectId: string | null, id: string): Memory`
+Marca el recuerdo como archivado (`state: "archived"`).
+
+### `store.restore(projectId: string | null, id: string): Memory`
+Reactiva un recuerdo previamente archivado (`state: "active"`).
+
+### `store.close(): void`
+Cierra la conexión SQLite y libera los descriptores de archivo.
+
+---
+
+## 4. Ejemplo Completo y Funcional
+
+Crea un archivo de prueba llamado `ejemplo-sdk.ts` en la raíz del repositorio y ejecútalo con `bun run ejemplo-sdk.ts`:
+
+```typescript
+import { MemoryWorkspace } from "./src/index";
+
+// 1. Instanciamos el espacio de trabajo global
+const workspace = new MemoryWorkspace();
+
+// 2. Inicializamos el espacio de forma segura (idempotente)
+workspace.init();
+
+// 3. Obtenemos un proyecto existente o creamos uno nuevo
+let project = workspace.listProjects().find((p) => p.name === "Mi Aplicación");
+if (!project) {
+  project = workspace.createProject("Mi Aplicación");
+  console.log("Nuevo proyecto creado con ID:", project.projectId);
+} else {
+  console.log("Reutilizando proyecto existente:", project.projectId);
+}
+
+// 4. Abrimos el almacén para operar
+const store = workspace.open();
 
 try {
-  // 1. Guardar un recuerdo inicial con clave temática
-  const saved = store.save({
-    project: "backend-api",
-    title: "Motor de Base de Datos",
-    content: "Utilizamos PostgreSQL para producción y SQLite para pruebas locales",
+  // A. Guardar un recuerdo propio del proyecto
+  const memProyecto = store.save({
+    projectId: project.projectId,
+    title: "Base de Datos",
+    content: "Usaremos SQLite localmente con modo WAL",
     type: "decision",
     topicKey: "architecture/storage",
-    requestKey: "req-001",
   });
+  console.log("Recuerdo de proyecto guardado:", memProyecto.id);
 
-  console.log("Recuerdo guardado con ID:", saved.id);
-  console.log("Versión actual:", saved.version);
-
-  // 2. Buscar recuerdos activos relacionados con SQLite
-  const searchResults = store.search("backend-api", "SQLite", 5);
-  for (const item of searchResults) {
-    console.log(`[Coincidencia] ${item.memory.title}: ${item.memory.content}`);
-    console.log(`Modo: ${item.explanation.mode}, Puntaje: ${item.explanation.orderScore}`);
-  }
-
-  // 3. Recuperar la ficha completa del recuerdo
-  const current = store.get("backend-api", saved.id);
-  if (current) {
-    console.log("Estado de la memoria:", current.state); // "active"
-  }
-
-  // 4. Actualizar a la versión 2 (requiere expectedVersion)
-  const updated = store.save({
-    project: "backend-api",
-    title: "Motor de Base de Datos",
-    content: "Utilizamos PostgreSQL 16 en producción y SQLite en desarrollo local",
-    type: "decision",
-    topicKey: "architecture/storage",
-    expectedVersion: 1, // Coincide con la versión 1 existente
-    requestKey: "req-002",
+  // B. Guardar una preferencia compartida universal
+  const memCompartida = store.save({
+    scope: "shared",
+    projectId: null,
+    title: "Idioma de Interacción",
+    content: "Prefiero explicaciones claras en español",
+    type: "preference",
+    topicKey: "preferences/language",
   });
+  console.log("Recuerdo compartido guardado:", memCompartida.id);
 
-  console.log("Nueva versión guardada:", updated.version); // 2
-
-  // 5. Consultar la auditoría completa de versiones
-  const historyList = store.history("backend-api", saved.id);
-  console.log(`Total de versiones históricas: ${historyList.length}`);
-  for (const snap of historyList) {
-    console.log(` -> Versión ${snap.version} (${snap.updatedAt}): ${snap.content}`);
+  // C. Búsqueda combinada desde el proyecto (encuentra ambos recuerdos)
+  console.log("\n--- Búsqueda combinada en el proyecto ---");
+  const resultados = store.search(project.projectId, "español");
+  for (const r of resultados) {
+    console.log(`[${r.memory.scope.toUpperCase()}] ${r.memory.title}: ${r.memory.content}`);
+    console.log(`Puntaje de orden: ${r.explanation.orderScore}`);
   }
 
-  // 6. Archivar el recuerdo (lo retira de búsquedas activas)
-  store.archive("backend-api", saved.id);
-  console.log("Búsqueda tras archivar:", store.search("backend-api", "SQLite").length); // 0
+  // D. Búsqueda exclusiva en el espacio compartido
+  console.log("\n--- Búsqueda exclusiva compartida ---");
+  const compartidos = store.search(null, "español", 5, "shared");
+  console.log("Total compartidos encontrados:", compartidos.length);
 
-  // 7. Restaurar el recuerdo (restituye la visibilidad en búsquedas)
-  // NOTA: restore() solo cambia la visibilidad a 'active', no revierte el texto al pasado.
-  store.restore("backend-api", saved.id);
-  console.log("Búsqueda tras restaurar:", store.search("backend-api", "SQLite").length); // 1
-
-} catch (error) {
-  if (error instanceof MemoryError) {
-    console.error(`Error del sistema de memoria [${error.code}]:`, error.message);
-  } else {
-    console.error("Error inesperado del sistema de archivos o SQLite:", error);
-  }
 } finally {
+  // 5. Cierre obligatorio para liberar SQLite
   store.close();
 }
 ```
 
----
-
-## 3. Catálogo de Métodos de `MemoryStore`
-
-### `constructor(path?: string)`
-Crea la instancia del almacén. Si se omite `path`, utiliza `defaultDatabasePath()` (`~/.forge614/engram.db`).
-
-### `save(input: SaveInput): MemoryVersion`
-Guarda una memoria o actualiza una existente.
-- **Diferencia frente a la CLI:** En el SDK el campo `type` es **estrictamente obligatorio** (`SaveInput.type`).
-- **Parámetros obligatorios:** `project`, `title`, `content`, `type`.
-- **Parámetros opcionales:** `topicKey`, `pinned` (booleano), `expectedVersion` (entero $\ge 1$), `requestKey`.
-- **Retorno:** Devuelve el objeto `MemoryVersion` con la foto guardada.
-
-### `get(project: string, id: string): Memory | null`
-Obtiene la memoria activa o archivada según su ID. Devuelve `null` si no existe.
-
-### `search(project: string, query: string, limit = 10): SearchResult[]`
-Busca todas las notas activas cuyas palabras coincidan con la consulta. `limit` por defecto es 10 (rango: 1..100).
-
-### `history(project: string, id: string): MemoryVersion[]`
-Devuelve la lista cronológica de fotos de contenido ordenadas por `version ASC`. Devuelve `[]` si el ID no existe.
-
-### `archive(project: string, id: string): Memory`
-Marca el estado del recuerdo como `'archived'`. Lanza `NOT_FOUND` si no existe.
-
-### `restore(project: string, id: string): Memory`
-Restaura un recuerdo previamente archivado al estado `'active'`. Lanza `NOT_FOUND` si no existe.
-
-### `close(): void`
-Cierra la conexión con SQLite de forma segura e idempotente.
-
----
-
-## 4. Tipos de Datos e Interfaces
-
-```typescript
-export const memoryTypes = ["fact", "decision", "procedure", "warning", "preference"] as const;
-export type MemoryType = (typeof memoryTypes)[number];
-
-export interface SaveInput {
-  project: string;
-  title: string;
-  content: string;
-  type: MemoryType;
-  topicKey?: string;
-  pinned?: boolean;
-  expectedVersion?: number;
-  requestKey?: string;
-}
-
-export interface MemoryVersion {
-  id: string;
-  project: string;
-  topicKey: string | null;
-  title: string;
-  content: string;
-  type: MemoryType;
-  pinned: boolean;
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Memory extends MemoryVersion {
-  state: "active" | "archived";
-}
-
-export interface SearchResult {
-  memory: Memory;
-  explanation: {
-    mode: "fts5" | "literal";
-    bm25: number | null;
-    multiplier: number;
-    orderScore: number | null;
-  };
-}
-```
+> [!IMPORTANT]
+> **Cierre limpio con `try ... finally`:** Mantén siempre tus operaciones de `MemoryStore` envueltas en un bloque `try ... finally { store.close(); }` para evitar bloqueos del diario WAL y garantizar que la base de datos se cierre de manera ordenada.

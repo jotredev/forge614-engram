@@ -15,9 +15,14 @@ function database() {
 function open(path = ":memory:") {
   const store = new MemoryStore(path);
   stores.push(store);
+  demoId = (store.listProjects().find(p => p.name === "Demo") ?? store.createProject("Demo")).projectId;
+  otherId = (store.listProjects().find(p => p.name === "Other") ?? store.createProject("Other")).projectId;
+  input.projectId = demoId;
   return store;
 }
-const input = { project: "demo", title: "Database choice", content: "Use SQLite locally", type: "decision" as const };
+let demoId: string;
+let otherId: string;
+const input = { projectId: "", title: "Database choice", content: "Use SQLite locally", type: "decision" as const };
 afterEach(() => {
   for (const store of stores.splice(0)) store.close();
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true });
@@ -29,26 +34,26 @@ describe("memoria local", () => {
     const first = open(path);
     const saved = first.save(input);
     first.close();
-    expect(open(path).get("demo", saved.id)?.content).toBe("Use SQLite locally");
+    expect(open(path).get(demoId, saved.id)?.content).toBe("Use SQLite locally");
   });
 
   test("isolates reads, history, search and archive by project", () => {
     const store = open();
     const saved = store.save(input);
-    expect(store.get("other", saved.id)).toBeNull();
-    expect(store.history("other", saved.id)).toEqual([]);
-    expect(store.search("other", "SQLite")).toEqual([]);
-    expect(() => store.archive("other", saved.id)).toThrow();
-    expect(store.get("demo", saved.id)?.state).toBe("active");
+    expect(store.get(otherId, saved.id)).toBeNull();
+    expect(store.history(otherId, saved.id)).toEqual([]);
+    expect(store.search(otherId, "SQLite")).toEqual([]);
+    expect(() => store.archive(otherId, saved.id)).toThrow();
+    expect(store.get(demoId, saved.id)?.state).toBe("active");
   });
 
-  test("normalizes project names and keeps topics scoped", () => {
+  test("keeps topic keys scoped to registered project identities", () => {
     const store = open();
-    const a = store.save({ ...input, project: " Demo ", topicKey: "architecture/db" });
-    const b = store.save({ ...input, project: "other", topicKey: "architecture/db" });
-    expect(a.project).toBe("demo");
+    const a = store.save({ ...input, projectId: demoId, topicKey: "architecture/db" });
+    const b = store.save({ ...input, projectId: otherId, topicKey: "architecture/db" });
+    expect(a.projectId).toBe(demoId);
     expect(a.id).not.toBe(b.id);
-    expect(store.search(" DEMO ", "SQLite")).toHaveLength(1);
+    expect(store.search(demoId, "SQLite")).toHaveLength(1);
   });
 
   test("preserves revisions and replaces old FTS content", () => {
@@ -57,9 +62,9 @@ describe("memoria local", () => {
     const updated = store.save({ ...input, topicKey: "architecture/db", content: "Use PostgreSQL remotely", expectedVersion: 1 });
     expect(updated.id).toBe(saved.id);
     expect(updated.version).toBe(2);
-    expect(store.history("demo", saved.id).map(v => v.content)).toEqual(["Use SQLite locally", "Use PostgreSQL remotely"]);
-    expect(store.search("demo", "SQLite")).toEqual([]);
-    expect(store.search("demo", "PostgreSQL")[0]?.memory.id).toBe(saved.id);
+    expect(store.history(demoId, saved.id).map(v => v.content)).toEqual(["Use SQLite locally", "Use PostgreSQL remotely"]);
+    expect(store.search(demoId, "SQLite")).toEqual([]);
+    expect(store.search(demoId, "PostgreSQL")[0]?.memory.id).toBe(saved.id);
   });
 
   test("rejects stale revisions from another connection without losing data", () => {
@@ -69,8 +74,8 @@ describe("memoria local", () => {
     const saved = one.save({ ...input, topicKey: "database" });
     two.save({ ...input, topicKey: "database", content: "New decision", expectedVersion: 1 });
     expect(() => one.save({ ...input, topicKey: "database", expectedVersion: 1 })).toThrow();
-    expect(one.get("demo", saved.id)?.content).toBe("New decision");
-    expect(one.history("demo", saved.id)).toHaveLength(2);
+    expect(one.get(demoId, saved.id)?.content).toBe("New decision");
+    expect(one.history(demoId, saved.id)).toHaveLength(2);
   });
 
   test("requires a revision when replacing a topic", () => {
@@ -86,56 +91,56 @@ describe("memoria local", () => {
     const saved = store.save(request);
     store.save({ ...input, topicKey: "database", content: "New choice", expectedVersion: 1 });
     expect(store.save(request)).toEqual(saved);
-    expect(store.history("demo", saved.id)).toHaveLength(2);
+    expect(store.history(demoId, saved.id)).toHaveLength(2);
     expect(() => store.save({ ...request, content: "Different request" })).toThrow();
   });
 
   test("archives reversibly without erasing versions or allowing silent replacement", () => {
     const store = open();
     const saved = store.save({ ...input, topicKey: "database" });
-    store.archive("demo", saved.id);
-    expect(store.search("demo", "SQLite")).toEqual([]);
-    expect(store.get("demo", saved.id)?.state).toBe("archived");
-    expect(store.history("demo", saved.id)).toHaveLength(1);
+    store.archive(demoId, saved.id);
+    expect(store.search(demoId, "SQLite")).toEqual([]);
+    expect(store.get(demoId, saved.id)?.state).toBe("archived");
+    expect(store.history(demoId, saved.id)).toHaveLength(1);
     expect(() => store.save({ ...input, topicKey: "database", expectedVersion: 1 })).toThrow();
-    store.restore("demo", saved.id);
-    expect(store.search("demo", "SQLite")).toHaveLength(1);
+    store.restore(demoId, saved.id);
+    expect(store.search(demoId, "SQLite")).toHaveLength(1);
   });
 
   test("archive and restore accept the same trimmed IDs as get", () => {
     const store = open();
     const saved = store.save(input);
-    expect(store.archive("demo",` ${saved.id} `).state).toBe("archived");
-    expect(store.restore("demo",` ${saved.id} `).state).toBe("active");
+    expect(store.archive(demoId,` ${saved.id} `).state).toBe("archived");
+    expect(store.restore(demoId,` ${saved.id} `).state).toBe("active");
   });
 
   test("a short term does not break accented case-insensitive search", () => {
     const store = open();
     store.save({ ...input, title: "ÁRBOL", content: "UI de navegación" });
-    expect(store.search("demo","árbol")).toHaveLength(1);
-    expect(store.search("demo","UI árbol")).toHaveLength(1);
+    expect(store.search(demoId,"árbol")).toHaveLength(1);
+    expect(store.search(demoId,"UI árbol")).toHaveLength(1);
   });
 
   test("limited literal searches release their statements for reuse and writes", () => {
     const store = open();
     store.save({ ...input, title: "UI first" });
     store.save({ ...input, title: "UI second" });
-    expect(store.search("demo","UI",1)).toHaveLength(1);
-    expect(store.search("demo","UI",1)).toHaveLength(1);
+    expect(store.search(demoId,"UI",1)).toHaveLength(1);
+    expect(store.search(demoId,"UI",1)).toHaveLength(1);
     store.save({ ...input, title: "UI third" });
-    expect(store.search("demo","UI",10)).toHaveLength(3);
+    expect(store.search(demoId,"UI",10)).toHaveLength(3);
   });
 
   test("searches substrings and short words as literals", () => {
     const store = open();
     store.save({ ...input, title: "UI uploadHandler", content: "Discount 10% _field" });
     store.save({ ...input, title: "Other", content: "Discount 100 unrelated" });
-    expect(store.search("demo", "loadHand")).toHaveLength(1);
-    expect(store.search("demo", "UI")[0]?.explanation.mode).toBe("literal");
-    expect(store.search("demo", "10%")).toHaveLength(1);
-    expect(store.search("demo", "%")).toHaveLength(1);
-    expect(store.search("demo", "_field")).toHaveLength(1);
-    expect(store.search("demo", '" OR *')).toEqual([]);
+    expect(store.search(demoId, "loadHand")).toHaveLength(1);
+    expect(store.search(demoId, "UI")[0]?.explanation.mode).toBe("literal");
+    expect(store.search(demoId, "10%")).toHaveLength(1);
+    expect(store.search(demoId, "%")).toHaveLength(1);
+    expect(store.search(demoId, "_field")).toHaveLength(1);
+    expect(store.search(demoId, '" OR *')).toEqual([]);
   });
 
   test("requires every search term and gives title matches higher relevance", () => {
@@ -143,7 +148,7 @@ describe("memoria local", () => {
     const title = store.save({ ...input, title: "retry upload", content: "Resolved safely" });
     store.save({ ...input, title: "Other issue", content: "retry upload fixed" });
     store.save({ ...input, title: "retry alone", content: "another issue" });
-    const results = store.search("demo", "retry upload");
+    const results = store.search(demoId, "retry upload");
     expect(results).toHaveLength(2);
     expect(results[0]?.memory.id).toBe(title.id);
     expect(results[0]?.explanation.bm25).toBeLessThan(0);
@@ -151,13 +156,13 @@ describe("memoria local", () => {
 
   test("rejects empty text, invalid types and invalid limits", () => {
     const store = open();
-    for (const key of ["project", "title", "content"] as const) {
+    for (const key of ["projectId", "title", "content"] as const) {
       expect(() => store.save({ ...input, [key]: " " })).toThrow();
     }
     expect(() => store.save({ ...input, type: "invalid" as "fact" })).toThrow();
-    expect(() => store.search("demo", " ")).toThrow();
-    for (const limit of [0, -1, 101, 1.5, NaN]) expect(() => store.search("demo", "SQLite", limit)).toThrow();
-    expect(store.search("demo", "SQLite")).toEqual([]);
+    expect(() => store.search(demoId, " ")).toThrow();
+    for (const limit of [0, -1, 101, 1.5, NaN]) expect(() => store.search(demoId, "SQLite", limit)).toThrow();
+    expect(store.search(demoId, "SQLite")).toEqual([]);
   });
 
   test("rolls back content, history and FTS together if a revision write fails", () => {
@@ -169,10 +174,10 @@ describe("memoria local", () => {
       WHEN NEW.version=2 BEGIN SELECT RAISE(ABORT,'forced revision failure'); END;`);
     connection.close();
     expect(() => store.save({ ...input, topicKey: "database", expectedVersion: 1, content: "PostgreSQL" })).toThrow();
-    expect(store.get("demo",saved.id)?.content).toBe("Use SQLite locally");
-    expect(store.history("demo",saved.id)).toHaveLength(1);
-    expect(store.search("demo","SQLite")).toHaveLength(1);
-    expect(store.search("demo","PostgreSQL")).toEqual([]);
+    expect(store.get(demoId,saved.id)?.content).toBe("Use SQLite locally");
+    expect(store.history(demoId,saved.id)).toHaveLength(1);
+    expect(store.search(demoId,"SQLite")).toHaveLength(1);
+    expect(store.search(demoId,"PostgreSQL")).toEqual([]);
   });
 
   test("refuses an unrelated SQLite database without adding memory tables", () => {

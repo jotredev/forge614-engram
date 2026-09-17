@@ -1,173 +1,302 @@
-# 02. System Walkthrough Guide
+# 02. Guided System Walkthrough
 
-> **Stage:** Stage 1 — Local Memory  
-> **Status:** Current & Active  
+> **Stage:** Stage 1 — Local Memory (Single Database and Shared Memory)
+> **Release Versions:** Program 0.2.0 | Configuration Format 2 | SQLite Schema 3
+> **Status:** Current & Active
 > **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
-This guided walkthrough demonstrates the complete lifecycle of a memory in Forge614 Engram: from initial storage to revision updates, explainable search, historical auditing, and reversible archiving.
+This walkthrough guides you step by step through the complete lifecycle of Forge614 Engram: from initializing the global user space and registering projects to recording project-scoped and shared memories, executing combined searches, applying topic overrides, auditing version history, and managing reversible archival.
 
 > [!NOTE]
-> All examples use the compiled `forge614-engram` command. If developing inside the repository without installing, replace `forge614-engram` with `bun run cli`.
+> All examples use the installed standalone binary `forge614-engram`. If working directly from the source repository with Bun, replace `forge614-engram` with `bun run cli`.
 
 ---
 
-## 1. Project Scoping within Centralized Storage
+## 1. Project Concept and Identity (`projectId`)
 
-In Forge614 Engram, **every operation is strictly bound to a project name** via `--project`.
+In Forge614 Engram, **all projects share a single database (`~/.forge614/engram.db`) and a single configuration file (`~/.forge614/.env`)**.
 
-Project names are automatically normalized: whitespaces are trimmed, and letters are lowercased (`Demo-App` becomes `demo-app`).
-
-All project memories reside within a single user database (`~/.forge614/engram.db`). The `--project` flag ensures that searches executed in `frontend-web` never leak memories from `backend-api`.
+Within that database, projects are formally registered with two attributes:
+1. **`projectId` (Immutable Unique Identifier):** An automatically generated lowercase UUIDv4 (e.g. `7c9e6679-7425-40de-944b-e07fc1f90ae7`). It serves as the primary key linking all project-scoped memories.
+2. **`name` (Descriptive Display Name):** A human-readable label (e.g. `"Online Store"`). Renaming the project with `project-rename` never changes `projectId` or affects stored memories.
 
 <callout icon="⚠️" color="yellow_bg">
-**Data Separation, Not User Authentication:** Project scoping organizes records logically. Anyone with local file access to your hard drive can inspect the SQLite file. **Never store secret passwords or tokens**.
+**Logical Data Isolation, Not Multi-User Security:** Scoping by `projectId` isolates data so one project never reads private memories from another. However, it is not a network permission system. Any program running under your local operating system user can access the store. **Never store plaintext passwords, secret keys, or sensitive API tokens in memories.**
 </callout>
-
-> [!NOTE]
-> **Approved Future Design (`idProject`):** In the current Stage 1 release, project scoping relies on the textual name in `--project`. An approved future architecture (pending implementation) introduces a unique and stable identifier named `idProject` with private per-project configuration in `~/.forge614/projects/<idProject>/.env`. See [08. Stage 1 Boundaries and Planned Roadmap](08-boundaries-and-roadmap.md) for technical details.
-
 
 ---
 
-## 2. Standalone Memories vs. Topic Memories
+## 2. The Two Memory Scopes (`scope`)
 
-You can record memories in two distinct ways:
+The `scope` property determines where each memory applies:
 
-### Option A: Standalone Memory (Without a Topic)
-Omit `--topic` to store an independent memory card:
+| Scope (`scope`) | Identifier (`projectId`) | Purpose and Behavior |
+| :--- | :--- | :--- |
+| **`project`** | UUID of a registered project | Decisions, facts, or guidelines specific **only to that project**. |
+| **`shared`** | `null` (no project) | Universal preferences or learnings that apply to **all projects**. |
+
+### Everyday Examples:
+- *"This application uses SQLite"* $\rightarrow$ **Project** scope (`scope: project`).
+- *"I prefer explanations in English"* $\rightarrow$ **Shared** scope (`scope: shared`).
+
+A shared memory is stored **once in the database**; it is never duplicated across individual projects.
+
+---
+
+## 3. Step-by-Step Lifecycle Walkthrough
+
+### Step 1: Initialize the Storage Space (`init`)
+Prepare the configuration and database files:
+
 ```bash
-forge614-engram save --project demo --title "Team Meeting" --content "Team agreed to hold weekly sprint reviews on Fridays" --type fact
-```
-Executing this command twice (without `--request-key`) creates two distinct memories with separate UUIDs.
-
-### Option B: Topic Memory (With Revision Tracking)
-Assign a topic key (`--topic`) when recording evolving architectural or operational decisions:
-```bash
-forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
+forge614-engram init
 ```
 
-**Returned JSON:**
+**JSON Response:**
 ```json
 {
-  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-  "project": "demo",
-  "topicKey": "architecture/database",
-  "type": "decision",
-  "title": "Base de datos",
-  "content": "Usamos SQLite localmente",
-  "pinned": false,
-  "version": 1,
-  "createdAt": "2026-09-16T16:19:51.746Z",
-  "updatedAt": "2026-09-16T16:19:51.746Z"
+  "initialized": true,
+  "storage": "sqlite"
 }
 ```
 
-Assigning `architecture/database` reserves that topic within project `demo` at **version 1** with a permanent unique ID.
+---
+
+### Step 2: Register a Project (`project-create`)
+Register your project with a human-readable name:
+
+```bash
+forge614-engram project-create --name "Online Store"
+```
+
+**JSON Response:**
+```json
+{
+  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "name": "Online Store",
+  "createdAt": "2026-09-16T20:10:00.000Z",
+  "updatedAt": "2026-09-16T20:10:00.000Z"
+}
+```
+
+*(Keep the returned `projectId` for subsequent project operations).*
+
+List all registered projects whenever needed:
+```bash
+forge614-engram project-list
+```
 
 ---
 
-## 3. Searching Memories: Word Matching and Explainable Scoring
+### Step 3: Record Project Memories (`save --project-id`)
+Within a project, you can save standalone or topic-tracked memories:
 
-Search active memories in the project:
+#### A. Standalone Memory (No Topic)
+For notes that do not require revision tracking:
 ```bash
-forge614-engram search --project demo --query SQLite
+forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Kickoff agreement" --content "Deliveries will occur biweekly" --type fact
 ```
 
-### Response:
+#### B. Topic-Tracked Memory (Version Controlled with Idempotency)
+For architectural decisions that evolve over time, specify a topic key (`--topic`) and request key (`--request-key`):
+```bash
+forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Database selection" --content "We use SQLite locally" --type decision --topic architecture/database --request-key req-db-v1
+```
+
+**JSON Response:**
+```json
+{
+  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
+  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "scope": "project",
+  "topicKey": "architecture/database",
+  "type": "decision",
+  "title": "Database selection",
+  "content": "We use SQLite locally",
+  "pinned": false,
+  "version": 1,
+  "state": "active",
+  "createdAt": "2026-09-16T20:11:00.000Z",
+  "updatedAt": "2026-09-16T20:11:00.000Z"
+}
+```
+
+---
+
+### Step 4: Record a Shared Preference (`save --scope shared`)
+Record a universal preference to guide assistants across all projects:
+
+```bash
+forge614-engram save --scope shared --title "Preferred language" --content "I prefer explanations in English" --type preference --topic preferences/language
+```
+
+**JSON Response:**
+```json
+{
+  "id": "e2f1c0d9-b8a7-4655-9012-3456789abcde",
+  "projectId": null,
+  "scope": "shared",
+  "topicKey": "preferences/language",
+  "type": "preference",
+  "title": "Preferred language",
+  "content": "I prefer explanations in English",
+  "pinned": false,
+  "version": 1,
+  "state": "active",
+  "createdAt": "2026-09-16T20:12:00.000Z",
+  "updatedAt": "2026-09-16T20:12:00.000Z"
+}
+```
+
+---
+
+### Step 5: Combined Search from a Project
+When searching from a project (`search --project-id <UUID>`), the system uses **combined scope (`--scope all`) by default**:
+
+```bash
+forge614-engram search --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --query "English"
+```
+
+**JSON Response:**
 ```json
 [
   {
     "memory": {
-      "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-      "project": "demo",
-      "topicKey": "architecture/database",
-      "type": "decision",
-      "title": "Base de datos",
-      "content": "Usamos SQLite localmente",
+      "id": "e2f1c0d9-b8a7-4655-9012-3456789abcde",
+      "projectId": null,
+      "scope": "shared",
+      "topicKey": "preferences/language",
+      "type": "preference",
+      "title": "Preferred language",
+      "content": "I prefer explanations in English",
       "pinned": false,
       "version": 1,
       "state": "active",
-      "createdAt": "2026-09-16T16:19:51.746Z",
-      "updatedAt": "2026-09-16T16:19:51.746Z"
+      "createdAt": "2026-09-16T20:12:00.000Z",
+      "updatedAt": "2026-09-16T20:12:00.000Z"
     },
     "explanation": {
       "mode": "fts5",
       "bm25": -0.000001,
-      "multiplier": 1.0599996,
-      "orderScore": -0.00000105999
+      "multiplier": 1.059999,
+      "orderScore": -0.000001059999
     }
   }
 ]
 ```
 
-### Search Mechanics:
-1. **Conjunctive Matching (AND):** Searching `SQLite localmente` requires both words to exist within the memory.
-2. **Rank Explanation (`explanation`):**
-   - `mode: "fts5"`: Evaluated via SQLite's FTS5 full-text search.
-   - `bm25`: BM25 score. More negative numbers indicate stronger textual matches.
-   - `multiplier`: Factor boosting recent memories and prioritized notes (`pinned`).
-   - `orderScore`: Final ranking score (`bm25 * multiplier`), ordered ascending (most negative first).
+The combined query seamlessly retrieved the shared preference alongside project memories. And crucially: **memories from other projects are never leaked**.
 
----
-
-## 4. Updating a Decision: Optimistic Concurrency Control
-
-When updating a topic, you **must explicitly specify the version you previously read** using `--expected-version`:
-
+If you wish to search exclusively within this project's private notes, pass `--scope project`:
 ```bash
-forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
-```
-
-### Key Update Behaviors:
-1. **Stable Identifier:** The `id` remains unchanged.
-2. **Version Incremented:** Advanced from `1` to `2`.
-3. **Full Replacement:** The new body completely replaces previous text.
-4. **Preserving Fields:** The CLI resets omitted flags to defaults (`fact` and `false`). Specify flags explicitly to retain them.
-5. **Collision Protection:** If another process modified the topic to version 2 first, sending `--expected-version 1` aborts with `VERSION_CONFLICT`.
-
----
-
-## 5. History Inspection: Auditing Historical Snapshots
-
-Retrieve past snapshots using `history`:
-
-```bash
-forge614-engram history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram search --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --scope project --query "SQLite"
 ```
 
 ---
 
-## 6. Duplicate Prevention with Request Keys (Idempotency)
+## 4. The Topic Exception Rule (*Topic Override*)
 
-- Re-sending identical payload data with the same `--request-key demo-v1` returns the original record without writing duplicate rows.
-- Re-using `--request-key demo-v1` with altered text throws `REQUEST_CONFLICT`.
+What happens when a general rule exists, but a specific project requires an exception?
+
+### Practical Testable Scenario:
+1. **General Shared Rule:**
+   Save a shared guideline under the topic `runtime`:
+   ```bash
+   forge614-engram save --scope shared --title "Execution runtime" --content "Bun as general preference" --type preference --topic runtime
+   ```
+2. **Project-Specific Exception:**
+   In project `Online Store`, Node.js is required for legacy compatibility. Save a project memory with the **exact same topic** (`runtime`):
+   ```bash
+   forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Execution runtime" --content "Node.js for project compatibility" --type decision --topic runtime
+   ```
+3. **Combined Project Query:**
+   Search for runtime requirements from the project:
+   ```bash
+   forge614-engram search --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --query "runtime"
+   ```
+   **Result:** Only the project's memory (*"Node.js..."*) is returned. The shared rule (*"Bun..."*) is **automatically omitted**.
+4. **Shared Rule Preservation:**
+   The shared memory is **neither deleted nor modified**. Other projects continue to see it, and it can be queried directly via:
+   ```bash
+   forge614-engram search --scope shared --query "Bun"
+   ```
+5. **Reversible Behavior:**
+   If you archive the project's exception:
+   ```bash
+   forge614-engram archive --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --id <project-exception-id>
+   ```
+   Searching from the project again immediately returns the shared Bun preference. Restoring the project memory (`restore`) re-applies the project override.
+
+> [!IMPORTANT]
+> The `topicKey` comparison is exact and case-sensitive. It requires no vector semantics or AI training: it is an explicit rule enforced in the SQL query.
 
 ---
 
-## 7. Archiving and Restoring
+## 5. Revision Updates and Optimistic Concurrency
 
-### Archive:
-```bash
-forge614-engram archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
-```
-- Transitions to `state: "archived"`.
-- Hidden from regular search, preserved in `get` and `history`.
+When updating a topic-tracked decision, **you must specify the version you read** using `--expected-version`:
 
-### Restore:
 ```bash
-forge614-engram restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Database selection" --content "We use SQLite locally with WAL mode" --type decision --topic architecture/database --expected-version 1 --request-key req-db-v2
 ```
-- Transitions back to `state: "active"` and reappears in search.
-- **Note:** `restore()` only toggles search visibility; it does not roll back text to older revisions.
+
+**JSON Response:**
+```json
+{
+  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
+  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "scope": "project",
+  "topicKey": "architecture/database",
+  "type": "decision",
+  "title": "Database selection",
+  "content": "We use SQLite locally with WAL mode",
+  "pinned": false,
+  "version": 2,
+  "state": "active",
+  "createdAt": "2026-09-16T20:11:00.000Z",
+  "updatedAt": "2026-09-16T20:20:00.000Z"
+}
+```
+
+The version increments to `2`. If a concurrent process attempts to send `--expected-version 1` again, the engine halts with `VERSION_CONFLICT` to protect against stale overwrites.
 
 ---
 
-## 8. Short-Word Fallback: Literal Search Mode
+## 6. Version Auditing and Reversible Archival
 
-When searching words shorter than 3 characters (e.g. `"UI"`, `"DB"`):
+### Inspect Historical Versions (`history`)
+Retrieve the complete immutable record of changes:
+
 ```bash
-forge614-engram search --project demo --query "UI árbol"
+forge614-engram history --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --id 5617e6cd-7072-48cc-a922-1a4b269e73be
 ```
-- Scans active memories using Unicode lowercasing (`toLowerCase()`).
-- Matches short terms and accented characters.
-- Sets `mode: "literal"`, `bm25: null`, `multiplier: 1`, `orderScore: null`.
+
+Returns a chronological JSON array containing snapshot version 1 and snapshot version 2.
+
+---
+
+### Crucial Rule: Modifying Shared Memories
+<callout icon="🛑" color="red_bg">
+Finding a shared memory in a combined project search **DOES NOT permit modifying or archiving it using `--project-id`**.
+</callout>
+
+- To modify, archive, or restore a project-scoped memory:
+  ```bash
+  forge614-engram archive --project-id <UUID> --id <memory-id>
+  ```
+- To modify, archive, or restore a shared memory:
+  ```bash
+  forge614-engram archive --scope shared --id <memory-id>
+  ```
+Attempting to pass both `--scope shared` and `--project-id` triggers an immediate error (`INVALID_INPUT`).
+
+---
+
+### Renaming a Project (`project-rename`)
+If your project changes display name:
+
+```bash
+forge614-engram project-rename --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --name "Global Store 2026"
+```
+
+The display name updates immediately. Because `projectId` remains unchanged, **all memories, historical revisions, and request keys remain fully intact**.
