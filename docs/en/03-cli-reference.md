@@ -1,155 +1,287 @@
 # 03. Terminal CLI Command Reference
 
-> **Stage:** Stage 1 — Local Memory  
-> **Status:** Current & Active  
-> **Sister translation:** [03. Referencia Completa de Terminal (CLI)](../es/03-referencia-cli.md)
+> **Stage:** Stage 1 — Local Memory (Single Database and Shared Memory)
+> **Release Versions:** Program 0.2.0 | Configuration Format 2 | SQLite Schema 3
+> **Status:** Current & Active
+> **Sister translation:** [03. Manual Exhaustivo de Terminal (CLI)](../es/03-referencia-cli.md)
 
-This reference documents the command-line interface (CLI) for Forge614 Engram.
+This reference documents every command, argument flag, syntax rule, and JSON output format in the Forge614 Engram command-line interface (CLI).
 
 ---
 
-## 1. General Command-Line Rules
+## 1. General CLI Syntax Rules
 
-1. **Strict Syntax Order:** The subcommand must appear immediately after the executable:
+1. **Command placement:** The command must immediately follow the executable name:
    ```bash
    forge614-engram <command> [options...]
-   # or inside repository during development:
+   # Or in repository development mode:
    bun run cli <command> [options...]
    ```
-2. **Option Spacing:** Each flag (`--option`) must be followed by a space and its value. The `--option=value` syntax is not accepted.
-   - ✅ Correct: `--project demo --limit 5`
-   - ❌ Invalid: `--project=demo`, `--limit=5`
-3. **Quotes for Spaced Text:** Any text containing spaces must be enclosed in double quotes (`"..."`).
-4. **No Unknown or Duplicate Flags:** Reusing a flag or specifying an unrecognized argument causes immediate rejection before opening SQLite.
-5. **Output Channels and Status Codes:**
-   - **Success:** JSON output emitted to standard output (`stdout`) with exit code `0`.
-   - **Failure:** JSON error object emitted to standard error (`stderr`) with exit code `1`.
+2. **Option syntax:** Flags must be separated from their values with a space. The syntax `--option=value` is not accepted.
+   - ✅ Valid: `--project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --limit 5`
+   - ❌ Invalid: `--project-id=7c9e6679-7425-40de-944b-e07fc1f90ae7`
+3. **Quoting whitespace:** Any title, content, or name with spaces must be enclosed in double quotes (`"..."`).
+4. **Strict argument validation:** Unknown options, repeated flags, or conflicting flags (such as combining `--scope shared` with `--project-id` on memory operations) cause an immediate exit with error **before reading configuration or opening SQLite**.
+5. **Output channels and exit codes:**
+   - **Success:** JSON output is written to standard output (`stdout`) with exit code `0`.
+   - **Failure:** JSON error details are written to standard error (`stderr`) with exit code `1`.
+6. **Superseded flags (Disallowed):**
+   - `--db`: Not accepted. Fixed location: `~/.forge614/engram.db`.
+   - `--project` (by name): Not accepted. The identifier is `--project-id <UUID>`.
+   - `--id-project`: Not accepted. Official name is `--project-id`.
 
 ---
 
-## 2. Universal Options
-
-These options apply to **all data subcommands**:
-
-| Option | Required | Default | Description and Behavior |
-| :--- | :--- | :--- | :--- |
-| `--project <name>` | **Yes** | *(None)* | Target project scope. Whitespace is trimmed and characters are lowercased (`My Project` $\rightarrow$ `my project`). |
-| `--db <path>` | No | `~/.forge614/engram.db` | File path to SQLite database. Defaults to the centralized user storage database. Automatically created if missing on valid operations. |
+## 2. Workspace and Project Commands
 
 ---
 
-## 3. Subcommand Reference
-
----
-
-### 3.1. `--version`
+### 2.1. `--version`
 Displays package name and installed version.
 
 ```bash
 forge614-engram --version
 ```
-- **Output:** `forge614-engram 0.1.0`
+- **Output:** `forge614-engram 0.2.0`
 - **Options:** Accepts no additional options.
-- **Side effects:** Does not touch filesystem or open SQLite.
+- **Side effects:** None. Does not read or create disk files.
 
 ---
 
-### 3.2. `help`
-Displays built-in quick reference manual.
+### 2.2. `help`
+Prints command-line help instructions.
 
 ```bash
 forge614-engram help
 ```
-- **Options:** Accepts no additional arguments.
-- **Side effects:** Does not touch disk or create folders.
+- **Options:** Accepts no additional options.
+- **Side effects:** None. Does not touch disk.
 
 ---
 
-### 3.3. `save`
-Stores a new memory card or saves a new revision to an existing topic.
+### 2.3. `init`
+Initializes user storage (`~/.forge614/`), creating `.env` (mode `0600`) and SQLite database `engram.db` (mode `0600`).
 
-> [!NOTE]
-> `save` is an explicit manual operation in Stage 1. Automated assistant-driven recording via MCP is planned for Stage 2.
-
-#### Specific Options:
-| Option | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--title <title>` | **Yes** | *(None)* | Descriptive heading. Trimmed. |
-| `--content <text>` | **Yes** | *(None)* | Memory body text. |
-| `--type <type>` | No | `fact` | Conceptual category. Allowed: `fact`, `decision`, `procedure`, `warning`, `preference`. |
-| `--topic <key>` | No | `null` | Unique topic key for versioning (e.g. `architecture/database`). Case-sensitive. |
-| `--expected-version <n>` | Conditional | `null` | Integer ($\ge 1$). **Mandatory if `--topic` already exists**. Must match current version in DB. |
-| `--request-key <key>` | No | `null` | Idempotency key. Re-sending identical payload with the same key returns previous record without writing. |
-| `--pinned <true\|false>` | No | `false` | Priority flag. Only accepts literal `true` or `false`. |
-
-#### Example 1: Initial save with topic and request key
 ```bash
-forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
+forge614-engram init
 ```
-
-**Output (stdout):**
+- **Options:** None.
+- **Behavior:** Idempotent. Valid existing configurations and databases are preserved without modification.
+- **Standard Output (JSON):**
 ```json
 {
-  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-  "project": "demo",
-  "topicKey": "architecture/database",
-  "type": "decision",
-  "title": "Base de datos",
-  "content": "Usamos SQLite localmente",
-  "pinned": false,
-  "version": 1,
-  "createdAt": "2026-09-16T16:19:51.746Z",
-  "updatedAt": "2026-09-16T16:19:51.746Z"
+  "initialized": true,
+  "storage": "sqlite"
 }
 ```
 
-#### Example 2: Update topic to revision 2
+---
+
+### 2.4. `project-create`
+Registers a new project in the central `projects` table.
+
 ```bash
-forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
+forge614-engram project-create --name <name>
+```
+- **Options:**
+  - `--name <name>` (**Required**): Descriptive non-empty display name.
+- **Behavior:** If storage is not yet initialized, `project-create` automatically initializes the environment. Returns a newly generated UUIDv4 `projectId`.
+- **Example:**
+```bash
+forge614-engram project-create --name "My Application"
+```
+- **Standard Output (JSON):**
+```json
+{
+  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "name": "My Application",
+  "createdAt": "2026-09-16T20:00:00.000Z",
+  "updatedAt": "2026-09-16T20:00:00.000Z"
+}
 ```
 
 ---
 
-### 3.4. `search`
-Finds active memories in the specified project.
+### 2.5. `project-list`
+Lists all registered projects in the central database.
 
-#### Specific Options:
+```bash
+forge614-engram project-list
+```
+- **Options:** None.
+- **Behavior:** If uninitialized, returns `[]` without creating files. If initialized, returns projects sorted by name.
+- **Standard Output (JSON):**
+```json
+[
+  {
+    "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "name": "My Application",
+    "createdAt": "2026-09-16T20:00:00.000Z",
+    "updatedAt": "2026-09-16T20:00:00.000Z"
+  }
+]
+```
+
+---
+
+### 2.6. `project-rename`
+Updates a project's display name.
+
+```bash
+forge614-engram project-rename --project-id <UUID> --name <new-name>
+```
+- **Options:**
+  - `--project-id <UUID>` (**Required**): Project UUID.
+  - `--name <new-name>` (**Required**): Non-empty new display name.
+- **Behavior:** Updates only the `name` column and `updatedAt` timestamp. `projectId`, memories, versions, and request keys remain unchanged.
+- **Standard Output (JSON):**
+```json
+{
+  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "name": "Renamed Application",
+  "createdAt": "2026-09-16T20:00:00.000Z",
+  "updatedAt": "2026-09-16T20:30:00.000Z"
+}
+```
+
+---
+
+## 3. Memory Management Commands
+
+---
+
+### 3.1. `save`
+Creates a memory or records a new version of an existing topic.
+
+#### Scoping Rules for `save`:
+- **For a project memory:** Pass `--project-id <UUID>` (defaults to scope `project`).
+- **For a shared memory:** Pass `--scope shared` (forbids `--project-id`).
+
+#### Options for `save`:
 | Option | Required | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--query <text>` | **Yes** | *(None)* | Search terms. All words must match. |
-| `--limit <n>` | No | `10` | Maximum results to return (range: 1..100). |
+| `--title <title>` | **Yes** | *(None)* | Brief descriptive title. |
+| `--content <text>` | **Yes** | *(None)* | Memory body content. |
+| `--type <type>` | No | `fact` | Conceptual category: `fact`, `decision`, `procedure`, `warning`, `preference`. |
+| `--topic <topic>` | No | `null` | Classification key for version tracking (e.g. `architecture/database`). Case-sensitive. |
+| `--expected-version <n>` | Conditional | `null` | Positive integer ($\ge 1$). **Required if topic exists** in target scope. |
+| `--request-key <key>` | No | `null` | Idempotency dispatch key. Re-sending identical content with the same key returns the existing entry without duplication. |
+| `--pinned <true\|false>` | No | `false` | Marks memory with ranking boost during searches. |
 
-#### Example:
+#### Example A: Save a project-scoped memory
 ```bash
-forge614-engram search --project demo --query SQLite --limit 5
+forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Database" --content "We use SQLite" --type decision --topic architecture/database
+```
+
+#### Example B: Save a shared universal memory
+```bash
+forge614-engram save --scope shared --title "Preferred language" --content "I prefer explanations in English" --type preference --topic preferences/language
 ```
 
 ---
 
-### 3.5. `get`
-Retrieves the current record of a specific memory by ID.
+### 3.2. `search`
+Searches active memories using explainable matching (SQLite FTS5 trigram or literal fallback).
 
+#### Scope Selection:
+- **With project:** `--project-id <UUID> [--scope all|project|shared]`
+  - `all` (**Default**): Returns project matches **plus** shared matches (applying topic overrides if the project defines an active exception).
+  - `project`: Restricts search to project memories only.
+  - `shared`: Restricts search to shared memories only.
+- **Shared only (without project):** `--scope shared`
+  - *(Note: Without `--project-id`, search **strictly requires** `--scope shared`. There is no universal search across all projects).*
+
+#### Options for `search`:
+| Option | Required | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `--query <text>` | **Yes** | *(None)* | Query string. All terms must match. |
+| `--limit <1..100>` | No | `10` | Maximum results to return. |
+
+#### Example: Combined project search
 ```bash
-forge614-engram get --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram search --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --query "SQLite" --limit 5
+```
+
+**Standard Output (JSON):**
+```json
+[
+  {
+    "memory": {
+      "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
+      "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "scope": "project",
+      "topicKey": "architecture/database",
+      "type": "decision",
+      "title": "Database",
+      "content": "We use SQLite",
+      "pinned": false,
+      "version": 1,
+      "state": "active",
+      "createdAt": "2026-09-16T20:11:00.000Z",
+      "updatedAt": "2026-09-16T20:11:00.000Z"
+    },
+    "explanation": {
+      "mode": "fts5",
+      "bm25": -0.000001,
+      "multiplier": 1.059999,
+      "orderScore": -0.000001059999
+    }
+  }
+]
 ```
 
 ---
 
-### 3.6. `history`
-Returns chronological array of all historical content snapshots for the memory.
+### 3.3. `get`
+Retrieves a single memory by UUID.
 
 ```bash
-forge614-engram history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+# Project memory:
+forge614-engram get --project-id <UUID> --id <memory-id>
+
+# Shared memory:
+forge614-engram get --scope shared --id <memory-id>
 ```
+- Returns complete memory JSON. Returns `NOT_FOUND` if not found in specified scope.
 
 ---
 
-### 3.7. `archive` and `restore`
-- `archive`: Hides memory from search results without destroying version snapshots.
-  ```bash
-  forge614-engram archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
-  ```
-- `restore`: Restores an archived memory back to active search visibility.
-  ```bash
-  forge614-engram restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
-  ```
+### 3.4. `history`
+Retrieves chronological immutable revision snapshots.
+
+```bash
+# Project memory:
+forge614-engram history --project-id <UUID> --id <memory-id>
+
+# Shared memory:
+forge614-engram history --scope shared --id <memory-id>
+```
+- Returns JSON array of historical snapshot objects from version 1 to present.
+
+---
+
+### 3.5. `archive`
+Hides a memory from active searches without deleting data.
+
+```bash
+# Project memory:
+forge614-engram archive --project-id <UUID> --id <memory-id>
+
+# Shared memory:
+forge614-engram archive --scope shared --id <memory-id>
+```
+- Sets `state: "archived"` and logs an audit record in `events`.
+
+---
+
+### 3.6. `restore`
+Reactivates an archived memory.
+
+```bash
+# Project memory:
+forge614-engram restore --project-id <UUID> --id <memory-id>
+
+# Shared memory:
+forge614-engram restore --scope shared --id <memory-id>
+```
+- Sets `state: "active"` and logs an audit record in `events`.

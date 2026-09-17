@@ -1,158 +1,287 @@
-# 03. Referencia de Comandos de Terminal (CLI)
+# 03. Manual Exhaustivo de Terminal (CLI)
 
-> **Etapa:** Etapa 1 — Memoria Local  
-> **Estado:** Vigente y Activo  
+> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
+> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Estado:** Vigente y Activo
 > **Traducción hermana:** [03 (EN). Terminal CLI Command Reference](../en/03-cli-reference.md)
 
-Esta guía documenta exhaustivamente la interfaz de línea de comandos (CLI) de Forge614 Engram.
+Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sintaxis y formatos de respuesta JSON de la interfaz de línea de comandos (CLI) de Forge614 Engram.
 
 ---
 
 ## 1. Reglas Generales de Uso de la Terminal
 
-1. **Orden estricto:** El comando debe escribirse inmediatamente después del nombre del ejecutable:
+1. **Estructura del comando:** El comando a ejecutar debe escribirse inmediatamente después del nombre del programa:
    ```bash
    forge614-engram <comando> [opciones...]
-   # o en desarrollo dentro del repositorio:
+   # O en desarrollo con Bun dentro del repositorio:
    bun run cli <comando> [opciones...]
    ```
-2. **Formato de opciones:** Cada bandera (`--opcion`) debe ir separada por un espacio de su valor. No se admite la sintaxis `--opcion=valor`.
-   - ✅ Correcto: `--project demo --limit 5`
-   - ❌ Incorrecto: `--project=demo`, `--limit=5`
-3. **Comillas obligatorias para textos con espacios:** Todo título, texto o ruta con espacios debe encerrarse entre comillas dobles (`"..."`).
-4. **Sin opciones duplicadas ni desconocidas:** Si repites una opción (ej. `--title "A" --title "B"`) o pasas una opción inexistente, el programa termina con error de inmediato antes de abrir la base de datos.
-5. **Canales de salida y códigos de estado:**
+2. **Formato de opciones:** Cada opción (`--opcion`) debe ir separada de su valor mediante un espacio. No se admite la sintaxis `--opcion=valor`.
+   - ✅ Correcto: `--project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --limit 5`
+   - ❌ Incorrecto: `--project-id=7c9e6679-7425-40de-944b-e07fc1f90ae7`
+3. **Comillas obligatorias para textos con espacios:** Todo título, texto o nombre con espacios debe encerrarse entre comillas dobles (`"..."`).
+4. **Validación estricta previa:** Si pasas una opción desconocida, repites una opción, o envías argumentos incompatibles (por ejemplo combinar `--scope shared` con `--project-id` en operaciones de recuerdo), el programa termina inmediatamente con error de sintaxis **antes de leer la configuración o abrir SQLite**.
+5. **Canales de salida y códigos de salida:**
    - **Éxito:** La respuesta se emite en formato **JSON estructurado** a través del canal estándar (`stdout`) con código de salida `0`.
    - **Error:** La descripción del fallo se emite en formato JSON a través del canal de errores (`stderr`) con código de salida `1`.
+6. **Banderas eliminadas que NO se admiten:**
+   - `--db`: No se admite. La base de datos es fija: `~/.forge614/engram.db`.
+   - `--project` (por nombre): No se admite. El identificador es estrictamente `--project-id <UUID>`.
+   - `--id-project`: No se admite. El parámetro oficial es `--project-id`.
 
 ---
 
-## 2. Opciones Universales
-
-Las siguientes opciones aplican a **todos los comandos de datos**:
-
-| Opción | Obligatoria | Valor predeterminado | Descripción y Comportamiento |
-| :--- | :--- | :--- | :--- |
-| `--project <nombre>` | **Sí** | *(Ninguno)* | Nombre del proyecto. Se eliminan espacios en los extremos y se pasa automáticamente a minúsculas (`Mi Proyecto` $\rightarrow$ `mi proyecto`). |
-| `--db <ruta>` | No | `~/.forge614/engram.db` | Ruta al archivo de base de datos SQLite. Por defecto usa la base compartida en la carpeta del usuario. Si la base no existe, se crea automáticamente al ejecutar una operación válida. |
+## 2. Catálogo de Comandos de Espacio y Proyecto
 
 ---
 
-## 3. Catálogo de Comandos
-
----
-
-### 3.1. `--version`
-Muestra el nombre del paquete y la versión actual instalada.
+### 2.1. `--version`
+Muestra el nombre del programa y la versión actual instalada.
 
 ```bash
 forge614-engram --version
 ```
-- **Salida:** `forge614-engram 0.1.0`
-- **Opciones:** No acepta opciones adicionales.
-- **Efecto secundario:** Ninguno. No abre ni crea la base de datos.
+- **Salida:** `forge614-engram 0.2.0`
+- **Opciones:** No acepta ninguna opción adicional.
+- **Efectos secundarios:** Ninguno. No lee ni crea archivos en disco.
 
 ---
 
-### 3.2. `help`
-Muestra la lista rápida de comandos y opciones en pantalla.
+### 2.2. `help`
+Imprime el manual de referencia rápida en la terminal.
 
 ```bash
 forge614-engram help
 ```
-- **Opciones:** No acepta ninguna opción adicional (ej. `forge614-engram help --project demo` causará un error).
-- **Efecto secundario:** Ninguno. No crea archivos ni carpetas en el disco.
+- **Opciones:** No acepta opciones adicionales.
+- **Efectos secundarios:** Ninguno. No interactúa con el disco.
 
 ---
 
-### 3.3. `save`
-Crea una nueva memoria o guarda una nueva revisión de un tema existente.
+### 2.3. `init`
+Inicializa el espacio de almacenamiento central del usuario (`~/.forge614/`) creando el archivo de configuración global `.env` (modo `0600`) y la base de datos SQLite `engram.db` (modo `0600`).
 
-> [!NOTE]
-> `save` es una operación manual en esta etapa. La integración automática con asistentes de código mediante MCP está planificada para la Etapa 2.
-
-#### Opciones específicas de `save`:
-| Opción | Obligatoria | Valor predeterminado | Descripción |
-| :--- | :--- | :--- | :--- |
-| `--title <título>` | **Sí** | *(Ninguno)* | Título o encabezado descriptivo. Se eliminan espacios en los extremos. |
-| `--content <texto>` | **Sí** | *(Ninguno)* | Texto completo o cuerpo de la memoria. |
-| `--type <tipo>` | No | `fact` | Categoría conceptual. Valores válidos: `fact`, `decision`, `procedure`, `warning`, `preference`. |
-| `--topic <tema>` | No | `null` | Clave temática única para versionado (ej. `architecture/database`). Distingue mayúsculas y minúsculas. |
-| `--expected-version <n>` | Condicional | `null` | Entero positivo ($\ge 1$). **Obligatorio si el `--topic` ya existía** en el proyecto. Debe coincidir con la versión actual en la base. |
-| `--request-key <clave>` | No | `null` | Clave de envío para idempotencia. Si se reenvía el mismo contenido con la misma clave, devuelve la versión previa sin escribir. |
-| `--pinned <true\|false>` | No | `false` | Bandera de prioridad. Acepta únicamente las palabras literales `true` o `false`. |
-
-#### Ejemplo 1: Guardar una memoria inicial con tema y clave de petición
 ```bash
-forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite localmente" --type decision --topic architecture/database --request-key demo-v1
+forge614-engram init
+```
+- **Opciones:** No requiere opciones.
+- **Comportamiento:** Es una operación idempotente (repetible sin riesgo). Si la configuración y la base ya existen y son válidas, confirma el estado sin reiniciar ni alterar tus datos.
+- **Salida estándar (JSON):**
+```json
+{
+  "initialized": true,
+  "storage": "sqlite"
+}
+```
+
+---
+
+### 2.4. `project-create`
+Registra un nuevo proyecto en la tabla `projects` de la base de datos central.
+
+```bash
+forge614-engram project-create --name <nombre>
+```
+- **Opciones:**
+  - `--name <nombre>` (**Obligatoria**): Nombre visible y legible del proyecto. Se eliminan espacios en los extremos y no puede estar vacío.
+- **Comportamiento:** Si el espacio de almacenamiento aún no está inicializado, `project-create` inicializa la base y la configuración automáticamente. Genera un nuevo `projectId` (UUIDv4 en minúsculas).
+- **Ejemplo:**
+```bash
+forge614-engram project-create --name "Mi aplicación"
+```
+- **Salida estándar (JSON):**
+```json
+{
+  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "name": "Mi aplicación",
+  "createdAt": "2026-09-16T20:00:00.000Z",
+  "updatedAt": "2026-09-16T20:00:00.000Z"
+}
+```
+
+---
+
+### 2.5. `project-list`
+Lista todos los proyectos registrados en la base de datos central.
+
+```bash
+forge614-engram project-list
+```
+- **Opciones:** Ninguna.
+- **Comportamiento:** Si el espacio aún no ha sido inicializado, devuelve `[]` sin crear archivos. Si la base existe, devuelve la lista ordenada alfabéticamente por nombre.
+- **Salida estándar (JSON):**
+```json
+[
+  {
+    "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+    "name": "Mi aplicación",
+    "createdAt": "2026-09-16T20:00:00.000Z",
+    "updatedAt": "2026-09-16T20:00:00.000Z"
+  }
+]
+```
+
+---
+
+### 2.6. `project-rename`
+Actualiza el nombre visual de un proyecto existente.
+
+```bash
+forge614-engram project-rename --project-id <UUID> --name <nuevo-nombre>
+```
+- **Opciones:**
+  - `--project-id <UUID>` (**Obligatoria**): Identificador UUID del proyecto.
+  - `--name <nuevo-nombre>` (**Obligatoria**): Nuevo nombre visible no vacío.
+- **Comportamiento:** Modifica únicamente la columna `name` y actualiza `updatedAt`. El `projectId`, los recuerdos asociados, las versiones y las claves de petición permanecen inalterados.
+- **Salida estándar (JSON):**
+```json
+{
+  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "name": "Mi aplicación renombrada",
+  "createdAt": "2026-09-16T20:00:00.000Z",
+  "updatedAt": "2026-09-16T20:30:00.000Z"
+}
+```
+
+---
+
+## 3. Catálogo de Comandos de Recuerdos
+
+---
+
+### 3.1. `save`
+Guarda un nuevo recuerdo o crea una nueva versión de un tema existente.
+
+#### Reglas de Alcance en `save`:
+- **Para un recuerdo de proyecto:** Especifica `--project-id <UUID>` (toma el alcance `project` por defecto).
+- **Para un recuerdo compartido:** Especifica `--scope shared` (prohíbe el uso de `--project-id`).
+
+#### Opciones de `save`:
+| Opción | Obligatoria | Valor por defecto | Descripción |
+| :--- | :--- | :--- | :--- |
+| `--title <título>` | **Sí** | *(Ninguno)* | Título breve y descriptivo de la nota. |
+| `--content <texto>` | **Sí** | *(Ninguno)* | Texto completo o contenido detallado del recuerdo. |
+| `--type <tipo>` | No | `fact` | Categoría conceptual: `fact`, `decision`, `procedure`, `warning`, `preference`. |
+| `--topic <tema>` | No | `null` | Clave de clasificación temática para control de versiones (ej. `architecture/database`). Sensible a mayúsculas. |
+| `--expected-version <n>` | Condicional | `null` | Entero positivo ($\ge 1$). **Obligatorio si el tema ya existía** en ese alcance. Debe ser igual a la versión actual. |
+| `--request-key <clave>` | No | `null` | Clave de envío para idempotencia. Reenviar el mismo contenido con la misma clave devuelve el registro existente sin escribir duplicados. |
+| `--pinned <true\|false>` | No | `false` | Marca la nota como prioritaria en las búsquedas (añade bonificación en la fórmula de ordenamiento). |
+
+#### Ejemplo A: Guardar un recuerdo de proyecto
+```bash
+forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Base de datos" --content "Usaremos SQLite" --type decision --topic architecture/database
+```
+
+#### Ejemplo B: Guardar un recuerdo compartido universal
+```bash
+forge614-engram save --scope shared --title "Idioma preferido" --content "Prefiero explicaciones en español" --type preference --topic preferences/language
+```
+
+---
+
+### 3.2. `search`
+Busca recuerdos activos mediante coincidencia de texto explicable (SQLite FTS5 trigram o modo literal).
+
+#### Sintaxis de Selección de Alcance:
+- **Desde un proyecto:** `--project-id <UUID> [--scope all|project|shared]`
+  - `all` (**Predeterminado**): Devuelve recuerdos relevantes del proyecto **más** recuerdos compartidos relevantes (aplicando la regla de sustitución por tema si el proyecto tiene una excepción activa).
+  - `project`: Limita la búsqueda únicamente a los recuerdos del proyecto.
+  - `shared`: Devuelve únicamente recuerdos compartidos.
+- **Búsqueda compartida pura:** `--scope shared` (sin `--project-id`).
+  - *(Nota: Sin `--project-id`, la CLI **exige obligatoriamente** `--scope shared`. No existe una búsqueda universal descontrolada a través de todos los proyectos de la base).*
+
+#### Opciones de `search`:
+| Opción | Obligatoria | Valor por defecto | Descripción |
+| :--- | :--- | :--- | :--- |
+| `--query <texto>` | **Sí** | *(Ninguno)* | Términos de búsqueda. Todas las palabras deben coincidir. |
+| `--limit <1..100>` | No | `10` | Cantidad máxima de resultados a devolver. |
+
+#### Ejemplo: Búsqueda combinada en un proyecto
+```bash
+forge614-engram search --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --query "SQLite" --limit 5
 ```
 
 **Salida estándar (JSON):**
 ```json
-{
-  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-  "project": "demo",
-  "topicKey": "architecture/database",
-  "type": "decision",
-  "title": "Base de datos",
-  "content": "Usamos SQLite localmente",
-  "pinned": false,
-  "version": 1,
-  "createdAt": "2026-09-16T16:19:51.746Z",
-  "updatedAt": "2026-09-16T16:19:51.746Z"
-}
-```
-
-#### Ejemplo 2: Actualizar a la versión 2 indicando `--expected-version 1`
-```bash
-forge614-engram save --project demo --title "Base de datos" --content "Usamos SQLite y conservamos revisiones" --type decision --topic architecture/database --expected-version 1 --request-key demo-v2
-```
-
-> [!WARNING]
-> **Conserva tipo y prioridad al actualizar:** El comando `save` reemplaza el contenido completo. Si en la versión 1 especificaste `--type decision` y `--pinned true`, y al guardar la versión 2 omites esas banderas, la versión 2 tomará los valores predeterminados (`fact` y `false`). Especifica siempre los valores deseados al actualizar.
-
----
-
-### 3.4. `search`
-Busca recuerdos activos dentro del proyecto indicado.
-
-#### Opciones específicas de `search`:
-| Opción | Obligatoria | Valor predeterminado | Descripción |
-| :--- | :--- | :--- | :--- |
-| `--query <texto>` | **Sí** | *(Ninguno)* | Palabras a buscar. Todas las palabras deben coincidir. |
-| `--limit <n>` | No | `10` | Límite de resultados a devolver. Entero entre `1` y `100`. |
-
-#### Ejemplo de búsqueda:
-```bash
-forge614-engram search --project demo --query SQLite --limit 5
+[
+  {
+    "memory": {
+      "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
+      "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "scope": "project",
+      "topicKey": "architecture/database",
+      "type": "decision",
+      "title": "Base de datos",
+      "content": "Usaremos SQLite",
+      "pinned": false,
+      "version": 1,
+      "state": "active",
+      "createdAt": "2026-09-16T20:11:00.000Z",
+      "updatedAt": "2026-09-16T20:11:00.000Z"
+    },
+    "explanation": {
+      "mode": "fts5",
+      "bm25": -0.000001,
+      "multiplier": 1.059999,
+      "orderScore": -0.000001059999
+    }
+  }
+]
 ```
 
 ---
 
-### 3.5. `get`
-Recupera la ficha vigente de un recuerdo específico mediante su identificador.
+### 3.3. `get`
+Recupera un recuerdo individual por su identificador UUID.
 
 ```bash
-forge614-engram get --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+# Recuerdo de proyecto:
+forge614-engram get --project-id <UUID> --id <UUID-recuerdo>
+
+# Recuerdo compartido:
+forge614-engram get --scope shared --id <UUID-recuerdo>
 ```
+- Devuelve la ficha completa del recuerdo en JSON. Si no existe en el alcance especificado, devuelve el error `NOT_FOUND`.
 
 ---
 
-### 3.6. `history`
-Devuelve la lista cronológica ascendente (versión 1, versión 2, etc.) de todas las fotos de contenido guardadas para ese recuerdo.
+### 3.4. `history`
+Consulta el historial cronológico inmutable de todas las revisiones guardadas para un recuerdo.
 
 ```bash
-forge614-engram history --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+# Para proyecto:
+forge614-engram history --project-id <UUID> --id <UUID-recuerdo>
+
+# Para compartido:
+forge614-engram history --scope shared --id <UUID-recuerdo>
 ```
+- Devuelve un arreglo JSON con cada fotografía histórica (*snapshot*) desde la versión 1 hasta la actual.
 
 ---
 
-### 3.7. `archive` y `restore`
-- `archive`: Oculta el recuerdo de las búsquedas normales sin destruir sus versiones.
-  ```bash
-  forge614-engram archive --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
-  ```
-- `restore`: Reactiva un recuerdo previamente archivado haciéndolo visible de nuevo en las búsquedas.
-  ```bash
-  forge614-engram restore --project demo --id 5617e6cd-7072-48cc-a922-1a4b269e73be
-  ```
+### 3.5. `archive`
+Retira un recuerdo de las búsquedas activas sin borrar sus datos ni su historia.
+
+```bash
+# Para proyecto:
+forge614-engram archive --project-id <UUID> --id <UUID-recuerdo>
+
+# Para compartido:
+forge614-engram archive --scope shared --id <UUID-recuerdo>
+```
+- Actualiza el campo `state` a `"archived"` y registra un evento de auditoría en la tabla `events`.
+
+---
+
+### 3.6. `restore`
+Reactiva un recuerdo previamente archivado, volviéndolo elegible para las búsquedas.
+
+```bash
+# Para proyecto:
+forge614-engram restore --project-id <UUID> --id <UUID-recuerdo>
+
+# Para compartido:
+forge614-engram restore --scope shared --id <UUID-recuerdo>
+```
+- Actualiza el campo `state` a `"active"` y registra un evento de auditoría en la tabla `events`.

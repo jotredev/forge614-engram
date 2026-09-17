@@ -1,59 +1,56 @@
-# 08. Límites de la Etapa 1 y Hoja de Ruta Futura
+# 08. Límites de la Etapa y Hoja de Ruta Futura
 
-> **Etapa:** Etapa 1 — Memoria Local  
-> **Estado:** Vigente y Activo (Incluye diseño aprobado pendiente de implementación)  
+> **Etapa:** Etapa 1 — Memoria Local (Una Sola Base y Recuerdos Compartidos)
+> **Versiones de esta entrega:** Programa 0.2.0 | Formato de configuración 2 | Esquema SQLite 3
+> **Estado:** Vigente y Verificado (65 pruebas superadas, 0 fallos en macOS con Bun 1.3.8)
 > **Traducción hermana:** [08 (EN). Stage 1 Boundaries and Evolutionary Roadmap](../en/08-boundaries-and-roadmap.md)
 
-Este documento declara con absoluta transparencia qué capacidades se encuentran implementadas en esta **Etapa 1**, qué limitaciones técnicas existen actualmente, cómo se compara nuestro enfoque con Gentleman Programming y Softmax Data, el diseño arquitectónico aprobado para la identidad del proyecto (`idProject`), y el orden oficial de trabajo pendiente hacia las próximas etapas.
+Este documento declara con total transparencia qué capacidades se encuentran completamente implementadas en esta entrega, qué límites técnicos existen actualmente, cómo se compara nuestra arquitectura con Gentleman Programming y Softmax Data, y el orden oficial de las 5 fases de desarrollo pendientes.
 
 ---
 
-## 1. Capacidades Completadas y Verificadas (Etapa 1)
+## 1. Capacidades Completadas y Verificadas (Entrega Actual)
 
-Las siguientes funciones están 100% implementadas en el código fuente de este repositorio y verificadas por la suite de pruebas automatizadas (`bun test`):
+Las siguientes funciones se encuentran 100% implementadas en `src/`, probadas y verificadas por la suite de 65 pruebas automatizadas:
 
-- [x] **Almacén centralizado de usuario:** Base SQLite en `~/.forge614/engram.db` compartida entre carpetas de trabajo con modo WAL, integridad referencial y tiempo de espera de 5000ms.
-- [x] **Instalador de binario autónomo:** Script `scripts/install.sh` que compila un ejecutable independiente (`forge614-engram`) en `$HOME/.local/bin` utilizable sin requerir Bun ni Node en PATH.
-- [x] **Historial inmutable de versiones:** Cada actualización de una memoria temática preserva una copia snapshot de su contenido en `memory_versions`.
-- [x] **Control de concurrencia optimista:** Actualizar un tema exige especificar la versión esperada (`expectedVersion`), impidiendo que dos procesos pisen notas sin leerlas antes.
-- [x] **Prevención de duplicados (Idempotencia):** Soporte para `requestKey` con verificación criptográfica de huella digital SHA-256.
-- [x] **Búsqueda textual explicable:** Motor FTS5 con tokenizador trigram y ponderación por campos (título: 5.0, tema: 3.0, contenido: 1.0).
-- [x] **Fórmula matemática de relevancia:** Combinación de puntuación BM25, multiplicador de notas prioritarias (`pinned`) y factor de decaimiento por antigüedad temporal ($r$).
-- [x] **Modo literal de respaldo:** Búsqueda transparente para términos cortos de menos de 3 caracteres (como `"UI"` o `"DB"`), insensible a mayúsculas y acentos Unicode.
-- [x] **Visibilidad reversible:** Archivar notas para retirarlas de las búsquedas activas sin borrar su historia y restaurarlas en cualquier momento.
-- [x] **Herramienta de terminal robusta (CLI):** Comando `forge614-engram` con soporte para `--version`, validación estricta previa a la apertura de base de datos y salida JSON estructurada.
-- [x] **SDK para TypeScript:** Clase `MemoryStore` lista para ser importada en proyectos internos con resolución automática de la base del usuario.
-
----
-
-## 2. Límites y Restricciones Vigentes en la Etapa 1
-
-Para evitar falsas expectativas, es fundamental tener presentes las siguientes restricciones actuales:
-
-1. **Guardado manual (sin captura automática de chat):**  
-   En esta Etapa 1, el programa guarda únicamente cuando tú escribes `forge614-engram save` o cuando un código llama a `store.save(...)`. No existe todavía un proceso que escuche silenciosamente tus conversaciones de IA.
-2. **Identificación por nombre (`--project`):**  
-   En la versión actual se utiliza el nombre textual del proyecto para aislar recuerdos. La identidad inmutable mediante `idProject` es un diseño aprobado que aún no está implementado.
-3. **Búsqueda estrictamente literal (sin vectores de significado):**  
-   El buscador actual analiza únicamente coincidencias de palabras exactas mediante trigramas y BM25. No comprende sinónimos ni conceptos afines (por ejemplo, buscar *"automóvil"* no encontrará notas que hablen de *"coche"*).
-4. **Sin presupuesto de palabras (Tokens de IA):**  
-   El comando `search` devuelve el contenido completo de cada recuerdo coincidente sin recortarlo para una ventana de contexto específica.
-5. **Sin servidor de red ni protocolo MCP:**  
-   No hay todavía un servidor MCP (*Model Context Protocol*) ni un servidor HTTP local para conectar Claude Desktop, Windsurf o Cursor como enchufes de red.
-6. **Sin sesiones de conversación ni resúmenes de relevo:**  
-   No existe el concepto de sesión de trabajo ni comandos automáticos de cierre de día.
-7. **Sin sistema de estrellas ni aprendizaje por refuerzo:**  
-   No hay calificación de utilidad de recuerdos (`success` / `failure`) ni cálculo de saliencia efectiva.
-8. **Sin exportación ni importación de respaldo:**  
-   Las funciones `archive` y `restore` solo alteran la visibilidad de las notas. No existe aún un comando para empaquetar o exportar la base de datos a archivos externos.
-9. **Sin borrado permanente:**  
-   No existe un comando `delete` para eliminar filas de forma destructiva; las notas obsoletas se conservan archivadas.
+- [x] **Una Sola Configuración y Una Sola Base:** Almacén central en `~/.forge614/` con archivo de configuración única `.env` (modo `0600`) y base SQLite única `engram.db` (modo `0600`) bajo directorio privado (modo `0700`).
+- [x] **Identidad Estable de Proyecto (`projectId`):** Catálogo formal de proyectos en la tabla `projects` con UUIDv4 en minúsculas. El nombre visible es una etiqueta cosmética; cambiar el nombre con `project-rename` no altera recuerdos ni identificador.
+- [x] **Dos Alcances de Memoria (`scope`):** Separación lógica entre recuerdos de proyecto (`scope: "project"`, asociado a `projectId`) y recuerdos compartidos universales (`scope: "shared"`, con `projectId: null`, guardados una sola vez).
+- [x] **Búsqueda Combinada con Excepciones por Tema (*Topic Override*):** La búsqueda en proyecto (`search --project-id <UUID>`) utiliza por defecto `--scope all`. Si el proyecto cuenta con un recuerdo activo con el mismo `topicKey` que una regla compartida, la decisión del proyecto sustituye a la general en ese proyecto sin alterar la regla compartida.
+- [x] **Reversibilidad de Excepciones:** Archivar la excepción del proyecto reexpone la regla compartida; restaurarla reinstaura la prioridad del proyecto.
+- [x] **Historial Inmutable y Auditoría:** Guardado de copias fotográficas (*snapshots*) en `memory_versions` para cada actualización temática y registro de eventos (`events`).
+- [x] **Control Optimista de Concurrencia:** Obligatoriedad de `--expected-version` para actualizar notas temáticas existentes, impidiendo sobreescrituras desfasadas.
+- [x] **Prevención de Duplicados (Idempotencia):** Soporte para `--request-key` con huella SHA-256 del contenido normalizado, con índices únicos parciales por alcance.
+- [x] **Búsqueda Explicable con SQLite FTS5:** Índice trigram con ponderación por campos (título 5.0, tema 3.0, contenido 1.0), multiplicador de prioridad (`pinned`) y curva de recencia suave (vida media de 30 días).
+- [x] **Modo Literal de Respaldo:** Búsqueda automática y eficiente con plegado Unicode para términos de menos de 3 caracteres.
+- [x] **Herramienta de Consola Robusta (CLI):** Comandos `init`, `project-create`, `project-list`, `project-rename`, `save`, `search`, `get`, `history`, `archive`, `restore`, validación previa a la apertura de base y salida JSON estructurada.
+- [x] **SDK para TypeScript:** Clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` listas para su integración en código fuente.
+- [x] **Seguridad Atómica de Archivos:** Rechazo estricto de enlaces simbólicos, enlaces duros, propietarios ajenos, directorios antiguos `projects/` (`LEGACY_CONFIG`) y esquemas SQLite previos (`MIGRATION_REQUIRED`).
 
 ---
 
-## 3. Comparativa de Enfoques: ¿Cómo Guardan Gentleman, Softmax y Forge614?
+## 2. Límites y Restricciones Vigentes
 
-Una duda recurrente es: *¿por qué Gentleman Programming parece no exigir comandos de guardado manuales?*
+Para mantener expectativas realistas, es indispensable tener presentes las siguientes restricciones de la etapa actual:
+
+1. **Guardado manual o por código (sin captura automática en segundo plano):**
+   El sistema guarda únicamente cuando escribes `forge614-engram save` o cuando un script invoca `store.save(...)`. No hay ningún proceso o demonio que escuche pasivamente tus conversaciones de chat.
+2. **Sin comprensión semántica ni vectores de IA (*Embeddings*):**
+   El buscador actual se basa en coincidencias de palabras exactas mediante trigramas y BM25. No comprende sinónimos (por ejemplo, buscar *"coche"* no encontrará notas que hablen de *"automóvil"*).
+3. **Sin presupuesto de contexto (Tokens de IA):**
+   El comando `search` devuelve notas completas sin recortarlas ni ajustarlas a un límite de tokens de una ventana de contexto.
+4. **Sin servidor MCP ni enchufes de red:**
+   No existe todavía un servidor MCP (*Model Context Protocol*) ni un servidor HTTP para conectar asistentes externos como Claude Desktop o Cursor mediante la red local.
+5. **Sin permisos multiusuario ni contraseñas:**
+   El `projectId` organiza la información dentro de la base, pero no es una contraseña ni un mecanismo de autenticación. Cualquier programa ejecutado por tu usuario en el sistema operativo puede consultar el archivo.
+6. **Sin borrado permanente:**
+   No existe un comando destructivo `delete`; las notas obsoletas se retiran mediante `archive` conservando su trazabilidad.
+7. **Sin migración automática de esquemas antiguos:**
+   Si se detecta una base con esquema 1 o 2, el sistema la rechaza con `MIGRATION_REQUIRED`. No se ejecuta ninguna transformación destructiva sobre bases reales.
+
+---
+
+## 3. Comparativa de Arquitectura frente a Gentleman y Softmax
 
 <table header-row="true">
 <tr>
@@ -63,117 +60,76 @@ Una duda recurrente es: *¿por qué Gentleman Programming parece no exigir coman
 <td>🧠 Forge614 Engram</td>
 </tr>
 <tr>
+<td>**Ubicación de Datos**</td>
+<td>Bases SQLite por proyecto o carpetas locales.</td>
+<td>Servidor central en la nube.</td>
+<td>**Una única base (`~/.forge614/engram.db`) y un solo `.env` en la carpeta del usuario.**</td>
+</tr>
+<tr>
+<td>**Recuerdos Compartidos**</td>
+<td>No nativos (aislados por proyecto).</td>
+<td>Espacios de trabajo en la nube.</td>
+<td>**Nativo (`scope: shared`): guardados una sola vez, visibles en todos los proyectos.**</td>
+</tr>
+<tr>
+<td>**Sustitución de Reglas**</td>
+<td>Manual por el usuario en prompts.</td>
+<td>Reglas ponderadas por vectores.</td>
+<td>**Sustitución por tema (*Topic Override*) en SQL con reversibilidad inmediata.**</td>
+</tr>
+<tr>
 <td>**¿Quién decide qué guardar?**</td>
-<td>**El propio asistente de código** (Claude, Cursor) siguiendo instrucciones de sistema (*prompt/skill*) que le ordenan llamar a `mem_save` cuando detecta un aprendizaje.</td>
-<td>**Un modelo extractor secundario** (*Reflector*) en el servidor que analiza pasivamente el chat completo.</td>
-<td>**Etapa 1:** Manual (usuario o código).<br>**Etapa 2 (Planificada):** Híbrido proactivo del asistente vía MCP + reglas de extracción.</td>
+<td>El asistente de IA mediante *skills* y herramientas `mem_save`.</td>
+<td>Un modelo extractor en segundo plano (*Reflector*).</td>
+<td>**Etapa actual:** Manual / SDK.<br>**Etapa futura:** Integración proactiva vía `memory_save`.</td>
 </tr>
 <tr>
-<td>**Captura Pasiva / Ganchos**</td>
-<td>Usa *hooks* (ej. `SubagentStop` en Claude Code) que envían texto a scripts con expresiones regulares (`ExtractLearnings`).</td>
-<td>Envía el texto crudo a la API del servidor.</td>
-<td>**Pendiente para Etapa 2.**</td>
-</tr>
-<tr>
-<td>**Costo de Tokens**</td>
-<td>Consume contexto y herramientas en el chat del asistente (no es costo cero en tokens de entrada).</td>
-<td>Quema llamadas de API con OpenAI para el Reflector y los *embeddings*.</td>
-<td>**0 USD:** 100% local, cero tokens en Etapa 1. En Etapa 2 utilizará herramientas locales.</td>
+<td>**Costo y Privacidad**</td>
+<td>0 USD en almacenamiento; consume tokens en el chat.</td>
+<td>Consume llamadas de API de pago (OpenAI embeddings).</td>
+<td>**0 USD:** 100% local, cero tokens, sin llamadas a internet ni telemetría.</td>
 </tr>
 </table>
 
-> [!NOTE]
-> En ningún sistema basta con instalar un ejecutable para que "adivine mágicamente" las conversaciones. Siempre se requiere un puente de integración (protocolo MCP o ganchos en el cliente de IA) que entregue los datos al almacén de memoria.
-
 ---
 
-## 4. Diseño Aprobado: Identidad del Proyecto (`idProject`) y Configuración Segura
+## 4. Hoja de Ruta Oficial (5 Etapas Pendientes de Implementación)
 
 > [!IMPORTANT]
-> **ESTADO: DISEÑO APROBADO PENDIENTE DE IMPLEMENTACIÓN.**  
-> Los conceptos descritos en esta sección han sido aprobados para el desarrollo de las siguientes fases, pero **NO están implementados todavía en el código actual**. No intentes ejecutar comandos inexistentes ni asumas que la estructura `~/.forge614/projects/` ya está en uso.
-
-### 4.1. Principios de Identidad con `idProject`
-1. **Identificador único y estable (`idProject`):**  
-   Cada proyecto tendrá un identificador único, inmutable y estable llamado exactamente `idProject`. Será el mismo identificador utilizado tanto en la configuración local de la máquina como en la base de datos para asociar los recuerdos al proyecto correspondiente.
-2. **Separación entre nombre visible e identidad:**  
-   El nombre visible del proyecto (ej. *"Tienda Virtual"*) será únicamente una etiqueta descriptiva independiente de su identificador. Cambiar el nombre visible del proyecto no cambiará su identidad ni provocará que se pierda el acceso a sus recuerdos.
-3. **Nombres duplicados permitidos:**  
-   Dos proyectos distintos pueden tener el mismo nombre visible y coexistir pacíficamente, ya que poseerán diferentes `idProject`.
-4. **Reutilización entre computadoras:**  
-   Cuando otra computadora, máquina virtual o nueva instalación deba conectarse a un proyecto existente, **deberá reutilizar el `idProject` ya asignado**, en lugar de generar un identificador nuevo.
-5. **Aislamiento en servidores compartidos:**  
-   Compartir un servidor o una base de datos (como una instancia central de PostgreSQL) no significa mezclar proyectos: una misma base podrá contener múltiples proyectos aislados limpiamente mediante su respectivo `idProject`.
-6. **`idProject` no es una contraseña:**  
-   El `idProject` identifica a qué proyecto pertenecen los datos; no es un secreto ni sustituye los mecanismos de autenticación o permisos de acceso del sistema o de la base de datos.
-7. **Detalles pendientes de definición:**  
-   El formato exacto del identificador (ej. UUID, prefijo alfanumérico), su algoritmo de generación y los comandos específicos de la terminal para importarlo o vincularlo se definirán formalmente durante su fase de implementación.
-8. **Transición segura sin pérdida de datos:**  
-   Los recuerdos ya almacenados en la Etapa 1 bajo nombres de proyecto requerirán un proceso de transición seguro hacia este nuevo esquema de identidad. Dicha migración aún no existe y será desarrollada de forma transparente para no perder ningún recuerdo histórico.
-
----
-
-### 4.2. Estructura de Configuración y Seguridad de Credenciales
-
-```text
-carpeta del usuario (~/)
-  └── .forge614/
-        ├── engram.db                      (almacén SQLite local de usuario)
-        └── projects/                      (PENDIENTE DE IMPLEMENTACIÓN)
-              └── <idProject>/
-                    └── .env               (configuración privada de este proyecto)
-```
-
-1. **Ubicación privada en la carpeta del usuario:**  
-   La configuración de cada proyecto residirá en `~/.forge614/projects/<idProject>/.env`. Cada proyecto podrá utilizar una conexión diferente (ej. SQLite local en un proyecto y PostgreSQL en otro).
-2. **Nunca dentro del repositorio:**  
-   El archivo de configuración `.env` reside siempre en el directorio del usuario del sistema operativo, **jamás dentro del árbol de carpetas del repositorio Git de tu código**, evitando fugas accidentales al hacer commits.
-3. **Un archivo oculto no es un archivo cifrado:**  
-   Que un archivo comience con un punto (`.env`) en Linux/macOS solo significa que no se muestra por defecto en el explorador de archivos. No está cifrado. Por ende:
-   - Los archivos `.env` deben contar con permisos de archivo estrictamente restringidos en el sistema operativo (ej. `chmod 600`).
-   - Las credenciales y contraseñas de bases de datos **jamás deben aparecer en registros de terminal (logs), capturas de pantalla, mensajes enviados a asistentes de IA ni documentación pública**.
-4. **Reglas estrictas de conexión a bases de datos:**  
-   - Solo se permite inicializar automáticamente bases de datos que estén completamente **vacías y dedicadas** a Forge614 Engram.
-   - Al conectar con una base de datos existente y compatible, el sistema reutilizará los datos sin borrar recuerdos existentes y **sin alterar automáticamente la estructura de tablas al momento de la conexión**.
-   - La sentencia SQL `CREATE TABLE IF NOT EXISTS` **no sustituye** la verificación estricta de la estructura relacional ni la validación del número de versión de esquema (`user_version` / migraciones).
-
----
-
-## 5. Orden Oficial de Trabajo Pendiente (Backlog Priorizado)
-
-El desarrollo futuro de Forge614 Engram seguirá estrictamente el siguiente orden secuencial de fases:
+> **ESTADO: DISEÑO APROBADO PENDIENTE DE IMPLEMENTACIÓN.**
+> Los siguientes 5 hitos representan el orden cronológico estricto de desarrollo para las próximas entregas. Ninguna de estas funciones existe en la versión actual.
 
 ```mermaid
-flowchart TD
-    F1["1. Identidad y configuración por proyecto<br>(idProject + ~/.forge614/projects/<idProject>/.env)"] --> F2["2. Asistente de configuración<br>(Flujo interactivo guiado de inicialización)"]
-    F2 --> F3["3. Soporte PostgreSQL<br>(Driver de red + concurrencia cliente-servidor)"]
-    F3 --> F4["4. Guardado desde el asistente mediante memory_save<br>(Protocolo MCP + ganchos proactivos en clientes de IA)"]
-    F4 --> F5["5. Mejoras de recuperación y puntuación<br>(Embeddings locales + RRF + MMR + presupuesto de tokens)"]
-    F5 --> F6["6. TUI de administración y configuración<br>(Interfaz visual interactiva dentro de la terminal)"]
+flowchart LR
+    E1["Etapa Actual<br>Una base y memoria compartida<br>(IMPLEMENTADO)"] --> P1["1. Asistente interactivo<br>de configuración"]
+    P1 --> P2["2. PostgreSQL como<br>almacén global"]
+    P2 --> P3["3. Integración asistente<br>(memory_save / MCP)"]
+    P3 --> P4["4. Mejoras de recuperación<br>y puntuación"]
+    P4 --> P5["5. Interfaz visual TUI<br>en la terminal"]
 ```
 
-1. **Identidad y configuración por proyecto:** Implementación formal de `idProject`, directorio `~/.forge614/projects/<idProject>/.env` y migración segura de datos existentes.
-2. **Asistente de configuración:** Asistente interactivo por preguntas en terminal para configurar proyectos, rutas y conexiones sin editar archivos a mano.
-3. **Soporte PostgreSQL:** Capacidad de conectar a bases de datos PostgreSQL para compartir recuerdos en red entre múltiples miembros o máquinas.
-4. **Guardado desde el asistente mediante `memory_save`:** Conector oficial del protocolo MCP (*Model Context Protocol*) y ganchos (*hooks*) para que el asistente de IA guarde aprendizajes de forma proactiva durante la sesión de trabajo.
-5. **Mejoras de recuperación y puntuación:** Búsqueda híbrida con vectores de significado (*embeddings* locales), fusión recíproca de rangos (*RRF*), diversidad con *MMR* y control de presupuesto de tokens.
-6. **TUI de administración y configuración:** Interfaz visual dentro de la terminal para gestionar proyectos y conexiones cómodamente.
+### 1. Asistente interactivo de configuración
+Un asistente interactivo por consola que guíe al usuario en la preparación inicial de su espacio, validación de permisos y configuración guiada sin edición manual de archivos.
+
+### 2. PostgreSQL como almacenamiento global
+Opción para configurar una base de datos PostgreSQL global dentro del mismo archivo `~/.forge614/.env`, sustituyendo el almacenamiento SQLite local para quienes requieran centralización en un servidor de red.
+
+### 3. Integración del asistente mediante `memory_save`
+Desarrollo de las herramientas MCP y ganchos (*hooks*) para que los asistentes de inteligencia artificial (Claude Code, Cursor, Antigravity) reconozcan hitos en la conversación y guarden recuerdos de forma proactiva.
+
+### 4. Mejoras adicionales de recuperación y puntuación
+Implementación de algoritmos avanzados de poda de contexto, presupuestos de tokens, soporte de sinónimos y refinamiento matemático de relevancia.
+
+### 5. Interfaz visual TUI dentro de la terminal
+Una aplicación visual de texto (*Text User Interface*) construida para navegar proyectos, inspeccionar recuerdos, auditar versiones y gestionar archivos mediante el teclado sin salir de la consola.
 
 ---
 
-## 6. Alcance Inicial Propuesto de la TUI
+## 5. Reporte Oficial de Pruebas de esta Entrega
 
-### ¿Qué es una TUI?
-**TUI** significa **"interfaz visual dentro de la terminal"** (*Text-based User Interface*).  
-A diferencia de una CLI donde tienes que recordar y teclear comandos largos (como `forge614-engram save --project ...`), una TUI dibuja paneles, botones y listas navegables con las flechas del teclado y la tecla Enter directamente dentro de tu ventana de consola habitual, sin necesidad de abrir un navegador web ni instalar ventanas pesadas.
+La presente entrega documental y técnica cuenta con respaldo y verificación directa mediante la suite automatizada en **macOS con Bun 1.3.8**:
 
-### Alcance Inicial Aprobado para la Fase 6:
-- **Listado de proyectos:** Ver una tabla con todos los proyectos configurados localmente, mostrando su nombre descriptivo y su `idProject`.
-- **Tipo de almacenamiento:** Indicar claramente si cada proyecto almacena sus datos en **SQLite local** o en **PostgreSQL**.
-- **Gestión de proyectos:** Añadir proyectos nuevos o conectar proyectos existentes reutilizando su `idProject`.
-- **Diagnóstico seguro de conexiones:** Revisar y probar la conectividad con la base de datos (ping y lectura de versión) sin revelar contraseñas ni credenciales en la pantalla.
-- **Proyecto activo y estado:** Seleccionar cuál es el proyecto de trabajo activo en la terminal y consultar el número de memorias guardadas.
-- **Desconexión segura:** Desconectar un proyecto de la máquina actual sin eliminar ni modificar sus recuerdos en la base de datos compartida.
-
-> [!NOTE]
-> Cualquier funcionalidad visual adicional para la TUI queda pendiente de definición y será evaluada durante el desarrollo de su fase correspondiente.
+- **Pruebas unitarias y de integración:** **65 pruebas superadas (0 fallos)** con **483 aserciones**.
+- **Verificación de tipos (TypeScript):** `bun run typecheck` (`tsc --noEmit`) finalizado con **0 errores**.
+- **Consistencia de código:** `git diff --check` limpio y sin espacios en blanco corruptos.
+- **Pruebas de concurrencia y seguridad:** 45 ejecuciones concurrentes en 15 rondas sobre SQLite real, verificando atomicidad de creación, exclusión mutua de bloqueos y rechazo estricto de enlaces simbólicos y directorios antiguos.

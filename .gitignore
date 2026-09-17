@@ -3,6 +3,9 @@ node_modules/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+engram.db
+engram.db-shm
+engram.db-wal
 .env
 .env.*
 !.env.example

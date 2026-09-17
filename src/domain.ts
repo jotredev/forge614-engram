@@ -1,8 +1,16 @@
 export const memoryTypes = ["fact", "decision", "procedure", "warning", "preference"] as const;
 export type MemoryType = (typeof memoryTypes)[number];
 
-export interface SaveInput {
-  project: string;
+export interface Project {
+  projectId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MemoryScope = "project" | "shared";
+export type SearchScope = MemoryScope | "all";
+export type SaveInput = {
   title: string;
   content: string;
   type: MemoryType;
@@ -10,11 +18,12 @@ export interface SaveInput {
   pinned?: boolean;
   expectedVersion?: number;
   requestKey?: string;
-}
+} & ({ scope?: "project"; projectId: string } | { scope: "shared"; projectId: null });
 
 export interface MemoryVersion {
   id: string;
-  project: string;
+  projectId: string | null;
+  scope: MemoryScope;
   topicKey: string | null;
   title: string;
   content: string;
