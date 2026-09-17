@@ -1,0 +1,221 @@
+import type { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
+import { memoryTypes,type Memory,type MemoryVersion,type SaveInput } from "../../modules/memory";
+import { projectIdentity,type Project } from "../../modules/projects";
+import { sessionIdentity,summaryContent,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../../modules/sessions";
+import { MemoryError } from "../../shared/errors";
+import { get,required,type Row } from "./memory";
+import { getProject,projectForDirectory,requireAssistantIntegration,resolveProjectDirectory as resolveProjectDirectoryInTransaction } from "./projects";
+import { endRuntimeSession,inferredSessions,manualSession,requireSessions,sessionsEnabled,startRuntimeSession,validateSelectedSession } from "./sessions";
+
+// Composite local writes own their outer transaction here. Leaf helpers use the same connection.
+export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } {
+  requireAssistantIntegration(db);
+  const path = required(directory,"directory"), displayName = required(name,"name");
+  const operation = () => resolveProjectDirectoryInTransaction(db,path,displayName,create,bindingAvailable);
+  return create ? db.transaction(operation).immediate() : operation();
+}
+
+export function renameProject(db: Database, projectId: string, name: string): Project {
+    const identity = projectIdentity(projectId);
+    const displayName = required(name, "name");
+    return db.transaction(() => {
+      if (!getProject(db, identity)) throw new MemoryError("PROJECT_NOT_FOUND", "Proyecto no encontrado en esta base.");
+      db.query("UPDATE projects SET name=?,updatedAt=? WHERE projectId=?")
+        .run(displayName,new Date().toISOString(),identity);
+      return getProject(db, identity)!;
+    }).immediate();
+  }
+
+export function startSession(db: Database, projectId: string, sessionId: string, runtimeDirectory?: string): Session {
+    requireSessions(db);
+    const project = projectIdentity(projectId); const id = sessionIdentity(sessionId);
+    const directory = runtimeDirectory === undefined ? undefined : required(runtimeDirectory,"runtimeDirectory");
+    return db.transaction(() => startRuntimeSession(db,project,id,directory)).immediate();
+  }
+
+export function endSession(db: Database, projectId: string, sessionId: string): Session {
+    requireSessions(db);
+    const project = projectIdentity(projectId); const id = sessionIdentity(sessionId);
+    return db.transaction(() => endRuntimeSession(db,project,id)).immediate();
+  }
+
+export function startSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, sessionId: string, bindingAvailable?: (directory:string)=>boolean): Session {
+    requireSessions(db);
+    const id = sessionIdentity(sessionId); const runtime = required(runtimeDirectory,"runtimeDirectory");
+    return db.transaction(() => {
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
+      return startRuntimeSession(db,context.project!.projectId,id,runtime);
+    }).immediate();
+  }
+
+export function bindProjectDirectory(db: Database, directory: string, projectId: string): Project {
+    requireAssistantIntegration(db);
+    const path = required(directory,"directory"); const identity = projectIdentity(projectId);
+    return db.transaction(() => {
+      const project = getProject(db, identity);
+      if (!project) throw new MemoryError("PROJECT_NOT_FOUND","Proyecto no encontrado en esta base.");
+      const bound = projectForDirectory(db, path);
+      if (bound && bound.projectId !== identity) {
+        throw new MemoryError("PROJECT_BINDING_CONFLICT","La carpeta ya está vinculada a otro proyecto.");
+      }
+      if (!bound) db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)")
+        .run(path,identity,new Date().toISOString());
+      return project;
+    }).immediate();
+  }
+
+export function saveForProjectDirectory(db: Database, directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean): MemoryVersion {
+    requireAssistantIntegration(db);
+    return db.transaction(() => {
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
+      return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },{},new Date().toISOString()).memory;
+    }).immediate();
+  }
+
+export function saveWithSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, input: Omit<SaveInput,"projectId"|"scope">, options: SessionSaveOptions = {}, bindingAvailable?: (directory:string)=>boolean): SessionSaveResult {
+    requireAssistantIntegration(db);
+    const runtime = required(runtimeDirectory,"runtimeDirectory");
+    return db.transaction(() => {
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
+      return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },
+        { ...options, runtimeDirectory:runtime },new Date().toISOString());
+    }).immediate();
+  }
+
+export function save(db: Database, input: SaveInput): MemoryVersion {
+    return db.transaction(() => saveCore(db, input,{},new Date().toISOString()).memory).immediate();
+  }
+
+export function saveWithSession(db: Database, input: SaveInput, options: SessionSaveOptions = {}): SessionSaveResult {
+    return db.transaction(() => saveCore(db, input,options,new Date().toISOString())).immediate();
+  }
+
+export function saveSessionSummary(db: Database, projectId: string, sessionId: string, fields: SummaryFields, request: {requestKey:string;expectedVersion?:number}): SessionSaveResult {
+    const project = projectIdentity(projectId); const id = sessionIdentity(sessionId);
+    const requestKey = required(request?.requestKey,"requestKey");
+    if (request.expectedVersion !== undefined && (!Number.isSafeInteger(request.expectedVersion) || request.expectedVersion < 1)) {
+      throw new MemoryError("INVALID_INPUT","expectedVersion debe ser un entero positivo.");
+    }
+    const content = summaryContent(fields); const topicKey = `session/${id}/summary`;
+    return db.transaction(() => {
+      requireSessions(db);
+      const pointer = db.query("SELECT memoryId,version FROM session_summaries WHERE sessionId=?").get(id) as
+        {memoryId:string;version:number}|null;
+      const occupied = db.query("SELECT id FROM memories WHERE scope='project' AND projectId=? AND topic_key=?").get(project,topicKey) as {id:string}|null;
+      if (occupied && (!pointer || occupied.id !== pointer.memoryId)) {
+        throw new MemoryError("SUMMARY_TOPIC_CONFLICT","El tema reservado ya pertenece a otro recuerdo.");
+      }
+      const replay = db.query("SELECT 1 FROM requests WHERE scope='project' AND projectId=? AND request_key=?")
+        .get(project,requestKey) !== null;
+      const result = saveCore(db, {projectId:project,title:`Session summary: ${id}`,content,type:"procedure",topicKey,
+        requestKey,...(request.expectedVersion === undefined ? {} : {expectedVersion:request.expectedVersion})},
+        {sessionId:id},new Date().toISOString(),true);
+      if (replay) return result;
+      if (pointer?.memoryId === result.memory.id && pointer.version === result.memory.version) return result;
+      if (pointer && pointer.memoryId !== result.memory.id) throw new MemoryError("SUMMARY_TOPIC_CONFLICT","El resumen no coincide con su puntero.");
+      db.query(`INSERT INTO session_summaries(sessionId,memoryId,version) VALUES(?,?,?)
+        ON CONFLICT(sessionId) DO UPDATE SET memoryId=excluded.memoryId,version=excluded.version`)
+        .run(id,result.memory.id,result.memory.version);
+      return result;
+    }).immediate();
+  }
+
+function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, requestNow: string, summary = false): SessionSaveResult {
+    const scope = input.scope === undefined ? "project" : input.scope;
+    if (scope !== "project" && scope !== "shared") throw new MemoryError("INVALID_INPUT", "scope debe ser project o shared.");
+    if (scope === "shared" && input.projectId !== null) throw new MemoryError("INVALID_INPUT", "Un recuerdo shared no pertenece a un proyecto: projectId debe ser null.");
+    const projectId = scope === "shared" ? null : projectIdentity(input.projectId);
+    const title = required(input.title, "title");
+    const content = required(input.content, "content");
+    if (!memoryTypes.includes(input.type)) throw new MemoryError("INVALID_INPUT", "Tipo de recuerdo no válido.");
+    if (input.pinned !== undefined && typeof input.pinned !== "boolean") throw new MemoryError("INVALID_INPUT", "pinned debe ser booleano.");
+    const topic = input.topicKey === undefined ? null : required(input.topicKey, "topicKey");
+    const request = input.requestKey === undefined ? null : required(input.requestKey, "requestKey");
+    const expected = input.expectedVersion ?? null;
+    if (expected !== null && (!Number.isSafeInteger(expected) || expected < 1 || !topic)) {
+      throw new MemoryError("INVALID_INPUT", "expectedVersion requiere un tema y un entero positivo.");
+    }
+    const pinned = input.pinned ?? false;
+    const hash = createHash("sha256").update(JSON.stringify([scope,projectId,title,content,input.type,topic,pinned,expected])).digest("hex");
+    if (options.mode !== undefined && options.mode !== "independent" && options.mode !== "assistant") throw new MemoryError("INVALID_INPUT","mode no válido.");
+    const explicit = options.sessionId === undefined ? null : sessionIdentity(options.sessionId);
+    const optionProject = options.projectId === undefined ? null : projectIdentity(options.projectId);
+    const runtimeDirectory = options.runtimeDirectory === undefined ? null : required(options.runtimeDirectory,"runtimeDirectory");
+      if (projectId !== null && !getProject(db, projectId)) throw new MemoryError("PROJECT_NOT_FOUND", "Crea el proyecto antes de guardar.");
+      if (request !== null) {
+        const previous = db.query("SELECT * FROM requests WHERE scope=? AND projectId IS ? AND request_key=?").get(scope,projectId,request) as
+          { payload_hash: string; memory_id: string; version: number } | null;
+        if (previous) {
+          if (previous.payload_hash !== hash) throw new MemoryError("REQUEST_CONFLICT", "La clave de petición ya corresponde a otro contenido.");
+          const row = db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(previous.memory_id,previous.version) as { snapshot: string };
+          const memory = JSON.parse(row.snapshot) as MemoryVersion;
+          const origin = sessionsEnabled(db) ? db.query(`SELECT e.sessionId,s.kind,s.projectId FROM session_entries e
+            JOIN sessions s ON s.sessionId=e.sessionId WHERE e.memoryId=? AND e.version=?`).get(previous.memory_id,previous.version) as
+            {sessionId:string;kind:Session["kind"];projectId:string}|null : null;
+          if (explicit !== null && origin?.sessionId !== explicit) throw new MemoryError("REQUEST_CONFLICT","La petición ya tiene otra asociación de sesión.");
+          if (explicit !== null) validateSelectedSession(db, explicit,scope,projectId,optionProject,false);
+          const visible = scope === "project" || explicit !== null || (optionProject !== null && origin?.projectId === optionProject);
+          return {memory,sessionId:visible ? origin?.sessionId ?? null : null,
+            sessionSource:visible && origin ? (explicit ? "explicit" : origin.kind === "manual" ? "manual" : "inferred") : null};
+        }
+      }
+      let selected: string|null = null;
+      let source: SessionSaveResult["sessionSource"] = null;
+      if (explicit !== null) {
+        requireSessions(db); validateSelectedSession(db, explicit,scope,projectId,optionProject,true);
+        selected=explicit; source="explicit";
+      } else if (sessionsEnabled(db) && scope === "project") {
+        if ((options.mode ?? "independent") === "assistant") {
+          const candidates = runtimeDirectory === null ? [] : inferredSessions(db, projectId!,runtimeDirectory,requestNow);
+          if (candidates.length > 1) throw new MemoryError("AMBIGUOUS_SESSION",`AMBIGUOUS_SESSION: indica sessionId (${candidates.join(", ")}).`);
+          if (candidates.length === 1) { selected=candidates[0]!; source="inferred"; }
+        }
+        if (selected === null) { selected=manualSession(db, projectId!,requestNow); source="manual"; }
+      } else if (scope === "shared" && explicit === null) {
+        selected=null; source=null;
+      }
+      if (!summary && topic !== null && sessionsEnabled(db)) {
+        const reserved = db.query(`SELECT 1 FROM sessions s WHERE s.projectId IS ? AND ?=('session/'||s.sessionId||'/summary') LIMIT 1`)
+          .get(projectId,topic);
+        if (reserved) throw new MemoryError("SUMMARY_TOPIC_RESERVED","El tema está reservado para un resumen de sesión.");
+      }
+      const existing = topic === null ? null : db.query("SELECT * FROM memories WHERE scope=? AND projectId IS ? AND topic_key=?").get(scope,projectId,topic) as Row | null;
+      if (existing?.state === "archived") throw new MemoryError("ARCHIVED", "Restaura el recuerdo antes de actualizar su tema.");
+      if (existing ? existing.version !== expected : expected !== null) {
+        throw new MemoryError("VERSION_CONFLICT", "La versión esperada no coincide. Lee el tema antes de actualizarlo.");
+      }
+      const now = requestNow;
+      const id = existing?.id ?? crypto.randomUUID();
+      const version = (existing?.version ?? 0) + 1;
+      const snapshot: MemoryVersion = { id, projectId, scope, topicKey: topic, type: input.type, title, content, pinned, version,
+        createdAt: existing?.created_at ?? now, updatedAt: now };
+      if (existing) {
+        db.query("UPDATE memories SET type=?,title=?,content=?,pinned=?,version=?,updated_at=? WHERE id=?").run(input.type,title,content,Number(pinned),version,now,id);
+      } else {
+        db.query("INSERT INTO memories(id,projectId,scope,topic_key,type,title,content,pinned,version,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'active',?,?)")
+          .run(id,projectId,scope,topic,input.type,title,content,Number(pinned),version,now,now);
+      }
+      db.query("INSERT INTO memory_versions(memory_id,version,snapshot) VALUES(?,?,?)").run(id,version,JSON.stringify(snapshot));
+      db.query("INSERT INTO events(memory_id,action,version,created_at) VALUES(?,'save',?,?)").run(id,version,now);
+      if (request !== null) db.query("INSERT INTO requests(projectId,scope,request_key,payload_hash,memory_id,version) VALUES(?,?,?,?,?,?)").run(projectId,scope,request,hash,id,version);
+      if (selected !== null) db.query("INSERT INTO session_entries(sessionId,memoryId,version,recordedAt) VALUES(?,?,?,?)")
+        .run(selected,id,version,now);
+      return {memory:snapshot,sessionId:selected,sessionSource:source};
+  }
+
+export function archive(db: Database, projectId: string | null, id: string): Memory { return setState(db, projectId,id,"archived"); }
+
+export function restore(db: Database, projectId: string | null, id: string): Memory { return setState(db, projectId,id,"active"); }
+
+function setState(db: Database, projectId: string | null, id: string, state: Memory["state"]): Memory {
+    return db.transaction(() => {
+      const current = get(db, projectId,id);
+      if (!current) throw new MemoryError("NOT_FOUND", "Recuerdo no encontrado en el alcance seleccionado.");
+      if (current.state === state) return current;
+      db.query("UPDATE memories SET state=? WHERE id=?").run(state,current.id);
+      db.query("INSERT INTO events(memory_id,action,version,created_at) VALUES(?,?,?,?)")
+        .run(current.id,state === "active" ? "restore" : "archive",current.version,new Date().toISOString());
+      return { ...current,state };
+    }).immediate();
+  }

@@ -1,0 +1,187 @@
+import { afterEach, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { WorkspaceConfig } from "../../../infrastructure/filesystem/workspace-config";
+
+const directories: string[] = [];
+function workspace() {
+  const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
+}
+const cli = resolve(import.meta.dir,"../../../cli.ts");
+const preload = resolve(import.meta.dir,"../../../../tests/fixtures/user-directory.ts");
+function runAs(cwd: string, userDirectory: string, ...args: string[]) {
+  const result = Bun.spawnSync([process.execPath,"--preload",preload,cli,...args], {
+    cwd, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: userDirectory },
+  });
+  return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+}
+function run(cwd: string, ...args: string[]) { return runAs(cwd,join(cwd,"user"),...args); }
+function create(dir: string, name = "demo"): string {
+  const result = run(dir,"project-create","--name",name);
+  expect(result.code).toBe(0);
+  return JSON.parse(result.stdout).projectId;
+}
+afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
+
+test("setup requires a terminal and leaves automation commands noninteractive", () => {
+  const dir = workspace();
+  const result = run(dir, "setup");
+  expect(result.code).toBe(1);
+  expect(JSON.parse(result.stderr).code).toBe("INTERACTIVE_REQUIRED");
+  expect(result.stdout).toBe("");
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+  expect(run(dir, "init").code).toBe(0);
+  expect(JSON.parse(run(dir, "project-list").stdout)).toEqual([]);
+  expect(run(dir, "search", "--scope", "shared", "--query", "anything").code).toBe(0);
+});
+
+test("setup rejects unknown flags without entering prompts or creating files", () => {
+  const dir = workspace();
+  const result = run(dir, "setup", "--db", "PRIVATE_VALUE");
+  expect(JSON.parse(result.stderr).code).toBe("INVALID_INPUT");
+  expect(result.stderr).not.toContain("PRIVATE_VALUE");
+  expect(result.stdout).toBe("");
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+});
+
+test("sync without PostgreSQL configuration never creates storage",()=>{
+  const dir=workspace();const result=run(dir,"sync");
+  expect(result.code).toBe(1);
+  expect(JSON.parse(result.stderr).code).toBe("CONFIG_NOT_FOUND");
+  expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
+  expect(run(dir,"init").code).toBe(0);
+  expect(JSON.parse(run(dir,"sync").stderr).code).toBe("SYNC_DISABLED");
+  expect(JSON.parse(run(dir,"sync-watch","--interval","0").stderr).code).toBe("INVALID_INPUT");
+});
+
+test("all projects and working directories share exactly one workspace configuration", () => {
+  const a = workspace(); const b = workspace(); const id = create(a);
+  create(a,"Another"); const user = join(a,"user");
+  const saved = run(a,"save","--project-id",id,"--title","Global storage","--content","Persistent SQLite");
+  expect(saved.code).toBe(0);
+  const result = runAs(b,user,"search","--project-id",id,"--query","SQLite");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)[0].memory.id).toBe(JSON.parse(saved.stdout).id);
+  expect(JSON.parse(runAs(b,user,"project-list").stdout)).toHaveLength(2);
+  expect(existsSync(join(a,".forge614"))).toBe(false);
+  expect(existsSync(join(b,".forge614"))).toBe(false);
+  expect(readdirSync(join(user,".forge614")).filter(n=>!n.endsWith("-wal")&&!n.endsWith("-shm")).sort()).toEqual([".env","engram.db"]);
+  expect(readFileSync(join(user,".forge614",".env"),"utf8")).not.toContain(id);
+});
+
+test("SDK workspace and CLI share the same identity and database", () => {
+  const dir = workspace(); const index = resolve(import.meta.dir,"../../../index.ts");
+  const code = `import { MemoryWorkspace } from ${JSON.stringify(index)};
+    const workspace = new MemoryWorkspace();
+    const p = workspace.createProject("SDK");
+    const store = workspace.open();
+    try { store.save({projectId:p.projectId,title:'SDK',content:'SQLite shared',type:'fact'}); }
+    finally { store.close(); }
+    console.log(p.projectId);`;
+  const result = Bun.spawnSync([process.execPath,"--preload",preload,"-e",code],{
+    cwd:dir,env:{...process.env,FORGE614_TEST_USER_DIRECTORY:join(dir,"user")},
+  });
+  expect(result.exitCode).toBe(0);
+  const id = result.stdout.toString().trim();
+  expect(JSON.parse(run(dir,"search","--project-id",id,"--query","SQLite").stdout)).toHaveLength(1);
+});
+
+test("project CLI saves, revises, searches, archives and restores with UUID identity", () => {
+  const dir = workspace(); const id = create(dir);
+  const first = run(dir,"save","--project-id",id,"--title","Base","--content","SQLite","--topic","db","--request-key","first");
+  expect(first.code).toBe(0); const saved = JSON.parse(first.stdout);
+  const update = run(dir,"save","--project-id",id,"--title","Base","--content","PostgreSQL","--topic","db","--expected-version","1");
+  expect(update.code).toBe(0); expect(JSON.parse(update.stdout).version).toBe(2);
+  expect(JSON.parse(run(dir,"history","--project-id",id,"--id",saved.id).stdout)).toHaveLength(2);
+  expect(JSON.parse(run(dir,"search","--project-id",id,"--query","PostgreSQL").stdout)[0].memory.id).toBe(saved.id);
+  expect(run(dir,"archive","--project-id",id,"--id",saved.id).code).toBe(0);
+  expect(JSON.parse(run(dir,"search","--project-id",id,"--query","PostgreSQL").stdout)).toEqual([]);
+  expect(run(dir,"restore","--project-id",id,"--id",saved.id).code).toBe(0);
+  expect(JSON.parse(run(dir,"get","--project-id",id,"--id",saved.id).stdout).state).toBe("active");
+});
+
+test("init is repeatable and rename retains identity without per-project registration", () => {
+  const dir = workspace(); const id = create(dir); const root = join(dir,"user",".forge614");
+  const before = readFileSync(join(root,"engram.db")); const config = readFileSync(join(root,".env"));
+  expect(run(dir,"init").code).toBe(0);
+  expect(readFileSync(join(root,"engram.db"))).toEqual(before);
+  expect(readFileSync(join(root,".env"))).toEqual(config);
+  expect(run(dir,"project-rename","--project-id",id,"--name","Renamed").code).toBe(0);
+  const listed = JSON.parse(run(dir,"project-list").stdout);
+  expect(listed[0].name).toBe("Renamed"); expect(listed[0].projectId).toBe(id);
+  expect(run(dir,"project-list").stdout).not.toContain(root);
+});
+
+test("two identical project names stay isolated from each other", () => {
+  const dir = workspace(); const a = create(dir,"Same"); const b = create(dir,"Same");
+  expect(a).not.toBe(b);
+  expect(run(dir,"save","--project-id",a,"--title","SQLite","--content","One").code).toBe(0);
+  expect(JSON.parse(run(dir,"search","--project-id",b,"--query","SQLite").stdout)).toEqual([]);
+});
+
+test("missing configuration and configured missing database never cause silent reinitialization", () => {
+  const dir = workspace();
+  expect(JSON.parse(run(dir,"search","--scope","shared","--query","SQLite").stderr).code).toBe("CONFIG_NOT_FOUND");
+  expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
+  const id = create(dir);
+  expect(JSON.parse(run(dir,"get","--project-id",id,"--id","missing").stderr).code).toBe("NOT_FOUND");
+  const path = join(dir,"user",".forge614","engram.db"); rmSync(path);
+  for (const args of [["init"],["project-create","--name","No"],["search","--scope","shared","--query","SQLite"]]) {
+    expect(run(dir,...args).code).toBe(1); expect(existsSync(path)).toBe(false);
+  }
+});
+
+async function parallel(dir: string, args: string[]) {
+  return Promise.all(Array.from({length:4},async () => {
+    const child = Bun.spawn([process.execPath,"--preload",preload,cli,...args], {
+      cwd:dir,env:{...process.env,FORGE614_TEST_USER_DIRECTORY:join(dir,"user")},stdout:"pipe",stderr:"pipe",
+    });
+    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    return {code,stdout,stderr};
+  }));
+}
+test("concurrent project and shared request replays create one memory per namespace", async () => {
+  const dir = workspace(); const id = create(dir);
+  for (const target of [["--project-id",id],["--scope","shared"]]) {
+    const results = await parallel(dir,["save",...target,"--title","parallel","--content","One operation","--request-key","same-request"]);
+    for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
+    expect(new Set(results.map(result => JSON.parse(result.stdout).id)).size).toBe(1);
+  }
+  expect(JSON.parse(run(dir,"search","--project-id",id,"--query","parallel").stdout)).toHaveLength(2);
+});
+
+test("concurrent initializers keep a single config and preserve all projects", async () => {
+  const dir = workspace(); const results = await parallel(dir,["project-create","--name","parallel"]);
+  for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
+  expect(new Set(results.map(result => JSON.parse(result.stdout).projectId)).size).toBe(4);
+  expect(JSON.parse(run(dir,"project-list").stdout)).toHaveLength(4);
+  expect(existsSync(join(dir,"user",".forge614","projects"))).toBe(false);
+});
+
+test("concurrent init of existing workspace leaves existing memories and configuration intact", async () => {
+  const dir = workspace(); const id = create(dir);
+  expect(run(dir,"save","--project-id",id,"--title","Keep","--content","SQLite").code).toBe(0);
+  const path = join(dir,"user",".forge614",".env"); const before = readFileSync(path);
+  const results = await parallel(dir,["init"]);
+  for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
+  expect(readFileSync(path)).toEqual(before);
+  expect(JSON.parse(run(dir,"search","--project-id",id,"--query","SQLite").stdout)).toHaveLength(1);
+});
+
+test("explicit session CLI lifecycle, previews, version reads, timeline and context stay noninteractive",()=>{
+  const dir=workspace();
+  expect(run(dir,"sessions-enable").code).toBe(0);
+  const started=run(dir,"session-start","--directory",dir,"--session-id","chat-one");
+  expect(started.code).toBe(0);const session=JSON.parse(started.stdout);
+  const saved=run(dir,"save","--project-id",session.projectId,"--title","Decision","--content","Use WAL","--session-id","chat-one");
+  expect(saved.code).toBe(0);const memory=JSON.parse(saved.stdout);
+  const preview=JSON.parse(run(dir,"search","--project-id",session.projectId,"--query","WAL","--preview").stdout);
+  expect(preview[0].memory).not.toHaveProperty("content");
+  expect(JSON.parse(run(dir,"get","--project-id",session.projectId,"--id",memory.id,"--version","1").stdout)).toMatchObject({memory:{id:memory.id,version:1},currentVersion:1});
+  expect(JSON.parse(run(dir,"timeline","--project-id",session.projectId,"--session-id","chat-one","--id",memory.id,"--version","1","--before","0","--after","0").stdout)).toMatchObject({sessionId:"chat-one",before:[],after:[]});
+  expect(JSON.parse(run(dir,"context","--project-id",session.projectId,"--compact","--max-bytes","1024").stdout).format).toBe(1);
+  const summary=JSON.stringify({goal:"Ship",instructions:"",discoveries:"WAL",accomplishments:"Done",nextSteps:"None",files:[]});
+  expect(run(dir,"session-summary","--project-id",session.projectId,"--session-id","chat-one","--summary-json",summary,"--request-key","summary-1").code).toBe(0);
+  expect(JSON.parse(run(dir,"session-end","--project-id",session.projectId,"--session-id","chat-one").stdout).endedAt).not.toBeNull();
+});

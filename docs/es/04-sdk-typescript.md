@@ -1,8 +1,8 @@
 # 04. Guía de Integración con el SDK de TypeScript
 
-> **Etapa:** Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
+> **Etapa:** Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
 > **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
-> **Estado:** Vigente y Activo (Verificado con 250 pruebas en 18 archivos en macOS con Bun 1.3.8)
+> **Estado:** Vigente y Activo (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
 > **Traducción hermana:** [04 (EN). TypeScript SDK Guide (MemoryStore)](../en/04-typescript-sdk.md)
 
 Esta guía documenta la API pública en TypeScript de Forge614 Engram, cómo utilizar las clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` en tus propias herramientas o extensiones, el soporte del Esquema 6 para sesiones progresivas y contexto clasificado, y los tipos formales de recuperación progresiva.
@@ -61,15 +61,18 @@ import {
 } from "./src/index";
 ```
 
-### Principio Fundamental del SDK: Operación Local Síncrona
-- **La API de SQLite permanece 100% síncrona:** Todas las operaciones de lectura, escritura, búsqueda, sesiones, timeline y contexto en `MemoryStore` y `MemoryWorkspace` se ejecutan de forma inmediata y directa sobre SQLite sin requerir llamadas asíncronas (`async`/`await`).
-- **Los módulos de red y transporte son infraestructura interna:**
-  - El servidor MCP (`src/mcp.ts` y `src/mcp-tools.ts`)
-  - El ejecutor de ganchos de asistentes (`src/assistants/*`)
-  - La interfaz de terminal (`src/assistant-tui.ts`)
-  - El ejecutor de autoprueba (`src/assistant-self-test.ts`)
-  - El motor de sincronización de réplica (`src/sync-*.ts`)
-  Son componentes especializados de infraestructura interna y **no se reexportan como API pública en `src/index.ts`**.
+### Principios Fundamentales del SDK
+
+- **La API de SQLite permanece 100% síncrona:** Todas las operaciones de lectura, escritura, búsqueda, sesiones, línea temporal (`timeline`) y contexto (`context`) en `MemoryStore` y `MemoryWorkspace` se ejecutan de forma inmediata y directa sobre SQLite sin requerir llamadas asíncronas (`async`/`await`).
+- **Fachada Compatible `MemoryStore`:** La clase `MemoryStore` (ubicada en `src/app/memory-store.ts`) opera como un patrón de diseño Fachada (*facade pattern*): proporciona una interfaz pública estable, idéntica e inmutable a los consumidores del SDK, mientras delega internamente la persistencia a módulos especializados en `src/infrastructure/sqlite/` (`memory.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`).
+- **Eliminación de Rutas Internas Anteriores:** Los archivos históricos en la raíz de `src/` (`src/domain.ts`, `src/store.ts`, `src/identity.ts`, `src/sessions.ts`, `src/retrieval.ts`, `src/schema.ts`, `src/paths.ts`, etc.) han sido **eliminados por completo**. Cualquier herramienta externa debe importar únicamente desde `src/index.ts`. El auditor de TypeScript AST (`tests/architecture/import-rules.ts`) prohíbe además que el código interno importe desde `src/index.ts` para evitar ciclos de importación.
+- **Los módulos de red, transporte e interfaz son internos:**
+  - El servidor MCP (`src/interfaces/mcp/`)
+  - El ejecutor de ganchos de asistentes (`src/interfaces/terminal/` y `src/modules/assistants/`)
+  - La interfaz de menú en terminal (`src/interfaces/tui/`)
+  - El ejecutor de autoprueba (`src/infrastructure/assistants/self-test.ts`)
+  - El motor de sincronización de réplica (`src/infrastructure/postgres/` y `src/app/synchronization.ts`)
+  Son componentes especializados que no se reexportan como API pública en `src/index.ts`.
 - **No inventes un `AsyncMemoryWorkspace`:** No existe ningún envoltorio asíncrono público. La aplicación interactúa localmente con el almacén síncrono, y la interacción externa con asistentes se realiza mediante el protocolo estándar MCP o comandos de CLI.
 
 ---

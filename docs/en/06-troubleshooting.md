@@ -1,8 +1,8 @@
 # 06 (EN). Troubleshooting and Error Diagnostics
 
-> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Active (Verified with 250 tests across 18 files on macOS with Bun 1.3.8)
+> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) | SQLite Schemas 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
+> **Status:** Current & Active (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
 > **Sister translation:** [06. Resolución de Problemas y Catálogo de Errores](../es/06-resolucion-de-errores.md)
 
 This troubleshooting guide provides an exhaustive diagnostic catalog of error codes, root causes, and recommended recovery procedures in Forge614 Engram, including progressive sessions, ranked context, assistant configuration conflicts, and PostgreSQL replication.
@@ -117,3 +117,19 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
   forge614-engram sessions-enable
   ```
   The database updates additively to Schema 6 in milliseconds, preserving all memories and past history intact.
+
+---
+
+### 5. Resolving Deep Import Errors (`Cannot find module './store'`)
+- **Symptom:** External scripts, extensions, or test suites fail to compile with errors like `Cannot find module './store'` or `Cannot find module './domain'`.
+- **Root Cause:** In the feature-oriented modular monolith refactoring (Release 10), flat root files in `src/` (`src/domain.ts`, `src/store.ts`, `src/sessions.ts`, etc.) were removed and reorganized into `app/`, `modules/`, `infrastructure/`, and `interfaces/`. Deep internal paths are not public APIs.
+- **Recovery Procedure:**
+  Update your import statements to consume strictly from the root SDK entry point (`src/index.ts` or `@forge614/engram`):
+  ```typescript
+  // Before (Deprecated internal path, now removed):
+  // import { MemoryStore } from "./src/store";
+
+  // Now (Official stable public entry point):
+  import { MemoryStore, MemoryWorkspace, MemoryError } from "./src/index";
+  ```
+  The compatible `MemoryStore` facade in `src/index.ts` maintains 100% of historical methods and signatures.

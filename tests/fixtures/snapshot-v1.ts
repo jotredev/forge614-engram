@@ -1,7 +1,9 @@
 // Compatibility fixture copied from 193e89a:src/sync-snapshot.ts (0.5.0).
 import { createHash } from "node:crypto";
-import { MemoryError, memoryTypes, type Memory, type MemoryVersion, type Project } from "../../src/domain";
-import { projectIdentity } from "../../src/identity";
+import { MemoryError } from "../../src/shared/errors";
+import { memoryTypes, type Memory, type MemoryVersion } from "../../src/modules/memory";
+import { type Project } from "../../src/modules/projects";
+import { projectIdentity } from "../../src/modules/projects";
 
 export interface MemoryBundle {
   memory: Memory;

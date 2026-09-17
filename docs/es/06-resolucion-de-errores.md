@@ -1,8 +1,8 @@
 # 06. Resolución de Problemas y Catálogo de Errores
 
-> **Etapa:** Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
+> **Etapa:** Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
 > **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
-> **Estado:** Vigente y Activo (Verificado con 250 pruebas en 18 archivos en macOS con Bun 1.3.8)
+> **Estado:** Vigente y Activo (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
 > **Traducción hermana:** [06 (EN). Troubleshooting and Error Diagnostics](../en/06-troubleshooting.md)
 
 Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de error de Forge614 Engram, incluyendo los errores de sesiones progresivas, recuperación clasificada, conflictos de configuración de plugins y promoción de réplica PostgreSQL, detallando su causa raíz y la solución recomendada.
@@ -117,3 +117,19 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
   forge614-engram sessions-enable
   ```
   La base se actualizará aditivamente al Esquema 6 en milisegundos, preservando íntegros todos tus recuerdos, versiones y asociaciones previas.
+
+---
+
+### 5. Error al Importar Archivos Internos Antiguos (`Cannot find module './store'`)
+- **Síntoma:** Un script, extensión o prueba externa falla al compilar con errores como `Cannot find module './store'` o `Cannot find module './domain'`.
+- **Causa:** En la reorganización del monolito modular por funcionalidad (Entrega 10), los archivos planos que antes residían en la raíz de `src/` fueron eliminados y redistribuidos en `app/`, `modules/`, `infrastructure/` e `interfaces/`. Las rutas internas anteriores no forman parte de la API pública.
+- **Procedimiento de Recuperación:**
+  Actualiza las sentencias de importación para consumir exclusivamente desde la raíz del SDK (`src/index.ts` o `@forge614/engram`):
+  ```typescript
+  // Antes (Ruta interna obsoleta eliminada):
+  // import { MemoryStore } from "./src/store";
+
+  // Ahora (Punto de entrada público oficial):
+  import { MemoryStore, MemoryWorkspace, MemoryError } from "./src/index";
+  ```
+  La fachada `MemoryStore` en `src/index.ts` preserva el 100% de las firmas y métodos históricos.

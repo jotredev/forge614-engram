@@ -1,9 +1,9 @@
 # 01. Instalación, Configuración y Primeros Pasos
 
-> **Etapa:** Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Etapa:** Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
 > **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y resúmenes estructurados) | Réplica PostgreSQL Formato 1 / Formato 2
 > **Habilitaciones:** Explícitas y aditivas (`integration-enable` para Esquema 5; `sessions-enable` para Esquema 6; `sync --upgrade-format` para réplica Formato 2). La apertura de base y los comandos ordinarios nunca migran automáticamente.
-> **Estado:** Vigente y Verificado (250 pruebas totales en 18 archivos: 243 superadas y 7 omitidas sin binarios PG; 250 superadas, 0 fallos, 1506 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
+> **Estado:** Vigente y Verificado (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
 > **Traducción hermana:** [01 (EN). Installation, Setup, and Getting Started](../en/01-installation-and-getting-started.md)
 
 Esta guía explica paso a paso cómo preparar las dependencias, compilar e instalar el comando `forge614-engram` en tu computadora, los requisitos indispensables (incluyendo Git obligatorio), cómo funciona la detección post-instalación de asistentes, el asistente interactivo `setup` para el espacio central, y la habilitación explícita de la integración de asistentes (Esquema 5) y del ciclo de sesiones progresivas (Esquema 6) junto con la coordinación entre equipos pares.

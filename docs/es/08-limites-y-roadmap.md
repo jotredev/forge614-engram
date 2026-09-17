@@ -1,8 +1,8 @@
 # 08. Límites de la Etapa y Hoja de Ruta Futura
 
-> **Etapa:** Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
+> **Etapa:** Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
 > **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
-> **Estado:** Vigente y Verificado (250 pruebas totales en 18 archivos: 243 superadas y 7 omitidas sin binarios PG; 250 superadas, 0 fallos, 1506 aserciones con PostgreSQL aislado en macOS con Bun 1.3.8)
+> **Estado:** Vigente y Verificado (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con PostgreSQL aislado en macOS con Bun 1.3.8)
 > **Traducción hermana:** [08 (EN). Stage Boundaries and Evolutionary Roadmap](../en/08-boundaries-and-roadmap.md)
 
 Este documento declara con total transparencia qué capacidades se encuentran implementadas y verificadas en la entrega actual, los límites técnicos y operativos vigentes, la distinción entre pruebas sintéticas y sesiones reales de clientes, y las fases de desarrollo pendientes en la hoja de ruta oficial.
@@ -44,7 +44,15 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 - [x] **10 Herramientas MCP Nativas:** Suite completa de herramientas de memoria expuestas a los modelos.
 - [x] **Promoción a Formato 2 en PostgreSQL:** Soporte de réplica para sesiones y resúmenes promovido exclusivamente con `sync --upgrade-format` bajo CAS atómico en `forge614_sync.state`.
 - [x] **Resolución segura de conflictos en OpenCode:** Falla cerrada con `CONFLICT` si el plugin dedicado existe con contenido divergente, exigiendo conciliación manual sin sobrescrituras destructivas.
-- [x] **250 pruebas automatizadas en 18 archivos:** Cobertura exhaustiva en macOS con Bun 1.3.8 (1506 aserciones).
+
+### Fase 4.1: Monolito Modular por Funcionalidad y Pruebas Colocadas — COMPLETADA
+- [x] **Monolito modular por funcionalidad:** Separación estricta de responsabilidades en `app/` (coordinación de flujos), `modules/` (reglas puras y tipos sin I/O), `infrastructure/` (adaptadores de SQLite, PostgreSQL, filesystem, git y asistentes), `interfaces/` (CLI, MCP, TUI y terminal) y `shared/` (`errors.ts`).
+- [x] **Fachada compatible `MemoryStore`:** Preservación del 100% de firmas y contratos del SDK en `src/app/memory-store.ts`, delegando en operaciones SQLite particionadas.
+- [x] **Eliminación de rutas internas obsoletas:** Supresión definitiva de archivos planos en la raíz de `src/`, canalizando el SDK exclusivamente a través de `src/index.ts`.
+- [x] **Auditoría automática de arquitectura (AST):** Verificación estricta en TypeScript AST (`tests/architecture/import-rules.ts`) de reglas de importación, prohibición de ciclos entre componentes y restricción de dependencias externas en módulos de dominio.
+- [x] **Pruebas colocadas (*colocated sibling tests*):** Correspondencia 1:1 de pruebas hermanas (`<archivo>.test.ts`) para los 46 archivos de implementación que contienen lógica, más pruebas de colaboración en subcarpetas `__tests__/`.
+- [x] **Transacciones exteriores compuestas:** Canalización atómica de persistencia a través de `infrastructure/sqlite/writes.ts` bajo una única transacción compartida (`BEGIN IMMEDIATE`).
+- [x] **369 pruebas automatizadas en 69 archivos:** 361 superadas y 8 omitidas sin binarios aislados de PostgreSQL; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado (30.69s).
 
 ---
 
@@ -75,13 +83,13 @@ Para mantener expectativas estrictamente realistas, se declaran los siguientes l
 11. **Sin resolución automática de conflictos en sincronización:**
     Modificaciones concurrentes sobre una misma entidad producen `SYNC_CONFLICT`. No existe fusión heurística de textos en conflicto en esta versión.
 12. **Búsqueda BM25 trigram literal:**
-    El buscador se basa en coincidencias de texto exacto y trigramas en SQLite FTS5; no realiza búsqueda semántica mediante vectores ni *embeddings*.
+    El buscador se basa en coincidencias de texto exacto y trigramas en SQLite FTS5; no realiza búsqueda semántica mediante vectores ni *embeddings*. La arquitectura modular actual prepara las fronteras de extensión en `modules/search/` e `infrastructure/`, pero no incorpora proveedores de embeddings en esta fase.
 
 ---
 
 ## 3. Hoja de Ruta: Fases Pendientes Oficiales
 
-Habiéndose completado las Fases 1 a 4, el desarrollo futuro se concentra en las siguientes fases:
+Habiéndose completado las Fases 1 a 4.1, el desarrollo futuro se concentra en las siguientes fases:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -98,6 +106,10 @@ Habiéndose completado las Fases 1 a 4, el desarrollo futuro se concentra en las
                            ▼
 ┌────────────────────────────────────────────────────────┐
 │ [x] Fase 4: Sesiones Progresivas y Contexto Clasificado│ (Completada v0.5.0)
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ [x] Fase 4.1: Monolito Modular y Pruebas Colocadas     │ (Completada v0.5.0)
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐

@@ -1,0 +1,11 @@
+export { MemoryStore } from "./memory-store";
+export { MemoryWorkspace } from "./workspace";
+export { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
+export { defaultDatabasePath, userStorageDirectory } from "../infrastructure/filesystem/paths";
+export { resolveProjectContext, bindProjectContext, saveProjectMemory, saveProjectMemoryWithSession, startProjectSession, assertGitProjectDirectory } from "./project-context";
+export type { ProjectContext } from "./project-context";
+export { synchronize, syncWorkspace } from "./synchronization";
+export { runSetup } from "./setup";
+export type { SetupIO, SetupResult } from "./setup";
+export { detectAssistants, resolveAssistantPaths, coverageWarnings, AssistantConfigurationError, planAssistantConfiguration, preflightAssistantConfiguration, applyAssistantConfiguration, testInstalledServer, resolveInstalledEngram } from "./assistants";
+export type { ConfigurationPlan, ConfigurationResult, ServerTestResult } from "./assistants";
