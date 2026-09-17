@@ -1,46 +1,37 @@
 # 05 (EN). Internal Architecture, MCP Protocol, FTS5, and Ranking Formulas
 
-> **Stage:** Local MCP, Assistant TUI Menu, Local Memory & Optional PostgreSQL Synchronization
-> **Release Versions:** Program 0.5.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings)
-> **Status:** Current & Verified (191 total tests on macOS with Bun 1.3.8)
+> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
+> **Status:** Current & Active (Verified with 250 tests across 18 files on macOS with Bun 1.3.8)
 > **Sister translation:** [05. Arquitectura Interna, Protocolo MCP, SQLite FTS5 y Fórmulas Matemáticas](../es/05-arquitectura-interna-y-formulas.md)
 
-This document provides an exhaustive technical specification of Forge614 Engram: SQLite engine pragmas, relational schemas v3, v4, and v5 (`project_bindings`), canonical Git resolution for projects and linked worktrees, native stdio Model Context Protocol (MCP) server architecture, client configuration adapters with atomic backups (`0600`/UUID) and post-publication byte verification, 3-way snapshot merge replication with PostgreSQL, and mathematical formulas for **BM25**, recency decay, and explainable ranking.
+This document provides a technical thesis on the internal architecture of Forge614 Engram: SQLite engine pragmas, relational schemas v3 to v6, progressive session lifecycles, Git canonical identity resolution, the stdio MCP server exposing 10 tools, Format 2 PostgreSQL replication with atomic CAS promotion, and mathematical formulas for BM25, recency ranking, and payload byte budgets.
 
 ---
 
 ## 1. SQLite Engine Pragmas, Concurrency, and WAL Initialization
 
-Forge614 Engram builds upon the native SQLite engine bundled in Bun (`bun:sqlite`), initialized with strict security and data integrity directives:
+Forge614 Engram executes over Bun's embedded SQLite engine (`bun:sqlite`), initialized with strict operational directives:
 
 1. **`PRAGMA foreign_keys = ON;`**
-   Enforces referential integrity at all times. A record in `memory_versions` cannot exist without referencing an `id` in `memories`, and a project binding in `project_bindings` cannot exist without referencing a valid `projectId` in `projects`.
+   Enforces absolute referential integrity. Historical versions, events, sessions, entries, and summaries require valid foreign keys.
 2. **`PRAGMA busy_timeout = 5000;`**
-   If concurrent processes attempt to write simultaneously, SQLite waits up to **5,000 milliseconds (5 seconds)** for the active transaction to commit before raising a busy error.
+   If two processes attempt concurrent writes, SQLite waits **up to 5,000 ms (5 seconds)** for the active transaction to commit before raising a busy error.
 3. **`PRAGMA application_id = 1177956660;`**
-   Unique identification signature for Forge614 Engram databases, preventing accidental manipulation of foreign SQLite files.
-4. **`PRAGMA user_version = 3`, `4`, or `5`;**
-   - **Version 3:** Pure local SQLite storage without synchronization.
-   - **Version 4:** Storage with PostgreSQL replica sync enabled (adds `sync_checkpoints`).
-   - **Version 5:** Storage with assistant integration and local bindings enabled (adds `project_bindings` and its index).
-   - **Opening Rule:** A normal SQLite connection (`workspace.open()`) **never auto-migrates the database**. Migrations to schemas 4 and 5 are explicit and additive (via `setup`, `tui`, or `integration-enable`). Downgrading is not supported.
+   Unique application identifier verified before interacting with any SQLite database file.
+4. **`PRAGMA user_version = 3`, `4`, `5`, or `6`;**
+   - **Version 3:** Pure local storage without sync or assistant bindings.
+   - **Version 4:** Storage with PostgreSQL sync enabled (adds `sync_checkpoints`).
+   - **Version 5:** Storage with assistant integration and local bindings (adds `project_bindings`).
+   - **Version 6:** Storage with progressive memory sessions and ranked context (adds `sessions`, `session_entries`, `session_summaries`, `local_session_bindings`, `local_manual_sessions`).
+   - **Golden Rule of Opening:** Standard database opens (`workspace.open()`), standard queries, and MCP startup **never auto-migrate the database**. Schema promotions are strictly additive and explicit (`setup`, `tui`, `integration-enable`, `sessions-enable`).
 5. **`PRAGMA journal_mode = WAL;` (Write-Ahead Logging)**
-   - Readers access the main database file while writes append to the auxiliary write-ahead log (`engram.db-wal`).
    - Readers do not block writers and writers do not block readers.
-   - Writes remain serialized across processes.
-
-### WAL Initialization Adjustment (Empty Immediate Transaction)
-When initializing a new database:
-```sql
-PRAGMA journal_mode=WAL;
-BEGIN IMMEDIATE;
-COMMIT;
-```
-This forces physical synchronization of headers across `engram.db-wal` and `engram.db-shm` to support cold read-only opens on macOS.
+   - Cold read-only queries on macOS are ensured by executing an immediate empty transaction (`BEGIN IMMEDIATE; COMMIT;`) upon database creation.
 
 ---
 
-## 2. Local SQLite Relational Schema (Schemas 3, 4, and 5)
+## 2. SQLite Relational Schema (Schemas 3 to 6)
 
 ```text
 ┌─────────────────────────────────┐
@@ -57,7 +48,7 @@ This forces physical synchronization of headers across `engram.db-wal` and `engr
 │            memories             │   │   │         memory_versions         │
 ├─────────────────────────────────┤   │   ├─────────────────────────────────┤
 │ rowid INTEGER (Internal PK)     │   │   │ memory_id TEXT (FK memories.id) │◄──┐
-│ id TEXT (UUID unique)           │◄──┼───┤ version INTEGER (>= 1)          │   │
+│ id TEXT (Unique UUID)           │◄──┼───┤ version INTEGER (>= 1)          │   │
 │ projectId TEXT (FK nullable)    ├───┘   │ snapshot TEXT (Valid JSON)      │   │
 │ scope TEXT ('project'|'shared') │       └─────────────────────────────────┘   │
 │ topic_key TEXT (Optional)       │                         ▲                   │
@@ -75,13 +66,13 @@ This forces physical synchronization of headers across `engram.db-wal` and `engr
 ├─────────────────────────────────┤       ┌─────────────────────────────────┐
 │ id INTEGER (PK autoincrement)   │       │          memories_fts           │
 ├─────────────────────────────────┤       ├─────────────────────────────────┤
-│ memory_id TEXT (FK memories.id) │       │ FTS5 Virtual Table (trigram)    │
+│ memory_id TEXT (FK memories.id) │       │ Virtual FTS5 Table (trigram)    │
 │ action ('save'|'archive'|'rest')│       │ title (5.0), topic_key (3.0),   │
 │ version INTEGER                 │       │ content (1.0)                   │
 │ created_at TIMESTAMP            │       └─────────────────────────────────┘
 └─────────────────────────────────┘
                  ▲
-                 │ (Schema 4 Only - Additive Migration)
+                 │ (Schema 4 - Replication Migration)
 ┌────────────────┴────────────────┐
 │        sync_checkpoints         │
 ├─────────────────────────────────┤
@@ -89,59 +80,66 @@ This forces physical synchronization of headers across `engram.db-wal` and `engr
 │ snapshot TEXT (Valid JSON)      │
 └─────────────────────────────────┘
                  ▲
-                 │ (Schema 5 Only - Additive Migration)
+                 │ (Schema 5 - Assistant Integration Migration)
 ┌────────────────┴────────────────┐
 │        project_bindings         │
 ├─────────────────────────────────┤
-│ directory TEXT PRIMARY KEY      │  (Canonical local machine path)
+│ directory TEXT PRIMARY KEY      │  (Machine-local canonical path)
 │ projectId TEXT REFERENCES proj  ├───► projects.projectId
 │ createdAt TEXT NOT NULL         │
 └─────────────────────────────────┘
   CREATE INDEX project_bindings_project ON project_bindings(projectId);
+                 ▲
+                 │ (Schema 6 - Progressive Sessions Migration)
+┌────────────────┴────────────────────────────────────────────────────────┐
+│                               sessions                                 │
+├────────────────────────────────────────────────────────────────────────┤
+│ sessionId TEXT PRIMARY KEY                                             │
+│ projectId TEXT REFERENCES projects(projectId)                          │
+│ kind TEXT ('runtime' | 'manual')                                       │
+│ startedAt TEXT NOT NULL                                                │
+│ endedAt TEXT NULLABLE                                                  │
+└─────────────────────────────────┬──────────────────────────────────────┘
+                                  │
+      ┌───────────────────────────┼───────────────────────────┐
+      ▼                           ▼                           ▼
+┌───────────────────────────┐ ┌───────────────────────────┐ ┌───────────────────────────┐
+│      session_entries      │ │     session_summaries     │ │ local_session_bindings    │
+├───────────────────────────┤ ├───────────────────────────┤ ├───────────────────────────┤
+│ sessionId REFERENCES sess │ │ sessionId PK REFERENCES s │ │ sessionId REFERENCES sess │
+│ memoryId REFERENCES mem   │ │ memoryId REFERENCES mem   │ │ directory TEXT            │
+│ version INTEGER           │ │ version INTEGER           │ │ createdAt TEXT            │
+│ recordedAt TEXT NOT NULL  │ └───────────────────────────┘ └───────────────────────────┘
+└───────────────────────────┘                               (Machine-local only, not synced)
+                 ▲
+                 │
+┌────────────────┴───────────────┐
+│     local_manual_sessions      │
+├────────────────────────────────┤
+│ projectId PK REFERENCES proj   │  (Machine-local fallback session tracker)
+│ sessionId REFERENCES sessions  │
+└────────────────────────────────┘
 ```
 
-### Table `project_bindings` (Schema 5):
-Maps machine-local filesystem paths to project UUIDs:
-- `directory`: Canonical absolute filesystem directory path (`PRIMARY KEY`).
-- `projectId`: Foreign key referencing `projects(projectId)`.
-- `createdAt`: ISO 8601 creation timestamp.
-- Secondary index: `CREATE INDEX project_bindings_project ON project_bindings(projectId);`
+---
+
+## 3. Canonical Git Resolution and Worktrees
+
+1. **Git Common Directory Resolution (`git rev-parse --path-format=absolute --git-common-dir`):**
+   - **Linked worktrees:** Worktrees created with `git worktree add` share the common `.git` root. Engram maps all worktrees of a repository to the identical canonical `projectId` and memories.
+   - **Nested subdirectories:** Nested folders resolve up to the common Git root.
+2. **Git Mandatory:** Git is required even to safely verify that a directory is not a Git repository. If Git is unavailable, resolution fails closed with `PROJECT_IDENTITY_UNAVAILABLE`.
+3. **Conservative Path Ambiguity:** If all recorded bindings for any project are missing on disk, Engram halts automatic project creation with `PROJECT_BINDING_REQUIRED` to avoid duplicate orphan projects.
 
 ---
 
-## 3. Canonical Git Project Resolution
+## 4. Native Stdio MCP Server Architecture (10 Tools)
 
-When resolving project identity during MCP tool execution or `project-bind`:
-
-1. **Git Common Directory Resolution:**
-   Engram executes:
-   ```bash
-   git rev-parse --path-format=absolute --git-common-dir
-   ```
-   - **Linked worktrees:** Running in a worktree created with `git worktree add` points to the primary `.git` directory. Worktrees share identical project identity and memories.
-   - **Nested subdirectories:** Navigating inside subfolders resolves to the same common Git root.
-2. **Non-Git Directories:**
-   Directories outside Git require passing an explicit `directory` parameter or possessing a single MCP root. The executable directory is never used as an implicit project.
-3. **Mandatory Git Requirement:**
-   Git is required even to certify that a folder does not belong to Git. Missing Git fails closed with `PROJECT_IDENTITY_UNAVAILABLE`.
-4. **Conservative Path Ambiguity Check:**
-   Before creating a new project automatically for an unbound directory:
-   - Recorded bindings in `project_bindings` are inspected.
-   - If **all bindings for any project are unavailable on disk**, resolution halts with `PROJECT_BINDING_REQUIRED`.
-   - This prevents creating orphan duplicate projects when a folder was renamed or an external drive unmounted.
-   - **Resolution:** Explicitly bind the folder via `project-bind --directory /path --project-id <UUID>`.
-5. **Local Binding Isolation During Sync:**
-   Synchronization (`sync`) mirrors projects, memories, versions, requests, and events, **but never synchronizes local filesystem paths (`project_bindings`)**, which remain strictly local to each device.
-
----
-
-## 4. Stdio MCP Server Architecture
-
-The `forge614-engram mcp` command implements the Model Context Protocol over standard I/O:
+The MCP server implements the Model Context Protocol over standard I/O (`stdio`):
 
 ```text
 ┌────────────────────────────────────────────────────────┐
-│                      AI Client                         │
+│                   Coding Assistant                     │
 │   (Claude Code / Codex / Cursor / OpenCode / Gemini)   │
 └──────────────────────────┬─────────────────────────────┘
                            │ JSON-RPC via stdio
@@ -149,91 +147,130 @@ The `forge614-engram mcp` command implements the Model Context Protocol over sta
 ┌────────────────────────────────────────────────────────┐
 │             forge614-engram mcp (Server)               │
 │                                                        │
-│  - Instructions: MEMORY_PROTOCOL                       │
 │  - Transport: StdioServerTransport (256 KB buffer)     │
 │  - Stdout: 100% reserved for JSON-RPC protocol frames  │
-│  - Stderr: No human logs or ANSI escape sequences      │
+│  - Stderr: Zero human logs or ANSI escape pollution    │
 ├────────────────────────────────────────────────────────┤
-│                     5 Tools                            │
-│ 1. memory_current_project(directory?)                  │
-│ 2. memory_search(query, directory?, limit?, scope?)    │
-│ 3. memory_get(id, directory?, scope?)                  │
-│ 4. memory_save(title, content, type, directory?, ...)  │
-│ 5. memory_history(id, directory?, scope?)              │
+│                    10 Native Tools                     │
+│ 1. memory_context(directory?, scope?, compact?, ...)   │
+│ 2. memory_current_project(directory?)                  │
+│ 3. memory_get(id, directory?, scope?, version?)        │
+│ 4. memory_history(id, directory?, scope?)              │
+│ 5. memory_save(title, content, type, directory?, ...)  │
+│ 6. memory_search(query, directory?, limit?, scope?)    │
+│ 7. memory_session_end(directory?, sessionId)           │
+│ 8. memory_session_start(directory, sessionId)          │
+│ 9. memory_session_summary(directory?, sessionId, ...)  │
+│ 10. memory_timeline(directory?, sessionId, id, v, ...) │
 └──────────────────────────┬─────────────────────────────┘
-                           │ Synchronous operations
+                           │ Synchronous queries
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│                Local SQLite (engram.db)                │
-│              FTS5 Trigram BM25 + Schema 5              │
+│               Local SQLite (engram.db)                 │
+│               Schemas 5 & 6 + FTS5 Trigram             │
 └────────────────────────────────────────────────────────┘
 ```
 
-### Protocol Directives (`MEMORY_PROTOCOL`):
-- Treat Engram as curated durable memory, **not as a conversation transcript**.
-- On task start, after context compaction, or when resuming, call `memory_current_project` and `memory_search` before repeating research.
-- Record only durable decisions, resolved bugs, warnings, and explicit preferences.
-- **Never save secrets, API keys, credentials, personal data, raw logs, or full tool outputs.**
-- Default scope is `project`. `shared` strictly requires `globalIntent`.
-- Update existing topics using `expectedVersion` to prevent concurrent overwrite races.
+### Protocol Guidelines (`MEMORY_PROTOCOL`):
+- Store durable architectural decisions and preferences, **not raw conversational transcripts**.
+- Call `memory_context` or `memory_search` at task start or post-compaction before repeating research.
+- For `scope: "shared"`, explicit justification is required in `globalIntent`.
+- Storing shared memories with session retains `projectId: null` in storage and private session metadata is excluded from external queries.
 
 ---
 
-## 5. Client Configuration Adapters & Safe Publication
+## 5. Client Configuration Adapters and OpenCode Safety
 
-The `tui` command configures five AI development clients:
-
-| Client | Configuration File | Hooks / Plugin Location |
+| Client | Configuration File | Hooks / Dedicated Plugin |
 | :--- | :--- | :--- |
 | **Claude Code** | `~/.claude.json` | `~/.claude/settings.json` |
-| **Codex** | `~/.codex/config.toml` | `~/.codex/hooks.json` |
+| **Codex** | `~/.codex/config.toml` | `~/.codex/hooks.json` (requires `/hooks` trust) |
 | **Cursor** | `~/.cursor/mcp.json` | `~/.cursor/hooks.json` |
-| **OpenCode** | `~/.config/opencode/opencode.json` (or `.jsonc`) | `plugins/forge614-engram.js` in active global source |
-| **Gemini CLI** | `~/.gemini/settings.json` | `hooks` array in same file |
+| **OpenCode** | `~/.config/opencode/opencode.json` (or `.jsonc`) | `plugins/forge614-engram.js` in global directory |
+| **Gemini CLI** | `~/.gemini/settings.json` | Internal `hooks` section |
 
-### Safe Publication Workflow:
-1. **Preflight:** Validates directory permissions, verifies files are not symlinks, and checks file sizes.
-2. **Private Backups:** Creates exact copies of previous bytes in mode `0600` with a UUID suffix (e.g., `mcp.json.3a8f...bak`).
-3. **Comment Preservation:** Uses `jsonc-parser` for JSON/JSONC and `smol-toml` for TOML, preserving formatting and external comments.
-4. **Post-Publication Byte Verification:** Re-reads the file immediately after writing. If modified concurrently by another process, reports `PUBLISHED_UNVERIFIED`, retains backups, and avoids destructive rollback.
-5. **OpenCode Multi-Source Handling:** `OPENCODE_CONFIG_DIR` adds a configuration source without replacing the XDG global directory. Reuses the single global plugin rather than duplicating it.
-
----
-
-## 6. Event Coverage and Native Hooks
-
-| Client | Events with Injected Memory Guidance | Operational Limits |
-| :--- | :--- | :--- |
-| **Claude Code** | `SessionStart`, `UserPromptSubmit` | Subject to model compliance and enterprise policies. |
-| **Codex** | `SessionStart`, `UserPromptSubmit` | **Requires explicit review and approval in Codex via `/hooks`**. |
-| **Cursor** | `sessionStart` | Session start only; no prompt or post-compaction recovery hook verified. |
-| **OpenCode** | `experimental.chat.system.transform`, `experimental.session.compacting` | Upstream experimental plugin callbacks. |
-| **Gemini CLI** | `SessionStart`, `BeforeAgent` | Does not guarantee post-compaction callback. |
+### Safe Modification Workflow:
+1. **Preflight:** Inspects paths, validates permissions, and rejects suspicious symlinks.
+2. **Private Backups:** Generates `.bak` files with mode `0600` and UUID suffixes before writing.
+3. **Comment Preservation:** AST modification using `jsonc-parser` and `smol-toml`.
+4. **Post-Publication Byte Verification:** Validates exact planned bytes. Reports `PUBLISHED_UNVERIFIED` if concurrently modified.
+5. **OpenCode Plugin Conflict Detection (`CONFLICT`):** If `plugins/forge614-engram.js` already exists with different contents, Engram fails closed with `CONFLICT`. The file is never overwritten; the user must inspect, back up, and reconcile manually.
 
 ---
 
-## 7. Mathematical Retrieval & Ranking Formulas
+## 6. PostgreSQL Replication and Format 2 Promotion
 
-Searches compute transparent relevance ranking combining **BM25**, priority, and recency decay:
+Replication operates via deterministic 3-way snapshot merging:
+- **Format 1:** Classic snapshot replicating projects, memories, versions, requests, and events.
+- **Format 2:** Extended snapshot replicating sessions (`sessions`), session entries (`sessionEntries`), and structured summaries (`sessionSummaries`).
+- **Atomic CAS Promotion:**
+  - Upgrading a PostgreSQL replica from Format 1 to Format 2 is executed exclusively via `forge614-engram sync --upgrade-format`.
+  - Governed by atomic compare-and-swap (CAS) locking on `forge614_sync.state`.
+  - `sync-watch` rejects `--upgrade-format` with `INVALID_INPUT` to prevent accidental unattended promotions.
+  - Machine-local tables (`local_session_bindings`, `local_manual_sessions`) are never replicated.
+- **Payload Limits:** Snapshots exceeding 8 MiB (`8,388,608 bytes`) trigger `SYNC_TOO_LARGE` instead of false historical conflicts.
 
-$$\text{orderScore} = \text{bm25Score} \times \text{multiplier}$$
+---
 
-### 7.1. BM25 Algorithm
-Textual matching score:
+## 7. Mathematical Ranking Formulas
+
+### 7.1. SQLite FTS5 BM25 Scoring
+
+SQLite FTS5 ranks matches using BM25 (*Best Matching 25*):
 
 $$\text{BM25}(D, Q) = \sum_{i=1}^{N} \text{IDF}(q_i) \cdot \frac{f(q_i, D) \cdot (k_1 + 1)}{f(q_i, D) + k_1 \cdot \left(1 - b + b \cdot \frac{|D|}{\text{avgdl}}\right)}$$
 
-- $k_1 = 1.2$: Term frequency saturation parameter.
-- $b = 0.75$: Document length penalty relative to average collection length ($\text{avgdl}$).
-- FTS5 column weights: `title: 5.0`, `topic_key: 3.0`, `content: 1.0`.
+- Parameters: $k_1 = 1.2$, $b = 0.75$.
+- Column weights: `title: 5.0`, `topic_key: 3.0`, `content: 1.0`.
+- **Negative BM25 Scores:** SQLite's native `bm25()` returns **negative numbers**, where more negative represents a stronger match.
 
-### 7.2. Priority and Recency Multipliers
+### 7.2. Priority and Recency Multiplier
 
-$$\text{multiplier} = \text{priorityFactor} \times \text{recencyFactor}$$
+To integrate explicit pinning and temporal freshness with SQLite's negative BM25 score:
 
-1. **Priority Factor:**
-   - If `pinned == 1`: $\text{priorityFactor} = 1.5$
-   - If `pinned == 0`: $\text{priorityFactor} = 1.0$
-2. **Recency Factor (Smooth Exponential Decay):**
-   $$\text{recencyFactor} = 1.0 + 0.2 \cdot e^{-\lambda \cdot \Delta t}$$
-   where $\Delta t$ is age in days and $\lambda = \frac{\ln(2)}{30} \approx 0.0231$ (30-day half-life). Fresh notes receive a factor of $1.20$, asymptotically decaying to $1.00$ over time.
+$$\text{multiplier} = 1 + 0.10 \times \text{pinned} + \frac{0.06}{1 + \frac{\text{ageDays}}{30}}, \quad (\text{ageDays} \ge 0)$$
+
+where:
+- $\text{pinned} \in \{0, 1\}$: 1 if pinned, 0 otherwise.
+- $\text{ageDays} = \max\left(0, \text{julianday}('now') - \text{julianday}(m.\text{updated\_at})\right)$.
+- New memories ($\text{ageDays} = 0$) with $\text{pinned} = 1$ achieve maximum multiplier of $1.16$.
+- As time elapses, the recency factor converges to 0 and the multiplier approaches $1.00$ (or $1.10$ if pinned).
+
+**Ranking Calculation:**
+$$\text{orderScore} = \text{bm25} \times \text{multiplier}$$
+
+Because $\text{bm25}$ is negative, multiplying by $\text{multiplier} \ge 1.0$ makes strong, recent matches even more negative. The query orders ascending:
+```sql
+ORDER BY bm25 * multiplier ASC, m.id ASC
+```
+placing the most relevant and fresh memories first, resolving ties deterministically with `m.id`.
+
+### 7.3. Literal Searches for Short Terms
+Queries under 3 characters perform literal scans with Unicode lowercase folding, ordering strictly by:
+```sql
+ORDER BY m.pinned DESC, m.updated_at DESC, m.id ASC
+```
+In this mode, `bm25` and `orderScore` are reported as `null` with `multiplier: 1`.
+
+---
+
+## 8. Progressive Retrieval Limits vs Token Budgets
+
+1. **Unicode Code Points for Previews:**
+   - In `memory_search` with `--preview` and `memory_context`: content is truncated to a maximum of **300 Unicode code points** with boolean `truncated: true`.
+   - In `memory_timeline`: focus memory is truncated to **500 code points**; neighbors to **150 code points**.
+2. **Byte Limits (`--max-bytes`):**
+   - In `memory_context`: `--max-bytes` bounds the **total serialized UTF-8 JSON bytes** (1024..65536, default 16384).
+   - **Not an LLM Token Budget:** Token counting belongs to the model client; Engram guarantees a predictable byte payload limit between processes.
+
+---
+
+## 9. Design Lineage and Attribution
+
+Forge614 Engram's retrieval design acknowledges key design influences:
+- **Gentleman Inspiration:** The progressive lookup, preview truncation, and timeline reconstruction pattern is inspired by the Gentleman architecture.
+- **Forge614 Adaptations:**
+  - Decoupled UUID project identity independent of directory paths or display names.
+  - Explicit and manual per-device sessions resolved via Git common root directories.
+  - Complete isolation of machine-local session bindings (`local_session_bindings`).
+  - PostgreSQL 3-way snapshot replication with CAS-protected Format 2 promotion.

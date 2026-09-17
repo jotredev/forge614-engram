@@ -1,11 +1,12 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { MCP_TOOL_NAMES } from './mcp-tools';
 
 export interface ServerTestResult {
   status:'not-run'|'running'|'passed'|'failed';
   code?:'INSTALLATION_REQUIRED'|'CANCELLED'|'TIMED_OUT'|'MCP_FAILED';
 }
-const tools=['memory_current_project','memory_get','memory_history','memory_save','memory_search'];
+const tools=[...MCP_TOOL_NAMES].sort();
 
 /** Only the TUI's resolved own installation is passed here, never client configuration commands. */
 export async function testInstalledServer(executable:string,options:{signal:AbortSignal;timeoutMs?:number;home?:string}):Promise<ServerTestResult>{

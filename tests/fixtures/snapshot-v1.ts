@@ -1,8 +1,7 @@
+// Compatibility fixture copied from 193e89a:src/sync-snapshot.ts (0.5.0).
 import { createHash } from "node:crypto";
-import { MemoryError, memoryTypes, type Memory, type MemoryVersion, type Project } from "./domain";
-import { projectIdentity } from "./identity";
-import type { Session, SessionEntry, SessionSummary } from "./session-types";
-import { sessionIdentity } from "./sessions";
+import { MemoryError, memoryTypes, type Memory, type MemoryVersion, type Project } from "../../src/domain";
+import { projectIdentity } from "../../src/identity";
 
 export interface MemoryBundle {
   memory: Memory;
@@ -10,13 +9,8 @@ export interface MemoryBundle {
   requests: { request_key: string; payload_hash: string; version: number }[];
   events: { action: "save" | "archive" | "restore"; version: number; created_at: string }[];
 }
-export interface SyncSnapshotV1 { format: 1; projects: Project[]; memories: MemoryBundle[] }
-export interface SyncSnapshotV2 { format: 2; projects: Project[]; memories: MemoryBundle[]; sessions: Session[]; sessionEntries: SessionEntry[]; sessionSummaries: SessionSummary[] }
-export type SyncSnapshot = SyncSnapshotV1 | SyncSnapshotV2;
-export const emptySnapshot = (): SyncSnapshotV1 => ({ format:1,projects:[],memories:[] });
-export function normalizeSnapshot(value: SyncSnapshot): SyncSnapshotV2 {
-  return value.format === 2 ? value : { ...value, format: 2, sessions: [], sessionEntries: [], sessionSummaries: [] };
-}
+export interface SyncSnapshot { format: 1; projects: Project[]; memories: MemoryBundle[] }
+export const emptySnapshot = (): SyncSnapshot => ({ format:1,projects:[],memories:[] });
 export function syncError(code = "SYNC_INVALID"): never {
   throw new MemoryError(code, `${code}: sincronización detenida; se conservan los datos locales y remotos.`);
 }
@@ -27,7 +21,7 @@ export function canonical(value: unknown): string {
 }
 export function snapshotHash(value: SyncSnapshot): string { return createHash("sha256").update(canonical(value)).digest("hex"); }
 function text(v: unknown): asserts v is string { if(typeof v!=="string" || !v.trim() || v.includes("\0")) syncError(); }
-function date(v: unknown) { text(v); if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v) || !Number.isFinite(Date.parse(v)) || new Date(v).toISOString()!==v) syncError(); }
+function date(v: unknown) { text(v); if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v) || !Number.isFinite(Date.parse(v))) syncError(); }
 function keys(v: unknown, expected: string): asserts v is Record<string, any> {
   if(!v || typeof v!=="object" || Array.isArray(v) || Object.keys(v).sort().join(",")!==expected.split(",").sort().join(",")) syncError();
 }
@@ -42,9 +36,8 @@ function version(v: unknown): asserts v is MemoryVersion {
 }
 export function validateSnapshot(value: unknown): asserts value is SyncSnapshot {
   if(Buffer.byteLength(JSON.stringify(value) ?? "")>8*1024*1024) syncError("SYNC_TOO_LARGE");
-  const format=(value as {format?:unknown}|null)?.format;
-  keys(value,format===2?"format,projects,memories,sessions,sessionEntries,sessionSummaries":"format,projects,memories");
-  if((value.format!==1&&value.format!==2) || !Array.isArray(value.projects) || !Array.isArray(value.memories)) syncError();
+  keys(value,"format,projects,memories");
+  if(value.format!==1 || !Array.isArray(value.projects) || !Array.isArray(value.memories)) syncError();
   const projects=new Set<string>();const ids=new Set<string>();const topics=new Set<string>();const requests=new Set<string>();
   for(const p of value.projects) {
     keys(p,"projectId,name,createdAt,updatedAt");projectIdentity(p.projectId);text(p.name);date(p.createdAt);date(p.updatedAt);unique(projects,p.projectId);
@@ -82,36 +75,6 @@ export function validateSnapshot(value: unknown): asserts value is SyncSnapshot 
     }
     if(eventVersion!==v.version||eventState!==state) syncError();
   }
-  if(value.format===2) validateSessions(value as SyncSnapshotV2,projects);
-}
-
-function entryKey(entry: {memoryId:string;version:number}):string { return canonical([entry.memoryId,entry.version]); }
-function validateSessions(snapshot:SyncSnapshotV2,projects:Set<string>):void {
-  if(!Array.isArray(snapshot.sessions)||!Array.isArray(snapshot.sessionEntries)||!Array.isArray(snapshot.sessionSummaries)) syncError();
-  const sessions=new Map<string,Session>();const entries=new Map<string,SessionEntry>();const summaries=new Set<string>();
-  const memories=new Map(snapshot.memories.map(b=>[b.memory.id,b]));
-  for(const s of snapshot.sessions) {
-    keys(s,"sessionId,projectId,kind,startedAt,endedAt");
-    try {sessionIdentity(s.sessionId);} catch {syncError();}
-    projectIdentity(s.projectId);date(s.startedAt);if(s.endedAt!==null) date(s.endedAt);
-    if(!projects.has(s.projectId)||sessions.has(s.sessionId)||!["runtime","manual"].includes(s.kind)||(s.kind==="manual"&&s.endedAt!==null)) syncError();
-    sessions.set(s.sessionId,s);
-  }
-  for(const e of snapshot.sessionEntries) {
-    keys(e,"sessionId,memoryId,version,recordedAt");
-    const s=sessions.get(e.sessionId);const v=memories.get(e.memoryId)?.versions[e.version-1];
-    date(e.recordedAt);
-    if(!s||!Number.isSafeInteger(e.version)||!v||v.version!==e.version||v.updatedAt!==e.recordedAt||
-      (v.scope!=="shared"&&v.projectId!==s.projectId)||entries.has(entryKey(e))) syncError();
-    entries.set(entryKey(e),e);
-  }
-  for(const p of snapshot.sessionSummaries) {
-    keys(p,"sessionId,memoryId,version");
-    const s=sessions.get(p.sessionId);const v=memories.get(p.memoryId)?.versions[p.version-1];const e=entries.get(entryKey(p));
-    if(!s||s.kind!=="runtime"||!Number.isSafeInteger(p.version)||!v||v.version!==p.version||!e||e.sessionId!==s.sessionId||
-      v.scope!=="project"||v.projectId!==s.projectId||v.type!=="procedure"||v.topicKey!==`session/${s.sessionId}/summary`) syncError();
-    unique(summaries,p.sessionId);
-  }
 }
 function merge<T>(base:T[],local:T[],remote:T[],key:(v:T)=>string):T[] {
   const b=new Map(base.map(v=>[key(v),v]));const l=new Map(local.map(v=>[key(v),v]));const r=new Map(remote.map(v=>[key(v),v]));
@@ -127,41 +90,14 @@ function merge<T>(base:T[],local:T[],remote:T[],key:(v:T)=>string):T[] {
 }
 export function reconcile(base:SyncSnapshot,local:SyncSnapshot,remote:SyncSnapshot):SyncSnapshot {
   [base,local,remote].forEach(validateSnapshot);
-  assertExtension(base,local);assertExtension(base,remote);
-  const data={projects:merge(base.projects,local.projects,remote.projects,p=>p.projectId),memories:merge(base.memories,local.memories,remote.memories,b=>b.memory.id)};
-  let result:SyncSnapshot={format:1,...data};
-  if([base,local,remote].some(s=>s.format===2)) {
-    const [b,l,r]=[normalizeSnapshot(base),normalizeSnapshot(local),normalizeSnapshot(remote)] as const;
-    result={format:2,...data,sessions:mergeSessions(b.sessions,l.sessions,r.sessions),
-      sessionEntries:merge(b.sessionEntries,l.sessionEntries,r.sessionEntries,entryKey),
-      sessionSummaries:merge(b.sessionSummaries,l.sessionSummaries,r.sessionSummaries,s=>s.sessionId)};
-  }
-  try { validateSnapshot(result); } catch(error) {
-    if(error instanceof MemoryError&&error.code==="SYNC_TOO_LARGE") throw error;
-    syncError("SYNC_CONFLICT");
-  }
+  const result:SyncSnapshot={format:1,projects:merge(base.projects,local.projects,remote.projects,p=>p.projectId),memories:merge(base.memories,local.memories,remote.memories,b=>b.memory.id)};
+  try { validateSnapshot(result); } catch {syncError("SYNC_CONFLICT");}
   assertExtension(local,result);assertExtension(remote,result);
   return result;
 }
 
-function sessionExtends(current:Session,next:Session):boolean {
-  return current.sessionId===next.sessionId&&current.projectId===next.projectId&&current.kind===next.kind&&current.startedAt===next.startedAt&&
-    (current.endedAt===null||current.endedAt===next.endedAt);
-}
-function mergeSessions(base:Session[],local:Session[],remote:Session[]):Session[] {
-  // Identity is immutable even when two devices first observe the same ID without a checkpoint.
-  const out=new Map<string,Session>();
-  for(const s of [...base,...local,...remote]) {
-    const prior=out.get(s.sessionId);
-    if(prior&&!sessionExtends(prior,s)&&!sessionExtends(s,prior)) syncError("SYNC_CONFLICT");
-    if(!prior||prior.endedAt===null) out.set(s.sessionId,s);
-  }
-  return [...out.values()].sort((a,b)=>a.sessionId<b.sessionId?-1:a.sessionId>b.sessionId?1:0);
-}
-
 /** A merge may add revisions but cannot erase or rewrite either participant. */
 export function assertExtension(current:SyncSnapshot,next:SyncSnapshot):void {
-  if(current.format===2 && next.format!==2) syncError("SYNC_CONFLICT");
   const projects=new Map(next.projects.map(p=>[p.projectId,p]));
   const bundles=new Map(next.memories.map(b=>[b.memory.id,b]));
   for(const p of current.projects) if(!projects.has(p.projectId)||projects.get(p.projectId)!.createdAt!==p.createdAt) syncError("SYNC_CONFLICT");
@@ -171,13 +107,5 @@ export function assertExtension(current:SyncSnapshot,next:SyncSnapshot):void {
       canonical(n.versions.slice(0,b.versions.length))!==canonical(b.versions)||
       canonical(n.events.slice(0,b.events.length))!==canonical(b.events)||
       b.requests.some(r=>!n.requests.some(s=>canonical(r)===canonical(s)))) syncError("SYNC_CONFLICT");
-  }
-  if(current.format===2&&next.format===2) {
-    const sessions=new Map(next.sessions.map(s=>[s.sessionId,s]));
-    const entries=new Map(next.sessionEntries.map(e=>[entryKey(e),e]));
-    const summaries=new Map(next.sessionSummaries.map(s=>[s.sessionId,s]));
-    for(const s of current.sessions) {const n=sessions.get(s.sessionId);if(!n||!sessionExtends(s,n)) syncError("SYNC_CONFLICT");}
-    for(const e of current.sessionEntries) if(canonical(entries.get(entryKey(e)))!==canonical(e)) syncError("SYNC_CONFLICT");
-    for(const s of current.sessionSummaries) {const n=summaries.get(s.sessionId);if(!n||n.memoryId!==s.memoryId||n.version<s.version) syncError("SYNC_CONFLICT");}
   }
 }

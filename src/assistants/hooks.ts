@@ -1,7 +1,7 @@
 import { MEMORY_PROTOCOL } from '../memory-protocol';
 import type { ClientId } from './catalog';
 
-const RECOVERY = 'After compaction or resuming, call memory_current_project and memory_search to recover durable project context. Preserve the user’s instructions; save only curated durable value.';
+const RECOVERY = 'After compaction or resuming, recover the known conversation sessionId; never invent a replacement. Call memory_current_project and memory_context, then memory_search for previews and memory_get before relying on details. Hooks are reminders, not guaranteed model obedience.';
 export function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'`; }
 export function hookConfiguration(client: ClientId, executable: string): Record<string, unknown> {
   if(client === 'opencode') return {};

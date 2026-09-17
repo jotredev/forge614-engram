@@ -14,6 +14,41 @@ const BINDING_SCHEMA = `CREATE TABLE project_bindings (
 );
 CREATE INDEX project_bindings_project ON project_bindings(projectId);
 `;
+const SESSION_SCHEMA = `CREATE TABLE sessions (
+  sessionId TEXT PRIMARY KEY NOT NULL,
+  projectId TEXT NOT NULL REFERENCES projects(projectId),
+  kind TEXT NOT NULL CHECK(kind IN ('runtime','manual')),
+  startedAt TEXT NOT NULL,
+  endedAt TEXT,
+  CHECK(kind != 'manual' OR endedAt IS NULL)
+);
+CREATE INDEX sessions_project_started ON sessions(projectId,startedAt,sessionId);
+CREATE TABLE session_entries (
+  sessionId TEXT NOT NULL REFERENCES sessions(sessionId),
+  memoryId TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  recordedAt TEXT NOT NULL,
+  PRIMARY KEY(memoryId,version),
+  FOREIGN KEY(memoryId,version) REFERENCES memory_versions(memory_id,version)
+);
+CREATE INDEX session_entries_timeline ON session_entries(sessionId,recordedAt,memoryId,version);
+CREATE TABLE session_summaries (
+  sessionId TEXT PRIMARY KEY NOT NULL REFERENCES sessions(sessionId),
+  memoryId TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  FOREIGN KEY(memoryId,version) REFERENCES memory_versions(memory_id,version)
+);
+CREATE TABLE local_session_bindings (
+  sessionId TEXT NOT NULL REFERENCES sessions(sessionId),
+  directory TEXT NOT NULL,
+  PRIMARY KEY(sessionId,directory)
+);
+CREATE INDEX local_session_directory ON local_session_bindings(directory,sessionId);
+CREATE TABLE local_manual_sessions (
+  projectId TEXT PRIMARY KEY NOT NULL REFERENCES projects(projectId),
+  sessionId TEXT UNIQUE NOT NULL REFERENCES sessions(sessionId)
+);
+`;
 const SCHEMA = `
 CREATE TABLE projects (
   projectId TEXT PRIMARY KEY NOT NULL,
@@ -88,10 +123,10 @@ function definition(db: Database): string {
   return JSON.stringify(db.query("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name").all());
 }
 const expectedDefinitions = new Map<number,string>();
-function schemaFor(version: 3 | 4 | 5): string {
-  return SCHEMA + (version >= 4 ? SYNC_SCHEMA : "") + (version >= 5 ? BINDING_SCHEMA : "");
+function schemaFor(version: 3 | 4 | 5 | 6): string {
+  return SCHEMA + (version >= 4 ? SYNC_SCHEMA : "") + (version >= 5 ? BINDING_SCHEMA : "") + (version >= 6 ? SESSION_SCHEMA : "");
 }
-function validate(db: Database, version: 3 | 4 | 5): void {
+function validate(db: Database, version: 3 | 4 | 5 | 6): void {
   if (!expectedDefinitions.has(version)) {
     const reference = new Database(":memory:");
     try { reference.exec(schemaFor(version)); expectedDefinitions.set(version,definition(reference)); }
@@ -106,6 +141,7 @@ function validate(db: Database, version: 3 | 4 | 5): void {
 export function enableSynchronization(db: Database): void {
   db.transaction(() => {
     const { user_version } = db.query("PRAGMA user_version").get() as {user_version:number};
+    if(user_version===6) { validate(db,6); return; }
     if(user_version===5) { validate(db,5); return; }
     if(user_version===4) { validate(db,4); return; }
     if(user_version!==3) throw new MemoryError("MIGRATION_REQUIRED","No se puede habilitar sincronización en este formato.");
@@ -119,6 +155,7 @@ export function enableSynchronization(db: Database): void {
 export function enableAssistantIntegration(db: Database): void {
   db.transaction(() => {
     const { user_version } = db.query("PRAGMA user_version").get() as {user_version:number};
+    if (user_version === 6) { validate(db,6); return; }
     if (user_version === 5) { validate(db,5); return; }
     if (user_version === 4) {
       validate(db,4); db.exec(BINDING_SCHEMA); db.exec("PRAGMA user_version=5"); return;
@@ -127,6 +164,24 @@ export function enableAssistantIntegration(db: Database): void {
     validate(db,3);
     db.exec(SYNC_SCHEMA + BINDING_SCHEMA);
     db.exec("PRAGMA user_version=5");
+  }).immediate();
+}
+
+/** Explicit enrollment for the additive session lifecycle schema. */
+export function enableSessionLifecycle(db: Database): void {
+  db.transaction(() => {
+    const { user_version } = db.query("PRAGMA user_version").get() as {user_version:number};
+    if (user_version === 6) { validate(db,6); return; }
+    if (user_version === 5) {
+      validate(db,5); db.exec(SESSION_SCHEMA); db.exec("PRAGMA user_version=6"); return;
+    }
+    if (user_version === 4) {
+      validate(db,4); db.exec(BINDING_SCHEMA + SESSION_SCHEMA); db.exec("PRAGMA user_version=6"); return;
+    }
+    if (user_version !== 3) throw new MemoryError("MIGRATION_REQUIRED","No se puede habilitar sesiones en este formato.");
+    validate(db,3);
+    db.exec(SYNC_SCHEMA + BINDING_SCHEMA + SESSION_SCHEMA);
+    db.exec("PRAGMA user_version=6");
   }).immediate();
 }
 
@@ -142,6 +197,7 @@ export function initialize(db: Database, allowCreate = true, readonly = false): 
     if (version === SCHEMA_VERSION && app === APPLICATION_ID) { validate(db,3); return; }
     if (version === 4 && app === APPLICATION_ID) { validate(db,4); return; }
     if (version === 5 && app === APPLICATION_ID) { validate(db,5); return; }
+    if (version === 6 && app === APPLICATION_ID) { validate(db,6); return; }
     if (version !== 0 || app !== 0) throw new MemoryError("DATABASE_VERSION", "Base incompatible: no se puede abrir con esta versión.");
     const objects = db.query("SELECT count(*) AS n FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'").get() as { n: number };
     if (objects.n !== 0) throw new MemoryError("DATABASE_OWNER", "La base contiene una estructura ajena; usa una base vacía y dedicada.");

@@ -56,6 +56,8 @@ test('generated OpenCode plugin executes independently and preserves custom syst
   await hooks['experimental.session.compacting']({},compact);await hooks['experimental.session.compacting']({},compact);
   expect(compact.context).toHaveLength(2);expect(compact.context[0]).toBe('Existing recovery');expect(compact.prompt).toBe('Custom compaction prompt');
   expect(compact.context[1]).toContain('memory_current_project');
+  expect(compact.context[1]).toContain('known conversation sessionId');
+  expect(compact.context[1]).toContain('not guaranteed model obedience');
 });
 
 test('standalone compiled hooks and assistant listing run with no Bun on PATH and no storage writes',async()=>{

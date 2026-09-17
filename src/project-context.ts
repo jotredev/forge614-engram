@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { MemoryError, type MemoryVersion, type SaveInput } from "./domain";
 import { MemoryStore } from "./store";
+import type { Session, SessionSaveOptions, SessionSaveResult } from "./session-types";
 
 export interface ProjectContext {
   projectId: string | null;
@@ -94,6 +95,25 @@ function canonicalProject(directory: string): CanonicalProject {
   return { directory:common, name, git:true };
 }
 
+function runtimeProjectDirectory(directory: string, project: CanonicalProject): string {
+  const explicit = realDirectory(directory);
+  if (!project.git) return explicit;
+  const executable = process.env.PATH === undefined ? Bun.which("git") : Bun.which("git",{ PATH:process.env.PATH });
+  if (!executable) projectIdentityUnavailable();
+  let result: Bun.ReadableSyncSubprocess;
+  try {
+    result = Bun.spawnSync([executable,"-C",explicit,"rev-parse","--show-toplevel"], {
+      env:gitEnvironment(),stdout:"pipe",stderr:"pipe",timeout:GIT_TIMEOUT_MS,
+      maxBuffer:GIT_MAX_OUTPUT_BYTES,killSignal:"SIGKILL",
+    });
+  } catch { projectIdentityUnavailable(); }
+  if (result.exitedDueToTimeout || result.exitedDueToMaxBuffer || result.exitCode !== 0) projectIdentityUnavailable();
+  const output = result.stdout.toString().trim();
+  if (!output || output.includes("\0") || !isAbsolute(output)) projectIdentityUnavailable();
+  try { return realpathSync(output); }
+  catch { projectIdentityUnavailable(); }
+}
+
 export function assertGitProjectDirectory(directory: string): void {
   if (!canonicalProject(directory).git) {
     throw new MemoryError("PROJECT_DIRECTORY_REQUIRED","Una carpeta sin Git requiere directory explícito o una raíz MCP única.");
@@ -122,4 +142,17 @@ export function bindProjectContext(store: MemoryStore, directory: string, projec
 export function saveProjectMemory(store: MemoryStore, directory: string, input: ProjectMemoryInput): MemoryVersion {
   const canonical = canonicalProject(directory);
   return store.saveForProjectDirectory(canonical.directory,canonical.name,input,bindingAvailable);
+}
+
+export function saveProjectMemoryWithSession(store: MemoryStore, directory: string,
+    input: ProjectMemoryInput, options: SessionSaveOptions = {}): SessionSaveResult {
+  const canonical = canonicalProject(directory);
+  const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
+  return store.saveWithSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,input,options,bindingAvailable);
+}
+
+export function startProjectSession(store: MemoryStore, directory: string, sessionId: string): Session {
+  const canonical = canonicalProject(directory);
+  const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
+  return store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable);
 }

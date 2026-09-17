@@ -30,7 +30,19 @@ test("help, version and empty project list create no storage", () => {
     const result = run(dir,...args); expect(result.code).toBe(0);
     expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
   }
-  expect(run(dir,"help").stdout).toContain("--scope");
+  const help = run(dir,"help").stdout;
+  for (const syntax of [
+    "sync [--upgrade-format]",
+    "sessions-enable",
+    "session-start --directory <carpeta> --session-id <id>",
+    "session-end --project-id <UUID> --session-id <id>",
+    "session-summary --project-id <UUID> --session-id <id> --summary-json <json>",
+    "timeline --project-id <UUID> --session-id <id> --id <recuerdo> --version <n>",
+    "context [--project-id <UUID> | --scope shared] [--compact] [--max-bytes <1024..65536>]",
+    "[--session-id <id>] [--session-project-id <UUID>]",
+    "search   --query <texto> [--limit <1..100>] [--preview]",
+    "get      --id <recuerdo> [--version <n>]",
+  ]) expect(help).toContain(syntax);
   expect(run(dir,"--version").stdout).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
   expect(JSON.parse(run(dir,"project-list").stdout)).toEqual([]);
 });
@@ -239,4 +251,34 @@ test("concurrent init of existing workspace leaves existing memories and configu
   for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
   expect(readFileSync(path)).toEqual(before);
   expect(JSON.parse(run(dir,"search","--project-id",id,"--query","SQLite").stdout)).toHaveLength(1);
+});
+
+test("explicit session CLI lifecycle, previews, version reads, timeline and context stay noninteractive",()=>{
+  const dir=workspace();
+  expect(run(dir,"sessions-enable").code).toBe(0);
+  const started=run(dir,"session-start","--directory",dir,"--session-id","chat-one");
+  expect(started.code).toBe(0);const session=JSON.parse(started.stdout);
+  const saved=run(dir,"save","--project-id",session.projectId,"--title","Decision","--content","Use WAL","--session-id","chat-one");
+  expect(saved.code).toBe(0);const memory=JSON.parse(saved.stdout);
+  const preview=JSON.parse(run(dir,"search","--project-id",session.projectId,"--query","WAL","--preview").stdout);
+  expect(preview[0].memory).not.toHaveProperty("content");
+  expect(JSON.parse(run(dir,"get","--project-id",session.projectId,"--id",memory.id,"--version","1").stdout)).toMatchObject({memory:{id:memory.id,version:1},currentVersion:1});
+  expect(JSON.parse(run(dir,"timeline","--project-id",session.projectId,"--session-id","chat-one","--id",memory.id,"--version","1","--before","0","--after","0").stdout)).toMatchObject({sessionId:"chat-one",before:[],after:[]});
+  expect(JSON.parse(run(dir,"context","--project-id",session.projectId,"--compact","--max-bytes","1024").stdout).format).toBe(1);
+  const summary=JSON.stringify({goal:"Ship",instructions:"",discoveries:"WAL",accomplishments:"Done",nextSteps:"None",files:[]});
+  expect(run(dir,"session-summary","--project-id",session.projectId,"--session-id","chat-one","--summary-json",summary,"--request-key","summary-1").code).toBe(0);
+  expect(JSON.parse(run(dir,"session-end","--project-id",session.projectId,"--session-id","chat-one").stdout).endedAt).not.toBeNull();
+});
+
+test("CLI rejects valued boolean flags, malformed summaries, unknown summary keys and watch promotion",()=>{
+  const dir=workspace();
+  for(const args of [
+    ["search","--scope","shared","--query","x","--preview","true"],
+    ["session-summary","--project-id","11111111-1111-4111-8111-111111111111","--session-id","s","--summary-json","{bad","--request-key","r"],
+    ["session-summary","--project-id","11111111-1111-4111-8111-111111111111","--session-id","s","--summary-json",JSON.stringify({goal:"x",instructions:"",discoveries:"",accomplishments:"",nextSteps:"",files:[],extra:true}),"--request-key","r"],
+    ["sync-watch","--upgrade-format"],
+    ["context","--scope","shared","--project-id","11111111-1111-4111-8111-111111111111"],
+    ["save","--scope","shared","--title","x","--content","y","--session-id","s"],
+  ]) expect(JSON.parse(run(dir,...args).stderr).code).toBe("INVALID_INPUT");
+  expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
 });

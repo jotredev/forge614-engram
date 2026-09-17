@@ -1,40 +1,38 @@
 # 03 (EN). Terminal CLI Command Reference
 
-> **Stage:** Local MCP, Assistant TUI Menu, Local Memory & Optional PostgreSQL Synchronization
-> **Release Versions:** Program 0.5.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings)
-> **Status:** Current & Active (Verified with 191 tests on macOS with Bun 1.3.8)
+> **Stage:** Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
+> **Status:** Current & Active (Verified with 250 tests across 18 files on macOS with Bun 1.3.8)
 > **Sister translation:** [03. Manual Exhaustivo de Terminal (CLI)](../es/03-referencia-cli.md)
 
-This guide exhaustively documents all commands, options, syntax rules, exit codes, and output modes of the Forge614 Engram command-line interface (CLI).
+This manual provides an exhaustive reference for all CLI commands, options, syntax rules, exit codes, and response formats for Forge614 Engram.
 
 ---
 
-## 1. General Terminal Syntax & Operational Rules
+## 1. General Command-Line Rules
 
-1. **Command Invocation:** The command verb must immediately follow the program binary:
+1. **Command Structure:** The command must immediately follow the program name:
    ```bash
    forge614-engram <command> [options...]
-   # Or when developing with Bun inside the repository:
-   bun run cli <command> [options...]
    ```
-2. **Option Formatting:** Each option flag (`--flag`) must be separated from its value by a space. Key-value assignment (`--flag=value`) is not supported.
+2. **Option Formatting:** Every option (`--option`) must be separated from its value by a space. The syntax `--option=value` is not accepted.
    - ✅ Correct: `--project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --limit 5`
    - ❌ Incorrect: `--project-id=7c9e6679-7425-40de-944b-e07fc1f90ae7`
-3. **Double Quotes for Text with Spaces:** All titles, contents, and project names containing spaces must be enclosed in double quotes (`"..."`).
-4. **Strict Upfront Validation:** If you pass unknown flags, duplicate options, or incompatible arguments (e.g. combining `--scope shared` with `--project-id` on single-memory commands), execution terminates immediately with a syntax error **before reading configuration or opening SQLite**.
-5. **Output Channels & Exit Codes:**
-   - **Interactive Commands (`setup`, `tui`):** Emit human-readable text to `stdout`. Return exit code `0` on successful confirmation; code `130` on cancellation (`Ctrl+C`, `Escape`, `cancelar`, `q`, or `no`); and code `1` on error or non-interactive execution (`isTTY` is false, throwing `INTERACTIVE_REQUIRED`).
-   - **MCP Server (`mcp`):** Reserves `stdout` exclusively for JSON-RPC protocol frames. Exiting via SIGINT (`Ctrl+C`) returns code `130`; SIGTERM returns code `143`.
-   - **Continuous Watcher (`sync-watch`):** Emits successful rounds as JSON to `stdout` and retry warnings to `stderr`. Exits with code `130` when interrupted via `Ctrl+C`.
-   - **Data & Automation Commands (`init`, `sync`, `assistant-list`, `integration-enable`, `project-*`, `save`, `search`, etc.):** Emit structured **JSON** to `stdout` with exit code `0` on success. On failure, emit a structured JSON error object to `stderr` with exit code `1`.
-6. **Removed Flags that are NOT Supported:**
-   - `--db`: Rejected. The database path is fixed at `~/.forge614/engram.db`.
-   - `--project` (by name): Rejected. Project identity is strictly `--project-id <UUID>`.
-   - `--id-project`: Rejected. The canonical flag name is `--project-id`.
+3. **Mandatory Quotes for Multi-Word Strings:** All titles, contents, JSON objects, or names with spaces must be wrapped in double quotes (`"..."`).
+4. **Strict Prior Validation:** Passing an unknown option, repeating an option, or supplying incompatible arguments (such as mixing `--scope shared` with `--project-id` on single-memory commands or passing `--upgrade-format` to `sync-watch`) terminates immediately with `INVALID_INPUT` **before reading configuration or opening SQLite**.
+5. **Output Streams and Exit Codes:**
+   - **Interactive Commands (`setup`, `tui`):** Emit human-readable text via `stdout`. Return exit code `0` on success/confirmation; code `130` on voluntary cancellation (`Ctrl+C`, `Escape`, `cancelar`, `q`, or `no`); and code `1` on error or non-interactive execution (`INTERACTIVE_REQUIRED`).
+   - **MCP Server (`mcp`):** Reserves `stdout` exclusively for JSON-RPC frames. On `Ctrl+C` (SIGINT) returns code `130`; on SIGTERM returns code `143`.
+   - **Sync Watcher (`sync-watch`):** Emits successful sync rounds in JSON to `stdout` and retry notices to `stderr`. On `Ctrl+C` exits with code `130`.
+   - **Data and Automation Commands (`init`, `sync`, `assistant-list`, `integration-enable`, `sessions-enable`, `project-*`, `save`, `search`, `session-*`, `timeline`, `context`, etc.):** Emit structured JSON responses to `stdout` with exit code `0` on success. On error, emit a JSON error payload to `stderr` with exit code `1`.
+6. **Disallowed Legacy Flags:**
+   - `--db`: Not accepted. Database path is fixed: `~/.forge614/engram.db`.
+   - `--project` (by name): Not accepted. The identifier is strictly `--project-id <UUID>`.
+   - `--id-project`: Not accepted. The official parameter is `--project-id`.
 
 ---
 
-## 2. Configuration, Assistant, and MCP Commands
+## 2. Configuration, Assistants, and MCP Commands
 
 ---
 
@@ -45,13 +43,11 @@ Displays the program name and installed version.
 forge614-engram --version
 ```
 - **Output:** `forge614-engram 0.5.0`
-- **Options:** Accepts no additional flags.
-- **Side effects:** None. Does not read or write disk files.
 
 ---
 
 ### 2.2. `help`
-Prints the official quick-reference manual in the terminal.
+Prints the official quick-reference guide.
 
 ```bash
 forge614-engram help
@@ -60,160 +56,141 @@ forge614-engram help
 ---
 
 ### 2.3. `setup`
-Interactive setup wizard for configuring central user storage (`~/.forge614/.env` and `~/.forge614/engram.db`) with or without PostgreSQL sync.
+Interactive terminal wizard to configure the central workspace (`~/.forge614/.env` and `~/.forge614/engram.db`) with or without PostgreSQL replica sync.
 
 ```bash
 forge614-engram setup
 ```
-- **Options:** None.
-- **Requirements:** Interactive terminal (`stdin` and `stdout` TTY).
-- **Exit codes:** `0` on confirmation; `130` on cancellation; `1` on error.
+- **Requirements:** Interactive TTY (`stdin` and `stdout`).
+- **Exit Codes:** `0` on apply; `130` on cancellation; `1` on error.
 
 ---
 
 ### 2.4. `tui`
-Full-screen interactive terminal menu for auditing, previewing, and configuring AI coding assistants (Claude Code, Codex, Cursor, OpenCode, Gemini CLI).
+Interactive full-screen terminal dashboard to audit, preview, and configure coding assistants (Claude Code, Codex, Cursor, OpenCode, Gemini CLI).
 
 ```bash
 forge614-engram tui
 ```
-- **Options:** None.
-- **Requirements:** Interactive terminal (`isTTY` true and raw mode support). Non-interactive execution throws `INTERACTIVE_REQUIRED`.
-- **Keyboard navigation:**
+- **Keybindings:**
   - `↑` / `↓`: Move cursor.
-  - `Space`: Select or deselect client.
+  - `Space`: Toggle client selection.
   - `r`: Rescan installed executables and configurations.
-  - `c`: Customize executable or config directory via masked input.
-  - `t` / "Probar servidor propio (opcional)": Runs an asynchronous 5-second self-test of Engram's installed binary via MCP SDK over stdio, checking the 5 expected tools. Pressing `Escape` during the test cancels only the self-test.
-  - `Enter`: Advances through screens (`List` $\rightarrow$ `Preview` $\rightarrow$ `Confirm` $\rightarrow$ `Apply`).
-  - `Escape`: Steps back to previous screen.
-  - `Ctrl+C`: Cancels session immediately, restores terminal, and exits with code `130`.
-- **Side effects:**
-  - In Preview: None (zero disk writes).
-  - In Confirm: Executes preflight, enables Schema 5 in SQLite, creates `0600` backups with UUID suffixes, applies client configurations preserving comments, and validates post-publication bytes (`PUBLISHED_UNVERIFIED` on external interference).
+  - `c`: Custom binary or config path via masked input.
+  - `t`: Run 5-second async MCP server self-test over stdio.
+  - `Enter`: Advance through screens (`List` $\rightarrow$ `Preview` $\rightarrow$ `Confirm` $\rightarrow$ `Apply`).
+  - `Escape`: Step back to previous screen.
+  - `Ctrl+C`: Immediate clean abort, returning code `130`.
+- **Side Effects:**
+  - In Preview: Zero disk writes.
+  - On Apply: Runs preflights, enables Schema 5 in SQLite, creates `0600` UUID-suffixed backups, applies changes preserving comments, and validates published bytes (`PUBLISHED_UNVERIFIED` if concurrently modified). In OpenCode, existing divergent plugins trigger `CONFLICT` without silent overwriting.
 
 ---
 
 ### 2.5. `assistant-list`
-Read-only structured JSON inspection auditing installed assistant executables, existing configuration files, and native hook coverage levels.
+Read-only structured JSON inspection auditing detected executables, configuration paths, and hook coverage.
 
 ```bash
 forge614-engram assistant-list
 ```
-- **Options:** None.
-- **Output:** JSON array of assistant descriptors. Ideal for automation scripts.
-- **Side effects:** None. Does not write files, initialize databases, or launch client processes.
 
 ---
 
 ### 2.6. `integration-enable`
-Explicitly enables assistant integration and local project bindings by upgrading the local SQLite database to **Schema 5** (adds `project_bindings` table), without modifying any client configuration files.
+Explicitly enables assistant integration and local directory bindings by migrating the local database to **Schema 5** (adds table `project_bindings`).
 
 ```bash
 forge614-engram integration-enable
 ```
-- **Options:** None.
-- **JSON Output:**
-  ```json
-  {
-    "enabled": true,
-    "schema": 5
-  }
-  ```
-- **Side effects:** Initializes central storage if absent and applies additive Schema 5 migration.
+- **JSON Output:** `{"enabled": true, "schema": 5}`
 
 ---
 
-### 2.7. `mcp`
-Launches the local Model Context Protocol server over standard input/output (`stdio`).
+### 2.7. `sessions-enable`
+Explicitly enables progressive memory sessions and ranked context retrieval by migrating the local database to **Schema 6** (adds tables `sessions`, `session_entries`, `session_summaries`, `local_session_bindings`, and `local_manual_sessions`).
+
+```bash
+forge614-engram sessions-enable
+```
+- **JSON Output:** `{"enabled": true, "schema": 6}`
+- **Side Effects:** Additive irreversible migration. Standard commands, `mcp`, and `init` never auto-migrate existing databases.
+
+---
+
+### 2.8. `mcp`
+Starts the local Model Context Protocol (MCP) server over standard I/O channels (`stdio`).
 
 ```bash
 forge614-engram mcp
 ```
-- **Options:** None.
-- **Channels:** Reserves `stdout` strictly for JSON-RPC MCP messages.
-- **Exposed Tools:**
-  1. `memory_current_project`
-  2. `memory_search`
+- **Channels:** Reserves `stdout` strictly for JSON-RPC protocol frames.
+- **10 Exposed Tools:**
+  1. `memory_context`
+  2. `memory_current_project`
   3. `memory_get`
-  4. `memory_save`
-  5. `memory_history`
-- **Precondition:** Requires Schema 5 enabled beforehand (via `tui` or `integration-enable`). The MCP server never auto-migrates the database on launch.
-- **Shutdown:** Closes cleanly on `EOF` on `stdin`; exits with code `130` on `SIGINT`; exits with code `143` on `SIGTERM`.
+  4. `memory_history`
+  5. `memory_save`
+  6. `memory_search`
+  7. `memory_session_end`
+  8. `memory_session_start`
+  9. `memory_session_summary`
+  10. `memory_timeline`
+- **Precondition:** Requires Schema 5 (or Schema 6 for session tools). Does not auto-migrate on startup.
 
 ---
 
-### 2.8. `memory-hook`
-Native adapter invoked by assistant lifecycle hooks on session start or prompt submission.
+### 2.9. `memory-hook`
+Native hook adapter invoked by AI coding assistants on session start or prompt submission.
 
 ```bash
 forge614-engram memory-hook --client <claude-code|codex|cursor|opencode|gemini-cli>
 ```
-- **Required flag:** `--client <name>`
-- **Output:** Emits native JSON context for the specified client, injecting memory guidance.
-- **Side effects:** **Never saves memories directly to disk.** Saves are performed by the model via `memory_save`.
+- **Side Effects:** Injects contextual guidance. **Never saves memories directly**.
 
 ---
 
-### 2.9. `project-bind`
-Manually associates a local filesystem path with an existing project UUID (`projectId`).
+### 2.10. `project-bind`
+Manually associates a local directory to an existing `projectId`.
 
 ```bash
 forge614-engram project-bind \
   --directory "/Users/usuario/Desktop/my-project" \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 ```
-- **Required flags:** `--directory <path>`, `--project-id <UUID>`
-- **Behavior:** Resolves canonical repository root via Git (`git rev-parse --path-format=absolute --git-common-dir`), unifying worktrees and subdirectories.
-- **JSON Output:**
-  ```json
-  {
-    "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-    "directory": "/Users/usuario/Desktop/my-project",
-    "source": "binding"
-  }
-  ```
 
 ---
 
-### 2.10. `init`
-Programmatically initializes central storage (`~/.forge614/.env` and `~/.forge614/engram.db`) in purely local mode.
+### 2.11. `init`
+Programmatically initializes central storage (`~/.forge614/.env` and `~/.forge614/engram.db`) in local mode. Idempotent and never overwrites existing memories.
 
 ```bash
 forge614-engram init
 ```
-- **JSON Output:** `{"initialized":true,"storage":"sqlite"}`
-- **Side effects:** Idempotent. Preserves any pre-existing memories.
 
 ---
 
-### 2.11. `sync`
-Executes an immediate round of 3-way merge snapshot synchronization against the configured PostgreSQL replica.
+### 2.12. `sync`
+Executes an immediate 3-way snapshot merge synchronization round against the configured PostgreSQL replica.
 
 ```bash
+# Standard sync:
 forge614-engram sync
+
+# Explicit promotion of Format 1 replica to Format 2:
+forge614-engram sync --upgrade-format
 ```
-- **Options:** None.
-- **JSON Output:**
-  ```json
-  {
-    "synchronized": true,
-    "projects": 3,
-    "memories": 15
-  }
-  ```
-- **Errors:** Returns `SYNC_DISABLED` if sync is not enabled, `SYNC_CONFLICT` on incompatible concurrent edits, and `SYNC_TOO_LARGE` if snapshots exceed 8 MiB.
+- **Options:**
+  - `--upgrade-format`: Explicitly promotes a Format 1 PostgreSQL replica (projects & memories) to Format 2 (adding sessions, entries, and summaries) with atomic CAS protection on `forge614_sync.state`.
 
 ---
 
-### 2.12. `sync-watch`
-Executes an immediate sync round and maintains a foreground polling loop.
+### 2.13. `sync-watch`
+Executes an initial sync round and maintains a foreground polling loop.
 
 ```bash
 forge614-engram sync-watch [--interval <1..3600>]
 ```
-- **Optional flag:** `--interval <seconds>` (integer between 1 and 3600; default `30`).
-- **Behavior:** Runs in foreground. Exiting with `Ctrl+C` exits cleanly with code **130** while preserving local SQLite data.
+- **Restriction:** Rejects `--upgrade-format` with `INVALID_INPUT`. Promotion must be performed explicitly via `sync --upgrade-format`. Exits with code `130` on `Ctrl+C`.
 
 ---
 
@@ -222,113 +199,129 @@ forge614-engram sync-watch [--interval <1..3600>]
 ---
 
 ### 3.1. `project-create`
-Registers a new project in the central database.
+Registers a new project, returning its UUID `projectId`.
 
 ```bash
 forge614-engram project-create --name "Recommendation Engine"
 ```
-- **Required flag:** `--name <text>`
-- **Output:** Returns project object with generated UUID `projectId`.
 
 ---
 
 ### 3.2. `project-list`
-Lists all registered projects in the central database.
+Lists all registered projects ordered chronologically.
 
 ```bash
 forge614-engram project-list
 ```
-- **Output:** Chronologically sorted JSON array of all projects.
 
 ---
 
 ### 3.3. `project-rename`
-Updates a project's cosmetic display name without modifying its UUID or memories.
+Renames a project without altering its UUID or memories.
 
 ```bash
 forge614-engram project-rename \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
-  --name "New Project Name"
+  --name "Brand New Name"
 ```
-- **Required flags:** `--project-id <UUID>`, `--name <text>`
 
 ---
 
-## 4. Memory Storage & Retrieval Commands
+## 4. Memory Management Commands
 
 ---
 
 ### 4.1. `save`
-Creates a new memory or records a new revision of an existing topic (`--topic`).
+Saves a new memory or updates an existing topic.
 
 ```bash
-# Save to a project:
+# Project memory with explicit session:
 forge614-engram save \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
-  --title "Database Selection" \
+  --title "Database Engine" \
   --content "We will use PostgreSQL 16 with physical replication." \
   --type decision \
-  --topic "database-engine"
-
-# Update an existing topic (requires expected-version):
-forge614-engram save \
-  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
   --topic "database-engine" \
-  --title "Engine Upgrade" \
-  --content "We will upgrade to PostgreSQL 17." \
-  --type decision \
-  --expected-version 1
+  --session-id "ses-arch-01"
 
-# Save a universal shared memory:
+# Universal shared memory:
 forge614-engram save \
   --scope shared \
-  --title "Language Convention" \
-  --content "Write all technical documentation in English." \
+  --title "Language Preference" \
+  --content "Write technical docs in English." \
   --type preference
+
+# Shared memory associated with a private session context:
+forge614-engram save \
+  --scope shared \
+  --title "Formatting Rule" \
+  --content "Use 2-space indentation." \
+  --type preference \
+  --session-id "ses-arch-01" \
+  --session-project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 ```
 
-- **Flags:**
-  - `--title <text>`: Note title (required).
-  - `--content <text>`: Note content (required).
+- **Options:**
+  - `--title <text>`: Descriptive title (mandatory).
+  - `--content <text>`: Full text content (mandatory).
   - `--type <type>`: `fact` (default), `decision`, `procedure`, `warning`, `preference`.
-  - `--scope <project|shared>`: Memory scope (`project` by default).
-  - `--project-id <UUID>`: Required when scope is `project`; rejected when scope is `shared`.
-  - `--topic <key>`: Topic identifier for evolutive updates.
-  - `--expected-version <int>`: Required when updating an existing topic.
-  - `--request-key <key>`: Idempotency dispatch key for safe retries.
-  - `--pinned <true|false>`: Pins memory for boosted search rank.
+  - `--scope <project|shared>`: Scope (`project` default).
+  - `--project-id <UUID>`: Required for `project`; forbidden for `shared`.
+  - `--topic <key>`: Stable topic identifier.
+  - `--expected-version <n>`: Prior version required when updating an existing topic.
+  - `--request-key <key>`: Idempotency key.
+  - `--pinned <true|false>`: Pins memory for search and context priority.
+  - `--session-id <id>`: Session identifier.
+  - `--session-project-id <UUID>`: Session owner project when saving with `--scope shared`.
+- **Session Inference:**
+  - CLI `save` with `--session-id`: binds explicitly (`sessionSource: "explicit"`).
+  - CLI `save` without `--session-id`: on Schema 6, falls back to the machine's local manual session for the project (`sessionSource: "manual"`).
+  - MCP `memory_save` without `sessionId`: auto-binds if exactly 1 session was active in the last 7 days (`sessionSource: "inferred"`). If multiple candidates exist, halts with `AMBIGUOUS_SESSION`.
+  - Shared memory with session: stored with `projectId: null` and strips private session origin metadata from external responses.
 
 ---
 
 ### 4.2. `search`
-Searches active memories using SQLite FTS5 with trigram tokenization and BM25 ranking.
+Searches active memories using SQLite FTS5 trigram tokenization and BM25 recency ranking.
 
 ```bash
-# Combined search across project and shared memories (scope all default):
+# Combined project and shared search:
 forge614-engram search \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
-  --query "postgresql replication" \
+  --query "postgresql" \
   --limit 5
 
-# Exclusive search for shared memories:
-forge614-engram search --scope shared --query "convention"
+# Progressive preview search:
+forge614-engram search \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  --query "architecture" \
+  --preview
 ```
+- **Options:**
+  - `--preview`: Returns `MemoryPreview` objects with content truncated to a maximum of **300 Unicode code points** and boolean `truncated` flag.
 
 ---
 
 ### 4.3. `get`
-Retrieves a memory record by its UUID.
+Retrieves a memory by its UUID in its current version or a specific historical version.
 
 ```bash
+# Current active version:
 forge614-engram get \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
   --id "d290f1ee-6c54-4b01-90e6-d701748f0851"
+
+# Specific historical version:
+forge614-engram get \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  --id "d290f1ee-6c54-4b01-90e6-d701748f0851" \
+  --version 1
 ```
 
 ---
 
 ### 4.4. `history`
-Returns the immutable version history of a memory across past revisions.
+Audits the immutable chronological history of all versions of a memory.
 
 ```bash
 forge614-engram history \
@@ -339,8 +332,8 @@ forge614-engram history \
 ---
 
 ### 4.5. `archive` and `restore`
-- `archive`: Hides a memory from standard searches while preserving complete history.
-- `restore`: Reactivates an archived memory.
+- `archive`: Hides an active memory from normal searches while preserving its full history.
+- `restore`: Returns an archived memory to active status.
 
 ```bash
 forge614-engram archive \
@@ -354,28 +347,114 @@ forge614-engram restore \
 
 ---
 
-## 5. Command Summary Reference Table
+## 5. Progressive Sessions and Ranked Context Commands
 
-| Command | Required Flags | Optional Flags | Output Format |
+> [!IMPORTANT]
+> All commands in this section require **Schema 6** (enabled via `forge614-engram sessions-enable`).
+
+---
+
+### 5.1. `session-start`
+Starts a runtime work session tied to a project directory.
+
+```bash
+forge614-engram session-start \
+  --directory "/Users/usuario/Desktop/my-project" \
+  --session-id "ses-refactor-api"
+```
+- **Options:** `--directory <path>`, `--session-id <id>` (1..200 characters).
+
+---
+
+### 5.2. `session-end`
+Concludes a runtime session, recording its `endedAt` timestamp.
+
+```bash
+forge614-engram session-end \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  --session-id "ses-refactor-api"
+```
+- **Restriction:** Manual sessions cannot be closed (`SESSION_KIND`).
+
+---
+
+### 5.3. `session-summary`
+Saves or updates a structured session summary.
+
+```bash
+forge614-engram session-summary \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  --session-id "ses-refactor-api" \
+  --summary-json '{"goal":"Refactor API","instructions":"Use Zod schemas","discoveries":"Legacy routes untyped","accomplishments":"8 routes migrated","nextSteps":"Add integration tests","files":["src/routes/api.ts"]}' \
+  --request-key "sum-refactor-v1"
+```
+- **Required JSON keys:** `goal`, `instructions`, `discoveries`, `accomplishments`, `nextSteps` (non-empty strings) and `files` (array of strings). Saved under reserved topic `session/<sessionId>/summary` with type `procedure`.
+
+---
+
+### 5.4. `timeline`
+Reconstructs the event timeline surrounding a focus memory within a work session.
+
+```bash
+forge614-engram timeline \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  --session-id "ses-refactor-api" \
+  --id "d290f1ee-6c54-4b01-90e6-d701748f0851" \
+  --version 1 \
+  --before 3 \
+  --after 3
+```
+- **Behavior:** Focus memory is truncated to 500 Unicode code points; neighbors to 150 code points each.
+
+---
+
+### 5.5. `context`
+Assembles prioritized, ranked context for task startup or post-compaction recovery.
+
+```bash
+# Standard project context (16 KB max bytes default):
+forge614-engram context --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+# Compact context without previews:
+forge614-engram context --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" --compact
+
+# Custom byte limit:
+forge614-engram context --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" --max-bytes 32768
+```
+- **Options:**
+  - `--compact`: Omits `preview` text.
+  - `--max-bytes <1024..65536>`: Strict cap on **total serialized UTF-8 JSON bytes** (default 16384). **Not an LLM token budget**.
+
+---
+
+## 6. Comprehensive Options Summary Table
+
+| Command | Mandatory Options | Optional Options | Output |
 | :--- | :--- | :--- | :--- |
 | `setup` | None | None | Interactive text |
-| `tui` | None | None | Full-screen interactive |
+| `tui` | None | None | Interactive screen |
 | `assistant-list` | None | None | JSON |
 | `integration-enable` | None | None | JSON |
+| `sessions-enable` | None | None | JSON |
 | `mcp` | None | None | JSON-RPC (stdio) |
 | `memory-hook` | `--client` | None | Native JSON |
 | `project-bind` | `--directory`, `--project-id` | None | JSON |
 | `init` | None | None | JSON |
-| `sync` | None | None | JSON |
-| `sync-watch` | None | `--interval` | Continuous JSON |
+| `sync` | None | `--upgrade-format` | JSON |
+| `sync-watch` | None | `--interval` | Streaming JSON |
 | `project-create` | `--name` | None | JSON |
 | `project-list` | None | None | JSON |
 | `project-rename` | `--project-id`, `--name` | None | JSON |
-| `save` | `--title`, `--content` | `--type`, `--scope`, `--project-id`, `--topic`, `--expected-version`, `--request-key`, `--pinned` | JSON |
-| `search` | `--query` | `--project-id`, `--scope`, `--limit` | JSON |
-| `get` | `--id` | `--project-id`, `--scope` | JSON |
+| `save` | `--title`, `--content` | `--type`, `--scope`, `--project-id`, `--topic`, `--expected-version`, `--request-key`, `--pinned`, `--session-id`, `--session-project-id` | JSON |
+| `search` | `--query` | `--project-id`, `--scope`, `--limit`, `--preview` | JSON |
+| `get` | `--id` | `--project-id`, `--scope`, `--version` | JSON |
 | `history` | `--id` | `--project-id`, `--scope` | JSON |
 | `archive` | `--id` | `--project-id`, `--scope` | JSON |
 | `restore` | `--id` | `--project-id`, `--scope` | JSON |
+| `session-start` | `--directory`, `--session-id` | None | JSON |
+| `session-end` | `--project-id`, `--session-id` | None | JSON |
+| `session-summary`| `--project-id`, `--session-id`, `--summary-json`, `--request-key` | `--expected-version` | JSON |
+| `timeline` | `--project-id`, `--session-id`, `--id`, `--version` | `--before`, `--after` | JSON |
+| `context` | `--project-id` (or `--scope shared`) | `--compact`, `--max-bytes`, `--scope` | JSON |
 | `--version` | None | None | Plain text |
 | `help` | None | None | Plain text |

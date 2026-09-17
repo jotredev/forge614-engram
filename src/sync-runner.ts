@@ -5,13 +5,13 @@ import { MemoryWorkspace } from "./workspace";
 import { PostgresReplica } from "./sync-postgres";
 import { synchronize } from "./synchronize";
 
-export async function syncWorkspace(config=new WorkspaceConfig()) {
+export async function syncWorkspace(config=new WorkspaceConfig(),options:{upgradeFormat?:boolean}={}) {
   const settings=config.read();
   if(!settings.postgresUrl) throw new MemoryError("SYNC_DISABLED","Sincronización PostgreSQL desactivada. Ejecuta setup para configurarla.");
   const store=new MemoryWorkspace(config).open();
   try {
     const replica=await PostgresReplica.connect(settings.postgresUrl);
-    try {return await synchronize(store,replica);} finally {await replica.close();}
+    try {return await synchronize(store,replica,options);} finally {await replica.close();}
   } finally {store.close();}
 }
 

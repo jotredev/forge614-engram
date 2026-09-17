@@ -1,11 +1,11 @@
 # 06. Resolución de Problemas y Catálogo de Errores
 
-> **Etapa:** MCP Local, Menú TUI de Asistentes, Memoria Local y Sincronización PostgreSQL Opcional
-> **Versiones de esta entrega:** Programa 0.5.0 | Formato de configuración 2 (local) / 3 (con sync) | Esquema SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales)
-> **Estado:** Vigente y Activo (Verificado con 191 pruebas en macOS con Bun 1.3.8)
+> **Etapa:** Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
+> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
+> **Estado:** Vigente y Activo (Verificado con 250 pruebas en 18 archivos en macOS con Bun 1.3.8)
 > **Traducción hermana:** [06 (EN). Troubleshooting and Error Diagnostics](../en/06-troubleshooting.md)
 
-Esta guía documenta el catálogo exhaustivo de códigos de error de Forge614 Engram, incluyendo los nuevos diagnósticos del protocolo MCP, el menú interactivo TUI, ganchos de asistentes y resolución de proyectos por Git, explicando su causa raíz y el procedimiento de recuperación recomendado.
+Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de error de Forge614 Engram, incluyendo los errores de sesiones progresivas, recuperación clasificada, conflictos de configuración de plugins y promoción de réplica PostgreSQL, detallando su causa raíz y la solución recomendada.
 
 ---
 
@@ -13,7 +13,7 @@ Esta guía documenta el catálogo exhaustivo de códigos de error de Forge614 En
 
 > [!IMPORTANT]
 > **Nunca borres tu base de datos, tus tablas de SQLite ni tus puntos de control (*checkpoints*) para "arreglar" un error.**
-> Los errores en Forge614 Engram son salvaguardas de seguridad activas. Cuando el sistema detecta una ambigüedad de carpetas, una interferencia externa en archivos de clientes o un conflicto de sincronización, se detiene intencionadamente para **proteger la integridad absoluta de tus datos y evitar pérdidas silenciosas**.
+> Los errores en Forge614 Engram son salvaguardas de seguridad activas. Cuando el sistema detecta una ambigüedad de sesiones, un plugin con contenido divergente o una incompatibilidad de esquemas, se detiene intencionadamente para **proteger la integridad absoluta de tus datos y evitar pérdidas silenciosas**.
 
 ---
 
@@ -21,53 +21,99 @@ Esta guía documenta el catálogo exhaustivo de códigos de error de Forge614 En
 
 | Código de Error | Mensaje Habitual | Causa Raíz Explicada | Solución Recomendada |
 | :--- | :--- | :--- | :--- |
-| `INTERACTIVE_REQUIRED` | *"tui necesita una terminal interactiva..."* o *"setup necesita una terminal interactiva..."* | Se invocó `tui` o `setup` desde un script, tubería (`\|`) o entorno desatendido (`isTTY` falso o sin *raw mode*). | Ejecuta el comando directamente en tu terminal. Para auditorías desatendidas en scripts, utiliza `forge614-engram assistant-list`. |
-| `PROJECT_IDENTITY_UNAVAILABLE`| *"No se pudo determinar de forma segura la identidad Git del proyecto."* | Git no está instalado, no se encuentra en el PATH, o la invocación de `git rev-parse` falló. | Instala Git (`git --version`) y asegúrate de que esté accesible en el PATH de la terminal. |
-| `PROJECT_DIRECTORY_REQUIRED` | *"Una carpeta sin Git requiere directory explícito o una raíz MCP única."* o *"La carpeta del ejecutable no se usa..."* | Se invocó una herramienta MCP en una carpeta sin Git sin especificar la ruta, o se intentó usar el directorio del binario como proyecto. | Especifica el parámetro `directory` en la llamada a la herramienta MCP o vincula la carpeta previamente con `project-bind`. |
-| `PROJECT_NOT_BOUND` | *"La carpeta todavía no está vinculada; guardar puede crearla o project-bind puede recuperarla."* | Se intentó buscar (`memory_search`), obtener (`memory_get`) o ver historial (`memory_history`) en una carpeta no registrada antes de guardar el primer recuerdo. | Guarda una primera nota técnica con `memory_save` (que creará la vinculación automáticamente) o asóciala con `project-bind`. |
-| `PROJECT_BINDING_REQUIRED` | *"Existe un proyecto con el mismo nombre..."* o *"Hay proyectos cuyas carpetas registradas no están disponibles..."* | Existe ambigüedad: o bien hay otro proyecto con el mismo nombre, o bien alguna carpeta registrada en `project_bindings` ya no existe en el disco (carpeta movida o disco desmontado). | Consulta tus proyectos con `forge614-engram project-list` y asocia la carpeta explícitamente mediante `forge614-engram project-bind --directory /ruta --project-id <UUID>`. |
-| `PROJECT_BINDING_CONFLICT` | *"La carpeta ya está vinculada a otro proyecto."* | Se intentó vincular con `project-bind` una carpeta que ya tiene una asociación registrada hacia otro `projectId`. | Si deseas mover o reasignar la carpeta, verifica los proyectos registrados con `project-list`. |
-| `AMBIGUOUS_PROJECT` | *"Varias raíces MCP requieren indicar directory explícitamente."* | El cliente de IA tiene múltiples espacios de trabajo abiertos simultáneamente y no especificó el parámetro `directory`. | Pasa el argumento `directory` explícito en la llamada a la herramienta MCP correspondiente. |
+| `MIGRATION_REQUIRED` | *"Habilita primero las sesiones."* o *"Habilita primero la integración de asistentes con integration-enable."* | Se invocó un comando de sesiones (`session-*`, `timeline`, `context`) o una herramienta MCP avanzada sin haber migrado la base al Esquema 6. | Ejecuta `forge614-engram sessions-enable` en la terminal para actualizar aditivamente la base al Esquema 6. |
+| `AMBIGUOUS_SESSION` | *"AMBIGUOUS_SESSION: indica sessionId ([id1], [id2])."* | Un asistente intentó guardar un recuerdo en modo asistido sin `--session-id` y existen 2 o más sesiones en ejecución activas en los últimos 7 días en la carpeta vinculada. | Especifica el identificador de sesión deseado mediante la opción `--session-id <id>` o ciérralas con `session-end`. |
+| `SESSION_NOT_FOUND` | *"Sesión no encontrada."* o *"Sesión no encontrada para este proyecto."* | El `sessionId` especificado no existe en la tabla `sessions` o no pertenece al `projectId` asociado. | Comprueba el identificador de sesión y el proyecto, o inicia una nueva sesión con `session-start`. |
+| `SESSION_CONFLICT` | *"El identificador de sesión no está disponible."* | Se intentó iniciar una sesión con un `sessionId` que ya existe en la base de datos para otro proyecto o con otro tipo. | Utiliza un identificador de sesión nuevo o exclusivo para esta tarea. |
+| `SESSION_CLOSED` | *"La sesión está cerrada."* | Se intentó asociar un nuevo recuerdo a una sesión que ya concluyó (`endedAt` no es nulo). | Inicia una nueva sesión de trabajo con `session-start` o asocia el recuerdo a una sesión activa. |
+| `SESSION_KIND` | *"Una sesión manual no admite asociación explícita."* o *"Una sesión manual no puede cerrarse."* | Se intentó cerrar o asociar de forma explícita una sesión de tipo `manual` (las cuales son administradas automáticamente por el sistema como respaldo). | Utiliza sesiones de tipo `runtime` iniciadas mediante `session-start`. |
+| `NO_SESSION_CONTEXT` | *"NO_SESSION_CONTEXT: no existe contexto de sesión..."* o *"el recuerdo no pertenece a esta sesión o está archivado."* | Al solicitar una línea temporal (`timeline`), el recuerdo indicado no tiene registro en esa sesión o se encuentra archivado. | Verifica que el `id` y `version` del recuerdo correspondan a la sesión indicada y que el recuerdo esté activo. |
+| `SUMMARY_TOPIC_RESERVED` | *"El tema está reservado para un resumen de sesión."* | Se intentó guardar un recuerdo ordinario con un tema que sigue el patrón reservado `session/<id>/summary`. | Utiliza un identificador de tema ordinario (ej. `arquitectura-db`) o utiliza el comando oficial `session-summary`. |
+| `SUMMARY_TOPIC_CONFLICT` | *"El tema reservado ya pertenece a otro recuerdo."* o *"El resumen no coincide con su puntero."* | Existe una discrepancia de puntero entre la tabla `session_summaries` y el registro temático en `memories`. | Consulta el resumen previo con `get` y envía el comando con `--expected-version` o verifica tu clave de petición. |
+| `CONFLICT` | *"The dedicated Engram plugin already exists with different contents..."* | En OpenCode, el archivo `plugins/forge614-engram.js` ya existe en disco pero contiene código o modificaciones personalizadas distintas al plugin estándar. | Engram no sobrescribe archivos divergentes por seguridad. Haz un respaldo manual del plugin, elimínalo o concílialo y vuelve a ejecutar `forge614-engram tui`. |
+| `INTERACTIVE_REQUIRED` | *"tui necesita una terminal interactiva..."* o *"setup necesita una terminal interactiva..."* | Se invocó `tui` o `setup` desde un script, tubería (`\|`) o entorno desatendido (`isTTY` falso o sin *raw mode*). | Ejecuta el comando directamente en tu terminal interactiva. Para scripts, utiliza `assistant-list` o `init`. |
+| `PROJECT_IDENTITY_UNAVAILABLE`| *"No se pudo determinar de forma segura la identidad Git del proyecto."* | Git no está instalado, no se encuentra en el PATH, o la invocación de `git rev-parse` falló. | Instala Git (`git --version`) y asegúrate de que esté accesible en el PATH del sistema. |
+| `PROJECT_DIRECTORY_REQUIRED` | *"Una carpeta sin Git requiere directory explícito o una raíz MCP única."* | Se invocó una herramienta MCP en una carpeta sin Git sin especificar la ruta, o se intentó usar el directorio del binario como proyecto. | Especifica el parámetro `directory` en la llamada a la herramienta MCP o vincula la carpeta previamente con `project-bind`. |
+| `PROJECT_NOT_BOUND` | *"La carpeta todavía no está vinculada; guardar puede crearla o project-bind puede recuperarla."* | Se intentó consultar o buscar en una carpeta no registrada antes de guardar el primer recuerdo o iniciar sesión. | Guarda una primera nota técnica con `memory_save` o asocia la carpeta con `project-bind`. |
+| `PROJECT_BINDING_REQUIRED` | *"Existe un proyecto con el mismo nombre..."* o *"Hay proyectos cuyas carpetas registradas no están disponibles..."* | Existe ambigüedad de nombres o alguna carpeta registrada en `project_bindings` ya no existe en el disco. | Consulta tus proyectos con `project-list` y vincula la ruta explícitamente con `project-bind --directory /ruta --project-id <UUID>`. |
+| `PROJECT_BINDING_CONFLICT` | *"La carpeta ya está vinculada a otro proyecto."* | Se intentó vincular con `project-bind` una carpeta que ya tiene una asociación registrada hacia otro `projectId`. | Revisa las asociaciones con `project-list` y decide si deseas mover la asignación. |
+| `AMBIGUOUS_PROJECT` | *"Varias raíces MCP requieren indicar directory explícitamente."* | El cliente de IA tiene múltiples espacios de trabajo abiertos simultáneamente y no especificó el parámetro `directory`. | Pasa el argumento `directory` explícito en la llamada a la herramienta MCP. |
 | `SHARED_INTENT_REQUIRED` | *"scope shared requiere explicar la intención global explícita del usuario."* | El asistente intentó llamar a `memory_save` con `scope: "shared"` sin incluir el campo explicativo `globalIntent`. | Proporciona una explicación detallada en `globalIntent` justificando por qué la nota aplica a todos los proyectos. |
-| `INSTALLATION_REQUIRED` | *"Requisito: ejecuta forge614-engram tui con el binario instalado..."* | Se intentó ejecutar la autoprueba en `tui` ejecutando desde el código fuente con Bun sin tener instalado el binario compilado en `$HOME/.local/bin/`. | Compila e instala el ejecutable oficial ejecutando `bash scripts/install.sh` y repite la prueba con el binario instalado. |
-| `TIMED_OUT` | Autoprueba del servidor reportada como fallida por límite de tiempo. | La autoprueba del servidor MCP superó el plazo máximo estricto de 5 segundos para inicializar, listar herramientas y cerrarse. | Verifica que tu sistema no tenga una sobrecarga extrema de CPU y que el binario instalado tenga permisos de ejecución (`0755`). |
-| `MCP_FAILED` | Autoprueba del servidor reportada como fallida. | El servidor MCP falló al responder al apretón de manos (*handshake*) o no expuso las 5 herramientas esperadas. | Comprueba que la base de datos tenga el Esquema 5 habilitado mediante `forge614-engram integration-enable`. |
-| `CANCELLED` | Autoprueba cancelada. | El usuario presionó la tecla `Escape` durante la ejecución de la autoprueba. | La cancelación es limpia y segura; conserva la selección de clientes previa. |
-| `PUBLISHED_UNVERIFIED` | *"Publicado sin verificar: [ruta]"* | Se aplicó la configuración al archivo del cliente, pero la verificación posterior de bytes falló debido a modificaciones concurrentes de otro proceso. | Engram retiene la copia de seguridad `.bak`. Cierra el editor o cliente de desarrollo y vuelve a aplicar la configuración desde `tui`. |
-| `AMBIGUOUS` | *"Both OpenCode JSON and JSONC configs exist..."* | En OpenCode existen archivos simultáneos `.json` y `.jsonc`, o múltiples fuentes de configuración activas sin selección explícita. | Selecciona el archivo de configuración deseado de forma explícita o retira la configuración duplicada en OpenCode. |
-| `UNSUPPORTED_PLATFORM` | *"Assistant configuration currently supports macOS and Linux."* | Se ejecutó la configuración de asistentes en un sistema operativo no compatible. | Utiliza macOS o Linux para la configuración de asistentes de desarrollo. |
-| `INVALID_INPUT` | *"El campo [campo] debe ser texto no vacío..."* | Opciones vacías, caracteres nulos (`\0`), números fuera de rango (`limit`) o argumentos incompatibles. | Revisa la sintaxis en `forge614-engram help`. En `shared` no pases `--project-id`; en `project` proporciona su UUID. |
+| `INSTALLATION_REQUIRED` | *"Requisito: ejecuta forge614-engram tui con el binario instalado..."* | Se intentó ejecutar la autoprueba en `tui` ejecutando desde el código fuente con Bun sin tener instalado el binario compilado. | Instala el binario oficial ejecutando `bash scripts/install.sh` y repite la prueba con el ejecutable instalado. |
+| `TIMED_OUT` | Autoprueba del servidor reportada como fallida por límite de tiempo. | La autoprueba del servidor MCP superó el plazo máximo estricto de 5 segundos para responder y listar herramientas. | Verifica la carga de CPU de tu equipo y que el ejecutable cuente con permisos de ejecución (`0755`). |
+| `MCP_FAILED` | Autoprueba del servidor reportada como fallida. | El servidor MCP falló al responder o no expuso las 10 herramientas esperadas. | Comprueba que la base de datos tenga el Esquema 6 habilitado mediante `sessions-enable`. |
+| `PUBLISHED_UNVERIFIED` | *"Publicado sin verificar: [ruta]"* | Se aplicó la configuración al archivo del cliente, pero la verificación posterior de bytes falló por escrituras concurrentes. | Engram retiene la copia de respaldo `.bak`. Cierra el editor o cliente y vuelve a aplicar la configuración desde `tui`. |
+| `AMBIGUOUS` | *"Both OpenCode JSON and JSONC configs exist..."* | En OpenCode existen archivos simultáneos `.json` y `.jsonc`, o múltiples fuentes de configuración activas sin selección. | Selecciona el archivo deseado en el menú interactivo o retira la configuración duplicada en OpenCode. |
+| `INVALID_INPUT` | *"El campo [campo] debe ser texto no vacío..."* | Opciones vacías, caracteres nulos (`\0`), números fuera de rango o argumentos incompatibles (ej. `--upgrade-format` en `sync-watch`). | Consulta las opciones válidas con `forge614-engram help`. |
 | `PROJECT_NOT_FOUND` | *"Proyecto no encontrado en esta base."* | El `projectId` no existe en la tabla `projects` de `~/.forge614/engram.db`. | Ejecuta `forge614-engram project-list` para verificar los UUIDs de tus proyectos registrados. |
 | `VERSION_CONFLICT` | *"La versión esperada no coincide. Lee el tema antes de actualizarlo."* | El valor de `--expected-version` no coincide con la versión activa actual en la base de datos. | Consulta la versión actual con `get` o `history` y actualiza indicando la versión correcta. |
-| `REQUEST_CONFLICT` | *"La clave de petición ya corresponde a otro contenido."* | Se reutilizó un `--request-key` previo con un contenido, título o tema diferente. | Si buscas registrar una nueva nota o revisión, utiliza una nueva clave (ej. `--request-key req-02`) o prescinde de ella. |
-| `ARCHIVED` | *"Restaura el recuerdo antes de actualizar su tema."* | Se intentó actualizar un tema cuya memoria está en estado archivado. | Ejecuta `restore` sobre ese recuerdo antes de guardar la nueva versión temática. |
-| `NOT_FOUND` | *"Recuerdo no encontrado en el alcance seleccionado."* | El ID del recuerdo no existe en la base o no pertenece al proyecto/alcance indicado. | Verifica si el recuerdo era de proyecto o compartido, y revisa que el UUID esté completo y correcto. |
-| `CONFIG_BUSY` | *"Otra configuración está en curso. No se reemplazó el archivo."* | Existe el cerrojo `~/.forge614/.config-lock` porque otro proceso está ejecutando `setup` o `tui`. | Espera a que termine. Si fue un cierre abrupto anterior, retira manualmente el archivo `.config-lock`. |
-| `SYNC_DISABLED` | *"Sincronización PostgreSQL desactivada. Ejecuta setup para configurarla."* | Se ejecutó `sync` o `sync-watch` pero `.env` no tiene `POSTGRES_URL` (formato 2). | Ejecuta `forge614-engram setup` y elige `Sí, configurar PostgreSQL` para activar la réplica. |
-| `SYNC_CONFLICT` | *"SYNC_CONFLICT: sincronización detenida; se conservan los datos locales y remotos."* | Modificaciones incompatibles sobre una misma entidad entre local y remoto. | Detiene la ronda para proteger los datos. No hay resolución automática en esta versión; no borres tablas. |
-| `SYNC_TOO_LARGE` | *"SYNC_TOO_LARGE: sincronización detenida; se conservan los datos..."* | La instantánea sobrepasa el límite estricto de 8 MiB (`8,388,608 bytes`). | Archiva datos obsoletos o divide tu espacio de trabajo. |
+| `REQUEST_CONFLICT` | *"La clave de petición ya corresponde a otro contenido."* | Se reutilizó un `--request-key` previo con un contenido, título o tema diferente. | Utiliza una nueva clave de petición para una revisión diferente. |
+| `ARCHIVED` | *"Restaura el recuerdo antes de actualizar su tema."* | Se intentó actualizar un tema cuya memoria está archivada. | Ejecuta `restore` sobre ese recuerdo antes de guardar la nueva versión. |
+| `NOT_FOUND` | *"Recuerdo no encontrado en el alcance seleccionado."* | El ID del recuerdo no existe en la base o no pertenece al proyecto indicado. | Revisa si el recuerdo era de proyecto o compartido y verifica que el UUID sea exacto. |
+| `CONFIG_BUSY` | *"Otra configuración está en curso. No se reemplazó el archivo."* | Existe el cerrojo `~/.forge614/.config-lock` porque otro proceso está ejecutando `setup` o `tui`. | Espera a que concluya el otro proceso o retira `.config-lock` si fue una interrupción abrupta anterior. |
+| `SYNC_DISABLED` | *"Sincronización PostgreSQL desactivada. Ejecuta setup para configurarla."* | Se ejecutó `sync` o `sync-watch` pero `.env` no tiene `POSTGRES_URL`. | Ejecuta `forge614-engram setup` y elige `Sí, configurar PostgreSQL`. |
+| `SYNC_CONFLICT` | *"SYNC_CONFLICT: sincronización detenida; se conservan los datos locales y remotos."* | Modificaciones concurrentes incompatibles sobre una misma entidad entre local y remoto. | Detiene la sincronización para proteger los datos. No hay pérdida de información; no borres tablas. |
+| `SYNC_TOO_LARGE` | *"SYNC_TOO_LARGE: sincronización detenida; se conservan los datos..."* | La instantánea unificada supera el límite estricto de 8 MiB (`8,388,608 bytes`). | Se trata de un límite físico de carga, no de un conflicto histórico. Archiva datos obsoletos. |
 | `POSTGRES_URL` | *"POSTGRES_URL: conexión inválida..."* | Protocolo inválido o intento de `sslmode=disable` fuera de `127.0.0.1`/`localhost`. | Conexiones remotas exigen TLS verificado de manera estricta. |
-| `POSTGRES_UNAVAILABLE` | *"PostgreSQL no disponible o sin permisos..."* | Servidor PostgreSQL inaccesible o credenciales incorrectas. | Los datos locales en SQLite continúan operativos al 100%. Comprueba tu red y credenciales. |
+| `POSTGRES_UNAVAILABLE` | *"PostgreSQL no disponible o sin permisos..."* | Servidor PostgreSQL inaccesible o credenciales erróneas. | Los datos locales en SQLite continúan 100% operativos. Revisa tu red y credenciales. |
 
 ---
 
-## 3. Escenarios Operativos y de Recuperación
+## 3. Escenarios Operativos y Procedimientos de Recuperación
 
-### 1. Los ganchos de Codex no se disparan tras configurarlo con `tui`
-- **Causa:** Codex cuenta con una política de seguridad nativa donde los ganchos nuevos deben ser revisados y aprobados explícitamente por el usuario antes de permitir su ejecución.
-- **Solución:** Abre Codex en tu terminal o interfaz y ejecuta el comando `/hooks`. Revisa los ganchos asociados a Forge614 Engram y marca la opción de confiar en ellos (*trust*).
+### 1. Actualización Segura ante Conflicto de Plugin en OpenCode (`CONFLICT`)
+- **Síntoma:** Al configurar OpenCode desde `forge614-engram tui`, el cliente se marca con estado de conflicto y el mensaje: *"The dedicated Engram plugin already exists with different contents. Review it manually."*
+- **Causa:** El archivo `plugins/forge614-engram.js` ya existía en tu directorio de configuración con código modificado o de una versión previa. Engram no destruye código preexistente de forma automática.
+- **Procedimiento de Recuperación:**
+  1. Abre `tui` y presiona `Enter` para inspeccionar la pantalla de **Vista Previa** (*Plan Preview*), donde podrás contrastar los cambios planificados.
+  2. Haz una copia de seguridad manual de tu archivo actual:
+     ```bash
+     cp ~/.config/opencode/plugins/forge614-engram.js ~/.config/opencode/plugins/forge614-engram.js.backup
+     ```
+  3. Si deseas adoptar el plugin oficial actualizado de Engram, elimina o mueve el archivo divergente:
+     ```bash
+     rm ~/.config/opencode/plugins/forge614-engram.js
+     ```
+  4. Vuelve a ejecutar `forge614-engram tui`, selecciona OpenCode con `Espacio` y confirma la instalación.
 
-### 2. Aparece `PROJECT_BINDING_REQUIRED` al trabajar en una carpeta nueva
-- **Causa:** El sistema detectó que alguna carpeta que tenías registrada previamente ya no se encuentra en el disco (por ejemplo, renombraste la carpeta o desconectaste un disco externo). Engram bloquea preventivamente para no crear un proyecto huérfano por error.
-- **Solución:**
-  1. Ejecuta `forge614-engram project-list` para identificar el UUID de tu proyecto.
-  2. Ejecuta `forge614-engram project-bind --directory /ruta/actual --project-id <UUID>`.
-  3. Si la carpeta es verdaderamente un proyecto nuevo, créalo primero con `forge614-engram project-create --name "Nombre"` y luego vincúlalo con `project-bind`.
+---
 
-### 3. La autoprueba del servidor MCP falla con `INSTALLATION_REQUIRED`
-- **Causa:** Ejecutaste `bun src/cli.ts tui` directamente desde el repositorio de desarrollo sin haber compilado e instalado el ejecutable autónomo. Por seguridad, Engram jamás registra a Bun como binario de producción en las configuraciones de los clientes.
-- **Solución:** Ejecuta `bash scripts/install.sh --force` para compilar y publicar el binario en `$HOME/.local/bin/forge614-engram`. Luego abre el menú ejecutando `forge614-engram tui`.
+### 2. Coordinación de Equipos Pares ante Promoción de Réplica PostgreSQL
+- **Síntoma:** Tras ejecutar `forge614-engram sync --upgrade-format` en una computadora, otra máquina que sincroniza contra la misma base PostgreSQL reporta `SYNC_CONFLICT` al intentar sincronizar.
+- **Causa:** La base de datos remota en PostgreSQL fue promovida a **Formato 2** (que incluye sesiones y resúmenes), pero la segunda máquina aún ejecuta una versión anterior del software o su base SQLite local continúa en Esquema 3, 4 o 5 sin soporte de sesiones.
+- **Procedimiento de Recuperación:**
+  1. Instala la versión actualizada de Forge614 Engram en la segunda máquina (`bash scripts/install.sh --force`).
+  2. En la segunda máquina, actualiza su base local al Esquema 6:
+     ```bash
+     forge614-engram sessions-enable
+     ```
+  3. Ejecuta la sincronización ordinaria:
+     ```bash
+     forge614-engram sync
+     ```
+  Ambos equipos sincronizarán ahora limpiamente bajo el Formato 2.
 
-### 4. Se produce `PUBLISHED_UNVERIFIED` al aplicar configuraciones
-- **Causa:** El archivo de configuración de Claude Code, Cursor o Codex fue modificado por el propio editor o por un proceso en segundo plano en el mismo instante en que Engram escribía los cambios.
-- **Solución:** Engram conserva intacta la copia de respaldo previa con sufijo UUID. Cierra la aplicación del cliente para evitar escrituras concurrentes y vuelve a ejecutar `forge614-engram tui` para aplicar la configuración limpiamente.
+---
+
+### 3. Asistente Arroja `AMBIGUOUS_SESSION` al Guardar Recuerdos
+- **Síntoma:** Al solicitarle a un asistente que guarde una decisión técnica, la herramienta `memory_save` falla con el error `AMBIGUOUS_SESSION: indica sessionId (ses-a, ses-b)`.
+- **Causa:** El desarrollador inició múltiples sesiones de trabajo concurrentes en la misma carpeta dentro de los últimos 7 días y ninguna ha sido cerrada. El modelo no puede adivinar a cuál de las dos pertenece la nota técnica.
+- **Procedimiento de Recuperación:**
+  - Opción A: Indicarle al asistente explícitamente: *"Guarda la nota asociándola a la sesión ses-a"*.
+  - Opción B: Cerrar las sesiones antiguas que ya finalizaron desde la terminal:
+    ```bash
+    forge614-engram session-end --project-id <UUID> --session-id "ses-b"
+    ```
+    Una vez que solo quede una sesión activa, las notas subsiguientes se asociarán automáticamente por inferencia contextual.
+
+---
+
+### 4. Aparece `MIGRATION_REQUIRED` al Usar Sesiones o Herramientas MCP
+- **Síntoma:** Comandos como `forge614-engram session-start` o llamadas a `memory_context` fallan reportando `Habilita primero las sesiones.`
+- **Causa:** La base de datos `~/.forge614/engram.db` fue creada con una versión previa (Esquema 3, 4 o 5). Por política de estabilidad, las operaciones cotidianas jamás modifican la estructura de la base sin autorización.
+- **Procedimiento de Recuperación:**
+  Ejecuta el comando oficial de habilitación:
+  ```bash
+  forge614-engram sessions-enable
+  ```
+  La base se actualizará aditivamente al Esquema 6 en milisegundos, preservando íntegros todos tus recuerdos, versiones y asociaciones previas.
