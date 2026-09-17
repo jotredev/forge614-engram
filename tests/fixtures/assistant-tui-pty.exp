@@ -1,0 +1,40 @@
+# Real pseudoterminal exercise. All paths and HOME come from the isolated test.
+set timeout 15
+log_user 0
+set binary [lindex $argv 0]
+set scenario [lindex $argv 1]
+spawn /bin/sh -c {before=$(/bin/stty -g); "$1" tui; code=$?; after=$(/bin/stty -g); if [ "$before" = "$after" ]; then printf '\nRESTORED:%s\n' "$code"; else printf '\nNOT_RESTORED\n'; fi} sh $binary
+expect {
+  "Asistentes" {}
+  timeout { puts "FAIL initial TUI"; exit 1 }
+  eof { puts "FAIL early exit"; exit 1 }
+}
+send -- "\r"
+expect {
+  "Volver a detectar" {}
+  timeout {puts "FAIL clients page"; exit 1}
+  eof {puts "FAIL early exit"; exit 1}
+}
+send -- " "
+send -- "\r"
+expect {
+  "aún no se ha escrito nada." {}
+  timeout {puts "FAIL preview page"; exit 1}
+  eof {puts "FAIL early exit"; exit 1}
+}
+if {$scenario eq "escape"} {
+  send -- "\033"
+  expect {
+    "Volver a detectar" {}
+    timeout {puts "FAIL Escape did not return to clients"; exit 1}
+    eof {puts "FAIL Escape closed process"; exit 1}
+  }
+}
+send -- "\003"
+expect {
+  "RESTORED:130" {puts "PASS real PTY cancellation and stty restoration ($scenario)"}
+  "NOT_RESTORED" {puts "FAIL terminal mode changed"; exit 1}
+  timeout {puts "FAIL cancellation timeout: $expect_out(buffer)"; exit 1}
+  eof {puts "FAIL missing restoration evidence"; exit 1}
+}
+expect eof

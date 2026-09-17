@@ -7,6 +7,13 @@ const SYNC_SCHEMA = `CREATE TABLE sync_checkpoints (
   replica TEXT PRIMARY KEY NOT NULL,
   snapshot TEXT NOT NULL CHECK(json_valid(snapshot))
 );`;
+const BINDING_SCHEMA = `CREATE TABLE project_bindings (
+  directory TEXT PRIMARY KEY NOT NULL CHECK(length(trim(directory)) > 0),
+  projectId TEXT NOT NULL REFERENCES projects(projectId),
+  createdAt TEXT NOT NULL
+);
+CREATE INDEX project_bindings_project ON project_bindings(projectId);
+`;
 const SCHEMA = `
 CREATE TABLE projects (
   projectId TEXT PRIMARY KEY NOT NULL,
@@ -80,14 +87,17 @@ END;
 function definition(db: Database): string {
   return JSON.stringify(db.query("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name").all());
 }
-const expectedDefinitions = new Map<boolean,string>();
-function validate(db: Database, sync = false): void {
-  if (!expectedDefinitions.has(sync)) {
+const expectedDefinitions = new Map<number,string>();
+function schemaFor(version: 3 | 4 | 5): string {
+  return SCHEMA + (version >= 4 ? SYNC_SCHEMA : "") + (version >= 5 ? BINDING_SCHEMA : "");
+}
+function validate(db: Database, version: 3 | 4 | 5): void {
+  if (!expectedDefinitions.has(version)) {
     const reference = new Database(":memory:");
-    try { reference.exec(SCHEMA + (sync ? SYNC_SCHEMA : "")); expectedDefinitions.set(sync,definition(reference)); }
+    try { reference.exec(schemaFor(version)); expectedDefinitions.set(version,definition(reference)); }
     finally { reference.close(); }
   }
-  if (definition(db) !== expectedDefinitions.get(sync)) {
+  if (definition(db) !== expectedDefinitions.get(version)) {
     throw new MemoryError("DATABASE_SCHEMA", "La estructura no es compatible. No se modificó ni reparó la base.");
   }
 }
@@ -96,11 +106,27 @@ function validate(db: Database, sync = false): void {
 export function enableSynchronization(db: Database): void {
   db.transaction(() => {
     const { user_version } = db.query("PRAGMA user_version").get() as {user_version:number};
-    if(user_version===4) { validate(db,true); return; }
+    if(user_version===5) { validate(db,5); return; }
+    if(user_version===4) { validate(db,4); return; }
     if(user_version!==3) throw new MemoryError("MIGRATION_REQUIRED","No se puede habilitar sincronización en este formato.");
-    validate(db);
+    validate(db,3);
     db.exec(SYNC_SCHEMA);
     db.exec("PRAGMA user_version=4");
+  }).immediate();
+}
+
+/** Explicit enrollment for assistant integration and machine-local project bindings. */
+export function enableAssistantIntegration(db: Database): void {
+  db.transaction(() => {
+    const { user_version } = db.query("PRAGMA user_version").get() as {user_version:number};
+    if (user_version === 5) { validate(db,5); return; }
+    if (user_version === 4) {
+      validate(db,4); db.exec(BINDING_SCHEMA); db.exec("PRAGMA user_version=5"); return;
+    }
+    if (user_version !== 3) throw new MemoryError("MIGRATION_REQUIRED","No se puede habilitar la integración de asistentes en este formato.");
+    validate(db,3);
+    db.exec(SYNC_SCHEMA + BINDING_SCHEMA);
+    db.exec("PRAGMA user_version=5");
   }).immediate();
 }
 
@@ -113,8 +139,9 @@ export function initialize(db: Database, allowCreate = true, readonly = false): 
     if ((version === 1 || version === 2) && app === APPLICATION_ID) {
       throw new MemoryError("MIGRATION_REQUIRED", "Formato anterior detectado. Conserva el archivo: no se modificó la base y se necesita una migración explícita, aún no disponible.");
     }
-    if (version === SCHEMA_VERSION && app === APPLICATION_ID) { validate(db); return; }
-    if (version === 4 && app === APPLICATION_ID) { validate(db,true); return; }
+    if (version === SCHEMA_VERSION && app === APPLICATION_ID) { validate(db,3); return; }
+    if (version === 4 && app === APPLICATION_ID) { validate(db,4); return; }
+    if (version === 5 && app === APPLICATION_ID) { validate(db,5); return; }
     if (version !== 0 || app !== 0) throw new MemoryError("DATABASE_VERSION", "Base incompatible: no se puede abrir con esta versión.");
     const objects = db.query("SELECT count(*) AS n FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'").get() as { n: number };
     if (objects.n !== 0) throw new MemoryError("DATABASE_OWNER", "La base contiene una estructura ajena; usa una base vacía y dedicada.");

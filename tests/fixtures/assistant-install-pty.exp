@@ -1,0 +1,23 @@
+set timeout 20
+log_user 0
+set installer [lindex $argv 0]
+set destination [lindex $argv 1]
+spawn /bin/sh -c {before=$(/bin/stty -g); /bin/bash "$1" --bin-dir "$2"; code=$?; after=$(/bin/stty -g); if [ "$before" = "$after" ]; then printf '\nRESTORED:%s\n' "$code"; else printf '\nNOT_RESTORED\n'; fi} sh $installer $destination
+expect {
+  "\[s/N\] " {}
+  timeout {puts "FAIL installer prompt"; exit 1}
+  eof {puts "FAIL installer exited before prompt"; exit 1}
+}
+send -- "s\r"
+expect {
+  "Forge614 Engram | Asistentes" {}
+  timeout {puts "FAIL installer did not open TUI"; exit 1}
+  eof {puts "FAIL installer exited before TUI"; exit 1}
+}
+send -- "\003"
+expect {
+  "RESTORED:0" {puts "PASS real PTY installer opt-in and safe cancel"}
+  timeout {puts "FAIL installer cancellation"; exit 1}
+  eof {puts "FAIL installer restoration"; exit 1}
+}
+expect eof

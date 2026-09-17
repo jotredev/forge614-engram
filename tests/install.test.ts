@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, copyFileSync, symlinkSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { MemoryStore } from "../src/store";
@@ -13,7 +13,8 @@ function workspace() {
   return dir;
 }
 function install(cwd: string, args: string[], env = buildEnv) {
-  const result = Bun.spawnSync(["/bin/bash",installer,...args],{cwd,env});
+  const home=join(cwd,'isolated-home');mkdirSync(home,{recursive:true});
+  const result = Bun.spawnSync(["/bin/bash",installer,...args],{cwd,env:{...env,HOME:home,CLAUDE_CONFIG_DIR:join(home,'.claude'),CODEX_HOME:join(home,'.codex'),XDG_CONFIG_HOME:join(home,'.config'),OPENCODE_CONFIG_DIR:join(home,'.config/opencode'),OPENCODE_CONFIG:join(home,'.config/opencode/opencode.json'),OPENCODE_CONFIG_CONTENT:'',GEMINI_CLI_HOME:home,BUN_RUNTIME_TRANSPILER_CACHE_PATH:'0'}});
   return { code: result.exitCode, out: result.stdout.toString(), error: result.stderr.toString() };
 }
 afterEach(() => { for(const dir of dirs.splice(0)) rmSync(dir,{recursive:true}); });
@@ -23,13 +24,17 @@ test("repository installer produces a standalone CLI usable outside the repo wit
   const bin = join(dir,"bin with spaces");
   const installed = install(dir,["--bin-dir",bin]);
   expect(installed.code).toBe(0);
+  expect(installed.out).toContain('Claude Code');expect(installed.out).toContain('Gemini CLI');
+  expect(installed.out).toContain('tui');expect(installed.out).not.toContain('[s/N]');
+  expect(existsSync(join(dir,'isolated-home/.forge614'))).toBe(false);
   const target = join(bin,"forge614-engram");
   expect(existsSync(target)).toBe(true);
   // Only the installed command is discoverable: no bun, node, or source wrapper.
-  const run = (...args: string[]) => Bun.spawnSync(["forge614-engram",...args],{cwd:dir,env:{PATH:bin}});
+  const run = (...args: string[]) => Bun.spawnSync(["forge614-engram",...args],{cwd:dir,env:{PATH:bin,HOME:join(dir,'isolated-home')}});
   const help = run("help");
   expect(help.exitCode).toBe(0);
   expect(help.stdout.toString()).toContain("Uso: forge614-engram");
+  expect(help.stdout.toString()).toContain('tui');expect(help.stdout.toString()).not.toContain('memory_save con asistentes está pendiente');
   expect(existsSync(join(dir,".forge614"))).toBe(false);
   expect(run("--version").stdout.toString()).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
   const path = join(dir,"isolated.sqlite");
@@ -68,3 +73,28 @@ test("missing Bun reports prerequisite without creating destination", () => {
   expect(result.error).toContain("Bun");
   expect(existsSync(bin)).toBe(false);
 });
+
+test('missing dependencies fail with offline preparation instructions in an isolated checkout',()=>{
+  const dir=workspace();mkdirSync(join(dir,'scripts'));copyFileSync(installer,join(dir,'scripts/install.sh'));
+  copyFileSync(resolve(import.meta.dir,'../package.json'),join(dir,'package.json'));
+  const result=Bun.spawnSync(['/bin/bash',join(dir,'scripts/install.sh'),'--bin-dir',join(dir,'bin')],{cwd:dir,env:{...buildEnv,HOME:dir,BUN_RUNTIME_TRANSPILER_CACHE_PATH:'0'}});
+  expect(result.exitCode).toBe(1);expect(result.stderr.toString()).toContain('bun install --frozen-lockfile --ignore-scripts');
+  expect(existsSync(join(dir,'node_modules'))).toBe(false);expect(existsSync(join(dir,'bin'))).toBe(false);expect(existsSync(join(dir,'.forge614'))).toBe(false);
+});
+
+test('missing Git fails closed before compilation without installing anything',()=>{
+  const dir=workspace(),path=join(dir,'commands');mkdirSync(path);
+  symlinkSync(process.execPath,join(path,'bun'));symlinkSync('/usr/bin/uname',join(path,'uname'));
+  const result=install(dir,['--bin-dir',join(dir,'bin')],{...buildEnv,PATH:path});
+  expect(result.code).toBe(1);expect(result.error).toContain('Git');expect(existsSync(join(dir,'bin'))).toBe(false);
+});
+
+test.skipIf(!existsSync('/usr/bin/expect'))('real terminal installer offers TUI, opens only on opt-in, and cancellation leaves no storage',()=>{
+  const dir=workspace(),home=join(dir,'home');mkdirSync(home);
+  const result=Bun.spawnSync(['/usr/bin/expect',join(import.meta.dir,'fixtures/assistant-install-pty.exp'),installer,join(dir,'bin')],{
+    cwd:dir,env:{HOME:home,PATH:buildEnv.PATH,TERM:'xterm-256color',BUN_RUNTIME_TRANSPILER_CACHE_PATH:'0'},timeout:25000,
+  });
+  expect(result.stdout.toString()).toContain('PASS real PTY installer');expect(result.exitCode).toBe(0);
+  expect(existsSync(join(dir,'bin/forge614-engram'))).toBe(true);
+  expect(existsSync(join(home,'.forge614'))).toBe(false);expect(existsSync(join(home,'.claude.json'))).toBe(false);
+},30000);

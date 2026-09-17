@@ -1,106 +1,82 @@
 # 07. Glosario de Conceptos en Lenguaje Cotidiano
 
-> **Etapa:** Memoria Local y Sincronización PostgreSQL Opcional
-> **Versiones de esta entrega:** Programa 0.4.0 | Formato de configuración 2 (local) / 3 (con sync) | Esquema SQLite 3 (local) / 4 (con sync)
-> **Estado:** Vigente y Activo (Verificado con 90 pruebas en macOS con Bun 1.3.8)
+> **Etapa:** MCP Local, Menú TUI de Asistentes, Memoria Local y Sincronización PostgreSQL Opcional
+> **Versiones de esta entrega:** Programa 0.5.0 | Formato de configuración 2 (local) / 3 (con sync) | Esquema SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales)
+> **Estado:** Vigente y Activo (Verificado con 191 pruebas en macOS con Bun 1.3.8)
 > **Traducción hermana:** [07 (EN). Plain-Language Glossary](../en/07-glossary.md)
 
 Este glosario explica cada concepto técnico utilizando analogías y lenguaje de la vida cotidiana, seguido de su término técnico formal entre paréntesis.
 
 ---
 
-### Asistente interactivo guiado (Interactive Setup Wizard / `setup`)
-Comando para personas que explica las rutas del sistema, comprueba compatibilidad en modo de solo lectura, ofrece configurar la sincronización opcional con PostgreSQL y pide una confirmación antes de crear o actualizar el almacenamiento global, sin preguntar, crear ni seleccionar proyectos.
+### Protocolo de Contexto de Modelo (Model Context Protocol / MCP)
+Estándar abierto de comunicación que permite a los modelos de inteligencia artificial conectarse de forma segura y uniforme a herramientas y fuentes de datos externas. En Forge614 Engram opera localmente a través de la entrada y salida estándar de la computadora (`stdio`).
+
+### Menú Interactivo en Terminal (Terminal User Interface / TUI / `tui`)
+Panel visual interactivo a pantalla completa dentro de la consola de comandos donde una persona puede seleccionar opciones con las flechas del teclado y la barra espaciadora, previsualizar cambios, ejecutar autopruebas y confirmar configuraciones sin tener que editar manualmente archivos de configuración.
+
+### Autoprueba del Servidor MCP (MCP Server Self-Test)
+Prueba automatizada y asíncrona que el menú TUI ejecuta sobre el ejecutable binario de Engram instalado en tu máquina. Utiliza el SDK oficial de MCP para iniciar el servidor por canales estándar (`stdio`), verificar que responda con el nombre oficial `forge614-engram` y confirmar que exponga las 5 herramientas de memoria esperadas dentro de un plazo estricto de 5 segundos. **No prueba las sesiones reales de los clientes de IA**, las cuales deben verificarse dentro de cada editor.
+
+### Vinculación o Asociación Local de Proyecto (Project Binding / `project_bindings`)
+Registro en la base de datos local (tabla `project_bindings` de Esquema 5) que asocia una ruta física de carpeta en el disco duro de este equipo con un identificador de proyecto (`projectId`). Es exclusivo de cada computadora y jamás se sincroniza a través de la red hacia otras máquinas.
+
+### Directorio Raíz Común de Git (Git Common Directory / `--git-common-dir`)
+Ubicación física canónica del repositorio Git principal. Permite que múltiples subcarpetas y entornos de trabajo vinculados (*linked worktrees*) reconozcan automáticamente que pertenecen al mismo proyecto de software, accediendo a los mismos recuerdos sin duplicar identidades.
+
+### Entorno de Trabajo Vinculado (Linked Worktree)
+Característica avanzada de Git (`git worktree add`) que permite tener varias ramas de un mismo repositorio abiertas simultáneamente en carpetas separadas de tu disco. Gracias a la resolución canónica de Engram, todos los worktrees de un repositorio comparten exactamente la misma memoria.
+
+### Validación Previa de Seguridad (Preflight Check)
+Inspección rigurosa y previa a la escritura que realiza el menú TUI antes de modificar cualquier archivo de configuración. Comprueba permisos, rechaza enlaces simbólicos (*symlinks*) que puedan apuntar a ubicaciones inseguras y valida que los archivos no superen tamaños máximos permitidos.
+
+### Copia de Respaldo Privada con Sufijo UUID (UUID-Suffixed Private Backup)
+Archivo de respaldo generado automáticamente antes de aplicar cambios a la configuración de un cliente (por ejemplo, `~/.claude.json.3a8f...bak`). Se crea con permisos estrictos de acceso exclusivo (`0600`) y contiene los bytes anteriores exactos para garantizar recuperación ante cualquier imprevisto.
+
+### Publicado sin Verificar (Published Unverified / `PUBLISHED_UNVERIFIED`)
+Advertencia de seguridad que se emite cuando Engram aplicó con éxito la configuración en el archivo de un cliente, pero al volverlo a leer inmediatamente para verificar su integridad, los bytes no coincidieron con lo esperado debido a que otro proceso o el propio editor modificó el archivo de forma concurrente. En este caso, Engram conserva la copia de respaldo y no realiza una marcha atrás destructiva.
+
+### Gancho o Adaptador Nativo de Asistente (Native Hook / `memory-hook`)
+Adaptador de software invocado por los clientes de desarrollo al dispararse eventos del ciclo de vida (como el inicio de una sesión o el envío de un prompt). Engram utiliza este gancho para inyectar recordatorios de contexto que orientan al modelo a consultar la memoria antes de investigar, sin escribir datos directamente en la base.
+
+### Intención Global Explícita (`globalIntent`)
+Justificación en texto obligatorio que el asistente debe proporcionar cuando desea guardar un recuerdo con alcance compartido (`scope: "shared"`). Explica formalmente por qué esa decisión o preferencia aplica de manera universal a todos los proyectos de la computadora, previniendo que notas contextuales se filtren accidentalmente al espacio compartido.
+
+### Detección vs Configuración vs Sesión Probada
+Tres estados honestos e independientes que el sistema distingue con claridad:
+1. **Detectado:** El ejecutable del cliente está instalado en el sistema operativo.
+2. **Configurado:** Los archivos de configuración del cliente contienen los comandos de Engram.
+3. **Sesión Probada:** La sesión interactiva real del asistente fue iniciada y se comprobó que el modelo invoca las herramientas MCP.
+
+### Política de Confianza de Ganchos en Codex (`/hooks` Trust Policy)
+Mecanismo de seguridad nativo de Codex mediante el cual cualquier gancho de automatización recién instalado debe ser revisado y aprobado explícitamente por el usuario a través del comando `/hooks` dentro de Codex antes de que se le permita ejecutarse.
 
 ### Terminal interactiva con soporte de teclado (Interactive TTY / `isTTY`)
-Canal de consola interactivo donde una persona puede ingresar respuestas directamente por teclado y recibir texto en pantalla. Si no está presente (como en tuberías o scripts), `setup` falla con `INTERACTIVE_REQUIRED` para proteger el flujo.
+Canal de consola interactivo donde una persona puede interactuar directamente por teclado. Si no está presente, `setup` y `tui` fallan con `INTERACTIVE_REQUIRED`.
 
-### Código de salida por cancelación del usuario (Exit Code 130 / User Interruption)
-Valor numérico estándar devuelto al sistema operativo cuando una operación interactiva o un observador (`sync-watch`) es cancelado o interrumpido voluntariamente por el usuario (`no`, `cancelar`, `q`, `Ctrl+C` o fin de archivo EOF).
+### Código de salida por cancelación del usuario (Exit Code 130)
+Código devuelto al sistema operativo cuando una operación interactiva (`setup`, `tui`, `sync-watch` o `mcp`) es cancelada o interrumpida voluntariamente con `Ctrl+C`, `Escape` o `q`.
 
-### Espacio central de usuario (User storage directory / `~/.forge614/`)
-La carpeta privada ubicada en el directorio personal de tu computadora donde residen la configuración y la base de datos de memoria, protegida con permisos estrictos de acceso exclusivo para tu usuario (`0700`).
+### Espacio central de usuario (`~/.forge614/`)
+Directorio personal donde residen la configuración y la base de datos de memoria, protegido con permisos de acceso exclusivo para tu usuario (`0700`).
 
-### Configuración global única (Global configuration file / `.env`)
-El único archivo de ajustes del sistema (`~/.forge614/.env`), generado automáticamente en modo privado (`0600`). Define la versión del formato (2 para local, 3 para sincronización) y el motor de almacenamiento sin mezclar configuraciones dispersas por proyecto.
-
-### Base de datos central única (Single SQLite database / `engram.db`)
-El archivo de base de datos (`~/.forge614/engram.db`) donde se guardan todos los proyectos, recuerdos, revisiones y peticiones del sistema en una única estructura relacional local.
+### Base de datos central única (`engram.db`)
+El archivo de base de datos SQLite donde se guardan todos los proyectos, recuerdos, revisiones, peticiones y asociaciones locales en una única estructura relacional.
 
 ### Identificador único de proyecto (`projectId`)
-El código alfanumérico permanente e inmutable (un UUIDv4 en minúsculas) asignado a cada proyecto registrado. Vincula de forma inequívoca todos los recuerdos de ese proyecto, asegurando que cambiar su nombre visual nunca altere su identidad ni pierda el acceso a su información.
-
-### Nombre visual del proyecto (`name`)
-Una etiqueta de texto descriptiva y legible para humanos (por ejemplo, *"Tienda Virtual"*). Es puramente cosmética; múltiples proyectos pueden compartir el mismo nombre sin conflicto porque su identidad real depende de su `projectId`.
+Código UUIDv4 inmutable asignado a cada proyecto registrado, garantizando que cambiar el nombre visible jamás altere su identidad ni pierda el acceso a sus recuerdos.
 
 ### Alcance de una nota (`scope`)
-La propiedad que define dónde aplica un recuerdo guardado. Puede ser de proyecto (`project`), aplicando exclusivamente al proyecto indicado; o compartido (`shared`), aplicando como conocimiento universal a todos los proyectos.
-
-### Recuerdo compartido universal (Shared memory)
-Una nota o preferencia general que se guarda una sola vez en la base de datos con `projectId` nulo (por ejemplo, *"Prefiero explicaciones en español"*), quedando disponible de inmediato para orientar a los asistentes en todos los proyectos sin duplicar datos en el disco.
+Propiedad que define si una nota aplica exclusivamente a un proyecto (`project`) o si es universal para todos los proyectos (`shared`).
 
 ### Sustitución o excepción por tema (Topic override)
-Regla matemática y lógica que ocurre cuando un proyecto guarda un recuerdo activo con la misma clave temática (`topicKey`) exacta que un recuerdo compartido. En la búsqueda combinada del proyecto, la decisión específica del proyecto sustituye a la regla compartida, ocultando temporalmente la regla general para ese proyecto.
+Regla lógica por la cual una nota activa de un proyecto sustituye a una nota compartida con el mismo tema (`topicKey`) en las búsquedas combinadas del proyecto.
 
-### Búsqueda combinada (`scope: all`)
-Modo de búsqueda predeterminado al consultar desde un proyecto (`search --project-id <UUID>`), el cual devuelve tanto las notas privadas de ese proyecto como los recuerdos compartidos universales relevantes, respetando las sustituciones por tema.
-
-### Fotografía histórica inalterable (Snapshot / Versión)
-Copia digital exacta en formato JSON del texto y metadatos de un recuerdo en el momento preciso en que fue guardado. Permite viajar al pasado para auditar qué decía una decisión antes de ser modificada.
-
-### Comprobación de lectura antes de modificar (Control optimista de versiones / `expectedVersion`)
-Mecanismo de seguridad que te exige indicar qué número de versión leíste antes de permitirte guardar una nueva revisión de un tema, evitando que dos personas o programas sobreescriban notas a ciegas sin enterarse de cambios intermedios.
-
-### Sello contra duplicados (Idempotencia / `requestKey`)
-Propiedad que garantiza que enviar dos veces la misma orden con la misma clave de petición no cree notas duplicadas ni ensucie el historial; el sistema reconoce el sello y devuelve el registro ya existente.
-
-### Motor de búsqueda de texto completo (SQLite FTS5 / `memories_fts`)
-Mecanismo interno de alta velocidad que indexa todas las palabras de los recuerdos para encontrar coincidencias en milisegundos sin consumir tokens de inteligencia artificial ni requerir conexión a internet. Permanece siempre activo en tu computadora local incluso si utilizas réplicas de sincronización.
-
-### Búsqueda por fragmentos de tres letras (Tokenizador trigram)
-Técnica que divide las palabras en pedacitos consecutivos de tres letras (por ejemplo, `sqlite` se divide en `sql`, `qli`, `lit`, `ite`), permitiendo encontrar notas aunque busques partes intermedias de una palabra.
-
-### Puntuación de relevancia textual (Algoritmo BM25)
-Fórmula matemática clásica (*Best Matching 25*) que calcula qué tan bien coincide una nota con tu búsqueda, premiando palabras raras y textos concisos. En SQLite FTS5 produce números negativos donde los valores más negativos indican mayor relevancia.
-
-### Nota fijada o destacada (`pinned`)
-Marca especial (`pinned: true`) que añade una bonificación fija en la fórmula de ordenamiento para que la nota aparezca en los primeros lugares de búsqueda.
-
-### Curva de recencia o juventud temporal ($r$)
-Factor matemático suave que otorga una pequeña bonificación a las notas actualizadas recientemente (con una vida media de 30 días), permitiendo que la información fresca destaque sobre notas antiguas.
-
-### Diario de transacciones rápidas (WAL / Write-Ahead Logging)
-Modo de operación en SQLite donde los cambios se escriben primero en un diario auxiliar (`engram.db-wal`), permitiendo que los lectores consulten la base sin ser bloqueados por los escritores.
-
-### Materialización de cabeceras WAL (Transacción inmediata vacía)
-Técnica que sincroniza inmediatamente la estructura física del archivo WAL en el disco mediante `BEGIN IMMEDIATE; COMMIT;`, permitiendo que conexiones de solo lectura abran la base al instante en Bun/macOS sin proyectos.
-
-### Archivo y restauración reversible (`archive` y `restore`)
-Operaciones que permiten ocultar una nota de las búsquedas habituales sin borrarla de la base de datos, con la capacidad de reactivarla íntegramente en cualquier momento conservando todo su historial.
+### Algoritmo BM25
+Fórmula matemática (*Best Matching 25*) que evalúa la relevancia de un texto en búsquedas según la frecuencia y rareza de las palabras coincidentes.
 
 ### Réplica PostgreSQL opcional (PostgreSQL Replica / Direct sync)
-Copia de respaldo y sincronización que vive en un servidor PostgreSQL configurado por ti. Permite que múltiples computadoras compartan el mismo espacio de trabajo de Forge614 Engram sin necesidad de un servidor intermedio o una nube propietaria.
+Copia de respaldo que vive en un servidor PostgreSQL configurado por ti para sincronizar el espacio de trabajo entre múltiples computadoras sin servidores intermedios en la nube.
 
 ### Fusión de tres vías (3-Way Snapshot Merge)
-Algoritmo de reconciliación determinista que compara la fotografía del último acuerdo común (`base`), el estado actual de tu equipo (`local`) y el estado en el servidor (`remote`) para combinar novedades de distintos proyectos o recuerdos de manera pacífica.
-
-### Punto de control de réplica (Sync checkpoint / `sync_checkpoints`)
-Tabla relacional en SQLite donde el sistema anota la última fotografía exacta acordada con una réplica remota determinada, sirviendo de base matemática para la siguiente fusión.
-
-### Bloqueo de cabecera por comparación y reemplazo (CAS / Compare-And-Swap head locking)
-Técnica de seguridad en PostgreSQL (`SELECT head FROM state WHERE id=1 FOR UPDATE`) que asegura que solo una computadora a la vez pueda publicar una nueva fotografía, evitando que dos envíos simultáneos se sobreescriban entre sí.
-
-### Observador de sincronización en primer plano (`sync-watch`)
-Comando interactivo de terminal que efectúa una sincronización inmediata y repite rondas periódicas (por defecto cada 30 segundos) mientras mantengas la ventana abierta, sin instalar servicios permanentes ni consumir recursos en segundo plano.
-
-### Resiliencia fuera de línea (Offline resilience)
-Capacidad arquitectónica de Forge614 Engram para continuar guardando, consultando y buscando recuerdos en tu computadora local con cero fallos, incluso si el servidor PostgreSQL está apagado o no tienes conexión a internet.
-
-### Conflicto de sincronización irresoluble (`SYNC_CONFLICT`)
-Situación de salvaguarda que ocurre cuando dos computadoras modificaron de forma incompatible la misma nota o proyecto respecto a la base, o cuando desaparece un registro del historial. Detiene la sincronización inmediatamente para que no se pierdan datos en ninguna de las dos partes.
-
-### Límite de fotografía completa (Snapshot size limit / 8 MiB)
-Límite estricto de protección en esta etapa que impide transmitir fotografías de memoria superiores a 8 megabytes (`SYNC_TOO_LARGE`).
-
-### Esquema de sincronización (`forge614_sync`)
-Espacio de nombres exclusivo dentro de la base de datos PostgreSQL donde se crean únicamente las tablas canónicas `revisions` y `state`.
+Algoritmo determinista que compara la fotografía base del último acuerdo común, el estado local y el estado remoto para combinar cambios pacíficamente.

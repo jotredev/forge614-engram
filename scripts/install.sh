@@ -6,6 +6,8 @@ usage() {
     'Instala forge614-engram desde este repositorio, sin npm.' \
     'Uso: bash scripts/install.sh [--bin-dir RUTA] [--force]' \
     'Requiere Bun >=1.3.8 para compilar; el ejecutable instalado no requiere Bun.' \
+    'Requiere Git disponible para resolver directorios de proyectos.' \
+    'Prepara dependencias: bun install --frozen-lockfile --ignore-scripts' \
     'Destino predeterminado: $HOME/.local/bin/forge614-engram' \
     '--force reemplaza una instalación existente. No cambia las bases de recuerdos.' \
     'No modifica tu configuración de terminal ni descarga dependencias.'
@@ -31,6 +33,7 @@ done
 
 case "$(uname -s)" in Darwin|Linux) ;; *) fail 'Este instalador requiere macOS o Linux con Bash.' ;; esac
 command -v bun >/dev/null 2>&1 || fail 'Se necesita Bun >=1.3.8 para compilar. Instálalo desde https://bun.sh y repite.'
+command -v git >/dev/null 2>&1 || fail 'Se necesita Git disponible para resolver proyectos (también carpetas sin Git). Instálalo y repite; este instalador no descarga Git.'
 bun_version="$(bun --version)"
 IFS=. read -r bun_major bun_minor bun_patch <<< "$bun_version"
 [[ "$bun_major" =~ ^[0-9]+$ && "$bun_minor" =~ ^[0-9]+$ && "$bun_patch" =~ ^[0-9]+$ ]] || fail 'Se requiere una versión estable de Bun >=1.3.8.'
@@ -39,6 +42,18 @@ if (( bun_major < 1 || (bun_major == 1 && bun_minor < 3) || (bun_major == 1 && b
 fi
 
 repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Verify local dependency versions without downloading or changing the lockfile.
+if ! (cd -- "$repo_dir" && bun -e '
+  const fs = require("node:fs");
+  const expected = JSON.parse(fs.readFileSync("package.json", "utf8")).dependencies;
+  try {
+    for (const [name, version] of Object.entries(expected)) {
+      if (JSON.parse(fs.readFileSync("node_modules/" + name + "/package.json", "utf8")).version !== version) process.exit(1);
+    }
+  } catch { process.exit(1); }
+'); then
+  fail 'Faltan dependencias locales o sus versiones no coinciden. En el repositorio ejecuta: bun install --frozen-lockfile --ignore-scripts; luego repite la instalación.'
+fi
 case "$bin_dir" in /*) ;; *) bin_dir="$PWD/$bin_dir" ;; esac
 destination="$bin_dir/forge614-engram"
 [ ! -d "$destination" ] || fail 'El destino es una carpeta; elige otra ruta.'
@@ -56,7 +71,9 @@ cleanup() {
 trap cleanup EXIT
 
 # Compile the checkout the user selected; no network install and no global config changes.
-(cd -- "$repo_dir" && bun build ./src/cli.ts --compile --outfile "$build_dir/forge614-engram")
+if ! (cd -- "$repo_dir" && bun build ./src/cli.ts --compile --outfile "$build_dir/forge614-engram"); then
+  fail 'No se pudo compilar. Comprueba el código y prepara dependencias con: bun install --frozen-lockfile --ignore-scripts'
+fi
 "$build_dir/forge614-engram" --version
 mkdir -p -- "$bin_dir"
 staging="$(mktemp "$bin_dir/.forge614-engram.XXXXXX")"
@@ -78,3 +95,16 @@ case ":${PATH:-}:" in
     printf 'export PATH=%q:"$PATH"\n' "$bin_dir"
     printf '%s\n' 'La línea anterior sirve en Bash/Zsh; guárdala en la configuración de tu terminal si quieres conservarla.' ;;
 esac
+printf '%s\n' 'Detección de asistentes (solo lectura; no inicia clientes ni crea una base):'
+"$destination" assistant-list
+printf 'Para configurar asistentes con vista previa y confirmación, ejecuta: %q tui\n' "$destination"
+if [ -t 0 ] && [ -t 1 ]; then
+  printf '%s' '¿Abrir ahora el menú de asistentes? [s/N] '
+  answer=''
+  if IFS= read -r answer && [[ "$answer" == s || "$answer" == S || "$answer" == si || "$answer" == sí ]]; then
+    "$destination" tui || {
+      code=$?
+      [ "$code" -eq 130 ] || exit "$code"
+    }
+  fi
+fi
