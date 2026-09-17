@@ -38,7 +38,7 @@ integration("configured CLI stays local offline and sync failure preserves the s
   await admin.unsafe("CREATE DATABASE setup_test");
   const testUrl=url.replace("/postgres?","/setup_test?");
   const user=join(directory,"cli-user");const config=new WorkspaceConfig(join(user,".forge614"));
-  const answers=["si",testUrl,"si"];const output:string[]=[];
+  const answers=["si",testUrl,"no","si"];const output:string[]=[];
   await runSetup({write:t=>output.push(t),ask:async()=>answers.shift()??null},config);
   expect(config.read().postgresUrl).toBe(testUrl);
   const workspace=new MemoryWorkspace(config);expect(workspace.listProjects()).toEqual([]);
@@ -48,7 +48,7 @@ integration("configured CLI stays local offline and sync failure preserves the s
   finally {store.close();}
   await syncWorkspace(config);
   const other=new WorkspaceConfig(join(directory,"other-user",".forge614"));
-  const second=["si",testUrl,"si"];await runSetup({write(){},ask:async()=>second.shift()??null},other);
+  const second=["si",testUrl,"no","si"];await runSetup({write(){},ask:async()=>second.shift()??null},other);
   await syncWorkspace(other);
   const received=new MemoryWorkspace(other).open(true);
   try {expect(received.get(p.projectId,id)!.content).toBe("persistent");} finally {received.close();}

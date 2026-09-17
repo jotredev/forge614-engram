@@ -101,6 +101,26 @@ test("project CLI saves, revises, searches, archives and restores with UUID iden
   expect(JSON.parse(run(dir,"get","--project-id",id,"--id",saved.id).stdout).state).toBe("active");
 });
 
+test("explicit reinforcement enrollment is repeatable and exact CLI saves stay owner-scoped without a new version", () => {
+  const dir=workspace();
+  for(let attempt=0;attempt<2;attempt++) {
+    const enabled=run(dir,"reinforcement-enable");
+    expect(enabled.code).toBe(0);
+    expect(JSON.parse(enabled.stdout)).toEqual({enabled:true,schema:7});
+  }
+  const a=create(dir,"A"),b=create(dir,"B");
+  const base=["--title","Runtime owner","--content","Project-local observation","--type","decision","--topic","runtime-owner"];
+  const first=JSON.parse(run(dir,"save","--project-id",a,...base,"--request-key","a-create").stdout);
+  const foreign=JSON.parse(run(dir,"save","--project-id",b,...base,"--request-key","b-create").stdout);
+  const repeated=JSON.parse(run(dir,"save","--project-id",a,...base,"--expected-version","1","--request-key","a-observation").stdout);
+  expect(repeated).toMatchObject({id:first.id,projectId:a,version:1});
+  expect(repeated.id).not.toBe(foreign.id);
+  expect(JSON.parse(run(dir,"history","--project-id",a,"--id",first.id).stdout)).toHaveLength(1);
+  const results=JSON.parse(run(dir,"search","--project-id",a,"--scope","project","--query","observation").stdout);
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({memory:{id:first.id,version:1},explanation:{reinforcement:{duplicateCount:1}}});
+});
+
 test("init is repeatable and rename retains identity without per-project registration", () => {
   const dir = workspace(); const id = create(dir); const root = join(dir,"user",".forge614");
   const before = readFileSync(join(root,"engram.db")); const config = readFileSync(join(root,".env"));

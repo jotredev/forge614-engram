@@ -1,11 +1,11 @@
 # 01 (EN). Installation, Setup, and Getting Started
 
-> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Verified (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
+> **Stage:** Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
+> **Status:** Current & Verified (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
 > **Sister translation:** [01. Instalación, Configuración y Primeros Pasos](../es/01-instalacion-y-primeros-pasos.md)
 
-This guide walks you step-by-step through preparing dependencies, compiling, and installing the `forge614-engram` CLI command on your computer, understanding the mandatory Git requirement, assistant discovery, the interactive `setup` wizard for central storage, enabling progressive sessions with Schema 6, peer device coordination, and PostgreSQL replica promotion.
+This guide walks you step-by-step through preparing dependencies, compiling, and installing the `forge614-engram` CLI command on your computer, understanding the mandatory Git requirement, assistant discovery, the interactive `setup` wizard with the search reinforcement offer, enabling progressive sessions (Schema 6) and immutable FTS5 confirmations (Schema 7), peer device coordination, and PostgreSQL replica promotion to Format 3.
 
 ---
 
@@ -117,10 +117,12 @@ setup           Asistente interactivo; confirma antes de guardar. Cancelar no ap
 tui             Asistentes: flechas, Espacio, vista previa y confirmación explícita.
 init            Inicializa una sola configuración y base local, sin borrar datos.
 sync [--upgrade-format]
-                Sincroniza todo; --upgrade-format promueve explícitamente una réplica formato 1.
+                Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
 sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
 integration-enable  Habilita explícitamente MCP y asociaciones locales (esquema 5).
 sessions-enable Habilita explícitamente sesiones (esquema 6).
+reinforcement-enable
+                Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
 memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
@@ -156,6 +158,17 @@ context [--project-id <UUID> | --scope shared] [--compact] [--max-bytes <1024..6
 
 help      Muestra esta ayuda sin crear archivos.
 --version Muestra la versión instalada.
+
+Una configuración: ~/.forge614/.env. Una base SQLite: ~/.forge614/engram.db.
+No hay conexiones, carpetas .env ni bases diferentes por proyecto.
+--db, --project y --id-project no se admiten. El identificador se llama projectId.
+project-create inicializa el espacio si aún no existe configuración.
+Para guardar shared sin crear un proyecto, ejecuta init primero.
+No se migran ni borran bases o configuraciones antiguas automáticamente.
+SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada en setup.
+sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
+Antes de sync --upgrade-format, actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
+sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
 ```
 
 ---
@@ -178,42 +191,71 @@ Este asistente configurará el espacio de trabajo local en:
   Base de datos : /Users/usuario/.forge614/engram.db
 
 ¿Quieres habilitar la sincronización con una base de datos PostgreSQL?
-> 1. No
-  2. Sí, configurar PostgreSQL
-
-Opción [1]:
+No
+Sí, configurar PostgreSQL
+Elige [si/NO]:
 ```
 
 ### Synchronization Options
-- **Option 1: `No` (Default):**
-  Pressing Enter selects `No`. The system operates 100% locally and autonomously in **Format 2** without PostgreSQL settings.
-- **Option 2: `Sí, configurar PostgreSQL`:**
-  Selecting `2` prompts for the connection URL with **hidden terminal input** (`{ secret: true }`). Typed passwords are never echoed in cleartext or with asterisks.
+- **Option `No` (Default):**
+  Pressing Enter or typing `no` selects 100% local operation without cloud dependencies. If PostgreSQL was previously configured, choosing `No` disables it without deleting existing local or remote data.
+- **Option `Sí, configurar PostgreSQL`:**
+  Selecting `sí` prompts for the connection URL with **hidden terminal input** (`{ secret: true }`). Typed passwords are never echoed in cleartext or with asterisks.
+
+### FTS5 Search Reinforcement Offer (Schema 7)
+Next, the wizard asks whether you wish to enable search reinforcement through repetitions:
+
+```text
+registrar repeticiones mejora el orden; no verifica la verdad.
+sincronizar esta función requiere actualizar todos los equipos.
+¿Quieres habilitar el refuerzo de recuerdos? [si/NO]
+```
+
+- **Default is `NO`:** Pressing Enter leaves reinforcement disabled.
+- **If you answer `sí`:** Schema 7 will be applied upon final confirmation.
+- **If reinforcement is already enabled:** The wizard explains: *"El refuerzo de recuerdos ya está habilitado. Se conservará habilitado; esta configuración no ofrece una degradación."* and does not offer a misleading downgrade option.
 
 ### Summary and Confirmation
 Before writing any file to disk, the wizard displays a summary and asks for explicit confirmation:
 
 ```text
-¿Deseas guardar esta configuración e inicializar la base de datos?
-> 1. Sí, aplicar cambios
-  2. Cancelar y salir
+Resumen: configurar el almacenamiento global SQLite y mantener habilitado el refuerzo de recuerdos. No se crearán ni seleccionarán proyectos y no se borrarán datos.
+¿Confirmar? [si/NO]:
 ```
 
 > [!NOTE]
-> If you choose `Cancelar y salir` or press `Ctrl+C`:
-> - The command exits with standard code **130**.
+> If you choose `no` or press `Ctrl+C` at any point:
+> - The command exits with standard code **130** (*Cancelled*).
 > - **No files are created.** If `~/.forge614/` was absent, it remains absent.
 > - Any pre-existing database with previous memories remains untouched.
 
 ---
 
-## 6. Enabling Progressive Sessions and Schema 6
+## 6. Enabling Assistant Integration (Schema 5)
+
+To allow coding assistants to interact with memory and register machine-local directory bindings (`project_bindings`), the database must be on **Schema 5**.
+
+Enable it via the interactive menu (`forge614-engram tui`) or via the explicit command:
+
+```bash
+forge614-engram integration-enable
+```
+
+Expected JSON output:
+```json
+{
+  "enabled": true,
+  "schema": 5
+}
+```
+
+---
+
+## 7. Enabling Progressive Sessions (Schema 6)
 
 To enable progressive work sessions, structured summaries, and ranked context retrieval, the local SQLite database must be on **Schema 6**.
 
-### Enabling Schema 6 (`sessions-enable`)
-Run the explicit enablement command:
-
+### Explicit Command (`sessions-enable`)
 ```bash
 forge614-engram sessions-enable
 ```
@@ -227,25 +269,50 @@ Expected JSON output:
 ```
 
 > [!IMPORTANT]
-> **Strict Additive Migration Principle:** Normal database opens (`workspace.open()`), commands such as `init`, `mcp`, `list`, or memory queries **never auto-migrate existing databases**. The migration to Schema 6 is additive and permanent, creating tables `sessions`, `session_entries`, `session_summaries`, `local_session_bindings`, and `local_manual_sessions`.
-
-### Peer Device Coordination and Replica Promotion
-If your team or setup synchronizes multiple devices against a PostgreSQL replica:
-1. When upgrading a device to Schema 6, run:
-   ```bash
-   forge614-engram sync --upgrade-format
-   ```
-   This promotes the PostgreSQL replica from **Format 1** to **Format 2** under atomic CAS protection in `forge614_sync.state`.
-2. **Peer Devices Requirement:** Any other computer syncing against that same PostgreSQL database must install the updated software and run:
-   ```bash
-   forge614-engram sessions-enable
-   forge614-engram sync
-   ```
-   If a peer device attempts to sync against a Format 2 replica while still on Schema 3, 4, or 5, sync halts safely with `SYNC_CONFLICT` to protect data.
+> **Strict Additive Migration Principle:** Normal database opens (`workspace.open()`), commands such as `init`, `mcp`, `list`, or memory queries **never auto-migrate existing databases**. Attempting to invoke session commands on an un-migrated database halts with `MIGRATION_REQUIRED`.
 
 ---
 
-## 7. Inspecting Assistants in JSON (`assistant-list`)
+## 8. Enabling FTS5 Search Reinforcement (Schema 7)
+
+To allow SQLite FTS5 to reinforce search rankings using immutable confirmation events without embeddings, the database must be on **Schema 7**.
+
+### Explicit Command (`reinforcement-enable`)
+```bash
+forge614-engram reinforcement-enable
+```
+
+Expected JSON output:
+```json
+{
+  "enabled": true,
+  "schema": 7
+}
+```
+
+### Critical Rules of FTS5 Search Reinforcement:
+1. **Additive and Transactional Migration:**
+   Creates the `confirmations` table (UUID `confirmationId`, version, UTC recordedAt, and optional sessionId) and `confirmation_requests` table (for idempotent requestKey deduplication). If running from Schemas 3, 4, or 5, it chains prerequisite migrations atomically (`BEGIN IMMEDIATE ... COMMIT`).
+2. **Repeatable and Safe:**
+   Running `reinforcement-enable` repeatedly is safe and returns the same JSON. If a configured `.env` references a database file that was deleted, it halts with an error and **never recreates a silent empty database**.
+3. **No Automatic Assistant Configuration:**
+   Enabling reinforcement does not modify client settings or hooks. To update guidance for existing assistants, run `forge614-engram tui` to review previews and apply changes.
+4. **Peer Device Coordination:**
+   All syncing devices must update to version 0.5.0 and run `reinforcement-enable`. Syncing Format 3 snapshots to an unreinforced client aborts with `REINFORCEMENT_REQUIRED`.
+5. **PostgreSQL Replica Promotion (Format 1/2 to Format 3):**
+   Local enablement does not promote remote replicas. To promote PostgreSQL to Format 3, run:
+   ```bash
+   forge614-engram sync --upgrade-format
+   ```
+   > [!WARNING]
+   > `sync-watch` strictly rejects `--upgrade-format`. Format promotion must be performed consciously via single-shot `sync`. Note the clean distinction:
+   > - **SQLite Schema 7:** Local physical database structure in `engram.db`.
+   > - **Sync Payload Format 3:** Network snapshot bundle containing confirmations and requests.
+   > - **PostgreSQL `state.format = 1`:** Unchanged remote relational table structure.
+
+---
+
+## 9. Inspecting Assistants in JSON (`assistant-list`)
 
 To audit installed assistants, configuration paths, and hook coverage without modifying files or launching interactive menus:
 
@@ -285,7 +352,7 @@ Representative JSON output:
 
 ---
 
-## 8. Scriptable Non-Interactive Initialization (`init`)
+## 10. Scriptable Non-Interactive Initialization (`init`)
 
 For automated provisioning (e.g. CI/CD or Docker containers) without terminal prompts:
 
@@ -305,7 +372,7 @@ This command creates `~/.forge614/` (`0700`), `.env` (`0600`), and `engram.db` (
 
 ---
 
-## 9. Creating Projects and Initial Memories
+## 11. Creating Projects and Initial Memories
 
 ### Creating a Project
 Project identities are permanent UUIDv4 strings. Display names are cosmetic labels:

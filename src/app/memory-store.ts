@@ -1,7 +1,8 @@
 import { closeDatabase,defaultDatabasePath,openDatabase } from "../infrastructure/sqlite/connection";
 import * as memory from "../infrastructure/sqlite/memory";
 import * as projects from "../infrastructure/sqlite/projects";
-import { enableAssistantIntegration,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
+import * as confirmations from "../infrastructure/sqlite/confirmations";
+import { enableAssistantIntegration,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
@@ -23,6 +24,8 @@ export class MemoryStore {
   listProjects(): Project[] { return projects.listProjects(this.db); }
   renameProject(projectId: string, name: string): Project { return writes.renameProject(this.db, projectId, name); }
   sessionsEnabled(): boolean { return sessions.sessionsEnabled(this.db); }
+  reinforcementEnabled(): boolean { return confirmations.reinforcementEnabled(this.db); }
+  enableSearchReinforcement(): void { return enableSearchReinforcement(this.db); }
   enableSessions(): void { return enableSessionLifecycle(this.db); }
   startSession(projectId: string, sessionId: string, runtimeDirectory?: string): Session { return writes.startSession(this.db, projectId, sessionId, runtimeDirectory); }
   endSession(projectId: string, sessionId: string): Session { return writes.endSession(this.db, projectId, sessionId); }

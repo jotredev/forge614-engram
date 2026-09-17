@@ -1,11 +1,37 @@
 # 07. Glosario de Conceptos en Lenguaje Cotidiano
 
-> **Etapa:** Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
-> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
-> **Estado:** Vigente y Activo (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
+> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
 > **Traducción hermana:** [07 (EN). Plain-Language Glossary](../en/07-glossary.md)
 
 Este glosario explica cada concepto técnico utilizando analogías y metáforas de la vida cotidiana, seguidas inmediatamente de su término técnico formal entre paréntesis.
+
+---
+
+### Confirmación Inmutable de Recuerdo (Immutable Memory Confirmation / `Confirmation` / `confirmations`)
+Como poner una muesca de lápiz en la portada de un manual cada vez que lo vuelves a consultar en el taller, sin arrancar hojas ni reimprimir el libro entero: un evento histórico fechado e inmutable que registra que un recuerdo activo existente fue observado nuevamente por el asistente, sin fabricar versiones 2 o 3 artificiales ni duplicar el contenido. Representa una nueva observación del dato; no certifica verdad absoluta ni verificación humana.
+
+### Refuerzo de Búsqueda FTS5 sin Embeddings (FTS5 Reinforced Search without Embeddings)
+Como un bibliotecario experto que organiza los libros en el mostrador dando preferencia a los que consulta con frecuencia y a los que se han revisado recientemente, sin necesidad de escanearlos con rayos X ni usar complejos modelos neuronales: un mecanismo de ordenación matemática que pondera las coincidencias léxicas de BM25 multiplicándolas por factores de notas fijadas (`pinned`), actualidad temporal en escala de 30 días (`recencyBoost`), y estabilidad acumulada (`stabilityBoost`).
+
+### Ventana Móvil de Deduplicación de 15 Minutos (15-Minute Sliding Deduplication Window)
+Como recordar lo que te dijeron hace diez minutos en la misma conversación sin confundirlo con lo que te contaron el mes pasado: una regla temporal estricta para notas generales sin tema (`topicKey: null`), donde solo se consideran duplicados los datos observados en los últimos 15 minutos exactos (`now - 900,000 ms` a `now`). Si transcurren más de 15 minutos, Engram crea un recuerdo independiente nuevo para no fusionar hechos distantes.
+
+### Reintento Idempotente por Clave de Petición (Idempotent Request Key Replay / `requestKey` / `Replay`)
+Como presentar el mismo boleto sellado en la taquilla tras cortarse la luz: si una operación de guardado se interrumpe y se reintenta con la misma clave y el mismo contenido (mismo hash criptográfico SHA-256), el sistema devuelve inmediatamente la respuesta almacenada previamente sin alterar versiones ni añadir confirmaciones redundantes.
+
+### Conflicto de Carga en Reintento (Request Payload Conflict / `REQUEST_CONFLICT`)
+Como intentar cobrar un cheque ya emitido pero con una cantidad o beneficiario cambiado con bolígrafo: un error de seguridad que aborta inmediatamente la operación cuando se detecta que una misma clave de petición (`requestKey`) se intenta reutilizar con un contenido, título o alcance diferente al original.
+
+### Sesgo o Desfase de Reloj Local (System Clock Skew / `CLOCK_SKEW`)
+Como mirar un reloj de pared atrasado que pretende marcar las 2:00 de la tarde cuando ya sellaste un recibo a las 3:00: una salvaguarda de seguridad cronológica que rechaza una confirmación cuando el reloj del sistema local marca una fecha anterior a la fecha registrada en la versión del recuerdo que se pretende confirmar.
+
+### Saturación Asintótica de Estabilidad (Asymptotic Stability Saturation / $\frac{n}{n+4}$)
+Como un estudiante que adquiere confianza en un tema repasándolo: las primeras veces que repasa el impacto en su aprendizaje es muy notable, pero después de muchas repeticiones el beneficio adicional se estabiliza suavemente sin crecer descontroladamente hasta el infinito. En Engram, el impulso de estabilidad empieza en 0.00, llega a la mitad (0.02) con 4 observaciones acumuladas y converge a un tope máximo de 0.04.
+
+### Promoción a Formato 3 de Réplica (PostgreSQL Replica Format 3 Promotion / `sync --upgrade-format`)
+Como habilitar una nueva sección de archivos en una bóveda bancaria compartida: un procedimiento deliberado mediante el comando `sync --upgrade-format` que actualiza la réplica remota para transferir confirmaciones inmutables y peticiones idempotentes, manteniendo la tabla física de PostgreSQL invariable (`state.format = 1`) y protegiendo a los clientes pares que aún no hayan habilitado el Esquema 7 (`REINFORCEMENT_REQUIRED`).
 
 ---
 
@@ -36,9 +62,6 @@ Como el acta oficial de cierre de una obra: un documento estandarizado que conti
 ### Inferencia de Sesión (Session Inference)
 Como un asistente atento que sabe en qué asunto estás trabajando: cuando un modelo de IA guarda una nota sin indicar sesión, Engram revisa si existe exactamente una única sesión abierta en los últimos 7 días en esa carpeta. Si la encuentra, asocia la nota a ella de forma inteligente (`sessionSource: "inferred"`). Si hay dos o más abiertas, se detiene y te pregunta para no equivocarse (`AMBIGUOUS_SESSION`).
 
-### Promoción Atómica de Formato de Réplica (Format 2 Promotion / `sync --upgrade-format`)
-Como remodelar una carretera añadiendo nuevos carriles sin detener el tráfico: un procedimiento consciente y protegido por cerrojos optimistas atómicos (CAS) que actualiza una réplica en la nube desde el Formato 1 clásico al Formato 2 moderno (habilitando la sincronización de sesiones y resúmenes). Requiere ejecutarse deliberadamente con una ronda única de `sync --upgrade-format`.
-
 ### Conflicto de Plugin en OpenCode (`CONFLICT`)
 Como encontrarte con una cerradura cambiada que prefieres no forzar: una salvaguarda de seguridad mediante la cual Engram, al detectar que el archivo de plugin `plugins/forge614-engram.js` ya existe con modificaciones previas, se detiene en seco y no lo sobrescribe. Permite al usuario respaldar y conciliar su código manualmente.
 
@@ -56,9 +79,6 @@ Registro en la base de datos local que asocia una ruta física de carpeta en el 
 
 ### Directorio Raíz Común de Git (Git Common Directory / `--git-common-dir`)
 Ubicación canónica del repositorio Git principal que permite a múltiples subcarpetas y entornos de trabajo vinculados (*linked worktrees*) compartir exactamente la misma identidad y recuerdos sin duplicaciones.
-
-### Algoritmo BM25 y Multiplicador de Recencia
-Fórmula matemática (*Best Matching 25*) que calcula la relevancia de búsqueda combinando la frecuencia de palabras clave, la prioridad manual (`pinned`) y la frescura temporal de la nota mediante un decaimiento progresivo.
 
 ---
 

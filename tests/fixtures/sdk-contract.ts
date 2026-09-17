@@ -14,7 +14,7 @@ type _MemoryType = Assert<Equal<MemoryType, "fact" | "decision" | "procedure" | 
 type _WorkspaceSettings = Assert<Equal<WorkspaceSettings, {storage:"sqlite";postgresUrl?:string}>>;
 interface ExpectedStore {
   createProject(name:string):Project;getProject(projectId:string):Project|null;listProjects():Project[];renameProject(projectId:string,name:string):Project;
-  sessionsEnabled():boolean;enableSessions():void;startSession(projectId:string,sessionId:string,runtimeDirectory?:string):Session;endSession(projectId:string,sessionId:string):Session;getSession(projectId:string,sessionId:string):Session|null;
+  sessionsEnabled():boolean;reinforcementEnabled():boolean;enableSessions():void;enableSearchReinforcement():void;startSession(projectId:string,sessionId:string,runtimeDirectory?:string):Session;endSession(projectId:string,sessionId:string):Session;getSession(projectId:string,sessionId:string):Session|null;
   startSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,sessionId:string,bindingAvailable?:(directory:string)=>boolean):Session;
   projectForDirectory(directory:string):Project|null;bindProjectDirectory(directory:string,projectId:string):Project;
   resolveProjectDirectory(directory:string,name:string,create:boolean,bindingAvailable?:(directory:string)=>boolean):{project:Project|null;created:boolean};

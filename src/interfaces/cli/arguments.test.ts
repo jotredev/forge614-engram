@@ -9,6 +9,11 @@ test("parser trims values, consumes boolean switches and requires command-specif
   expect(() => parsed.need("project-id")).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+test("parser accepts reinforcement enrollment only as an optionless explicit command", () => {
+  expect(parseArguments(["reinforcement-enable"]).command).toBe("reinforcement-enable");
+  expect(() => parseArguments(["reinforcement-enable", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
+});
+
 test.each([
   ["unknown"], ["save", "--query", "x"], ["search", "--query", "x", "--query", "y"],
   ["search", "--query"], ["search", "--query", "  "], ["search", "--query", "x\0y"],

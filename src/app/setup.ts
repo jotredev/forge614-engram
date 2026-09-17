@@ -29,9 +29,11 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     io.write("SQLite y FTS5 siempre guardan y buscan en este equipo, incluso sin conexión. PostgreSQL permite sincronizar una copia; no reemplaza SQLite.");
     const configured = config.exists();
     const revision=config.revision();
+    let reinforcementEnabled=false;
     if (configured) {
       const store = workspace.open(true); // Validate existing storage without listing projects.
-      store.close();
+      try { reinforcementEnabled=store.reinforcementEnabled(); }
+      finally { store.close(); }
     }
     io.write(configured
       ? "Configuración existente validada. Se conservarán la configuración y los recuerdos."
@@ -56,7 +58,21 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     }
     if(postgresUrl) io.write("Se sincronizará el espacio completo: todos los proyectos, recuerdos shared e historial. Usa una base PostgreSQL dedicada, vacía o ya compatible. Los equipos con acceso a esa base podrán recibir estos datos. No se transmite nada antes de confirmar.");
     else io.write("Sincronización PostgreSQL desactivada; se conservarán todas las copias existentes.");
-    io.write("Resumen: configurar el almacenamiento global SQLite. No se crearán ni seleccionarán proyectos y no se borrarán datos.");
+    let enableReinforcement=reinforcementEnabled;
+    if(reinforcementEnabled) {
+      io.write("El refuerzo de recuerdos ya está habilitado. Se conservará habilitado; esta configuración no ofrece una degradación.");
+    } else {
+      io.write("registrar repeticiones mejora el orden; no verifica la verdad.");
+      io.write("sincronizar esta función requiere actualizar todos los equipos.");
+      io.write("¿Quieres habilitar el refuerzo de recuerdos? [si/NO]");
+      while(true) {
+        const answer=(await ask("Elige [si/NO]: ")).toLowerCase();
+        if(["","no","n"].includes(answer)) break;
+        if(["si","sí","s","yes","y"].includes(answer)) {enableReinforcement=true;break;}
+        io.write("Responde si o no.");
+      }
+    }
+    io.write(`Resumen: configurar el almacenamiento global SQLite${enableReinforcement?" y mantener habilitado el refuerzo de recuerdos":""}. No se crearán ni seleccionarán proyectos y no se borrarán datos.`);
     while (true) {
       const confirmation = (await ask("¿Confirmar? [si/NO]: ")).toLowerCase();
       if (["", "no", "n"].includes(confirmation)) throw new Cancelled();
@@ -70,9 +86,16 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     }
     if(config.revision()!==revision) throw new MemoryError("CONFIG_CHANGED","La configuración cambió; ejecuta setup de nuevo.");
     workspace.init(); // Revalidate after confirmation; never replace a missing configured database.
-    if(postgresUrl) {const store=workspace.open();try {store.enableSync();} finally {store.close();}}
+    if(postgresUrl||enableReinforcement) {
+      const store=workspace.open();
+      try {
+        if(enableReinforcement) store.enableSearchReinforcement();
+        else store.enableSync();
+      } finally {store.close();}
+    }
     config.configurePostgres(postgresUrl,revision??config.revision());
     io.write("Configuración global lista. No necesitas elegir un proyecto para configurar Engram.");
+    if(enableReinforcement) io.write("El refuerzo de recuerdos está habilitado. Para promover una réplica remota ejecuta por separado forge614-engram sync --upgrade-format, después de actualizar todos los equipos para que entiendan el formato 3.");
     if(postgresUrl) io.write("Ejecuta forge614-engram sync para sincronizar ahora, o forge614-engram sync-watch para reintentar automáticamente mientras esté abierto. No se instaló un servicio permanente.");
     io.write("Ejecuta forge614-engram tui para configurar asistentes con vista previa. MCP permite identificar proyectos y guardar recuerdos; el modelo puede omitir guardados y no se garantiza un resumen al cerrar.");
     return { cancelled: false, storage: "sqlite" };

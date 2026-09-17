@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { save, archive, restore, saveForProjectDirectory } from "./writes";
 import { createProject, listProjects } from "./projects";
-import { enableAssistantIntegration } from "./schema";
+import { enableAssistantIntegration,enableSearchReinforcement } from "./schema";
 import { withDatabase } from "../__test-support__/fixtures";
 
 test("idempotent replay retains the original version and conflicts leave history untouched", () => withDatabase(db => {
@@ -22,4 +22,16 @@ test("invalid directory save rolls back newly created project and binding", () =
   expect(() => saveForProjectDirectory(db, "/new", "New", { type: "fact", title: "", content: "body" })).toThrow();
   expect(listProjects(db)).toEqual([]);
   expect(db.query("SELECT * FROM project_bindings").all()).toEqual([]);
+}));
+
+test("confirmation request replay is stable and cross-table request reuse conflicts", () => withDatabase(db => {
+  const project=createProject(db,"Owner");enableSearchReinforcement(db);
+  const input={projectId:project.projectId,title:"Queue",content:"Use jobs",type:"decision" as const};
+  const first=save(db,input);
+  const confirmed=save(db,{...input,requestKey:"confirm"});
+  expect(confirmed).toEqual(first);
+  expect(save(db,{...input,requestKey:"confirm"})).toEqual(first);
+  expect(()=>save(db,{...input,content:"Changed",requestKey:"confirm"})).toThrow(expect.objectContaining({code:"REQUEST_CONFLICT"}));
+  expect(db.query("SELECT count(*) AS n FROM confirmations").get()).toEqual({n:1});
+  expect(db.query("SELECT count(*) AS n FROM memory_versions").get()).toEqual({n:1});
 }));

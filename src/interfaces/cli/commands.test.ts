@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { WorkspaceConfig } from "../../infrastructure/filesystem/workspace-config";
+import { MemoryWorkspace } from "../../app/workspace";
 
 const directories: string[] = [];
 function workspace() {
@@ -79,4 +80,35 @@ test("CLI rejects valued boolean flags, malformed summaries, unknown summary key
     ["save","--scope","shared","--title","x","--content","y","--session-id","s"],
   ]) expect(JSON.parse(run(dir,...args).stderr).code).toBe("INVALID_INPUT");
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
+});
+
+test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", () => {
+  const dir=workspace();
+  expect(run(dir,"init").code).toBe(0);
+  const config=new WorkspaceConfig(join(dir,"user",".forge614"));
+  const memoryWorkspace=new MemoryWorkspace(config);
+  let store=memoryWorkspace.open(true);
+  try { expect(store.reinforcementEnabled()).toBe(false); }
+  finally { store.close(); }
+
+  expect(run(dir,"integration-enable").code).toBe(0);
+  expect(run(dir,"sessions-enable").code).toBe(0);
+  store=memoryWorkspace.open(true);
+  try { expect(store.reinforcementEnabled()).toBe(false); }
+  finally { store.close(); }
+
+  for (let attempt=0;attempt<2;attempt++) {
+    const result=run(dir,"reinforcement-enable");
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({enabled:true,schema:7});
+  }
+  store=memoryWorkspace.open(true);
+  try { expect(store.reinforcementEnabled()).toBe(true); }
+  finally { store.close(); }
+
+  rmSync(config.databasePath);
+  const missing=run(dir,"reinforcement-enable");
+  expect(missing.code).toBe(1);
+  expect(JSON.parse(missing.stderr).code).toBe("DATABASE_MISSING");
+  expect(existsSync(config.databasePath)).toBe(false);
 });

@@ -1,11 +1,11 @@
 # 02. Recorrido Guiado del Sistema
 
-> **Etapa:** Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
-> **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y resúmenes estructurados) | Réplica PostgreSQL Formato 1 / Formato 2
-> **Estado:** Vigente y Activo (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
+> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas) / 7 (confirmaciones inmutables y orden reforzado) | Réplica PostgreSQL Formatos 1, 2 y 3 (promoción explícita con `sync --upgrade-format`; tabla física remota `state.format = 1`)
+> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
 > **Traducción hermana:** [02 (EN). Guided System Walkthrough](../en/02-guided-walkthrough.md)
 
-Este recorrido práctico te guía paso a paso por el ciclo de vida integral de Forge614 Engram: desde configurar el espacio global interactivamente con `setup`, conectar tus asistentes de desarrollo mediante el menú interactivo en terminal `tui`, interactuar a través de las 10 herramientas del protocolo MCP nativo con resolución automática de proyectos por Git, gestionar sesiones de trabajo progresivas con líneas temporales (`timeline`), ensamblar contextos de prompt clasificados (`context`), hasta realizar búsquedas explicables con vista previa, gestionar actualizaciones seguras de plugins en OpenCode y sincronizar réplicas con PostgreSQL con promoción explícita de formato.
+Este recorrido práctico te guía paso a paso por el ciclo de vida integral de Forge614 Engram: desde configurar el espacio global interactivamente con `setup`, conectar tus asistentes de desarrollo mediante el menú interactivo en terminal `tui`, interactuar a través de las 10 herramientas del protocolo MCP nativo con resolución automática de proyectos por Git, gestionar sesiones de trabajo progresivas con líneas temporales (`timeline`), registrar recuerdos repetidos mediante confirmaciones inmutables sin fabricar versiones redundantes (Esquema 7), ensamblar contextos de prompt clasificados (`context`), realizar búsquedas FTS5 reforzadas con factores matemáticos transparentes sin embeddings, gestionar actualizaciones seguras de plugins en OpenCode y sincronizar réplicas con PostgreSQL con promoción explícita a Formato 3.
 
 ---
 
@@ -253,21 +253,80 @@ forge614-engram session-end \
 
 ---
 
-### Paso 7: Recuperación Progresiva (Previews, Timeline, Context)
+### Paso 7: Refuerzo de Búsqueda FTS5 y Confirmaciones Inmutables (Esquema 7)
+
+El Esquema 7 añade a Forge614 Engram la capacidad de registrar repeticiones como **confirmaciones inmutables** y ponderar el orden de búsqueda FTS5 sin utilizar embeddings ni modelos secundarios de IA.
+
+#### 1. Habilitación Local (`reinforcement-enable`):
+```bash
+forge614-engram reinforcement-enable
+```
+Salida: `{"enabled": true, "schema": 7}`.
+
+#### 2. Guardar un Recuerdo Inicial con Clave de Petición (`--request-key`):
+Para garantizar que una operación sea idempotente y segura ante reintentos de red o de proceso, el asistente asigna una `requestKey`:
+
+```bash
+forge614-engram save \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  --title "Cola de Tareas en Segundo Plano" \
+  --content "Usaremos colas basadas en SQLite WAL para tareas asíncronas." \
+  --type decision \
+  --request-key "req-queue-01"
+```
+
+El recuerdo se crea en versión 1, con 0 revisiones previas y 0 confirmaciones.
+
+#### 3. Reintento Idempotente con la Misma Clave (`Replay`):
+Si la conexión o el asistente se interrumpen y se vuelve a ejecutar la **misma petición con la misma clave `req-queue-01`**:
+- El sistema detecta la clave existente en `requests`.
+- Devuelve inmediatamente la respuesta almacenada previamente.
+- **No añade confirmaciones ni incrementa versiones.**
+
+#### 4. Conflicto de Carga en Reintento (`REQUEST_CONFLICT`):
+Si se reutiliza la misma clave `req-queue-01` enviando un contenido o título diferente:
+- El sistema detecta la discrepancia en el hash criptográfico SHA-256 de la carga.
+- Aborta inmediatamente arrojando el error `REQUEST_CONFLICT`.
+
+#### 5. Guardado Repetido con Nueva Clave: Registro de Confirmación:
+Si en un momento posterior (dentro de una ventana móvil de **15 minutos** para notas sin tema) el asistente vuelve a observar y guardar exactamente el mismo dato activo (mismo título, contenido, tipo y estado de fijado) utilizando una **nueva clave** `req-queue-02`:
+
+```bash
+forge614-engram save \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  --title "Cola de Tareas en Segundo Plano" \
+  --content "Usaremos colas basadas en SQLite WAL para tareas asíncronas." \
+  --type decision \
+  --request-key "req-queue-02"
+```
+
+**Comportamiento de Engram:**
+- **No crea una versión 2 redundante.**
+- Registra un evento inmutable en la tabla `confirmations` con su propio `confirmationId` (UUID), versión referenciada, fecha UTC y sesión actual.
+- Devuelve la versión 1 intacta con la sesión actualizada.
+- Al consultar el historial (`forge614-engram history --id <id>`), se comprueba que existe **exactamente 1 versión**, manteniendo el registro limpio de versiones artificiales.
+- **Significado honesto:** Esto indica que el dato fue observado nuevamente; **no certifica que sea una verdad absoluta ni que un humano lo haya verificado**.
+
+#### 6. Ventana Móvil de 15 Minutos (Deduplicación sin Tema):
+Para recuerdos generales sin tema (`topicKey: null`), la deduplicación solo considera candidatos activos observados en los últimos 15 minutos (entre `ahora - 900,000 ms` y `ahora`). Si pasan más de 15 minutos, Engram crea un recuerdo independiente nuevo para no fusionar hechos distantes en el tiempo. Si existen múltiples candidatos dentro de la ventana, selecciona el más recientemente observado y desempata por `id ASC`.
+
+---
+
+### Paso 8: Recuperación Progresiva y Búsqueda Reforzada (Previews, Timeline, Context)
 
 Engram implementa un modelo de recuperación progresiva (inspirado en **Gentleman** con adaptaciones de **Forge614**):
 
-#### 1. Búsqueda con Vista Previa Acotada (`--preview`):
-Para explorar sin saturar la memoria del modelo de IA, `--preview` acota el contenido a un máximo de 300 puntos de código Unicode:
+#### 1. Búsqueda FTS5 con Factores de Refuerzo (`--preview`):
+La búsqueda textual en SQLite FTS5 evalúa las coincidencias BM25 y aplica la fórmula de ranking con multiplicador de actualidad y estabilidad:
 
 ```bash
 forge614-engram search \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
-  --query "jwt" \
+  --query "colas sqlite" \
   --preview
 ```
 
-Salida representativa:
+Salida representativa con explicación detallada de factores:
 ```json
 [
   {
@@ -275,10 +334,10 @@ Salida representativa:
       "id": "e4a2d810-7215-46f9-bb20-56f7e4b2d351",
       "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       "scope": "project",
-      "topicKey": "firma-jwt",
+      "topicKey": null,
       "type": "decision",
-      "title": "Tokens JWT Asimétricos",
-      "preview": "Firmaremos los tokens con clave privada Ed25519.",
+      "title": "Cola de Tareas en Segundo Plano",
+      "preview": "Usaremos colas basadas en SQLite WAL para tareas asíncronas.",
       "truncated": false,
       "pinned": false,
       "version": 1,
@@ -287,13 +346,25 @@ Salida representativa:
     },
     "explanation": {
       "mode": "fts5",
-      "bm25": -1.8542,
-      "multiplier": 1.06,
-      "orderScore": -1.9654
+      "bm25": -2.145,
+      "multiplier": 1.069,
+      "orderScore": -2.293,
+      "reinforcement": {
+        "revisionCount": 0,
+        "duplicateCount": 1,
+        "lastSeenAt": "2026-09-17T12:12:00.000Z",
+        "ageDays": 0.005,
+        "pinnedBoost": 0,
+        "recencyBoost": 0.059,
+        "stabilityBoost": 0.008
+      }
     }
   }
 ]
 ```
+
+> [!NOTE]
+> Observa que el ordenamiento de SQLite FTS5 es ascendente por `orderScore = bm25 * multiplier`. Al ser BM25 negativo, un multiplicador mayor (por notas fijadas, recientes o con más confirmaciones) produce un número más negativo, posicionando la nota antes en los resultados.
 
 #### 2. Lectura de Versión Específica (`get --version`):
 Si necesitas el contenido íntegro de una revisión histórica:
@@ -336,21 +407,9 @@ forge614-engram context \
   --max-bytes 8192
 ```
 
-Salida JSON:
-```json
-{
-  "format": 1,
-  "pinned": [...],
-  "recent": [...],
-  "summaries": [...],
-  "omitted": { "pinned": 0, "recent": 2, "summaries": 1 },
-  "truncated": true
-}
-```
-
 ---
 
-### Paso 8: Actualización Segura de Plugins en OpenCode
+### Paso 9: Actualización Segura de Plugins en OpenCode
 
 En OpenCode, Engram genera el plugin de integración en `plugins/forge614-engram.js` utilizando callbacks experimentales upstream.
 
@@ -366,7 +425,7 @@ En OpenCode, Engram genera el plugin de integración en `plugins/forge614-engram
 
 ---
 
-### Paso 9: Sincronización PostgreSQL y Promoción Explícita (`sync --upgrade-format`)
+### Paso 10: Sincronización PostgreSQL y Promoción a Formato 3 (`sync --upgrade-format`)
 
 Si configuraste una réplica PostgreSQL en `setup`:
 
@@ -375,12 +434,13 @@ Si configuraste una réplica PostgreSQL en `setup`:
 forge614-engram sync
 ```
 
-#### Promoción Explícita de Formato 1 a Formato 2:
-Si la réplica remota contiene una instantánea en Formato 1 (anterior a sesiones) y tu base local tiene Esquema 6:
-- La sincronización ordinaria preserva el formato remoto para no romper compatibilidad sin consentimiento.
-- Para promover conscientemente la réplica a **Formato 2** (incluyendo sesiones, entradas y resúmenes), ejecuta:
+#### Promoción Explícita a Formato 3:
+Cuando tu base local cuenta con Esquema 7 (refuerzo de búsqueda con confirmaciones) y deseas que la réplica de PostgreSQL sincronice eventos de confirmación y peticiones:
+- La sincronización ordinaria sin banderas rechaza la promoción si la réplica remota está en un formato anterior, devolviendo `SYNC_UPGRADE_REQUIRED`.
+- Para promover conscientemente la réplica a **Formato 3**, ejecuta:
 ```bash
 forge614-engram sync --upgrade-format
 ```
-- La promoción es validada atómicamente mediante bloqueo optimista CAS (*Compare-And-Swap*).
-- Si otra máquina intentó una promoción concurrente o modificó el estado remoto, solo una resulta ganadora; la perdedora detiene la operación sin aplicar cambios destructivos.
+- La promoción es validada atómicamente mediante bloqueo optimista CAS (*Compare-And-Swap*) sobre el hash del snapshot remoto.
+- **Requisito en todos los equipos:** Antes de promover a Formato 3, **todos los equipos pares deben haberse actualizado** y haber ejecutado `reinforcement-enable`. Si un cliente que no tiene habilitado el refuerzo intenta sincronizar un paquete en Formato 3, se detiene arrojando `REINFORCEMENT_REQUIRED` para proteger los datos locales de confirmaciones no reconocidas.
+- **`sync-watch` rechaza promociones:** `sync-watch --upgrade-format` no está permitido; la promoción requiere ejecutarse mediante el comando puntual `sync`.

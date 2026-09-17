@@ -130,6 +130,104 @@ integration("remote snapshot size is bounded before parsing and before publishin
 });
 
 
+integration("format 3 confirmations survive PostgreSQL convergence, retries, conflicts, and offline failures",async()=>{
+  await admin.unsafe("CREATE DATABASE reinforcement_transport");
+  const testUrl=url.replace("/postgres?","/reinforcement_transport?");
+  const replica=await PostgresReplica.connect(testUrl,true),inspect=new SQL(testUrl);
+  const a=new MemoryStore(":memory:"),b=new MemoryStore(":memory:"),legacy=new MemoryStore(":memory:");
+  try {
+    a.enableSearchReinforcement();b.enableSearchReinforcement();legacy.enableSessions();
+    const project=a.createProject("Reinforced");
+    const memory=a.save({projectId:project.projectId,title:"Queue",content:"Use jobs",type:"decision",topicKey:"queue",requestKey:"create"});
+    a.save({projectId:project.projectId,title:memory.title,content:memory.content,type:memory.type,topicKey:memory.topicKey!,expectedVersion:1,requestKey:"confirm-a"});
+
+    const initial=await replica.read(),localBefore=a.syncSnapshot(),checkpointBefore=a.syncCheckpoint(replica.id);
+    await expect(synchronize(a,replica)).rejects.toMatchObject({code:"SYNC_UPGRADE_REQUIRED"});
+    expect((await replica.read()).hash).toBe(initial.hash);
+    expect(a.syncSnapshot()).toEqual(localBefore);
+    expect(a.syncCheckpoint(replica.id)).toEqual(checkpointBefore);
+
+    await synchronize(a,replica,{upgradeFormat:true});
+    expect((await replica.read()).snapshot.format).toBe(3);
+    expect((await inspect.unsafe("SELECT format FROM forge614_sync.state"))[0].format).toBe(1);
+    const historical=await inspect.unsafe("SELECT hash,payload FROM forge614_sync.revisions ORDER BY hash");
+
+    await synchronize(b,replica);
+    b.save({projectId:project.projectId,title:memory.title,content:memory.content,type:memory.type,topicKey:memory.topicKey!,expectedVersion:1,requestKey:"confirm-b"});
+    await synchronize(b,replica);await synchronize(a,replica);
+    await synchronize(a,replica);await synchronize(b,replica);
+    for(const snapshot of [a.syncSnapshot(),b.syncSnapshot(),(await replica.read()).snapshot]) {
+      expect(snapshot.format).toBe(3);
+      if(snapshot.format!==3) throw new Error("expected format 3");
+      expect(snapshot.confirmations).toHaveLength(2);
+      expect(snapshot.memories[0]!.versions).toHaveLength(1);
+    }
+
+    // Publication committed but its acknowledgment/checkpoint was lost.
+    a.save({projectId:project.projectId,title:memory.title,content:memory.content,type:memory.type,topicKey:memory.topicKey!,expectedVersion:1,requestKey:"lost-ack"});
+    const lostCheckpoint=a.syncCheckpoint(replica.id),head=await replica.read();
+    await replica.publish(head.hash,a.syncSnapshot());
+    expect(a.syncCheckpoint(replica.id)).toEqual(lostCheckpoint);
+    await synchronize(a,replica);await synchronize(b,replica);
+    const converged=a.syncSnapshot();
+    expect(converged.format).toBe(3);
+    if(converged.format!==3) throw new Error("expected format 3");
+    expect(converged.confirmations).toHaveLength(3);
+
+    // A request cannot point at a real confirmation belonging to another owner.
+    const otherProject=a.createProject("Foreign owner");
+    const otherMemory=a.save({projectId:otherProject.projectId,title:"Foreign",content:"separate",type:"fact",topicKey:"foreign"});
+    a.save({projectId:otherProject.projectId,title:otherMemory.title,content:otherMemory.content,type:otherMemory.type,
+      topicKey:otherMemory.topicKey!,expectedVersion:1,requestKey:"foreign-confirm"});
+    await synchronize(a,replica);
+    const published=await replica.read(),forged=structuredClone(published.snapshot);
+    if(forged.format!==3) throw new Error("expected format 3");
+    const ownerRequest=forged.confirmationRequests.find(request=>request.memoryId===memory.id);
+    const foreignEvent=forged.confirmations.find(confirmation=>confirmation.memoryId===otherMemory.id);
+    if(!ownerRequest||!foreignEvent) throw new Error("expected both confirmation owners");
+    ownerRequest.confirmationId=foreignEvent.confirmationId;
+    await expect(replica.publish(published.hash,forged)).rejects.toMatchObject({code:"SYNC_INVALID"});
+    expect((await replica.read()).hash).toBe(published.hash);
+
+    // A dangling confirmation reference is independently rejected as malformed.
+    const dangling=structuredClone(published.snapshot);
+    if(dangling.format!==3) throw new Error("expected format 3");
+    dangling.confirmations[0]!.memoryId=crypto.randomUUID();
+    await expect(replica.publish(published.hash,dangling)).rejects.toMatchObject({code:"SYNC_INVALID"});
+    expect((await replica.read()).hash).toBe(published.hash);
+
+    legacy.createProject("Unsupported local writer");
+    const legacyBefore=legacy.syncSnapshot();
+    await expect(synchronize(legacy,replica,{upgradeFormat:true})).rejects.toMatchObject({code:"REINFORCEMENT_REQUIRED"});
+    expect(legacy.syncSnapshot()).toEqual(legacyBefore);
+    expect(legacy.syncCheckpoint(replica.id)).toEqual({format:1,projects:[],memories:[]});
+    expect((await replica.read()).hash).toBe(published.hash);
+
+    for(const row of historical) {
+      expect((await inspect.unsafe("SELECT payload FROM forge614_sync.revisions WHERE hash=$1",[row.hash]))[0].payload).toBe(row.payload);
+    }
+
+    a.save({projectId:project.projectId,title:memory.title,content:"left",type:memory.type,topicKey:memory.topicKey!,expectedVersion:1});
+    b.save({projectId:project.projectId,title:memory.title,content:"right",type:memory.type,topicKey:memory.topicKey!,expectedVersion:1});
+    await synchronize(a,replica);
+    const leftHead=await replica.read(),rightBefore=b.syncSnapshot();
+    await expect(synchronize(b,replica)).rejects.toMatchObject({code:"SYNC_CONFLICT"});
+    expect((await replica.read()).hash).toBe(leftHead.hash);
+    expect(b.syncSnapshot()).toEqual(rightBefore);
+    expect(b.get(project.projectId,memory.id)!.content).toBe("right");
+
+    a.save({projectId:project.projectId,title:memory.title,content:"left",type:memory.type,topicKey:memory.topicKey!,expectedVersion:2,requestKey:"offline-confirm"});
+    const offlineBefore=a.syncSnapshot(),offline=await PostgresReplica.connect(testUrl);
+    await offline.close();
+    await expect(synchronize(a,offline)).rejects.toMatchObject({code:"POSTGRES_UNAVAILABLE"});
+    expect(a.syncSnapshot()).toEqual(offlineBefore);
+    expect(offlineBefore.format).toBe(3);
+    if(offlineBefore.format!==3) throw new Error("expected format 3");
+    expect(offlineBefore.confirmations).toHaveLength(5);
+  } finally {a.close();b.close();legacy.close();await replica.close();await inspect.close();}
+},30000);
+
+
 integration("two SQLite installations synchronize via real PostgreSQL, replays and conflicts preserve data",async()=>{
   const replica=await PostgresReplica.connect(url,true);
   const a=new MemoryStore(":memory:"),b=new MemoryStore(":memory:");
@@ -184,7 +282,7 @@ integration("PostgreSQL publishes only one winner for a concurrent head and reje
 
 integration("setup refuses an incompatible PostgreSQL schema without publishing config or creating SQLite",async()=>{
   const config=new WorkspaceConfig(join(directory,"refused-user",".forge614"));
-  const answers=["si",url,"si"];
+  const answers=["si",url,"no","si"];
   await expect(runSetup({write(){},ask:async()=>answers.shift()??null},config)).rejects.toMatchObject({code:"POSTGRES_SCHEMA"});
   expect(existsSync(config.root)).toBe(false);
 });

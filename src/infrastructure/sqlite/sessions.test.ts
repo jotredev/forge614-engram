@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { startRuntimeSession, endRuntimeSession, getSession, inferredSessions, manualSession, validateSelectedSession } from "./sessions";
+import { startRuntimeSession, endRuntimeSession, getSession, inferredSessions, manualSession, sessionsEnabled, validateSelectedSession } from "./sessions";
 import { createProject } from "./projects";
 import { enableSessionLifecycle } from "./schema";
 import { withDatabase } from "../__test-support__/fixtures";
@@ -23,4 +23,14 @@ test("manual session is reused per project and cannot be explicitly closed", () 
   const id = manualSession(db, p.projectId, "2026-01-01T00:00:00.000Z");
   expect(manualSession(db, p.projectId, "2026-02-01T00:00:00.000Z")).toBe(id);
   expect(() => endRuntimeSession(db, p.projectId, id)).toThrow(expect.objectContaining({ code: "SESSION_KIND" }));
+}));
+
+test("schema 7 retains session capability without admitting future versions", () => withDatabase(db => {
+  enableSessionLifecycle(db); db.exec("PRAGMA user_version=7");
+  const p=createProject(db,"Seven");
+  expect(sessionsEnabled(db)).toBe(true);
+  expect(startRuntimeSession(db,p.projectId,"run").sessionId).toBe("run");
+  db.exec("PRAGMA user_version=8");
+  expect(sessionsEnabled(db)).toBe(false);
+  expect(()=>getSession(db,p.projectId,"run")).toThrow(expect.objectContaining({code:"MIGRATION_REQUIRED"}));
 }));

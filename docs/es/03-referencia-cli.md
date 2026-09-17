@@ -1,8 +1,8 @@
 # 03. Manual Exhaustivo de Terminal (CLI)
 
-> **Etapa:** Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formato 2
-> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) | Formatos PostgreSQL 1 y 2
-> **Estado:** Vigente y Activo (369 pruebas totales en 69 archivos: 361 superadas y 8 omitidas sin binarios aislados PG; 369 superadas, 0 fallos, 1891 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8)
+> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
 > **Traducción hermana:** [03 (EN). Terminal CLI Command Reference](../en/03-cli-reference.md)
 
 Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sintaxis, códigos de salida y formatos de respuesta de la interfaz de línea de comandos (CLI) de Forge614 Engram.
@@ -26,7 +26,7 @@ Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sin
    - **Comandos interactivos (`setup`, `tui`):** Emiten texto comprensible para personas a través de `stdout`. Devuelven código `0` en caso de éxito/confirmación; código `130` si el usuario cancela voluntariamente (`Ctrl+C`, `Escape`, `cancelar`, `q` o `no`); y código `1` si ocurre un error o si se invocan sin terminal interactiva (`isTTY` falso arrojando `INTERACTIVE_REQUIRED`).
    - **Servidor MCP (`mcp`):** Reserva `stdout` exclusivamente para tramas JSON-RPC del protocolo MCP. Al cerrarse con `Ctrl+C` (SIGINT) devuelve código `130`; con SIGTERM devuelve código `143`.
    - **Observador de sincronización (`sync-watch`):** Emite rondas exitosas en JSON a `stdout` y avisos de reintento a `stderr`. Al interrumpirse con `Ctrl+C` finaliza con código `130`.
-   - **Comandos de datos y automatización (`init`, `sync`, `assistant-list`, `integration-enable`, `sessions-enable`, `project-*`, `save`, `search`, `session-*`, `timeline`, `context`, etc.):** Emiten respuestas en formato **JSON estructurado** a través de `stdout` con código de salida `0` en caso de éxito. En caso de error, emiten un objeto JSON de error a través de `stderr` con código de salida `1`.
+   - **Comandos de datos y automatización (`init`, `sync`, `assistant-list`, `integration-enable`, `sessions-enable`, `reinforcement-enable`, `project-*`, `save`, `search`, `session-*`, `timeline`, `context`, etc.):** Emiten respuestas en formato **JSON estructurado** a través de `stdout` con código de salida `0` en caso de éxito. En caso de error, emiten un objeto JSON de error a través de `stderr` con código de salida `1`.
 6. **Banderas eliminadas que NO se admiten:**
    - `--db`: No se admite. La base de datos es fija: `~/.forge614/engram.db`.
    - `--project` (por nombre): No se admite. El identificador es estrictamente `--project-id <UUID>`.
@@ -60,7 +60,7 @@ forge614-engram help
 ---
 
 ### 2.3. `setup`
-Asistente interactivo guiado para configurar el espacio central (`~/.forge614/.env` y `~/.forge614/engram.db`) con o sin sincronización PostgreSQL.
+Asistente interactivo guiado para configurar el espacio central (`~/.forge614/.env` y `~/.forge614/engram.db`), ofreciendo sincronización opcional con PostgreSQL y habilitación de refuerzo de búsqueda (Esquema 7).
 
 ```bash
 forge614-engram setup
@@ -142,7 +142,25 @@ forge614-engram sessions-enable
 
 ---
 
-### 2.8. `mcp`
+### 2.8. `reinforcement-enable`
+Habilita explícitamente el registro de confirmaciones inmutables y el ranking reforzado FTS5 actualizando la base de datos local al **Esquema 7** (añade las tablas `confirmations` y `confirmation_requests`).
+
+```bash
+forge614-engram reinforcement-enable
+```
+- **Opciones:** Ninguna.
+- **Salida JSON:**
+  ```json
+  {
+    "enabled": true,
+    "schema": 7
+  }
+  ```
+- **Efectos secundarios:** Migración aditiva irreversible. Si la base estaba en Esquema 3, 4, 5 o 6, la promueve al Esquema 7. Los comandos normales de apertura o `mcp` jamás auto-migran bases de datos existentes a Esquema 7; la ejecución de `reinforcement-enable` (o seleccionarlo en `setup`) es obligatoria para activar el ranking reforzado.
+
+---
+
+### 2.9. `mcp`
 Inicia el servidor local del Protocolo de Contexto de Modelo (*Model Context Protocol*) a través de los canales estándar de comunicación entre procesos (`stdio`).
 
 ```bash
@@ -161,12 +179,12 @@ forge614-engram mcp
   8. `memory_session_start`
   9. `memory_session_summary`
   10. `memory_timeline`
-- **Condición previa:** Requiere que la base de datos cuente con el Esquema 5 (habilitado mediante `tui` o `integration-enable`) o Esquema 6 (mediante `sessions-enable` para utilizar las herramientas de sesión). El servidor MCP no migra la base al arrancar.
+- **Condición previa:** Requiere que la base de datos cuente con el Esquema 5 (mediante `tui` o `integration-enable`), Esquema 6 (mediante `sessions-enable`), o Esquema 7 (mediante `reinforcement-enable`). El servidor MCP no migra la base al arrancar.
 - **Cierre:** Al recibir `EOF` en `stdin` se cierra ordenadamente; con `SIGINT` finaliza con código `130`; con `SIGTERM` finaliza con código `143`.
 
 ---
 
-### 2.9. `memory-hook`
+### 2.10. `memory-hook`
 Adaptador nativo invocado por ganchos de asistentes de desarrollo al iniciar sesión o enviar prompts.
 
 ```bash
@@ -178,7 +196,7 @@ forge614-engram memory-hook --client <claude-code|codex|cursor|opencode|gemini-c
 
 ---
 
-### 2.10. `project-bind`
+### 2.11. `project-bind`
 Asocia manualmente una ruta de carpeta local del disco a un identificador de proyecto (`projectId`) existente.
 
 ```bash
@@ -199,7 +217,7 @@ forge614-engram project-bind \
 
 ---
 
-### 2.11. `init`
+### 2.12. `init`
 Inicializa programáticamente el espacio global (`~/.forge614/.env` y `~/.forge614/engram.db`) en modo exclusivamente local.
 
 ```bash
@@ -210,18 +228,21 @@ forge614-engram init
 
 ---
 
-### 2.12. `sync`
+### 2.13. `sync`
 Ejecuta una ronda inmediata de sincronización por fusión de tres vías (*3-way merge snapshot sync*) contra el servidor PostgreSQL configurado en `~/.forge614/.env`.
 
 ```bash
 # Sincronización ordinaria:
 forge614-engram sync
 
-# Promoción explícita de réplica Formato 1 a Formato 2:
+# Promoción explícita de réplica a Formato 2 o Formato 3:
 forge614-engram sync --upgrade-format
 ```
 - **Opciones opcionales:**
-  - `--upgrade-format`: Promueve explícitamente una réplica remota PostgreSQL en formato 1 (proyectos y recuerdos) a formato 2 (añade sesiones, entradas cronológicas y resúmenes estructurados). La promoción está protegida por CAS optimista atómico en la tabla `forge614_sync.state`.
+  - `--upgrade-format`: Promueve explícitamente una réplica remota PostgreSQL en formato anterior a **Formato 3** (añade las colecciones `confirmations` y `confirmationRequests`). La promoción está protegida por bloqueo optimista CAS atómico sobre la instantánea en `forge614_sync.state`.
+- **Requisitos de Promoción:**
+  - Requiere que la base local tenga Esquema 7 (`reinforcement-enable`).
+  - **Todos los equipos pares deben haberse actualizado** a Esquema 7 antes de sincronizar con una réplica promovida a Formato 3. Si un cliente sin refuerzo intenta sincronizar un paquete en Formato 3, se detiene arrojando `REINFORCEMENT_REQUIRED`.
 - **Salida JSON exitosa:**
   ```json
   {
@@ -231,6 +252,8 @@ forge614-engram sync --upgrade-format
   }
   ```
 - **Errores:**
+  - `REINFORCEMENT_REQUIRED`: Si el cliente local carece de Esquema 7 y el servidor remoto está en Formato 3.
+  - `SYNC_UPGRADE_REQUIRED`: Si la réplica remota requiere `--upgrade-format` para coincidir con la versión local o viceversa.
   - `SYNC_DISABLED`: Si la sincronización no está configurada en `.env`.
   - `SYNC_CONFLICT`: Si hay modificaciones incompatibles sobre una misma entidad entre local y remoto.
   - `SYNC_TOO_LARGE`: Si la instantánea combinada supera los 8 MiB (`8,388,608 bytes`).
@@ -238,7 +261,7 @@ forge614-engram sync --upgrade-format
 
 ---
 
-### 2.13. `sync-watch`
+### 2.14. `sync-watch`
 Ejecuta una ronda inmediata de sincronización y mantiene un bucle en primer plano que reintenta periódicamente.
 
 ```bash
@@ -292,16 +315,17 @@ forge614-engram project-rename \
 ---
 
 ### 4.1. `save`
-Crea un nuevo recuerdo o actualiza un recuerdo existente identificado por su tema (`--topic`).
+Crea un nuevo recuerdo, actualiza un recuerdo existente por su tema (`--topic`), reintenta idempotentemente por clave (`--request-key`), o registra una confirmación inmutable.
 
 ```bash
-# Guardar en un proyecto con sesión explícita:
+# Guardar un recuerdo inicial con clave de petición idempotente:
 forge614-engram save \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
   --title "Base de Datos Elegida" \
   --content "Utilizaremos PostgreSQL 16 con réplica física." \
   --type decision \
   --topic "base-de-datos" \
+  --request-key "req-db-01" \
   --session-id "ses-arch-01"
 
 # Actualizar un tema existente (requiere expected-version):
@@ -342,10 +366,21 @@ forge614-engram save \
   - `--pinned <true|false>`: Fija el recuerdo para otorgarle prioridad en búsquedas y contexto.
   - `--session-id <id>`: Identificador de la sesión que origina este recuerdo.
   - `--session-project-id <UUID>`: Proyecto propietario de la sesión cuando se asocia una sesión a un guardado con `--scope shared`.
+- **Semántica de Claves de Petición (`--request-key`):**
+  - **Reintento Idempotente (*Replay*):** Si se reenvía una petición con la misma `requestKey` y la misma carga (mismo hash SHA-256), Engram devuelve inmediatamente la respuesta almacenada sin modificar el historial, sin subir versión y sin añadir confirmaciones.
+  - **Conflicto de Carga (`REQUEST_CONFLICT`):** Si se reutiliza una `requestKey` existente pero enviando diferente título, contenido, alcance o tipo, Engram aborta inmediatamente arrojando `REQUEST_CONFLICT`.
+- **Confirmaciones Inmutables (Esquema 7):**
+  - Cuando se guarda con una **nueva clave** un contenido idéntico a una nota activa existente:
+    - Si la nota tiene tema (`topicKey`), detecta la coincidencia exacta de título, contenido, tipo y estado fijado.
+    - Si la nota no tiene tema (`topicKey: null`), busca coincidencias dentro de una **ventana móvil de 15 minutos** (`ahora - 900,000 ms` a `ahora`).
+    - En lugar de crear una versión 2 redundante, Engram genera un registro en `confirmations` vinculando la versión actual intacta.
+    - El historial de versiones de la nota permanece en **1 sola versión**.
+    - **Significado honesto:** Representa una nueva observación del dato; no certifica verdad absoluta ni verificación humana.
+  - **Protección de Reloj (`CLOCK_SKEW`):** Si el reloj local del sistema indica una fecha anterior a la fecha de la versión confirmada del recuerdo, se arroja `CLOCK_SKEW`.
 - **Reglas de Inferencia y Asociación de Sesiones:**
   - Si se pasa `--session-id`: se asocia explícitamente la entrada cronológica (`sessionSource: "explicit"`). La sesión debe existir y pertenecer al proyecto; si está cerrada arroja `SESSION_CLOSED`.
   - Si se omite `--session-id`:
-    - En la CLI (`mode: "independent"`): para recuerdos de proyecto en bases con Esquema 6, se asocia automáticamente a la sesión manual persistente del proyecto en este equipo (`sessionSource: "manual"`). Para recuerdos compartidos (`scope: "shared"`), no se asocia ninguna sesión (`sessionSource: null`).
+    - En la CLI (`mode: "independent"`): para recuerdos de proyecto en bases con Esquema 6+, se asocia automáticamente a la sesión manual persistente del proyecto en este equipo (`sessionSource: "manual"`). Para recuerdos compartidos (`scope: "shared"`), no se asocia ninguna sesión (`sessionSource: null`).
     - En asistentes vía MCP (`mode: "assistant"`): busca sesiones en ejecución (*runtime*) activas en los últimos 7 días en la carpeta vinculada:
       - Si hay 0 sesiones activas: recurre a la sesión manual (`sessionSource: "manual"`).
       - Si hay exactamente 1 sesión activa: la asocia automáticamente (`sessionSource: "inferred"`).
@@ -355,7 +390,7 @@ forge614-engram save \
 ---
 
 ### 4.2. `search`
-Busca recuerdos activos utilizando SQLite FTS5 con tokenizador trigram y ponderación BM25 + recencia.
+Busca recuerdos activos utilizando SQLite FTS5 con tokenizador trigram y ponderación BM25 multiplicada por factores de actualidad y estabilidad.
 
 ```bash
 # Búsqueda combinada de proyecto y compartidos (scope all por defecto):
@@ -375,6 +410,31 @@ forge614-engram search --scope shared --query "español"
 ```
 - **Opciones opcionales:**
   - `--preview`: Emite fichas abreviadas (`MemoryPreview`) donde el contenido textual se trunca a un máximo de **300 puntos de código Unicode** (*code points*) y se añade la bandera booleana `truncated`. Reduce drásticamente el consumo de contexto antes de inspeccionar recuerdos específicos.
+  - `--limit <n>`: Número máximo de resultados (entero $\ge 1$, por defecto 20).
+  - `--scope <all|project|shared>`: Filtro de alcance (`all` por defecto).
+- **Estructura del Resultado y Explicación de Ranking:**
+  Cada elemento del arreglo devuelto contiene `memory` y `explanation`:
+  ```json
+  {
+    "memory": { ... },
+    "explanation": {
+      "mode": "fts5",
+      "bm25": -2.145,
+      "multiplier": 1.069,
+      "orderScore": -2.293,
+      "reinforcement": {
+        "revisionCount": 0,
+        "duplicateCount": 1,
+        "lastSeenAt": "2026-09-17T12:12:00.000Z",
+        "ageDays": 0.005,
+        "pinnedBoost": 0,
+        "recencyBoost": 0.059,
+        "stabilityBoost": 0.008
+      }
+    }
+  }
+  ```
+  - **Ordenamiento FTS5:** Se ordena ascendente por `orderScore = bm25 * multiplier`, desempatando por `id ASC`. Al ser `bm25` un valor negativo en SQLite FTS5, un multiplicador más alto produce un número más negativo, situando la nota en una posición más destacada.
 
 ---
 
@@ -429,7 +489,7 @@ forge614-engram restore \
 ## 5. Catálogo de Comandos de Sesiones Progresivas y Contexto
 
 > [!IMPORTANT]
-> Todos los comandos de esta sección requieren que la base de datos se encuentre en el **Esquema 6** (habilitado mediante `forge614-engram sessions-enable`).
+> Todos los comandos de esta sección requieren que la base de datos se encuentre al menos en el **Esquema 6** (habilitado mediante `forge614-engram sessions-enable` o `reinforcement-enable`).
 
 ---
 
@@ -535,7 +595,34 @@ forge614-engram context --scope shared
 
 ---
 
-## 6. Tabla Resumen Exhaustiva de Opciones por Comando
+## 6. Catálogo de Códigos de Error Oficiales
+
+Cuando la CLI falla, emite un objeto JSON en `stderr` con código de salida `1` conteniendo `{ "error": "<CODIGO>", "message": "<explicacion>" }`:
+
+| Código de Error | Causa Raíz | Acción Correctiva |
+| :--- | :--- | :--- |
+| `INVALID_INPUT` | Sintaxis incorrecta, opciones desconocidas, repetidas o incompatibles. | Revisar los argumentos y banderas según este manual. |
+| `REINFORCEMENT_REQUIRED` | El cliente local no tiene Esquema 7 y el servidor remoto sincroniza Formato 3. | Ejecutar `forge614-engram reinforcement-enable` localmente. |
+| `SYNC_UPGRADE_REQUIRED` | La réplica remota o cliente local requiere promoción de formato explícita. | Ejecutar `forge614-engram sync --upgrade-format` de forma deliberada. |
+| `CLOCK_SKEW` | El reloj local marca una fecha anterior a la versión del recuerdo a confirmar. | Sincronizar el reloj del sistema mediante NTP o ajustar fecha/hora. |
+| `REQUEST_CONFLICT` | Se reutilizó una misma `requestKey` con una carga (título, contenido, etc.) diferente. | Usar una `requestKey` nueva para operaciones distintas. |
+| `AMBIGUOUS_SESSION` | Existen 2 o más sesiones abiertas concurrentes para la carpeta y no se pasó `--session-id`. | Especificar explícitamente `--session-id <id>` en el comando. |
+| `SESSION_CLOSED` | Se intentó guardar o asociar un recuerdo a una sesión que ya fue finalizada. | Iniciar una sesión nueva o guardar sin asociar a la sesión cerrada. |
+| `SESSION_KIND` | Se intentó cerrar con `session-end` una sesión permanente manual. | Solo las sesiones de tipo `runtime` pueden finalizarse. |
+| `NO_SESSION_CONTEXT` | La nota solicitada en `timeline` no pertenece a esa sesión o está archivada. | Verificar el identificador de la nota y su sesión de pertenencia. |
+| `SUMMARY_TOPIC_RESERVED` | Se intentó usar el prefijo reservado `session/<id>/summary` manualmente en `save`. | Los resúmenes deben guardarse únicamente mediante `session-summary`. |
+| `PROJECT_BINDING_REQUIRED` | Una carpeta asociada previamente fue borrada, renombrada o desmontada. | Usar `project-bind` para asociar la ruta actual al proyecto deseado. |
+| `CONFLICT` | En OpenCode, existe un plugin local con modificaciones no gestionadas. | Respaldar y conciliar el plugin manualmente antes de usar `tui`. |
+| `PUBLISHED_UNVERIFIED` | Un archivo de configuración de asistente fue alterado concurrentemente tras guardarse. | Verificar los archivos de configuración y reintentar la operación. |
+| `INTERACTIVE_REQUIRED` | `setup` o `tui` fueron invocados sin una terminal interactiva TTY real. | Ejecutar el comando en una terminal interactiva humana. |
+| `SYNC_DISABLED` | Se invocó `sync` pero no hay configuración PostgreSQL en `~/.forge614/.env`. | Ejecutar `forge614-engram setup` para configurar la réplica. |
+| `SYNC_CONFLICT` | Conflicto irreconciliable de tres vías entre la base local y la réplica remota. | Resolver la divergencia inspeccionando las versiones en conflicto. |
+| `SYNC_TOO_LARGE` | La instantánea acumulada de sincronización supera el límite de 8 MiB. | Purgar o archivar entidades históricas para reducir el paquete. |
+| `POSTGRES_UNAVAILABLE` | El servidor PostgreSQL remoto no responde o rechazó la conexión. | Verificar la red, estado del servidor PostgreSQL y credenciales. |
+
+---
+
+## 7. Tabla Resumen Exhaustiva de Opciones por Comando
 
 | Comando | Opciones Obligatorias | Opciones Opcionales | Salida |
 | :--- | :--- | :--- | :--- |
@@ -544,6 +631,7 @@ forge614-engram context --scope shared
 | `assistant-list` | Ninguna | Ninguna | JSON |
 | `integration-enable` | Ninguna | Ninguna | JSON |
 | `sessions-enable` | Ninguna | Ninguna | JSON |
+| `reinforcement-enable` | Ninguna | Ninguna | JSON |
 | `mcp` | Ninguna | Ninguna | JSON-RPC (stdio) |
 | `memory-hook` | `--client` | Ninguna | JSON nativo |
 | `project-bind` | `--directory`, `--project-id` | Ninguna | JSON |

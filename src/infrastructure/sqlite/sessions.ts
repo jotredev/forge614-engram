@@ -44,7 +44,8 @@ export function endRuntimeSession(db: Database, projectId: string, sessionId: st
 }
 
 export function sessionsEnabled(db: Database): boolean {
-    return (db.query("PRAGMA user_version").get() as {user_version:number}).user_version === 6;
+    const version=(db.query("PRAGMA user_version").get() as {user_version:number}).user_version;
+    return version===6 || version===7;
   }
 
 export function requireSessions(db: Database): void {

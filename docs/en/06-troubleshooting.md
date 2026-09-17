@@ -1,11 +1,11 @@
 # 06 (EN). Troubleshooting and Error Diagnostics
 
-> **Stage:** Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 2
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) | SQLite Schemas 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) | PostgreSQL Formats 1 & 2
-> **Status:** Current & Active (369 total tests across 69 files: 361 passed and 8 skipped without isolated PostgreSQL test binaries; 369 passed, 0 failures, 1891 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8)
+> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
 > **Sister translation:** [06. Resolución de Problemas y Catálogo de Errores](../es/06-resolucion-de-errores.md)
 
-This troubleshooting guide provides an exhaustive diagnostic catalog of error codes, root causes, and recommended recovery procedures in Forge614 Engram, including progressive sessions, ranked context, assistant configuration conflicts, and PostgreSQL replication.
+This troubleshooting guide provides an exhaustive diagnostic catalog of error codes, root causes, and recommended recovery procedures in Forge614 Engram, including reinforced FTS5 search ranking, immutable confirmations (Schema 7), Format 3 PostgreSQL replication, clock skew guards, idempotent retries, and assistant configuration conflicts.
 
 ---
 
@@ -13,7 +13,7 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 
 > [!IMPORTANT]
 > **Never delete your database, SQLite tables, or sync checkpoints to "fix" an error.**
-> Errors in Forge614 Engram are active safety safeguards. When the system detects session ambiguities, divergent plugin contents, or schema incompatibilities, it intentionally halts to **protect data integrity and prevent silent information loss**.
+> Errors in Forge614 Engram are active safety safeguards. When the system detects session ambiguities, divergent plugin contents, clock skew, or schema incompatibilities, it intentionally halts to **protect data integrity and prevent silent information loss**.
 
 ---
 
@@ -21,7 +21,11 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 
 | Error Code | Typical Message | Root Cause | Recommended Solution |
 | :--- | :--- | :--- | :--- |
-| `MIGRATION_REQUIRED` | *"Habilita primero las sesiones."* or *"Habilita primero la integración..."* | A session command (`session-*`, `timeline`, `context`) or MCP tool was invoked before migrating SQLite to Schema 6. | Run `forge614-engram sessions-enable` in your terminal to apply the additive Schema 6 migration. |
+| `REINFORCEMENT_REQUIRED` | *"REINFORCEMENT_REQUIRED: habilita el Esquema 7 con reinforcement-enable..."* | The remote PostgreSQL replica synchronizes Format 3 (confirmations & requests) but the local SQLite database lacks Schema 7. | Run `forge614-engram reinforcement-enable` on the local machine before syncing. |
+| `SYNC_UPGRADE_REQUIRED` | *"SYNC_UPGRADE_REQUIRED: la réplica remota requiere promoción explícita..."* | Attempted to sync against a replica in an earlier format (Format 1 or 2) without supplying `--upgrade-format`. | Run `forge614-engram sync --upgrade-format` deliberately to promote the replica to Format 3. |
+| `CLOCK_SKEW` | *"CLOCK_SKEW: el reloj local marca una fecha anterior a la versión confirmada..."* | The local system clock is earlier than the timestamp recorded on the confirmed memory version. | Synchronize system clock with NTP or adjust date/time settings. |
+| `REQUEST_CONFLICT` | *"REQUEST_CONFLICT: la clave de petición ya corresponde a otro contenido."* | Reused an existing `--request-key` with modified title, content, type, or pinned state (mismatched SHA-256 hash). | Use a fresh, unique request key for requests with differing content. |
+| `MIGRATION_REQUIRED` | *"Habilita primero las sesiones."* or *"Habilita primero la integración..."* | A session command (`session-*`, `timeline`, `context`) or MCP tool was invoked before migrating SQLite to Schema 6 or 7. | Run `forge614-engram sessions-enable` (or `reinforcement-enable`) in your terminal to apply the additive migration. |
 | `AMBIGUOUS_SESSION` | *"AMBIGUOUS_SESSION: indica sessionId ([id1], [id2])."* | An assistant invoked `memory_save` without `sessionId` while 2 or more runtime sessions were active in the past 7 days on the bound folder. | Supply the target session explicitly with `--session-id <id>` or close finished sessions with `session-end`. |
 | `SESSION_NOT_FOUND` | *"Sesión no encontrada."* or *"Sesión no encontrada para este proyecto."* | The requested `sessionId` does not exist in `sessions` or does not belong to the active `projectId`. | Verify session ID and project association, or start a new session with `session-start`. |
 | `SESSION_CONFLICT` | *"El identificador de sesión no está disponible."* | Attempted to start a session with a `sessionId` already in use by another project or session kind. | Use a fresh, unique session identifier for this task. |
@@ -41,13 +45,12 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 | `SHARED_INTENT_REQUIRED` | *"scope shared requiere explicar la intención global explícita del usuario."* | Assistant called `memory_save` with `scope: "shared"` without providing `globalIntent`. | Supply `globalIntent` explaining why the decision applies universally. |
 | `INSTALLATION_REQUIRED` | *"Requisito: ejecuta forge614-engram tui con el binario instalado..."* | Ran self-test in `tui` directly from source with Bun without installing the standalone binary. | Run `bash scripts/install.sh` to install the binary to `$HOME/.local/bin/forge614-engram`. |
 | `TIMED_OUT` | Server self-test reported as timed out. | MCP self-test exceeded the strict 5-second deadline to spawn, handshake, and list tools. | Verify CPU load and ensure executable has `0755` permissions. |
-| `MCP_FAILED` | Server self-test reported as failed. | MCP server failed handshake or did not expose all 10 expected tools. | Ensure database has Schema 6 enabled via `sessions-enable`. |
+| `MCP_FAILED` | Server self-test reported as failed. | MCP server failed handshake or did not expose all 10 expected tools. | Ensure database has Schema 6 or 7 enabled via `sessions-enable` or `reinforcement-enable`. |
 | `PUBLISHED_UNVERIFIED` | *"Publicado sin verificar: [path]"* | Configuration applied to file, but immediate post-publication byte validation failed due to concurrent modification. | Engram retains `.bak` backup. Close client editor and re-run `forge614-engram tui`. |
 | `AMBIGUOUS` | *"Both OpenCode JSON and JSONC configs exist..."* | OpenCode has simultaneous `.json` and `.jsonc` files, or multiple active configuration directories. | Select configuration file explicitly in TUI or remove duplicate config files. |
 | `INVALID_INPUT` | *"El campo [field] debe ser texto no vacío..."* | Empty options, null characters (`\0`), out-of-range limits, or incompatible flags (e.g. `--upgrade-format` on `sync-watch`). | Check valid options with `forge614-engram help`. |
 | `PROJECT_NOT_FOUND` | *"Proyecto no encontrado en esta base."* | The `projectId` does not exist in `projects`. | Run `forge614-engram project-list` to verify project UUIDs. |
 | `VERSION_CONFLICT` | *"La versión esperada no coincide. Lee el tema antes de actualizarlo."* | The `--expected-version` does not match the active version in SQLite. | Query current version with `get` or `history` and update with the correct version. |
-| `REQUEST_CONFLICT` | *"La clave de petición ya corresponde a otro contenido."* | Reused a `--request-key` with differing content, title, or topic. | Use a fresh request key for a new revision. |
 | `ARCHIVED` | *"Restaura el recuerdo antes de actualizar su tema."* | Attempted to update a topic whose memory is in archived status. | Run `restore` on the memory before saving the new version. |
 | `NOT_FOUND` | *"Recuerdo no encontrado en el alcance seleccionado."* | Memory UUID does not exist or does not belong to the selected scope. | Verify scope and verify UUID accuracy. |
 | `CONFIG_BUSY` | *"Otra configuración está en curso. No se reemplazó el archivo."* | Lockfile `~/.forge614/.config-lock` is held by another process running `setup` or `tui`. | Wait for completion or remove `.config-lock` if orphaned by an abrupt termination. |
@@ -78,20 +81,20 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 
 ---
 
-### 2. Peer Device Coordination on PostgreSQL Format 2 Promotion
-- **Symptom:** After executing `sync --upgrade-format` on computer A, computer B reports `SYNC_CONFLICT` when running `sync`.
-- **Root Cause:** The PostgreSQL replica was promoted to **Format 2** (including sessions and summaries), but computer B's local SQLite database is still on Schema 3, 4, or 5.
+### 2. Peer Device Coordination on PostgreSQL Format 3 Promotion (`REINFORCEMENT_REQUIRED` and `SYNC_UPGRADE_REQUIRED`)
+- **Symptom:** After executing `sync --upgrade-format` on computer A, computer B reports `REINFORCEMENT_REQUIRED` or `SYNC_UPGRADE_REQUIRED` when running `sync`.
+- **Root Cause:** The PostgreSQL replica was promoted to **Format 3** (including confirmations and request replay records), but computer B's local SQLite database has not yet been upgraded to Schema 7.
 - **Recovery Procedure:**
   1. Update Forge614 Engram on computer B (`bash scripts/install.sh --force`).
-  2. Enable Schema 6 locally on computer B:
+  2. Enable Schema 7 locally on computer B:
      ```bash
-     forge614-engram sessions-enable
+     forge614-engram reinforcement-enable
      ```
   3. Execute standard synchronization:
      ```bash
      forge614-engram sync
      ```
-  Both machines now sync cleanly under Format 2.
+  Both machines now sync cleanly under Format 3.
 
 ---
 
@@ -99,37 +102,29 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 - **Symptom:** When asking an assistant to save a technical decision, `memory_save` fails with `AMBIGUOUS_SESSION: indica sessionId (ses-a, ses-b)`.
 - **Root Cause:** Multiple runtime work sessions were started in the same folder within the last 7 days and remain unclosed.
 - **Recovery Procedure:**
-  - Option A: Instruct the assistant explicitly: *"Save this decision associating it with session ses-a"*.
-  - Option B: Close finished sessions from terminal:
-    ```bash
-    forge614-engram session-end --project-id <UUID> --session-id "ses-b"
-    ```
-    Once only one active session remains, subsequent notes are auto-inferred.
+  - Option A: Tell the assistant explicitly: *"Save this memory associating it with session ses-a"*.
+  - Option B: Conclude obsolete open sessions from your terminal:
+     ```bash
+     forge614-engram session-end --project-id <UUID> --session-id "ses-b"
+     ```
+     Once only one runtime session remains open, subsequent saves auto-bind via contextual inference.
 
 ---
 
-### 4. Resolving `MIGRATION_REQUIRED` for Sessions or MCP Tools
-- **Symptom:** Running `forge614-engram session-start` or calling `memory_context` fails with `Habilita primero las sesiones.`
-- **Root Cause:** Central database `~/.forge614/engram.db` was created under a prior schema (3, 4, or 5). Everyday operations never alter schemas without explicit authorization.
+### 4. System Clock Skew on Confirmations (`CLOCK_SKEW`)
+- **Symptom:** Running `save` or calling `memory_save` halts with error code `CLOCK_SKEW`.
+- **Root Cause:** The computer's local clock is earlier than the timestamp recorded on the confirmed memory version. This occurs when a machine loses time sync or the system clock is manually set backward.
 - **Recovery Procedure:**
-  Run the official enablement command:
-  ```bash
-  forge614-engram sessions-enable
-  ```
-  The database updates additively to Schema 6 in milliseconds, preserving all memories and past history intact.
+  1. Synchronize system time using Network Time Protocol (NTP):
+     - On macOS: Open *System Settings* $\rightarrow$ *General* $\rightarrow$ *Date & Time* and toggle "Set time and date automatically".
+     - On Linux: Run `sudo timedatectl set-ntp true` or `sudo ntpdate pool.ntp.org`.
+  2. Re-run the save operation; it will succeed now that causal temporal progression is restored.
 
 ---
 
-### 5. Resolving Deep Import Errors (`Cannot find module './store'`)
-- **Symptom:** External scripts, extensions, or test suites fail to compile with errors like `Cannot find module './store'` or `Cannot find module './domain'`.
-- **Root Cause:** In the feature-oriented modular monolith refactoring (Release 10), flat root files in `src/` (`src/domain.ts`, `src/store.ts`, `src/sessions.ts`, etc.) were removed and reorganized into `app/`, `modules/`, `infrastructure/`, and `interfaces/`. Deep internal paths are not public APIs.
+### 5. Payload Conflict on Idempotent Request Retries (`REQUEST_CONFLICT`)
+- **Symptom:** Memory save halts with error code `REQUEST_CONFLICT`.
+- **Root Cause:** The client or assistant reused an existing `--request-key` while sending modified title, content, scope, or type. Engram preserves transactional immutability by forbidding payload modifications under the same idempotency key.
 - **Recovery Procedure:**
-  Update your import statements to consume strictly from the root SDK entry point (`src/index.ts` or `@forge614/engram`):
-  ```typescript
-  // Before (Deprecated internal path, now removed):
-  // import { MemoryStore } from "./src/store";
-
-  // Now (Official stable public entry point):
-  import { MemoryStore, MemoryWorkspace, MemoryError } from "./src/index";
-  ```
-  The compatible `MemoryStore` facade in `src/index.ts` maintains 100% of historical methods and signatures.
+  - If intending to modify the memory content, use a fresh, unique request key (e.g., `--request-key "req-task-02"`).
+  - If intending to retry an interrupted operation without changes, verify that the parameters and content match the original request exactly.
