@@ -3,18 +3,29 @@ import { projectIdentity } from "./identity";
 import { version } from "../package.json";
 import { setupTerminal } from "./setup-terminal";
 import { syncWorkspace, watchSync } from "./sync-runner";
+import { bindProjectContext } from "./project-context";
+import { startMcp } from "./mcp";
+import { detectAssistants, isClientId } from "./assistants/catalog";
+import { runMemoryHook } from "./assistants/hooks";
+import { assistantTui } from "./assistant-tui";
 
 const HELP = `Forge614 Engram — una base, recuerdos por proyecto y compartidos
 
 Uso: forge614-engram <comando> [opciones]
 
 setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
+tui             Asistentes: flechas, Espacio, vista previa y confirmación explícita.
 init            Inicializa una sola configuración y base local, sin borrar datos.
 sync            Sincroniza todo el espacio local con PostgreSQL configurado.
 sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
+integration-enable  Habilita explícitamente MCP y asociaciones locales (esquema 5).
+mcp             Inicia el servidor MCP local por stdio; no migra la base.
+assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
+memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
+project-bind    --directory <carpeta> --project-id <UUID>
 
 Recuerdos: --project-id <UUID> (scope project por defecto) O --scope shared.
 save     --title <título> --content <texto> [--type fact|decision|procedure|warning|preference]
@@ -47,14 +58,16 @@ Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
 Actualizar un tema requiere --expected-version. Archivar conserva el historial.
-setup muestra texto y requiere terminal; cancelar devuelve código 130.
-Los demás resultados son JSON; errores a stderr y código de salida 1, sin conexiones privadas.
-save es manual/programático; la integración memory_save con asistentes está pendiente.
+setup y tui muestran texto y requieren terminal; cancelar devuelve código 130.
+Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
+MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
+La resolución de directorios de proyecto requiere Git disponible, incluso para carpetas sin Git.
 `;
 
 const MEMORY_OPTIONS = ["project-id", "scope"];
 const OPTIONS: Record<string, readonly string[]> = {
-  setup: [], init: [], sync: [], "sync-watch": ["interval"], "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"],
+  setup: [], tui: [], init: [], sync: [], "sync-watch": ["interval"], "integration-enable": [], mcp: [], "assistant-list": [], "memory-hook": ["client"],
+  "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id"],
   save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned"],
   search: [...MEMORY_OPTIONS,"query","limit"],
   get: [...MEMORY_OPTIONS,"id"], history: [...MEMORY_OPTIONS,"id"],
@@ -89,9 +102,25 @@ async function main(args: string[]): Promise<void> {
   }
   const need = (key: string): string => values.get(key) ?? invalid(`Falta --${key}.`);
   if (command === "setup") { await setupTerminal(); return; }
+  if (command === "tui") { const result=await assistantTui();if(result.cancelled)process.exitCode=130;return; }
   if (command === "sync") {console.log(JSON.stringify(await syncWorkspace(),null,2));return;}
   if (command === "sync-watch") {await watchSync(values.has("interval")?integer(need("interval"),"interval",3600):30);return;}
+  if (command === "mcp") { await startMcp(); return; }
+  if (command === "assistant-list") {console.log(JSON.stringify(detectAssistants({engramExecutable:process.execPath}),null,2));return;}
+  if (command === "memory-hook") {const client=need("client");if(!isClientId(client))invalid("Asistente desconocido.");await runMemoryHook(client);return;}
   const workspace = new MemoryWorkspace();
+  if (command === "integration-enable") {
+    workspace.init(); const store = workspace.open();
+    try { store.enableAssistantIntegration(); }
+    finally { store.close(); }
+    console.log(JSON.stringify({ enabled:true,schema:5 },null,2)); return;
+  }
+  if (command === "project-bind") {
+    const store = workspace.open();
+    try { console.log(JSON.stringify(bindProjectContext(store,need("directory"),projectIdentity(need("project-id"))),null,2)); }
+    finally { store.close(); }
+    return;
+  }
   if (command === "init" || command.startsWith("project-")) {
     let result: unknown;
     switch (command) {

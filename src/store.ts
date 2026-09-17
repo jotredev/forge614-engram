@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { MemoryError, memoryTypes, type Memory, type MemoryVersion, type SaveInput, type SearchResult, type Project, type SearchScope } from "./domain";
-import { initialize, enableSynchronization } from "./schema";
+import { initialize, enableAssistantIntegration, enableSynchronization } from "./schema";
 import { exportSnapshot, applySnapshot, checkpoint } from "./sync-local";
 import type { SyncSnapshot } from "./sync-snapshot";
 import { defaultDatabasePath } from "./paths";
@@ -67,6 +67,73 @@ export class MemoryStore {
       this.db.query("UPDATE projects SET name=?,updatedAt=? WHERE projectId=?")
         .run(displayName,new Date().toISOString(),identity);
       return this.getProject(identity)!;
+    }).immediate();
+  }
+
+  private requireAssistantIntegration(): void {
+    const version = (this.db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
+    if (version !== 5) {
+      throw new MemoryError("MIGRATION_REQUIRED", "Habilita primero la integración de asistentes con integration-enable.");
+    }
+  }
+
+  projectForDirectory(directory: string): Project | null {
+    this.requireAssistantIntegration();
+    const path = required(directory,"directory");
+    return this.db.query(`SELECT p.* FROM project_bindings b JOIN projects p ON p.projectId=b.projectId
+      WHERE b.directory=?`).get(path) as Project | null;
+  }
+
+  bindProjectDirectory(directory: string, projectId: string): Project {
+    this.requireAssistantIntegration();
+    const path = required(directory,"directory"); const identity = projectIdentity(projectId);
+    return this.db.transaction(() => {
+      const project = this.getProject(identity);
+      if (!project) throw new MemoryError("PROJECT_NOT_FOUND","Proyecto no encontrado en esta base.");
+      const bound = this.projectForDirectory(path);
+      if (bound && bound.projectId !== identity) {
+        throw new MemoryError("PROJECT_BINDING_CONFLICT","La carpeta ya está vinculada a otro proyecto.");
+      }
+      if (!bound) this.db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)")
+        .run(path,identity,new Date().toISOString());
+      return project;
+    }).immediate();
+  }
+
+  resolveProjectDirectory(directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } {
+    this.requireAssistantIntegration();
+    const path = required(directory,"directory"); const displayName = required(name,"name");
+    const operation = () => {
+      const bound = this.projectForDirectory(path);
+      if (bound || !create) return { project: bound, created: false };
+      const collision = this.db.query("SELECT projectId FROM projects WHERE name=? LIMIT 1").get(displayName);
+      if (collision) {
+        throw new MemoryError("PROJECT_BINDING_REQUIRED","Existe un proyecto con el mismo nombre; se requiere vinculación explícita.");
+      }
+      if (bindingAvailable) {
+        const bindings=this.db.query("SELECT projectId,directory FROM project_bindings").all() as {projectId:string;directory:string}[];
+        const available=new Map<string,boolean>();
+        for(const binding of bindings){
+          let exists=false;try{exists=bindingAvailable(binding.directory);}catch{/* Unavailable is ambiguous. */}
+          available.set(binding.projectId,(available.get(binding.projectId)??false)||exists);
+        }
+        if([...available.values()].some(exists=>!exists)) {
+          throw new MemoryError("PROJECT_BINDING_REQUIRED","Hay proyectos cuyas carpetas registradas no están disponibles; se requiere vinculación explícita con project-bind.");
+        }
+      }
+      const project = this.createProject(displayName);
+      this.db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)")
+        .run(path,project.projectId,new Date().toISOString());
+      return { project, created: true };
+    };
+    return create ? this.db.transaction(operation).immediate() : operation();
+  }
+
+  saveForProjectDirectory(directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean): MemoryVersion {
+    this.requireAssistantIntegration();
+    return this.db.transaction(() => {
+      const context = this.resolveProjectDirectory(directory,name,true,bindingAvailable);
+      return this.save({ ...input, scope:"project", projectId:context.project!.projectId });
     }).immediate();
   }
 
@@ -198,6 +265,7 @@ export class MemoryStore {
   }
 
   enableSync(): void { enableSynchronization(this.db); }
+  enableAssistantIntegration(): void { enableAssistantIntegration(this.db); }
   syncSnapshot(): SyncSnapshot { return exportSnapshot(this.db); }
   syncCheckpoint(replica: string): SyncSnapshot { return checkpoint(this.db,replica); }
   applySync(expected: SyncSnapshot, next: SyncSnapshot, replica: string): void { applySnapshot(this.db,expected,next,replica); }

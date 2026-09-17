@@ -1,14 +1,11 @@
 # 02 (EN). Guided System Walkthrough
 
-> **Stage:** Local Memory & Optional PostgreSQL Synchronization
-> **Release Versions:** Program 0.4.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync)
-> **Status:** Current & Active (Verified with 90 tests on macOS with Bun 1.3.8)
+> **Stage:** Local MCP, Assistant TUI Menu, Local Memory & Optional PostgreSQL Synchronization
+> **Release Versions:** Program 0.5.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings)
+> **Status:** Current & Active (Verified with 191 tests on macOS with Bun 1.3.8)
 > **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
-This practical walkthrough guides you step-by-step through the complete lifecycle of Forge614 Engram: from setting up global storage interactively with `setup` (with or without optional PostgreSQL sync) and registering projects, to recording project and shared memories, executing combined searches, leveraging topic overrides, synchronizing replicas via `sync` and `sync-watch`, auditing immutable version histories, and managing reversible archival.
-
-> [!NOTE]
-> All examples use the compiled binary `forge614-engram`. When developing directly in the source repository with Bun, replace `forge614-engram` with `bun run cli`.
+This practical walkthrough guides you step-by-step through the complete lifecycle of Forge614 Engram: from setting up global storage interactively with `setup`, configuring developer coding assistants using the terminal UI menu `tui`, interacting via the native stdio Model Context Protocol (MCP) server with Git-based canonical project resolution, to performing explainable searches, managing topic overrides, and synchronizing replicas with PostgreSQL.
 
 ---
 
@@ -20,9 +17,8 @@ Within that database, projects are formally registered with two attributes:
 1. **`projectId` (Immutable Unique Identifier):** An automatically generated lowercase UUIDv4 (e.g. `7c9e6679-7425-40de-944b-e07fc1f90ae7`). It permanently links all memories to that project.
 2. **`name` (Cosmetic Display Name):** A human-readable label (e.g. `"Online Store"`). Renaming with `project-rename` never changes the `projectId` or affects stored memories.
 
-<callout icon="⚠️" color="yellow_bg">
-**Logical isolation, not multi-tenant authorization:** Isolation by `projectId` organizes your data so one project never reads private notes belonging to another. However, it is not a multi-user operating system boundary. Any program running under your local user account can access the storage. **Never store plain-text passwords, private API secrets, or access tokens in memories.**
-</callout>
+> [!WARNING]
+> **Logical isolation, not multi-tenant authorization:** Isolation by `projectId` organizes your data so one project never reads private notes belonging to another. However, it is not a multi-user operating system boundary. Any program running under your local user account can access the storage. **Never store plain-text passwords, private API secrets, or access tokens in memories.**
 
 ---
 
@@ -47,338 +43,192 @@ A shared memory is stored **once in the central database**; it is never duplicat
 
 ### Step 1: Initialize Global Storage (`setup` or `init`)
 
-For human users in the terminal, the interactive `setup` wizard explains storage paths, offers optional PostgreSQL replica sync, and requests confirmation before modifying disk:
+To configure your central storage interactively:
 
 ```bash
 forge614-engram setup
 ```
 
 **Interactive terminal walkthrough:**
-```text
-Forge614 Engram — configuración guiada
-Escribe cancelar o q, o pulsa Ctrl+C, para salir antes de confirmar.
-Una configuración global: "/Users/usuario/.forge614/.env"
-Una base SQLite para todos los proyectos: "/Users/usuario/.forge614/engram.db"
-SQLite y FTS5 siempre guardan y buscan en este equipo, incluso sin conexión. PostgreSQL permite sincronizar una copia; no reemplaza SQLite.
-Se preparará el espacio global al confirmar. Una base existente solo se reutilizará si es compatible; nunca se borrará ni reemplazará.
-¿Quieres habilitar la sincronización con una base de datos PostgreSQL?
-No
-Sí, configurar PostgreSQL
-Elige [si/NO]: si
-URL PostgreSQL (entrada oculta): [oculto]
-Se sincronizará el espacio completo: todos los proyectos, recuerdos shared e historial. Usa una base PostgreSQL dedicada, vacía o ya compatible. Los equipos con acceso a esa base podrán recibir estos datos. No se transmite nada antes de confirmar.
-Resumen: configurar el almacenamiento global SQLite. No se crearán ni seleccionarán proyectos y no se borrarán datos.
-¿Confirmar? [si/NO]: si
-Configuración global lista. No necesitas elegir un proyecto para configurar Engram.
-Ejecuta forge614-engram sync para sincronizar ahora, o forge614-engram sync-watch para reintentar automáticamente mientras esté abierto. No se instaló un servicio permanente.
-La identificación de proyectos y el guardado automático con asistentes siguen pendientes de integración.
-```
-
-- If you select `No` (pressing Enter directly), the system operates in purely local mode with `.env` format version 2 and SQLite schema version 3.
-- If you select `Sí, configurar PostgreSQL`, the URL is entered via masked input (`[oculto]`), the `forge614_sync` schema is initialized on PostgreSQL, and SQLite is upgraded to schema version 4 with the additive `sync_checkpoints` table.
-- Canceling at any prompt with `no`, `cancelar`, `q`, or `Ctrl+C` exits with **code 130** without writing changes to disk.
-- For automation scripts without an interactive terminal, use silent `init`:
-  ```bash
-  forge614-engram init
-  # JSON output: {"initialized":true,"storage":"sqlite"}
-  ```
+1. Explains central file locations: `~/.forge614/.env` and `~/.forge614/engram.db`.
+2. Prompts whether to enable PostgreSQL synchronization:
+   - Option 1: `No` (default, purely local mode).
+   - Option 2: `Sí, configurar PostgreSQL` (prompts for masked connection URL and explains full workspace replication).
+3. Displays a plan summary and asks for confirmation (`Sí, aplicar cambios` or `Cancelar y salir`).
+4. On confirmation, sets directory permissions `0700`, writes `.env` in `0600`, and initializes `engram.db`.
+5. Exiting with `Ctrl+C` or `q` exits with **code 130** without touching disk.
 
 ---
 
-### Step 2: Register a Project (`project-create`)
+### Step 2: Interactive Assistant Configuration Menu (`tui`)
 
-Register your project with a descriptive name:
+To configure your coding assistants (Claude Code, Codex, Cursor, OpenCode, and Gemini CLI) without manually editing JSON or TOML files, open the interactive terminal menu:
 
 ```bash
-forge614-engram project-create --name "Online Store"
+forge614-engram tui
 ```
 
-**JSON Output:**
-```json
-{
-  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-  "name": "Online Store",
-  "createdAt": "2026-09-16T20:10:00.000Z",
-  "updatedAt": "2026-09-16T20:10:00.000Z"
-}
-```
+> [!NOTE]
+> `tui` requires a real interactive terminal (`TTY` with raw mode support). When invoked in a non-interactive environment (such as a pipe or automated script), it immediately fails with `INTERACTIVE_REQUIRED`. For scriptable inspection, use the read-only command `assistant-list`.
 
-*(Keep the returned `projectId` handy for all commands relating to this project).*
+#### Keyboard Controls:
+- **Up / Down Arrows (`↑` / `↓`):** Move cursor through the menu and assistant list.
+- **Spacebar (`Space`):** Select or deselect assistants for configuration.
+- **`r` key or "Redetectar":** Rescans system PATH and default directories to update detected binary and configuration states.
+- **`c` key or "Personalizar":** Prompts for custom executable paths and configuration directories via masked inputs (do not paste secrets).
+- **`t` key or "Probar servidor propio (opcional)":** Triggers an **asynchronous self-test** of Engram's installed MCP server:
+  - Spawns the installed executable (`forge614-engram`) via the official MCP SDK over stdio.
+  - Verifies that the server identifies as `forge614-engram` and registers the 5 expected tools (`memory_current_project`, `memory_search`, `memory_get`, `memory_save`, `memory_history`).
+  - Governed by a strict **5-second deadline**. If timed out, reports `TIMED_OUT` and forcibly reaps the child process with a 250 ms grace period.
+  - Pressing `Escape` during the test cancels only the self-test and preserves user assistant selections.
+  - **Important:** The self-test tests only Engram's own installed binary; **it never tests live client sessions nor executes commands extracted from client configurations**. Client sessions remain untested until verified inside each client application.
+- **`Enter` key:**
+  - On the client list with selected assistants: plans configuration and opens the **Preview Screen**.
+  - On the preview screen: opens the **Confirmation Screen**.
+  - On the confirmation screen: runs preflight checks on all plans, enables Schema 5 in SQLite, and applies configurations.
+- **`Escape` key:** Steps back to the previous screen (`Confirm` $\rightarrow$ `Preview` $\rightarrow$ `Client List` $\rightarrow$ `Menu` $\rightarrow$ `Exit`).
+- **`Ctrl+C`:** Cancels the session immediately, terminates any spawned child process, restores terminal state, and returns exit code **130**.
+- **`PgUp` / `PgDn` and Arrows in Preview:** Scroll warnings, coverage details, and policy notices in compact viewports.
 
-You can list all registered projects at any time:
-```bash
-forge614-engram project-list
-```
+#### Safety Guarantees During Configuration:
+1. **Zero-write preview:** Selecting assistants and previewing never modifies files on disk.
+2. **Preflight verification:** Rejects unsafe symlinks, validates directory permissions, and checks file sizes.
+3. **Private backups:** Before modifying an existing configuration, creates an exact byte-for-byte backup in mode `0600` with a UUID suffix (e.g., `settings.json.019183ab-....bak`).
+4. **Comment preservation:** Uses tolerant parsers (JSONC and TOML) to preserve comments and foreign entries.
+5. **Post-publication byte verification:** After publishing, Engram re-reads the file and validates exact planned bytes. If modified concurrently by another process, reports `PUBLISHED_UNVERIFIED`, retains backups, and avoids destructive rollback.
+6. **Partial failure reporting:** If one assistant fails in a multi-client batch, Engram reports applied files, unverified paths, retained backups, and specific errors without undoing successful clients.
 
 ---
 
-### Step 3: Store Project Memories (`save --project-id`)
+### Step 3: Assistant Interaction via MCP
 
-You can store memories within a project in two ways:
-
-#### A. Standalone memory (without a topic)
-For general notes that do not require version evolution:
-```bash
-forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Kickoff Meeting" --content "Client requested bi-weekly milestone deliveries" --type fact
-```
-
-#### B. Topic-managed memory (with revision control & idempotency)
-For architectural decisions that evolve over time, assign a topic (`--topic`) and request key (`--request-key`):
-```bash
-forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Database Engine" --content "We will use SQLite locally" --type decision --topic architecture/database --request-key req-db-v1
-```
-
-**JSON Output:**
-```json
-{
-  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
-  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-  "scope": "project",
-  "topicKey": "architecture/database",
-  "type": "decision",
-  "title": "Database Engine",
-  "content": "We will use SQLite locally",
-  "pinned": false,
-  "version": 1,
-  "state": "active",
-  "createdAt": "2026-09-16T20:11:00.000Z",
-  "updatedAt": "2026-09-16T20:11:00.000Z"
-}
-```
-
----
-
-### Step 4: Store a Shared Universal Preference (`save --scope shared`)
-
-Store a universal preference to guide assistants across all your projects:
+Once an assistant is configured (e.g. Claude Code or Codex), it launches Engram's MCP server over stdio:
 
 ```bash
-forge614-engram save --scope shared --title "Language Preference" --content "I prefer technical explanations in English" --type preference --topic preferences/language
+forge614-engram mcp
 ```
-
-**JSON Output:**
-```json
-{
-  "id": "e2f1c0d9-b8a7-4655-9012-3456789abcde",
-  "projectId": null,
-  "scope": "shared",
-  "topicKey": "preferences/language",
-  "type": "preference",
-  "title": "Language Preference",
-  "content": "I prefer technical explanations in English",
-  "pinned": false,
-  "version": 1,
-  "state": "active",
-  "createdAt": "2026-09-16T20:12:00.000Z",
-  "updatedAt": "2026-09-16T20:12:00.000Z"
-}
-```
-
----
-
-### Step 5: Combined Search from a Project
-
-When searching from a project (`search --project-id <UUID>`), the system **defaults to combined scope (`--scope all`)**:
-
-```bash
-forge614-engram search --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --query "English"
-```
-
-**JSON Output:**
-```json
-[
-  {
-    "memory": {
-      "id": "e2f1c0d9-b8a7-4655-9012-3456789abcde",
-      "projectId": null,
-      "scope": "shared",
-      "topicKey": "preferences/language",
-      "type": "preference",
-      "title": "Language Preference",
-      "content": "I prefer technical explanations in English",
-      "pinned": false,
-      "version": 1,
-      "state": "active",
-      "createdAt": "2026-09-16T20:12:00.000Z",
-      "updatedAt": "2026-09-16T20:12:00.000Z"
-    },
-    "explanation": {
-      "mode": "fts5",
-      "bm25": -0.000001,
-      "multiplier": 1.059999,
-      "orderScore": -0.000001059999
-    }
-  }
-]
-```
-
-The combined search seamlessly retrieved the universal shared preference. Crucially, **it will never return private memories belonging to other projects**.
-
-To restrict results exclusively to this project's private notes, specify `--scope project`:
-```bash
-forge614-engram search --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --scope project --query "SQLite"
-```
-
----
-
-## 4. The Topic Exception Rule (*Topic Override*)
-
-What happens if you have a company-wide guideline, but one specific project requires an exception?
-
-### Practical Verifiable Scenario:
-1. **Universal Shared Policy:**
-   Record a shared preference under topic `runtime`:
-   ```bash
-   forge614-engram save --scope shared --title "Execution Runtime" --content "Bun as default runtime" --type preference --topic runtime
-   ```
-2. **Project-Specific Exception:**
-   In our `Online Store` project, we require Node.js for dependency compatibility. We save a note with the **exact same topic** (`runtime`):
-   ```bash
-   forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Execution Runtime" --content "Node.js for project compatibility" --type decision --topic runtime
-   ```
-3. **Project Combined Search:**
-   Query runtime information from the project:
-   ```bash
-   forge614-engram search --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --query "runtime"
-   ```
-   **Result:** Only the project's exception (*"Node.js..."*) is returned. The shared policy (*"Bun..."*) is **automatically suppressed**.
-4. **Shared Rule Preservation:**
-   The shared memory is **neither deleted nor modified**. Other projects continue receiving it normally, and you can inspect it directly using:
-   ```bash
-   forge614-engram search --scope shared --query "Bun"
-   ```
-5. **Reversible Suppression:**
-   If you archive the project's exception:
-   ```bash
-   forge614-engram archive --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --id <project-exception-id>
-   ```
-   When querying from the project again, the shared rule (`Bun`) **automatically resurfaces**. Restoring the exception (`restore`) reinstates the project's priority.
 
 > [!IMPORTANT]
-> Topic matching (`topicKey`) is exact and case-sensitive. It relies on deterministic SQL query filtering rather than opaque AI weights.
+> The `mcp` server communicates via standard input/output (`stdio`) JSON-RPC. It reserves `stdout` exclusively for protocol messages, never emitting ANSI escapes or human logs.
+
+#### The 5 Native Tools:
+
+1. **`memory_current_project` (`directory?`):**
+   Resolves the current project context based on Git without creating a database record. Returns the bound `projectId` or indicates the folder is unbound.
+2. **`memory_search` (`query`, `directory?`, `limit?`, `scope?`):**
+   Executes explainable search across active memories. Read-only and never creates projects. Defaults to searching project and shared memories (`all`).
+3. **`memory_get` (`id`, `directory?`, `scope?`):**
+   Retrieves a memory by its UUID after verifying ownership in the active project or shared scope.
+4. **`memory_save` (`title`, `content`, `type`, `directory?`, `scope?`, `globalIntent?`, `topicKey?`, `pinned?`, `expectedVersion?`, `requestKey?`):**
+   Saves or updates durable knowledge.
+   - **Project scope by default:** When `scope` is omitted, defaults to `project`.
+   - **Atomic project creation:** When saving the first memory in an unbound Git repository, Engram atomically creates the project record, registers the local folder binding in `project_bindings`, and saves the memory within a single database transaction.
+   - **Explicit shared scope:** Saving with `scope: "shared"` **strictly requires explaining user intent in `globalIntent`**. Missing `globalIntent` throws `SHARED_INTENT_REQUIRED`.
+5. **`memory_history` (`id`, `directory?`, `scope?`):**
+   Audits the immutable version history of a memory across past revisions.
 
 ---
 
-## 5. Version Progression & Optimistic Concurrency Control
+### Step 4: Canonical Git Identity & Manual Binding (`project-bind`)
 
-When evolving a topic decision over time, **you must declare the version you previously read** using `--expected-version`:
+#### How does Engram resolve project identity?
+Engram runs `git rev-parse --path-format=absolute --git-common-dir` to identify the canonical repository root.
+- **Linked worktrees:** Worktrees created with `git worktree add` point to the same common `.git` directory, sharing identical project identity and memories.
+- **Subdirectories:** Running from deep nested folders resolves to the same root repository.
+- **Non-git folders:** Require an explicit `directory` parameter or a single MCP root. Engram never guesses project identity from the binary location.
+
+#### Conservative Path Ambiguity & Manual Binding (`project-bind`):
+- When moving a repository or cloning onto a new machine, the `projectId` exists in the database, but local filesystem paths are not yet recorded.
+- Before creating a new project identity for an unknown folder, Engram checks recorded bindings. If all bindings for any existing project are missing on disk, resolution conservatively halts with `PROJECT_BINDING_REQUIRED`.
+- To resolve ambiguity, link the directory explicitly:
 
 ```bash
-forge614-engram save --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --title "Database Engine" --content "We will use SQLite locally with WAL mode" --type decision --topic architecture/database --expected-version 1 --request-key req-db-v2
+# 1. List registered projects to find UUID
+forge614-engram project-list
+
+# 2. Bind local folder to existing project UUID
+forge614-engram project-bind \
+  --directory "/Users/usuario/Desktop/my-project" \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 ```
 
-**JSON Output:**
+Output:
 ```json
 {
-  "id": "5617e6cd-7072-48cc-a922-1a4b269e73be",
   "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-  "scope": "project",
-  "topicKey": "architecture/database",
-  "type": "decision",
-  "title": "Database Engine",
-  "content": "We will use SQLite locally with WAL mode",
-  "pinned": false,
-  "version": 2,
-  "state": "active",
-  "createdAt": "2026-09-16T20:11:00.000Z",
-  "updatedAt": "2026-09-16T20:20:00.000Z"
+  "directory": "/Users/usuario/Desktop/my-project",
+  "source": "binding"
 }
 ```
 
-The version advanced to `2`. If another process attempts to submit `--expected-version 1` again, the engine rejects the write with `VERSION_CONFLICT` to protect against blind overwrites.
-
 ---
 
-## 6. Audit Tree, Inspection, and Reversible Archival
+### Step 5: Native Assistant Hooks (`memory-hook`)
 
-### Inspect Version History (`history`)
-Examine the immutable historical snapshots over time:
+For compatible clients supporting hooks, Engram injects contextual reminders upon session start or prompt submission:
 
 ```bash
-forge614-engram history --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --id 5617e6cd-7072-48cc-a922-1a4b269e73be
+forge614-engram memory-hook --client codex
 ```
 
-Returns a chronologically ordered JSON array containing complete version 1 and version 2 payloads.
+- Emits client-specific native JSON context reminding models to check `memory_current_project` and `memory_search` before repeating research.
+- **Never saves memories directly.** Memory saves are performed by the model via `memory_save`.
+
+> [!IMPORTANT]
+> **Codex Trust Requirement:** In Codex, newly installed hooks must be inspected and trusted explicitly using the `/hooks` command inside Codex before they are allowed to execute.
 
 ---
 
-### Crucial Rule for Mutating Shared Memories
-<callout icon="🛑" color="red_bg">
-Discovering a shared memory in a project's combined search **DOES NOT authorize you to modify or archive it passing `--project-id`**.
-</callout>
+### Step 6: Topic Overrides and Explainable Search
 
-- To mutate, archive, or restore a project memory:
-  ```bash
-  forge614-engram archive --project-id <UUID> --id <memory-id>
-  ```
-- To mutate, archive, or restore a shared memory:
-  ```bash
-  forge614-engram archive --scope shared --id <memory-id>
-  ```
-Combining `--scope shared` with `--project-id` triggers an immediate validation error (`INVALID_INPUT`).
-
----
-
-### Renaming a Project (`project-rename`)
-If your project changes its public branding:
+When saving a universal rule alongside a project-specific exception:
 
 ```bash
-forge614-engram project-rename --project-id 7c9e6679-7425-40de-944b-e07fc1f90ae7 --name "Global Store 2026"
+# Universal rule:
+forge614-engram save \
+  --scope shared \
+  --topic "preferred-runtime" \
+  --title "General Runtime" \
+  --content "Use Bun for all new services." \
+  --type preference
+
+# Project exception:
+forge614-engram save \
+  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
+  --topic "preferred-runtime" \
+  --title "Runtime Exception" \
+  --content "Use Node.js 20 LTS due to client requirements." \
+  --type decision
 ```
 
-The display label is updated instantly. Because `projectId` remains stable, **not a single memory, version snapshot, or request key is lost**.
+Searching from the project (`--scope all` default):
+```bash
+forge614-engram search --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" --query "runtime"
+```
+Engram applies **topic override**: the project's active note overrides the shared rule with the same `topicKey`. Archiving the project exception causes the shared rule to automatically reappear in subsequent searches.
 
 ---
 
-## 7. PostgreSQL Synchronization Lifecycle (`sync` & `sync-watch`)
+### Step 7: PostgreSQL Synchronization (`sync` & `sync-watch`)
 
-If you enabled PostgreSQL replica synchronization during `setup`, you have two deterministic, safe execution modes:
+If PostgreSQL replication was configured in `setup`:
 
-### Mode 1: Single On-Demand Round (`sync`)
-When you want to explicitly push and pull changes following a work session:
-
+#### On-Demand Single Round:
 ```bash
 forge614-engram sync
 ```
-
-**Successful JSON Output:**
+Output:
 ```json
 {
   "synchronized": true,
-  "projects": 1,
-  "memories": 2
+  "projects": 3,
+  "memories": 12
 }
 ```
 
-#### What happens during `sync`?
-1. **Remote Read:** Connects to PostgreSQL and fetches the latest published head snapshot.
-2. **Local Snapshot:** Exports current local SQLite state (`projects`, `memories`, versions, requests, and events).
-3. **Base Checkpoint:** Retrieves the last agreed snapshot stored in `sync_checkpoints`.
-4. **Deterministic 3-Way Merge:** Combines changes from local and remote if they affect distinct projects or memories.
-5. **Remote Publication (CAS):** If local modifications exist, publishes the new head using atomic compare-and-swap locking (`FOR UPDATE`).
-6. **Local Atomic Apply:** If remote modifications exist, applies them within an immediate SQLite transaction, simultaneously updating FTS5 indexes via database triggers and updating the local checkpoint.
-
----
-
-### Mode 2: Foreground Continuous Watcher (`sync-watch`)
-To keep changes synchronized periodically without running manual commands:
-
+#### Foreground Continuous Sync:
 ```bash
-forge614-engram sync-watch
-# Or specify a custom interval in seconds (between 1 and 3600):
-forge614-engram sync-watch --interval 60
+forge614-engram sync-watch --interval 30
 ```
-
-#### Operational Rules for `sync-watch`:
-- **Foreground Terminal Process:** Runs directly in your console window. **It does not install background daemons**, OS services (*launchd*, *systemd*), or *cron* entries.
-- **Continuous Terminal Reporting:**
-  - Emits JSON to `stdout` on each successful round:
-    ```json
-    {"synchronized":true,"projects":1,"memories":2}
-    ```
-  - If PostgreSQL is unreachable or drops offline, logs an informational error to `stderr` and keeps waiting for the next round:
-    ```json
-    {"code":"POSTGRES_UNAVAILABLE","error":"Sincronización pendiente; los datos locales se conservan."}
-    ```
-- **Offline Resilience:** If the PostgreSQL database is powered down or you lose internet access, **local Forge614 Engram operations (`save`, `search`, `get`, `archive`) never block or fail**. All memories are saved and retrieved locally from SQLite, and will synchronize automatically during the next round once PostgreSQL recovers.
-- **Clean Termination:** Press `Ctrl+C` at any time to exit the watcher with standard exit code `130`. Any unsynchronized local changes remain safely stored in SQLite.
+- Performs an immediate round and retries every 30 seconds.
+- Runs in the foreground; exiting with `Ctrl+C` exits cleanly with code 130 while keeping local SQLite data safe.

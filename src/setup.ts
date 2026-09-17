@@ -74,7 +74,7 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     config.configurePostgres(postgresUrl,revision??config.revision());
     io.write("Configuración global lista. No necesitas elegir un proyecto para configurar Engram.");
     if(postgresUrl) io.write("Ejecuta forge614-engram sync para sincronizar ahora, o forge614-engram sync-watch para reintentar automáticamente mientras esté abierto. No se instaló un servicio permanente.");
-    io.write("La identificación de proyectos y el guardado automático con asistentes siguen pendientes de integración.");
+    io.write("Ejecuta forge614-engram tui para configurar asistentes con vista previa. MCP permite identificar proyectos y guardar recuerdos; el modelo puede omitir guardados y no se garantiza un resumen al cerrar.");
     return { cancelled: false, storage: "sqlite" };
   } catch (error) {
     if (!(error instanceof Cancelled)) throw error;

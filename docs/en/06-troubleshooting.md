@@ -1,19 +1,19 @@
 # 06 (EN). Troubleshooting and Error Diagnostics
 
-> **Stage:** Local Memory & Optional PostgreSQL Synchronization
-> **Release Versions:** Program 0.4.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync)
-> **Status:** Current & Active (Verified with 90 tests on macOS with Bun 1.3.8)
+> **Stage:** Local MCP, Assistant TUI Menu, Local Memory & Optional PostgreSQL Synchronization
+> **Release Versions:** Program 0.5.0 | Configuration Format 2 (local) / 3 (with sync) | SQLite Schema 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings)
+> **Status:** Current & Active (Verified with 191 tests on macOS with Bun 1.3.8)
 > **Sister translation:** [06. Resolución de Problemas y Catálogo de Errores](../es/06-resolucion-de-errores.md)
 
-This troubleshooting guide allows you to rapidly diagnose any error code returned by the Forge614 Engram CLI or TypeScript SDK, understand its root cause, and resolve it without risking data loss.
+This troubleshooting guide documents the comprehensive error code catalog of Forge614 Engram, including Model Context Protocol (MCP) diagnostics, the terminal UI menu (TUI), client hooks, and Git project resolution, detailing root causes and recommended recovery steps.
 
 ---
 
 ## 1. Core Safety Directive
 
 > [!IMPORTANT]
-> **Never delete your database, tables, or sync checkpoints to "fix" an error.**
-> Errors in Forge614 Engram are active safety invariants. When the system detects an unresolvable conflict, altered schema, or unsafe file permissions, it halts intentionally to **prevent silent data corruption and irrevocable history erasure**.
+> **Never delete your database, SQLite tables, or sync checkpoints to "fix" an error.**
+> Errors in Forge614 Engram are active safety invariants. When the system detects directory ambiguity, external interference in client configuration files, or synchronization conflicts, it halts intentionally to **prevent silent data corruption and accidental loss**.
 
 ---
 
@@ -21,56 +21,53 @@ This troubleshooting guide allows you to rapidly diagnose any error code returne
 
 | Error Code | Typical Error Message | Root Cause Explained | Recommended Fix |
 | :--- | :--- | :--- | :--- |
-| `INTERACTIVE_REQUIRED` | *"setup necesita una terminal interactiva..."* | `setup` was invoked from a non-interactive pipe (`\|`), redirect, or background CI environment (`isTTY` is false). | In automation scripts or CI/CD pipelines, use `forge614-engram init`. |
-| `INVALID_INPUT` | *"El campo [campo] debe ser texto no vacío..."* or *"scope shared no acepta --project-id..."* | Missing mandatory arguments, null bytes (`\0`), out-of-bounds numbers (`limit`), or incompatible flag combinations. | Review command arguments. In `shared` mode, omit `--project-id`. In `project` mode, pass a valid project UUID. |
-| `PROJECT_NOT_FOUND` | *"Proyecto no encontrado en esta base."* | The provided `projectId` does not exist in the `projects` table of `~/.forge614/engram.db`. | Run `forge614-engram project-list` to verify registered project UUIDs. |
-| `VERSION_CONFLICT` | *"La versión esperada no coincide. Lee el tema antes de actualizarlo."* | The `--expected-version` number does not match the active version currently stored in the database. | Query current version using `get` or `history` and submit the update with the exact matching version. |
+| `INTERACTIVE_REQUIRED` | *"tui necesita una terminal interactiva..."* or *"setup necesita una terminal interactiva..."* | `tui` or `setup` was invoked from a non-interactive pipe (`\|`), redirect, or headless CI environment (`isTTY` false or no raw mode). | Run the command directly inside an interactive terminal. For scriptable non-interactive audits, use `forge614-engram assistant-list`. |
+| `PROJECT_IDENTITY_UNAVAILABLE`| *"No se pudo determinar de forma segura la identidad Git del proyecto."* | Git is not installed, not in system PATH, or `git rev-parse` failed. | Install Git (`git --version`) and verify it is available in terminal PATH. |
+| `PROJECT_DIRECTORY_REQUIRED` | *"Una carpeta sin Git requiere directory explícito o una raíz MCP única."* or *"La carpeta del ejecutable no se usa..."* | An MCP tool was called in a non-git directory without an explicit path, or the binary directory was targeted as a project. | Pass the explicit `directory` parameter in the MCP call, or bind the folder beforehand with `project-bind`. |
+| `PROJECT_NOT_BOUND` | *"La carpeta todavía no está vinculada; guardar puede crearla o project-bind puede recuperarla."* | Attempted to search (`memory_search`), get (`memory_get`), or view history (`memory_history`) in an unbound directory before any save. | Save a durable note with `memory_save` (which creates the binding atomically) or bind manually using `project-bind`. |
+| `PROJECT_BINDING_REQUIRED` | *"Existe un proyecto con el mismo nombre..."* or *"Hay proyectos cuyas carpetas registradas no están disponibles..."* | Ambiguity detected: either another project shares the display name, or recorded paths in `project_bindings` are missing from disk. | List registered projects via `forge614-engram project-list` and explicitly link the folder using `forge614-engram project-bind --directory /path --project-id <UUID>`. |
+| `PROJECT_BINDING_CONFLICT` | *"La carpeta ya está vinculada a otro proyecto."* | Attempted to bind a directory path already bound to another `projectId`. | Inspect existing projects using `project-list` to verify project ownership. |
+| `AMBIGUOUS_PROJECT` | *"Varias raíces MCP requieren indicar directory explícitamente."* | The AI assistant client has multiple workspace roots open simultaneously and did not pass `directory`. | Provide an explicit `directory` parameter in the MCP tool call. |
+| `SHARED_INTENT_REQUIRED` | *"scope shared requiere explicar la intención global explícita del usuario."* | The assistant called `memory_save` with `scope: "shared"` without providing the required `globalIntent` explanation. | Provide a detailed explanation in `globalIntent` justifying why the note applies across all projects. |
+| `INSTALLATION_REQUIRED` | *"Requisito: ejecuta forge614-engram tui con el binario instalado..."* | Attempted to run the TUI self-test from source code via Bun (`bun src/cli.ts tui`) without having the compiled binary installed in `$HOME/.local/bin/`. | Build and install the official binary via `bash scripts/install.sh` and rerun the menu using the installed binary. |
+| `TIMED_OUT` | Server self-test reported as failed due to timeout. | The MCP server self-test exceeded its strict 5-second deadline for initialization, tool listing, and shutdown. | Ensure the host machine is not under extreme CPU starvation and that the binary has execution permissions (`0755`). |
+| `MCP_FAILED` | Server self-test reported as failed. | The MCP server failed to complete the protocol handshake or did not expose the 5 expected tools. | Ensure the database has Schema 5 enabled via `forge614-engram integration-enable`. |
+| `CANCELLED` | Server self-test canceled. | The user pressed `Escape` during the asynchronous self-test. | Clean cancellation; preserves user assistant selections. |
+| `PUBLISHED_UNVERIFIED` | *"Publicado sin verificar: [ruta]"* | Configuration was applied to client files, but post-publication byte verification failed due to concurrent edits by another process. | Engram retains the `.bak` backup file. Close the client editor and re-apply settings via `tui`. |
+| `AMBIGUOUS` | *"Both OpenCode JSON and JSONC configs exist..."* | In OpenCode, both `.json` and `.jsonc` files exist simultaneously, or multiple active sources exist without explicit selection. | Select the intended configuration file explicitly or remove duplicate configs in OpenCode. |
+| `UNSUPPORTED_PLATFORM` | *"Assistant configuration currently supports macOS and Linux."* | Assistant configuration was invoked on an unsupported operating system. | Use macOS or Linux for developer assistant configuration. |
+| `INVALID_INPUT` | *"El campo [campo] debe ser texto no vacío..."* | Missing mandatory options, null bytes (`\0`), out-of-bounds numbers (`limit`), or incompatible flags. | Review syntax in `forge614-engram help`. Omit `--project-id` in `shared` mode; provide UUID in `project` mode. |
+| `PROJECT_NOT_FOUND` | *"Proyecto no encontrado en esta base."* | The provided `projectId` does not exist in the `projects` table of `~/.forge614/engram.db`. | Run `forge614-engram project-list` to check registered project UUIDs. |
+| `VERSION_CONFLICT` | *"La versión esperada no coincide. Lee el tema antes de actualizarlo."* | The `--expected-version` number does not match the active version currently stored in the database. | Query current version using `get` or `history` and submit update with the matching version. |
 | `REQUEST_CONFLICT` | *"La clave de petición ya corresponde a otro contenido."* | A previously seen `--request-key` was submitted with differing title, content, or topic data. | When storing a new note or revision, use a new unique key (e.g. `--request-key req-02`) or omit the key. |
 | `ARCHIVED` | *"Restaura el recuerdo antes de actualizar su tema."* | Attempted to update a topic memory currently in an archived state. | Execute `restore` on the memory before publishing a new topic revision. |
 | `NOT_FOUND` | *"Recuerdo no encontrado en el alcance seleccionado."* | Memory ID does not exist or does not match the provided project or shared scope. | Check whether the memory is project-scoped or shared, and verify UUID formatting. |
-| `CONFIG_NOT_FOUND` | *"Configuración global inválida o inaccesible..."* | The file `~/.forge614/.env` is missing. | Run `forge614-engram init` or `forge614-engram setup` to generate global configuration. |
-| `CONFIG_INVALID` | *"Configuración global inválida o inaccesible. Comprueba su formato..."* | `.env` or parent folder has insecure permissions (`not 0600/0700`), wrong owner, or malformed syntax. | Enforce mode `0700` on `~/.forge614` and mode `0600` on `.env`. Verify that keys match format 2 or 3. |
-| `CONFIG_BUSY` | *"Otra configuración está en curso. No se reemplazó el archivo."* | Lock file `~/.forge614/.config-lock` is held by another running `setup` process. | Wait for the other process to finish. If left behind by a crash, verify no processes are running, then remove lock. |
-| `CONFIG_CHANGED` | *"La configuración cambió mientras respondías. Vuelve a ejecutar setup."* | The `.env` file was modified or had its hash altered while answering `setup` prompts. | Rerun `forge614-engram setup` to configure against current configuration state. |
-| `LEGACY_CONFIG` | *"Se detectó configuración antigua por proyecto..."* | A legacy `projects/` folder from deprecated designs was found in `~/.forge614/`. | Back up and manually remove that folder. The engine will not silently delete it. |
-| `MIGRATION_REQUIRED` | *"Formato anterior detectado..."* or *"No se puede habilitar sincronización en este formato."* | SQLite database is in version 1 or 2, or sync was attempted on an incompatible database. | Keep your file intact. Schema 3 is required for local operation; schema 4 is required for sync. |
-| `DATABASE_MISSING` | *"Falta la base configurada. No se creó un reemplazo..."* | `.env` is present, but `engram.db` is missing from disk. | The engine refuses to generate an empty replacement to prevent silent data loss. Restore `engram.db` from backup. |
-| `DATABASE_PATH_UNSAFE` | *"La base o un archivo auxiliar tiene un enlace, propietario o tipo no permitido..."* | Database or auxiliary WAL/SHM files are symlinks, hard links, or owned by another user. | Ensure all database files are regular files owned by your operating system user account. |
-| `DATABASE_SCHEMA` | *"La estructura no es compatible. No se modificó ni reparó la base."* | SQLite tables, triggers, or indexes do not match canonical schema definitions. | The engine rejects altered databases without attempting unsafe repairs. Use a genuine Forge614 database. |
-| `DATABASE_VERSION` | *"Base incompatible: no se puede abrir con esta versión."* | Database `user_version` is newer than or incompatible with this binary. | Update your `forge614-engram` binary to the latest repository release. |
-| `DATABASE_OWNER` | *"La base contiene una estructura ajena; usa una base vacía y dedicada."* | SQLite file contains tables from an unrelated third-party software application. | Provide a clean, dedicated database for Forge614 Engram. |
-| `DATABASE_UNINITIALIZED`| *"La base no está inicializada. Conectar no crea tablas."* | Opened database in read-only mode prior to initializing schema. | Run `forge614-engram init` or confirm in `setup` to initialize tables. |
+| `CONFIG_BUSY` | *"Otra configuración está en curso. No se reemplazó el archivo."* | Lock file `~/.forge614/.config-lock` is held by another running `setup` or `tui` process. | Wait for the other process to finish. If left behind by a crash, remove `.config-lock` manually. |
 | `SYNC_DISABLED` | *"Sincronización PostgreSQL desactivada. Ejecuta setup para configurarla."* | `sync` or `sync-watch` was executed but `.env` lacks `POSTGRES_URL` (format 2). | Run `forge614-engram setup` and select `Sí, configurar PostgreSQL` to enable sync. |
-| `SYNC_CONFLICT` | *"SYNC_CONFLICT: sincronización detenida; se conservan los datos locales y remotos."* | Incompatible concurrent edits on the same entity across replicas, or a missing historical record. | The round is halted to protect data. **No automatic resolution exists in this version**. Do not delete tables or checkpoints. |
-| `SYNC_LOCAL_CHANGED` | *"SYNC_LOCAL_CHANGED: sincronización detenida; se conservan los datos..."* | Local writes occurred in SQLite while waiting for remote network I/O. | Retry with `forge614-engram sync` or keep `sync-watch` running. |
-| `SYNC_REMOTE_CHANGED` | *"SYNC_REMOTE_CHANGED: sincronización detenida; se conservan los datos..."* | Another replica advanced the PostgreSQL head revision between read and publish (CAS mismatch). | Retry via `forge614-engram sync`. The new round will pull remote changes and re-reconcile. |
-| `SYNC_INVALID` | *"SYNC_INVALID: sincronización detenida; se conservan los datos..."* | Snapshot payload or its SHA-256 hash failed canonical integrity verification. | Check that external tools have not directly mutated the `forge614_sync` tables in PostgreSQL. |
-| `SYNC_TOO_LARGE` | *"SYNC_TOO_LARGE: sincronización detenida; se conservan los datos..."* | Workspace snapshot exceeds the strict 8 MiB (8,388,608 bytes) safety boundary. | Storage exceeds current full-snapshot capacity. Archive obsolete records or await future incremental protocol versions. |
-| `POSTGRES_URL` | *"POSTGRES_URL: conexión inválida. Usa una URL PostgreSQL completa; TLS verificado es obligatorio..."* | Invalid URL protocol, missing database/user, illegal control characters, or `sslmode=disable` outside loopback. | Use `postgres://user:password@host:5432/dbname`. For remote hosts, verified TLS is mandatory; `sslmode=disable` is only allowed on `127.0.0.1` or `localhost`. |
-| `POSTGRES_UNAVAILABLE` | *"PostgreSQL no disponible o sin permisos. Los datos locales se conservan; comprueba conexión..."* | PostgreSQL server is down, unreachable network, bad credentials, or connection timeout. | Local SQLite operations remain 100% operational. Verify network connection and host settings without leaking secrets. |
-| `POSTGRES_UNINITIALIZED`| *"POSTGRES_UNINITIALIZED: sincronización detenida; se conservan los datos..."* | Schema `forge614_sync` does not exist in PostgreSQL and `sync` was called without running `setup`. | Run `forge614-engram setup` to create the schema and initial state in PostgreSQL. |
-| `POSTGRES_SCHEMA` | *"POSTGRES_SCHEMA: sincronización detenida; se conservan los datos..."* | PostgreSQL `revisions` or `state` tables are altered, incomplete, or contain foreign triggers/rules. | Use a dedicated or canonical PostgreSQL database. Do not manually alter the `forge614_sync` schema. |
-| `STORAGE_ERROR` | *"No se pudo completar la operación. Comprueba permisos..."* | General OS I/O failure (disk full, hardware fault, filesystem lock). | Check available disk space and operating system filesystem permissions. |
+| `SYNC_CONFLICT` | *"SYNC_CONFLICT: sincronización detenida; se conservan los datos locales y remotos."* | Incompatible concurrent edits on the same entity across replicas. | The round is halted to protect data. No automatic resolution exists in this version; do not delete tables. |
+| `SYNC_TOO_LARGE` | *"SYNC_TOO_LARGE: sincronización detenida; se conservan los datos..."* | Workspace snapshot exceeds the strict 8 MiB (`8,388,608 bytes`) safety boundary. | Archive obsolete records or partition your workspace. |
+| `POSTGRES_URL` | *"POSTGRES_URL: conexión inválida..."* | Invalid URL protocol or attempting `sslmode=disable` outside `127.0.0.1`/`localhost`. | Verified TLS is mandatory on remote connections. |
+| `POSTGRES_UNAVAILABLE` | *"PostgreSQL no disponible o sin permisos..."* | PostgreSQL server is unreachable or credentials are invalid. | Local SQLite operations remain 100% functional. Check network connectivity and credentials. |
 
 ---
 
 ## 3. Operational Recovery Scenarios
 
-### 1. `SYNC_CONFLICT` Occurred During Synchronization
-- **Cause:** You modified the exact same memory or project on two different computers without synchronizing between the two editing sessions.
-- **System Safeguard:** Forge614 Engram halts the round immediately without modifying either your local SQLite or remote PostgreSQL databases. There is no silent overwrite and no last-write-wins clock resolution.
-- **What NOT to do:** **Never delete the `sync_checkpoints` table, never purge `revisions` in PostgreSQL, and never delete `engram.db`.** Doing so erases cryptographic audit trails.
-- **Current Status:** Automated or interactive conflict resolution commands are not available in this delivery. Both versions remain safely preserved in their respective databases.
+### 1. Codex Hooks Do Not Fire After TUI Configuration
+- **Cause:** Codex enforces a native security model where newly installed hooks must be reviewed and trusted explicitly before execution.
+- **Fix:** Open Codex and run the `/hooks` command. Review the Forge614 Engram hooks and mark them as trusted.
 
-### 2. PostgreSQL Server is Down (`POSTGRES_UNAVAILABLE`)
-- **Offline Resilience:** A network outage or PostgreSQL downtime **never blocks or delays local operations**. You can continue executing `save`, `get`, `search`, `history`, and `archive` against local SQLite with zero latency.
-- **Watcher Behavior:** `sync-watch` logs a warning to `stderr` and continues polling on its scheduled interval until the server recovers.
+### 2. `PROJECT_BINDING_REQUIRED` Encountered in a New Directory
+- **Cause:** The system detected that a previously registered directory path is no longer available on disk (e.g. you renamed a folder or unmounted an external drive). Engram halts conservatively to avoid creating an orphan duplicate project.
+- **Fix:**
+  1. Run `forge614-engram project-list` to view registered project UUIDs.
+  2. Run `forge614-engram project-bind --directory /current/path --project-id <UUID>`.
+  3. If the folder is genuinely a new project, create it first via `forge614-engram project-create --name "Name"` and bind it using `project-bind`.
 
-### 3. Orphaned `.config-lock` File After Terminal Crash
-- **Cause:** If your workstation lost power or the terminal was abruptly killed while `setup` was writing `.env`, an orphaned lock file (`~/.forge614/.config-lock`) may remain.
-- **Why It Isn't Deleted Silently:** To protect against overwriting another legitimate concurrent `setup` process running in a different terminal window.
-- **Safe Recovery:** Verify via `ps aux | grep forge614-engram` that no other setup assistant is active. If clear, remove the lock manually with `rm ~/.forge614/.config-lock` and rerun `setup`.
+### 3. MCP Server Self-Test Fails with `INSTALLATION_REQUIRED`
+- **Cause:** You ran `bun src/cli.ts tui` from source without installing the standalone binary. For security, Engram never registers Bun as an installed server binary.
+- **Fix:** Run `bash scripts/install.sh --force` to compile and publish the binary to `$HOME/.local/bin/forge614-engram`. Then run `forge614-engram tui`.
 
-### 4. PostgreSQL URL Rejected with `POSTGRES_URL`
-- **Common Cause:** Attempting to specify `sslmode=disable` when connecting to a remote cloud database (e.g. Neon, Supabase, or a remote VPS).
-- **Security Invariant:** Forge614 Engram strictly **enforces verified TLS encryption on all remote network connections**. The `sslmode=disable` exception is exclusively permitted when connecting to local loopback hosts (`127.0.0.1`, `localhost`, or `[::1]`).
+### 4. `PUBLISHED_UNVERIFIED` Reported During Configuration
+- **Cause:** Claude Code, Cursor, or Codex modified the configuration file in the same millisecond Engram was writing changes.
+- **Fix:** Engram preserves the pre-change backup with a UUID suffix. Close the editor client and rerun `forge614-engram tui` to apply the configuration cleanly.

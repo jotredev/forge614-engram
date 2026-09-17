@@ -2,6 +2,25 @@ import { expect, test } from "bun:test";
 import { MemoryStore } from "../src/store";
 import { reconcile, snapshotHash, validateSnapshot } from "../src/sync-snapshot";
 
+test('schema5 sync updates memory history and FTS while preserving only local machine bindings',()=>{
+  const a=new MemoryStore(':memory:'),b=new MemoryStore(':memory:');
+  try{
+    a.enableAssistantIntegration();b.enableAssistantIntegration();
+    const p=a.createProject('Cross machine');
+    const m=a.save({projectId:p.projectId,title:'Topic',content:'firstword',type:'fact',topicKey:'topic'});
+    a.bindProjectDirectory('/synthetic/machine-A/project',p.projectId);
+    b.applySync(b.syncSnapshot(),a.syncSnapshot(),'replica');
+    b.bindProjectDirectory('/synthetic/machine-B/project',p.projectId);
+    a.save({projectId:p.projectId,title:'Topic',content:'updatedword',type:'fact',topicKey:'topic',expectedVersion:1});
+    b.applySync(b.syncSnapshot(),a.syncSnapshot(),'replica');
+    expect(b.projectForDirectory('/synthetic/machine-B/project')?.projectId).toBe(p.projectId);
+    expect(b.projectForDirectory('/synthetic/machine-A/project')).toBeNull();
+    expect(b.get(p.projectId,m.id)?.content).toBe('updatedword');expect(b.history(p.projectId,m.id)).toHaveLength(2);
+    expect(b.search(p.projectId,'updatedword')).toHaveLength(1);expect(b.search(p.projectId,'firstword')).toHaveLength(0);
+    expect(JSON.stringify(a.syncSnapshot())).not.toContain('/synthetic/');expect(JSON.stringify(b.syncSnapshot())).not.toContain('/synthetic/');
+  }finally{a.close();b.close();}
+});
+
 test("sync merges independent projects and imports memory history into local FTS", () => {
   const a = new MemoryStore(":memory:"); const b = new MemoryStore(":memory:");
   try {
