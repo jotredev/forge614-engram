@@ -10,7 +10,7 @@ expect {
 }
 send -- "s\r"
 expect {
-  "Forge614 Engram | Asistentes" {}
+  "Forge614 Engram | Control Center" {}
   timeout {puts "FAIL installer did not open TUI"; exit 1}
   eof {puts "FAIL installer exited before TUI"; exit 1}
 }

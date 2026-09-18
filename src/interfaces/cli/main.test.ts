@@ -40,6 +40,8 @@ test("help, version and empty project list create no storage", () => {
   ]) expect(help).toContain(syntax);
   expect(help).toContain("--upgrade-format promueve al formato local habilitado (hasta 3).");
   expect(help).toContain("todos deben entender el formato seleccionado; el refuerzo requiere formato 3.");
+  expect(help).toContain("Centro de control");
+  expect(help).toContain("Asistentes con vista previa y confirmación");
   expect(run(dir,"--version").stdout).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
   expect(JSON.parse(run(dir,"project-list").stdout)).toEqual([]);
 });

@@ -1,11 +1,11 @@
 # 04 (EN). TypeScript SDK Guide (MemoryStore)
 
-> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
+> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [04. Guía de Integración con el SDK de TypeScript](../es/04-sdk-typescript.md)
 
-This guide documents the public TypeScript API for Forge614 Engram, covering the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes, Schema 7 support for immutable confirmations and reinforced FTS5 search ranking without embeddings, and progressive retrieval contracts.
+This guide documents the public TypeScript API for Forge614 Engram, covering the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes, Schema 7 support for immutable confirmations and reinforced FTS5 search ranking without embeddings, and progressive retrieval and Control Center contracts.
 
 > [!NOTE]
 > **Aimed at developers:** This SDK is designed for engineers integrating structured memory into TypeScript agents or extensions. Terminal end users only require the `forge614-engram` CLI binary. There is no npm package published; imports resolve locally from `./src/index`.
@@ -68,12 +68,12 @@ import {
 ### Core SDK Architecture Principles
 
 - **The SQLite API remains 100% synchronous:** All read, write, search, confirmation, session, timeline, and context operations in `MemoryStore` and `MemoryWorkspace` execute immediately on SQLite without `async`/`await`.
-- **`MemoryStore` Facade Pattern:** Located in `src/app/memory-store.ts`, `MemoryStore` provides an immutable, backwards-compatible public interface while delegating persistence to specialized modules under `src/infrastructure/sqlite/` (`memory.ts`, `confirmations.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`).
+- **`MemoryStore` Facade Pattern:** Located in `src/app/memory-store.ts`, `MemoryStore` provides an immutable, backwards-compatible public interface while delegating persistence to specialized modules under `src/infrastructure/sqlite/` (`memory.ts`, `confirmations.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`, `control-center.ts`).
 - **Complete Elimination of Legacy Root Files:** Historical files in the root of `src/` (`src/domain.ts`, `src/store.ts`, `src/identity.ts`, `src/sessions.ts`, etc.) have been completely removed. External consumers must import strictly from `src/index.ts`. Internal modules are forbidden by TypeScript AST lint rules (`tests/architecture/import-rules.ts`) from importing from `src/index.ts` to prevent cycles.
 - **Network, transport, and interface modules are strictly internal:**
   - MCP server (`src/interfaces/mcp/`)
   - Assistant hook runner (`src/interfaces/terminal/` & `src/modules/assistants/`)
-  - Terminal UI menu (`src/interfaces/tui/`)
+  - Terminal Control Center interface (`src/interfaces/tui/`)
   - Async self-test runner (`src/infrastructure/assistants/self-test.ts`)
   - Replica sync engine (`src/infrastructure/postgres/` & `src/app/synchronization.ts`)
   These components are not re-exported in `src/index.ts`.
@@ -88,7 +88,7 @@ import {
 2. **`WorkspaceConfig` (Configuration Manager):**
    Manages atomic read/write of `~/.forge614/.env`. Validates permissions (`0700` directory, `0600` file), format versions (Format 2 local, Format 3 sync), and prevents concurrency using `.config-lock`.
 3. **`MemoryStore` (SQLite Database Engine):**
-   Directly executes operations on SQLite tables (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, etc.).
+   Directly executes operations on SQLite tables (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, `controlCenter`, etc.).
 
 ---
 
@@ -116,6 +116,23 @@ Opens a `MemoryStore` instance after verifying permissions and database schema v
 ---
 
 ## 4. `MemoryStore` Methods (Schemas 5, 6, and 7)
+
+### Control Center Methods (Monitoring & Aggregates)
+
+#### `store.controlCenter(): { capabilities: CapabilityState; projects: ProjectSummary[]; shared: SharedSummary | null }`
+Queries database aggregate statistics and capability status in a 100% read-only fashion:
+- `capabilities`: `{ schema: 3 | 4 | 5 | 6 | 7; assistantIntegration: boolean; sessions: boolean; reinforcement: boolean }`
+- `projects`: List of enrolled projects with `projectId`, `name`, `createdAt`, `updatedAt`, bound directory paths (`bindings`), and counts `{ active: number; archived: number; lastUpdatedAt: string | null }`.
+- `shared`: Global `{ active: number; archived: number; lastUpdatedAt: string | null }` counts for shared universal memories.
+- **Strict Privacy:** This query performs relational counts (`LEFT JOIN`) only; it never loads memory titles or content into memory.
+
+#### Application Orchestration Function: `readControlCenter(config?: WorkspaceConfig): ControlCenterSnapshot`
+(Located in `src/app/control-center.ts`):
+Loads a complete, safe snapshot for UI consumption:
+- If `config.exists()` is `false`, returns an uninitialized state snapshot without touching storage.
+- Opens `MemoryStore` in read-only mode (`readonly: true`), fetches aggregates from `store.controlCenter()`, appends safe storage attributes (`databasePath`, `postgres: "configured" | "not-configured"`), and guarantees store closure in a `finally` block.
+
+---
 
 ### Schema Management & Local Bindings
 

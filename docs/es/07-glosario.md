@@ -1,13 +1,34 @@
 # 07. Glosario de Conceptos en Lenguaje Cotidiano
 
-> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
 > **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
+> **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [07 (EN). Plain-Language Glossary](../en/07-glossary.md)
 
 Este glosario explica cada concepto técnico utilizando analogías y metáforas de la vida cotidiana, seguidas inmediatamente de su término técnico formal entre paréntesis.
 
 ---
+
+### Centro de Control TUI (TUI Control Center / `controlCenterTui` / `forge614-engram tui`)
+Como un panel de instrumentos de supervisión general en la sala de control de una central: una interfaz interactiva de consola a pantalla completa que centraliza la visualización de proyectos, carpetas vinculadas, memorias compartidas globales, estado de almacenamiento SQLite y PostgreSQL, y ejecución deliberada de acciones administrativas sin necesidad de recordar comandos CLI individuales.
+
+### Lectura por Defecto (Read-Only by Default)
+Como un museo con vitrinas donde puedes observar y estudiar cada pieza sin peligro de alterarlas: una regla arquitectónica donde abrir el Centro de Control TUI, navegar entre pestañas, consultar proyectos o redimensionar la ventana opera en modo de estricta solo lectura, garantizando que ninguna consulta o exploración altere un solo byte de la base de datos o de los archivos de configuración.
+
+### Confirmación de Dos Pasos (Two-Step Action Confirmation / `confirm` + Enter)
+Como una caja de seguridad con llave protegida y botón de confirmación deliberada: un protocolo de seguridad interactivo donde ninguna acción de escritura (crear proyectos, vincular carpetas, aplicar migraciones o sincronizar) puede ejecutarse presionando simplemente `Enter`. Requiere que el operador visualice la previsualización del impacto, escriba deliberadamente la palabra `confirm` (o `CONFIRM`) en un cuadro de texto y presione `Enter`.
+
+### Saneamiento de Salida de Terminal (Terminal Output Sanitization / `sanitizeTerminalOutput`)
+Como un filtro purificador que retira impurezas del aire antes de entrar a un quirófano: una rutina de limpieza de cadenas que analiza nombres de proyectos, rutas y textos externos, suprimiendo secuencias de escape ANSI, caracteres de control no imprimibles, marcadores de anulación bidireccional (bidi overrides), caracteres de ancho cero y enlaces URL para blindar la terminal contra inyecciones maliciosas o distorsiones visuales.
+
+### Subflujo Secuencial de Terminal (Sequential Terminal Subflow)
+Como pausar una llamada telefónica para atender brevemente otra línea y luego reanudar la llamada original exactamente donde se quedó: la técnica donde el Centro de Control pausa su propio bucle de eventos, restaura de forma limpia la terminal estándar, invoca el asistente de integración (`assistantTui`) en un subproceso secuencial y, al finalizar este, recarga una instantánea fresca del sistema y reactiva el Centro de Control sin anidar modos crudos (*raw mode*) concurrentes.
+
+### Ocultación Estricta de Secretos y Privacidad (Strict Secret Concealment)
+Como un informe financiero ejecutivo que resume cifras clave sin revelar las claves de acceso de las cuentas bancarias: el principio de privacidad por el cual el Centro de Control TUI jamás muestra contraseñas, URLs de conexión a PostgreSQL (`POSTGRES_URL`), contenidos íntegros de `.env`, ni el texto o títulos de los recuerdos de los proyectos, limitándose a métricas agregadas y metadatos estructurales.
+
+---
+
 
 ### Confirmación Inmutable de Recuerdo (Immutable Memory Confirmation / `Confirmation` / `confirmations`)
 Como poner una muesca de lápiz en la portada de un manual cada vez que lo vuelves a consultar en el taller, sin arrancar hojas ni reimprimir el libro entero: un evento histórico fechado e inmutable que registra que un recuerdo activo existente fue observado nuevamente por el asistente, sin fabricar versiones 2 o 3 artificiales ni duplicar el contenido. Representa una nueva observación del dato; no certifica verdad absoluta ni verificación humana.

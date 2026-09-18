@@ -1,11 +1,11 @@
 # 04. Guía de Integración con el SDK de TypeScript
 
-> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
 > **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
+> **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [04 (EN). TypeScript SDK Guide (MemoryStore)](../en/04-typescript-sdk.md)
 
-Esta guía documenta la API pública en TypeScript de Forge614 Engram, cómo utilizar las clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` en tus propias herramientas o extensiones, el soporte del Esquema 7 para confirmaciones inmutables y refuerzo de búsqueda FTS5 sin embeddings, y los tipos formales de recuperación progresiva.
+Esta guía documenta la API pública en TypeScript de Forge614 Engram, cómo utilizar las clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` en tus propias herramientas o extensiones, el soporte del Esquema 7 para confirmaciones inmutables y refuerzo de búsqueda FTS5 sin embeddings, y los tipos formales de recuperación progresiva y del Centro de Control.
 
 > [!NOTE]
 > **Dirigido a desarrolladores:** Este SDK está orientado a programadores que desean integrar memoria estructurada dentro de herramientas o agentes TypeScript. Los usuarios finales de terminal solo necesitan el binario `forge614-engram`. No existe un paquete publicado en npm; las importaciones se realizan localmente desde `./src/index`.
@@ -68,12 +68,12 @@ import {
 ### Principios Fundamentales del SDK
 
 - **La API de SQLite permanece 100% síncrona:** Todas las operaciones de lectura, escritura, búsqueda, confirmaciones, sesiones, línea temporal (`timeline`) y contexto (`context`) en `MemoryStore` y `MemoryWorkspace` se ejecutan de forma inmediata y directa sobre SQLite sin requerir llamadas asíncronas (`async`/`await`).
-- **Fachada Compatible `MemoryStore`:** La clase `MemoryStore` (ubicada en `src/app/memory-store.ts`) opera como un patrón de diseño Fachada (*facade pattern*): proporciona una interfaz pública estable, idéntica e inmutable a los consumidores del SDK, mientras delega internamente la persistencia a módulos especializados en `src/infrastructure/sqlite/` (`memory.ts`, `confirmations.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`).
+- **Fachada Compatible `MemoryStore`:** La clase `MemoryStore` (ubicada en `src/app/memory-store.ts`) opera como un patrón de diseño Fachada (*facade pattern*): proporciona una interfaz pública estable, idéntica e inmutable a los consumidores del SDK, mientras delega internamente la persistencia a módulos especializados en `src/infrastructure/sqlite/` (`memory.ts`, `confirmations.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`, `control-center.ts`).
 - **Eliminación de Rutas Internas Anteriores:** Los archivos históricos en la raíz de `src/` (`src/domain.ts`, `src/store.ts`, `src/identity.ts`, `src/sessions.ts`, `src/retrieval.ts`, `src/schema.ts`, `src/paths.ts`, etc.) han sido **eliminados por completo**. Cualquier herramienta externa debe importar únicamente desde `src/index.ts`. El auditor de TypeScript AST (`tests/architecture/import-rules.ts`) prohíbe además que el código interno importe desde `src/index.ts` para evitar ciclos de importación.
 - **Los módulos de red, transporte e interfaz son internos:**
   - El servidor MCP (`src/interfaces/mcp/`)
   - El ejecutor de ganchos de asistentes (`src/interfaces/terminal/` y `src/modules/assistants/`)
-  - La interfaz de menú en terminal (`src/interfaces/tui/`)
+  - La interfaz del Centro de Control TUI (`src/interfaces/tui/`)
   - El ejecutor de autoprueba (`src/infrastructure/assistants/self-test.ts`)
   - El motor de sincronización de réplica (`src/infrastructure/postgres/` y `src/app/synchronization.ts`)
   Son componentes especializados que no se reexportan como API pública en `src/index.ts`.
@@ -88,7 +88,7 @@ import {
 2. **`WorkspaceConfig` (Gestor de Configuración):**
    Gestiona la lectura y escritura atómica del archivo `~/.forge614/.env`. Valida permisos (`0700` en carpeta, `0600` en archivo), formatos (Formato 2 local y Formato 3 con sincronización) y previene concurrencias con el cerrojo `.config-lock`.
 3. **`MemoryStore` (Motor de Base de Datos SQLite):**
-   Ejecuta las operaciones directas sobre las tablas de SQLite (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, etc.).
+   Ejecuta las operaciones directas sobre las tablas de SQLite (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, `controlCenter`, etc.).
 
 ---
 
@@ -116,6 +116,23 @@ Abre el almacén `MemoryStore` tras validar los permisos y el esquema de la base
 ---
 
 ## 4. Métodos de `MemoryStore` (Esquemas 5, 6 y 7)
+
+### Métodos del Centro de Control (Supervisión y Estadísticas)
+
+#### `store.controlCenter(): { capabilities: CapabilityState; projects: ProjectSummary[]; shared: SharedSummary | null }`
+Consulta agregados estadísticos y estado de capacidades de la base de datos de forma 100% de solo lectura:
+- `capabilities`: `{ schema: 3 | 4 | 5 | 6 | 7; assistantIntegration: boolean; sessions: boolean; reinforcement: boolean }`
+- `projects`: Lista de proyectos con `projectId`, `name`, `createdAt`, `updatedAt`, lista de rutas `bindings` vinculadas, y conteos `{ active: number; archived: number; lastUpdatedAt: string | null }`.
+- `shared`: Conteo `{ active: number; archived: number; lastUpdatedAt: string | null }` de recuerdos universales compartidos.
+- **Privacidad estricta:** Esta consulta realiza únicamente agregaciones relacionales (`LEFT JOIN`) sin cargar en memoria títulos ni contenidos de recuerdos.
+
+#### Función de Coordinación de Aplicación: `readControlCenter(config?: WorkspaceConfig): ControlCenterSnapshot`
+(Ubicada en `src/app/control-center.ts`):
+Carga un snapshot completo y seguro para la interfaz de usuario:
+- Si `config.exists()` es `false`, devuelve un snapshot de estado no inicializado sin crear archivos ni base de datos en el disco.
+- Abre un `MemoryStore` en modo de solo lectura (`readonly: true`), obtiene los agregados de `store.controlCenter()`, agrega la información segura de almacenamiento (`databasePath`, `postgres: "configured" | "not-configured"`) y garantiza el cierre del almacén en un bloque `finally`.
+
+---
 
 ### Gestión de Esquemas y Asociaciones Locales
 

@@ -1,8 +1,8 @@
 # 03. Manual Exhaustivo de Terminal (CLI)
 
-> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
 > **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
+> **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [03 (EN). Terminal CLI Command Reference](../en/03-cli-reference.md)
 
 Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sintaxis, códigos de salida y formatos de respuesta de la interfaz de línea de comandos (CLI) de Forge614 Engram.
@@ -72,25 +72,42 @@ forge614-engram setup
 ---
 
 ### 2.4. `tui`
-Menú interactivo de pantalla completa en terminal para auditar, previsualizar y configurar asistentes de inteligencia artificial (Claude Code, Codex, Cursor, OpenCode, Gemini CLI).
+Centro de Control interactivo de pantalla completa en terminal para auditar el estado del almacén local, inspeccionar proyectos y memoria compartida, ejecutar acciones seguras con confirmación estricta (`confirm` + Enter) y configurar asistentes de inteligencia artificial mediante un subflujo secuencial limpio.
 
 ```bash
 forge614-engram tui
 ```
 - **Opciones:** Ninguna.
-- **Requisitos:** Terminal interactiva (`isTTY` verdadero y soporte de *raw mode*). Si se ejecuta en un entorno no interactivo, falla con `INTERACTIVE_REQUIRED`.
+- **Requisitos:** Terminal interactiva (`isTTY` verdadero en `stdin` y `stdout`). Si se ejecuta en un entorno no interactivo o redirigido, falla inmediatamente con `INTERACTIVE_REQUIRED`.
+- **Estructura del Menú Superior:**
+  `Summary | Projects | Shared | Storage | Actions | Assistants | Exit`
+  *(Resumen | Proyectos | Shared | Almacenamiento | Acciones | Asistentes | Salir)*
 - **Teclas de navegación:**
-  - `↑` / `↓`: Mover cursor.
-  - `Espacio`: Seleccionar o deseleccionar cliente.
-  - `r`: Redetectar ejecutables y configuraciones en el sistema.
-  - `c`: Personalizar ejecutable o directorio de configuración mediante entrada oculta.
-  - `t` / "Probar servidor propio (opcional)": Ejecuta una autoprueba asíncrona de 5 segundos del binario de Engram mediante el SDK oficial de MCP por stdio, verificando las 10 herramientas. Presionar `Escape` durante la prueba cancela únicamente la autoprueba.
-  - `Enter`: Avanza entre pantallas (`Lista` $\rightarrow$ `Vista Previa` $\rightarrow$ `Confirmación` $\rightarrow$ `Aplicar`).
-  - `Escape`: Retrocede a la pantalla previa.
-  - `Ctrl+C`: Cancela la sesión inmediatamente, restaura la terminal y devuelve código `130`.
-- **Efectos secundarios:**
-  - En Vista Previa: Ninguno (no escribe archivos).
-  - Al Confirmar: Ejecuta *preflight*, habilita el Esquema 5 en SQLite, genera respaldos con permisos `0600` y sufijo UUID de los archivos a modificar, aplica los cambios preservando comentarios JSONC/TOML y verifica los bytes exactos publicados (`PUBLISHED_UNVERIFIED` si hubo interferencia externa). Si detecta un plugin existente de OpenCode con contenido divergente, se detiene con conflicto `CONFLICT` sin sobrescribirlo ciegamente.
+  - `←` / `→` / `↑` / `↓`: Mover el foco entre pestañas del menú y desplazarse por listas de elementos.
+  - `Enter`: Abrir la pestaña enfocada o ver el detalle del proyecto seleccionado.
+  - `Escape`: Retroceder a la pantalla anterior o cancelar la acción en curso.
+  - `PgUp` / `PgDn`: Desplazar el texto cuando excede la altura de la terminal.
+  - `Ctrl+C` o `EOF`: Terminar la sesión inmediatamente, restaurar la terminal y salir con código `130`.
+- **Comportamiento de Solo Lectura por Defecto:**
+  - Abrir la pantalla, navegar, redimensionar la terminal o presionar teclas no reconocidas **jamás escribe archivos en el disco**, no crea `~/.forge614/.env`, no crea `engram.db` ni registra proyectos.
+  - Si el almacén no existe, muestra un estado claro sin inicializar e indica usar `setup` o `init`; no crea archivos automáticamente.
+- **Vistas y Metadatos Disponibles:**
+  - **Summary:** Inicialización, esquema SQLite activo (3 a 7), capacidades habilitadas, total de proyectos y estadísticas agregadas de memoria compartida.
+  - **Projects:** Lista proyectos con nombre descriptivo, UUID abreviado y conteo de recuerdos activos/archivados. Al pulsar Enter, muestra el detalle con UUID canónico completo, marcas temporales y rutas locales vinculadas (`bindings`).
+  - **Shared:** Conteos activo/archivado de notas compartidas y fecha de última actualización; aclara que es una colección única global y no bases por proyecto.
+  - **Storage:** Ruta de SQLite local, versión de esquema y estado de PostgreSQL (`configured` o `not-configured`).
+- **Privacidad Estricta y Saneamiento:**
+  - **Oculta de forma absoluta:** `POSTGRES_URL`, contenidos del `.env`, contraseñas, secretos, títulos y contenidos de recuerdos, y configuraciones de asistentes.
+  - **Saneamiento:** Filtra y reemplaza caracteres de escape ANSI, caracteres de control, secuencias bidireccionales (bidi), caracteres de ancho cero y URLs. Ocultar la URL no prueba conectividad remota.
+- **Acciones Confirmadas (`Actions`):**
+  - Acciones disponibles: `Create project`, `Rename project`, `Bind directory`, `Enable assistant integration` (Esquema 5), `Enable sessions` (Esquema 6), `Enable search reinforcement` (Esquema 7), `Synchronize now` (solo si PostgreSQL está configurado; ronda única sin promoción de formato ni instalación de servicios).
+  - **Protocolo de confirmación:** Exige previsualizar las consecuencias, escribir explícitamente la palabra `confirm` (insensible a mayúsculas/minúsculas) y presionar Enter. Presionar Enter solo jamás autoriza la operación.
+  - **Cancelación segura:** Presionar Escape o Ctrl+C antes de la confirmación final no realiza ninguna escritura. Si una acción ya confirmada comenzó a ejecutarse, se ignoran pulsaciones repetidas y la terminal se restaura con seguridad al salir, aunque la acción iniciada no se promete revertir.
+- **Subflujo de Asistentes (`Assistants`):**
+  - Suspende limpiamente el Centro de Control y restaura la terminal.
+  - Abre de forma secuencial el configurador de asistentes existente (`assistantTui`) con su selección con la barra espaciadora, autoprueba asíncrona de 5 segundos (`t`), previsualización de cambios, respaldos `0600` con sufijo UUID y verificación posterior de bytes.
+  - Al salir del subflujo de asistentes, la terminal se restaura y el Centro de Control recarga un resumen fresco y actualizado de la base de datos sin anidar lectores en crudo (*no nested raw modes*).
+- **Códigos de salida:** `0` al salir normalmente; `130` al cancelar; `1` ante error o si falta TTY (`INTERACTIVE_REQUIRED`).
 
 ---
 

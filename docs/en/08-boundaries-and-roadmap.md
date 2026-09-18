@@ -1,8 +1,8 @@
 # 08 (EN). Stage Boundaries and Evolutionary Roadmap
 
-> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Verified (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (con sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Verified (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2,566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [08. Límites de la Etapa y Hoja de Ruta Futura](../es/08-limites-y-roadmap.md)
 
 This document transparently defines implemented and verified capabilities in the current delivery, operational boundaries, distinctions between synthetic tests and live assistant sessions, and official pending roadmap phases.
@@ -66,7 +66,15 @@ The following development phases are **100% implemented and verified**:
 - [x] **Deterministic Single Query Clock:** `request_clock(nowMs)` evaluated once per search query, applying ordering before `LIMIT`.
 - [x] **PostgreSQL Format 3 Promotion:** Replicates confirmations and requests under atomic CAS snapshot locking, preserving physical table schema `state.format = 1`.
 - [x] **Peer Client Compatibility Safeguard:** Unreinforced peer clients halt with `REINFORCEMENT_REQUIRED` when syncing Format 3 snapshots.
-- [x] **439 Automated Tests Across 76 Files:** 430 passed and 9 skipped without PostgreSQL binary; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured in 38.62s.
+
+### Phase 4.3: TUI Control Center (`forge614-engram tui`) — COMPLETED
+- [x] **Unified Interactive Control Center:** Full-screen terminal dashboard with `Summary`, `Projects`, `Shared`, `Storage`, `Actions`, `Assistants`, and `Exit` tabs.
+- [x] **Strict Read-Only Default:** Opening the interface, switching tabs, browsing project hierarchies, and resizing windows execute 100% read-only without modifying a single byte on disk or SQLite.
+- [x] **Two-Step Mutation Confirmation:** Write actions require preview inspection, explicitly typing `confirm` (or `CONFIRM`) into a dialog prompt, and pressing `Enter`.
+- [x] **Comprehensive Secret and Note Concealment:** Completely masks `POSTGRES_URL`, unredacted `.env` contents, memory note text, titles, and assistant configuration contents.
+- [x] **Terminal Output Sanitization:** Neutralizes ANSI escape sequences, non-printable control characters, bidirectional overrides (bidi), zero-width characters, and URLs.
+- [x] **Sequential Assistant Subflow:** Cleanly pauses Control Center event loop, restores terminal mode, spawns the assistant menu (`assistantTui`), and reloads fresh system state upon return without nested raw modes.
+- [x] **504 Automated Tests Across 82 Files:** 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2,566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured in 39.76s.
 
 ---
 
@@ -100,12 +108,22 @@ To maintain realistic expectations, the following boundaries are formally declar
     Each synchronization snapshot is strictly capped at 8 MiB (`8,388,608 bytes`), halting with `SYNC_TOO_LARGE` if exceeded.
 13. **No Heuristic Auto-Merge in Sync:**
     Concurrent modifications to the same entity trigger `SYNC_CONFLICT`. No heuristic three-way text merging is performed in this version.
+14. **No Heavy Desktop or Web GUI (Zero Bloated GUI):**
+    The Control Center operates exclusively inside the terminal console using standard ANSI/POSIX sequences. It uses no Electron, local HTTP daemons, React views, or browser engines.
+15. **No Resident Background Daemon:**
+    The Control Center starts strictly on demand via `forge614-engram tui` and terminates completely when exited with `Escape`, `q`, or `Ctrl+C`. It consumes zero CPU cycles or RAM when not running.
+16. **No Passive Remote Network Probing:**
+    PostgreSQL status inspection in the `Storage` tab reads local `.env` values and the latest sync state recorded in SQLite. It never emits unsolicited network pings or remote probes during passive navigation.
+17. **No Per-Project Database Fragmentation:**
+    Engram maintains a single centralized database at `~/.forge614/engram.db`. Projects are partitioned logically by immutable `projectId`, avoiding scattering `.db` files across workspace folders.
+18. **No Granular Note Content Editing in Control Center:**
+    The Control Center manages projects, directory bindings, storage, migrations, and assistants. Authoring and editing granular memory notes is performed via CLI (`save`, `get`, `delete`), MCP tools, or future specialized explorers.
 
 ---
 
 ## 3. Evolutionary Roadmap: Official Future Phases
 
-With Phases 1 through 4.2 completed, future development centers on the following roadmap:
+With Phases 1 through 4.3 completed, future development centers on the following roadmap:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -133,6 +151,10 @@ With Phases 1 through 4.2 completed, future development centers on the following
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
+│ [x] Phase 4.3: Full TUI Control Center                 │ (Completed v0.5.0)
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
 │ [ ] Phase 5: Semantic Search & Vector Embeddings       │ (Pending)
 │     - Local vector embedding generation                │
 │     - Hybrid retrieval (FTS5 BM25 + cosine similarity) │
@@ -140,11 +162,11 @@ With Phases 1 through 4.2 completed, future development centers on the following
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│ [ ] Phase 6: Full Management Terminal UI (TUI)         │ (Pending)
+│ [ ] Phase 6: Interactive Memory Explorer in TUI        │ (Pending)
 │     - Interactive memory explorer in terminal          │
 │     - Visual topic, version, and session editor        │
 │     - Interactive replica conflict reconciliation      │
-└──────────────────────────┘
+└────────────────────────────────────────────────────────┘
 ```
 
 > [!NOTE]

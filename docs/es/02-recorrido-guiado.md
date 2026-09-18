@@ -1,11 +1,11 @@
 # 02. Recorrido Guiado del Sistema
 
-> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
 > **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas) / 7 (confirmaciones inmutables y orden reforzado) | Réplica PostgreSQL Formatos 1, 2 y 3 (promoción explícita con `sync --upgrade-format`; tabla física remota `state.format = 1`)
-> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
+> **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [02 (EN). Guided System Walkthrough](../en/02-guided-walkthrough.md)
 
-Este recorrido práctico te guía paso a paso por el ciclo de vida integral de Forge614 Engram: desde configurar el espacio global interactivamente con `setup`, conectar tus asistentes de desarrollo mediante el menú interactivo en terminal `tui`, interactuar a través de las 10 herramientas del protocolo MCP nativo con resolución automática de proyectos por Git, gestionar sesiones de trabajo progresivas con líneas temporales (`timeline`), registrar recuerdos repetidos mediante confirmaciones inmutables sin fabricar versiones redundantes (Esquema 7), ensamblar contextos de prompt clasificados (`context`), realizar búsquedas FTS5 reforzadas con factores matemáticos transparentes sin embeddings, gestionar actualizaciones seguras de plugins en OpenCode y sincronizar réplicas con PostgreSQL con promoción explícita a Formato 3.
+Este recorrido práctico te guía paso a paso por el ciclo de vida integral de Forge614 Engram: desde configurar el espacio global interactivamente con `setup`, supervisar y administrar el sistema mediante el **Centro de Control interactivo en terminal (`tui`)**, conectar tus asistentes de desarrollo mediante su subflujo seguro con autoprueba de 5 segundos, interactuar a través de las 10 herramientas del protocolo MCP nativo con resolución automática de proyectos por Git, gestionar sesiones de trabajo progresivas con líneas temporales (`timeline`), registrar recuerdos repetidos mediante confirmaciones inmutables sin fabricar versiones redundantes (Esquema 7), ensamblar contextos de prompt clasificados (`context`), realizar búsquedas FTS5 reforzadas con factores matemáticos transparentes sin embeddings, gestionar actualizaciones seguras de plugins en OpenCode y sincronizar réplicas con PostgreSQL con promoción explícita a Formato 3.
 
 ---
 
@@ -60,33 +60,59 @@ forge614-engram setup
 
 ---
 
-### Paso 2: Menú Interactivo de Asistentes (`tui`)
+### Paso 2: El Centro de Control Interactivo en Terminal (`tui`)
 
-Para conectar tus clientes de desarrollo (Claude Code, Codex, Cursor, OpenCode y Gemini CLI) sin editar manualmente archivos JSON o TOML, abre el menú interactivo en terminal:
+Para supervisar el estado de tu almacenamiento, proyectos, capacidades y asistentes sin memorizar comandos ni exponer secretos, abre el Centro de Control:
 
 ```bash
 forge614-engram tui
 ```
 
 > [!NOTE]
-> `tui` requiere una terminal interactiva real (`TTY` con soporte de modo crudo / *raw mode*). Si se invoca sin terminal interactiva, falla inmediatamente arrojando `INTERACTIVE_REQUIRED`. Para auditorías desatendidas en scripts, utiliza `assistant-list`.
+> `tui` requiere una terminal interactiva real (`TTY`). En entornos automatizados sin TTY falla de inmediato arrojando `INTERACTIVE_REQUIRED`.
 
-#### Controles del Menú TUI:
-- **Flechas Arriba / Abajo (`↑` / `↓`):** Desplazan el cursor.
-- **Barra Espaciadora (`Espacio`):** Marca o desmarca clientes para configuración.
-- **Tecla `r`:** Vuelve a escanear ejecutables y configuraciones en el sistema.
-- **Tecla `c`:** Introduce rutas personalizadas para ejecutable o carpeta de configuración mediante entradas enmascaradas.
-- **Tecla `t`:** Inicia la autoprueba asíncrona de 5 segundos del servidor MCP oficial sobre el binario compilado instalado. Presionar `Escape` durante la prueba cancela únicamente el test.
-- **Tecla `Enter`:** Avanza entre pantallas (`Lista` $\rightarrow$ `Vista Previa` $\rightarrow$ `Confirmación` $\rightarrow$ `Aplicar`).
-- **Tecla `Escape`:** Retrocede a la pantalla previa.
-- **`Ctrl+C`:** Cancela la sesión inmediatamente, restaura la terminal y devuelve código **130**.
+#### 1. Principio de Solo Lectura por Defecto:
+Al abrirse, el Centro de Control lee el estado local de forma completamente pasiva:
+- No crea bases de datos ni archivos `.env`. Si no hay configuración, explica que uses `setup` o `init` y permanece sin escribir.
+- No registra proyectos ficticios ni altera contadores.
+- Puedes navegar libremente entre secciones sin temor a modificar nada.
 
-#### Seguridad en la Aplicación de Configuraciones:
-1. **Previsualización sin escritura:** Previsualizar cambios jamás escribe archivos.
-2. **Preflight estricto:** Descarta enlaces simbólicos (*symlinks*) y valida permisos antes de tocar disco.
-3. **Respaldos privados `0600` con UUID:** Antes de modificar un archivo existente, genera una copia de seguridad exacta (ej. `settings.json.019183ab-....bak`).
-4. **Preservación de comentarios:** Emplea analizadores tolerantes (JSONC y TOML) que conservan comentarios y ajustes de otras herramientas.
-5. **Verificación posterior (*Post-Publication Verification*):** Si otro proceso altera el archivo en el mismo milisegundo, reporta `PUBLISHED_UNVERIFIED`, conserva los respaldos y no hace marcha atrás destructiva.
+#### 2. Barra de Menú y Secciones:
+```text
+Summary | Projects | Shared | Storage | Actions | Assistants | Exit
+```
+- **Summary (Resumen):** Muestra el estado general de inicialización, versión de esquema SQLite activo, capacidades habilitadas (Asistentes, Sesiones, Refuerzo de búsqueda), total de proyectos y estadísticas agregadas de memoria compartida.
+- **Projects (Proyectos):** Lista cada proyecto registrado con su nombre legible, UUID abreviado (ej. `7c9e6679...`) y número de recuerdos activos y archivados. Al presionar **Enter** sobre un proyecto, se abre la vista de **Detalle**:
+  - UUID completo (`7c9e6679-7425-40de-944b-e07fc1f90ae7`).
+  - Fechas de creación y última actualización.
+  - Lista de rutas locales vinculadas (`bindings`), verificadas en la máquina física actual.
+- **Shared (Memoria Compartida):** Presenta el conteo de notas universales activas y archivadas junto con la última fecha de actualización, recordando con claridad que es una colección única para toda la máquina, no una base separada por proyecto.
+- **Storage (Almacenamiento):** Expone la ruta del archivo SQLite local (`~/.forge614/engram.db`), el número exacto de esquema (3 a 7), las capacidades activas y si PostgreSQL está configurado (`configured` o `not-configured`).
+  - **Seguridad total:** Oculta de forma absoluta la URL de PostgreSQL, contraseñas, secretos, títulos y contenido de recuerdos.
+
+#### 3. Ejecución de Acciones con Confirmación de Dos Pasos (`Actions`):
+En la pestaña `Actions` se ofrecen operaciones seguras:
+- `Create project`: Solicita un nombre descriptivo y genera un UUID nuevo.
+- `Rename project`: Permite seleccionar un proyecto y actualizar su etiqueta descriptiva conservando intactos su UUID y sus recuerdos.
+- `Bind directory`: Asocia una ruta absoluta a un proyecto específico sin adivinar por nombre.
+- `Enable assistant integration`: Aplica la migración aditiva a Esquema 5.
+- `Enable sessions`: Aplica la migración aditiva a Esquema 6.
+- `Enable search reinforcement`: Aplica la migración aditiva a Esquema 7.
+- `Synchronize now`: Disponible únicamente si PostgreSQL está configurado. Ejecuta una ronda única de sincronización sin alterar el formato remoto ni instalar demonios.
+
+**El protocolo estricto de confirmación:**
+1. Al seleccionar una acción, la pantalla muestra una vista previa completa con los parámetros y consecuencias.
+2. Si se solicitan datos (nombre de proyecto o ruta), se capturan y validan formalmente.
+3. Se requiere **escribir la palabra `confirm`** (sin distinción de mayúsculas/minúsculas) y presionar Enter.
+4. **Presionar Enter solo jamás ejecuta nada.**
+5. Presionar Escape o Ctrl+C cancela inmediatamente y devuelve la terminal a su estado original sin alterar ningún byte del disco.
+
+#### 4. Subflujo de Asistentes (`Assistants`):
+Al seleccionar `Assistants`:
+- El Centro de Control suspende su pantalla y restaura la terminal de forma limpia.
+- Se abre de forma secuencial el configurador de asistentes existente (`assistantTui`).
+- Puedes marcar clientes con la barra espaciadora (Claude Code, Codex, Cursor, OpenCode, Gemini CLI), ejecutar la autoprueba asíncrona de 5 segundos con la tecla `t`, revisar la vista previa de cambios y aplicar configuraciones con respaldos automáticos `0600` identificados por UUID.
+- Al salir de la pantalla de asistentes, la terminal se restaura y el Centro de Control recarga automáticamente un resumen fresco y actualizado con las nuevas asociaciones.
 
 ---
 
@@ -122,7 +148,7 @@ Engram ejecuta `git rev-parse --path-format=absolute --git-common-dir`.
 - **Carpetas sin Git:** Exigen pasar `--directory` explícito o disponer de una única raíz MCP; jamás se utiliza el directorio del binario como proyecto implícito.
 
 #### Bloqueo Conservador y Vinculación Manual:
-Si alguna ruta registrada en `project_bindings` ya no existe en disco (carpeta movida o disco desmontado), Engram bloquea preventivamente con `PROJECT_BINDING_REQUIRED` para no crear proyectos duplicados. Se asocia manualmente con:
+Si alguna ruta registrada en `project_bindings` ya no existe en disco (carpeta movida o disco desmontado), Engram bloquea preventivamente con `PROJECT_BINDING_REQUIRED` para no crear proyectos duplicados. Se asocia manualmente mediante la TUI (`Actions > Bind directory`) o por CLI con:
 
 ```bash
 forge614-engram project-list
@@ -149,7 +175,7 @@ forge614-engram memory-hook --client codex
 
 ### Paso 6: El Ciclo de Sesiones Progresivas
 
-Una sesión progresiva permite agrupar las notas generadas durante una tarea y examinarlas en su orden de ocurrencia. Requiere haber ejecutado `forge614-engram sessions-enable`.
+Una sesión progresiva permite agrupar las notas generadas durante una tarea y examinarlas en su orden de ocurrencia. Requiere haber ejecutado `forge614-engram sessions-enable` o haber activado las sesiones desde la TUI.
 
 #### 1. Iniciar una Sesión (`session-start`):
 El identificador de sesión debe tener entre 1 y 200 caracteres Unicode, sin controles ni espacios exteriores:
@@ -258,6 +284,7 @@ forge614-engram session-end \
 El Esquema 7 añade a Forge614 Engram la capacidad de registrar repeticiones como **confirmaciones inmutables** y ponderar el orden de búsqueda FTS5 sin utilizar embeddings ni modelos secundarios de IA.
 
 #### 1. Habilitación Local (`reinforcement-enable`):
+Puede habilitarse desde la pestaña `Actions` del Centro de Control TUI o mediante terminal:
 ```bash
 forge614-engram reinforcement-enable
 ```
@@ -314,7 +341,7 @@ Para recuerdos generales sin tema (`topicKey: null`), la deduplicación solo con
 
 ### Paso 8: Recuperación Progresiva y Búsqueda Reforzada (Previews, Timeline, Context)
 
-Engram implementa un modelo de recuperación progresiva (inspirado en **Gentleman** con adaptaciones de **Forge614**):
+Engram implementa un modelo de recuperación progresiva:
 
 #### 1. Búsqueda FTS5 con Factores de Refuerzo (`--preview`):
 La búsqueda textual en SQLite FTS5 evalúa las coincidencias BM25 y aplica la fórmula de ranking con multiplicador de actualidad y estabilidad:
@@ -418,10 +445,10 @@ En OpenCode, Engram genera el plugin de integración en `plugins/forge614-engram
 > Si ya existe un plugin de Engram en una carpeta activa de OpenCode cuyo contenido difiere del generado por la versión actual, el sistema lo trata como un conflicto de configuración (`CONFLICT`) y **nunca lo sobrescribe automáticamente**.
 >
 > **Procedimiento de Reconciliación:**
-> 1. Abre `forge614-engram tui` e inspecciona la vista previa.
+> 1. Abre `forge614-engram tui` e ingresa a `Assistants` para inspeccionar la vista previa.
 > 2. Si reporta conflicto, haz una copia de respaldo manual de tu archivo `plugins/forge614-engram.js` existente.
 > 3. Retira o reconcilia los cambios locales del archivo.
-> 4. Vuelve a ejecutar `forge614-engram tui`, confirma los cambios y verifica la aplicación limpia.
+> 4. Vuelve a ejecutar `Assistants` en el Centro de Control, confirma los cambios y verifica la aplicación limpia.
 
 ---
 
@@ -430,13 +457,14 @@ En OpenCode, Engram genera el plugin de integración en `plugins/forge614-engram
 Si configuraste una réplica PostgreSQL en `setup`:
 
 #### Sincronización Ordinaria:
+Puede ejecutarse desde la pestaña `Actions > Synchronize now` en `forge614-engram tui` o directamente en la línea de comandos:
 ```bash
 forge614-engram sync
 ```
 
 #### Promoción Explícita a Formato 3:
 Cuando tu base local cuenta con Esquema 7 (refuerzo de búsqueda con confirmaciones) y deseas que la réplica de PostgreSQL sincronice eventos de confirmación y peticiones:
-- La sincronización ordinaria sin banderas rechaza la promoción si la réplica remota está en un formato anterior, devolviendo `SYNC_UPGRADE_REQUIRED`.
+- La sincronización ordinaria sin banderas (o desde la TUI) rechaza la promoción si la réplica remota está en un formato anterior, devolviendo `SYNC_UPGRADE_REQUIRED`.
 - Para promover conscientemente la réplica a **Formato 3**, ejecuta:
 ```bash
 forge614-engram sync --upgrade-format

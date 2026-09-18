@@ -3,7 +3,7 @@ export const HELP = `Forge614 Engram — una base, recuerdos por proyecto y comp
 Uso: forge614-engram <comando> [opciones]
 
 setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
-tui             Asistentes: flechas, Espacio, vista previa y confirmación explícita.
+tui             Centro de control local. Asistentes con vista previa y confirmación explícita.
 init            Inicializa una sola configuración y base local, sin borrar datos.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).

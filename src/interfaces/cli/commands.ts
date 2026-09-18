@@ -8,11 +8,29 @@ import { watchSync } from "../terminal/sync-watch";
 import { startMcp } from "../mcp/server";
 import { runMemoryHook } from "../terminal/hooks";
 import { assistantTui } from "../tui/controller";
+import { controlCenterTui, type ControlCenterTuiResult } from "../tui/control-center";
 import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
 
-export async function dispatch({command,values,need}:ParsedCommand):Promise<void> {
+export interface TuiRunners {
+  controlCenter?: () => Promise<ControlCenterTuiResult>;
+  assistants?: () => Promise<{cancelled:boolean}>;
+}
+
+export async function runTuiCommand(runners:TuiRunners = {}):Promise<void> {
+  const runControlCenter = runners.controlCenter ?? controlCenterTui;
+  const runAssistants = runners.assistants ?? assistantTui;
+  for (;;) {
+    const result = await runControlCenter();
+    if (result.cancelled) { process.exitCode = 130; return; }
+    if (!result.openAssistants) return;
+    const assistants = await runAssistants();
+    if (assistants.cancelled) { process.exitCode = 130; return; }
+  }
+}
+
+export async function dispatch({command,values,need}:ParsedCommand, tuiRunners:TuiRunners = {}):Promise<void> {
   if (command === "setup") { await setupTerminal(); return; }
-  if (command === "tui") { const result=await assistantTui();if(result.cancelled)process.exitCode=130;return; }
+  if (command === "tui") { await runTuiCommand(tuiRunners); return; }
   if (command === "sync") {console.log(JSON.stringify(await syncWorkspace(undefined,{upgradeFormat:values.has("upgrade-format")}),null,2));return;}
   if(command==="sync-watch"&&values.has("upgrade-format"))invalid("sync-watch no acepta --upgrade-format.");
   if (command === "sync-watch") {await watchSync(values.has("interval")?integer(need("interval"),"interval",3600):30);return;}

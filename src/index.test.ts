@@ -11,7 +11,7 @@ const RUNTIME_EXPORTS = [
 ];
 
 const PUBLIC_STORE_METHODS = [
-  "applySync", "archive", "bindProjectDirectory", "close", "context", "createProject",
+  "applySync", "archive", "bindProjectDirectory", "close", "context", "controlCenter", "createProject",
   "enableAssistantIntegration", "enableSessions", "enableSync", "endSession", "get", "getProject",
   "enableSearchReinforcement", "getSession", "getVersion", "history", "listProjects", "reinforcementEnabled",
   "projectForDirectory", "renameProject", "resolveProjectDirectory", "restore", "save",

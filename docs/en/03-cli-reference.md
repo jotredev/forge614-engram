@@ -1,8 +1,8 @@
 # 03 (EN). Terminal CLI Command Reference
 
-> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
+> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [03. Manual Exhaustivo de Terminal (CLI)](../es/03-referencia-cli.md)
 
 This manual provides an exhaustive reference for all CLI commands, options, syntax rules, exit codes, and response formats for Forge614 Engram.
@@ -71,23 +71,41 @@ forge614-engram setup
 ---
 
 ### 2.4. `tui`
-Interactive full-screen terminal dashboard to audit, preview, and configure coding assistants (Claude Code, Codex, Cursor, OpenCode, Gemini CLI).
+Interactive full-screen Terminal Control Center to audit local storage, inspect project registries and shared memory, execute two-step confirmed actions (`confirm` + Enter), and configure AI coding assistants through a sequential subflow.
 
 ```bash
 forge614-engram tui
 ```
+- **Options:** None.
+- **Requirements:** Interactive terminal (`isTTY` true on both `stdin` and `stdout`). In non-interactive or piped environments, aborts with `INTERACTIVE_REQUIRED`.
+- **Top Menu Header:**
+  `Summary | Projects | Shared | Storage | Actions | Assistants | Exit`
 - **Keybindings:**
-  - `↑` / `↓`: Move cursor.
-  - `Space`: Toggle client selection.
-  - `r`: Rescan installed executables and configurations.
-  - `c`: Custom binary or config path via masked input.
-  - `t`: Run 5-second async MCP server self-test over stdio.
-  - `Enter`: Advance through screens (`List` $\rightarrow$ `Preview` $\rightarrow$ `Confirm` $\rightarrow$ `Apply`).
-  - `Escape`: Step back to previous screen.
-  - `Ctrl+C`: Immediate clean abort, returning code `130`.
-- **Side Effects:**
-  - In Preview: Zero disk writes.
-  - On Apply: Runs preflights, enables Schema 5 in SQLite, creates `0600` UUID-suffixed backups, applies changes preserving comments, and validates published bytes (`PUBLISHED_UNVERIFIED` if concurrently modified). In OpenCode, existing divergent plugins trigger `CONFLICT` without silent overwriting.
+  - `←` / `→` / `↑` / `↓`: Shift tab focus across top header and navigate item lists.
+  - `Enter`: Open focused tab or view selected project detail.
+  - `Escape`: Return to prior view or cancel active action.
+  - `PgUp` / `PgDn`: Scroll detail text when output exceeds viewport height.
+  - `Ctrl+C` or `EOF`: Immediately terminate session, restore terminal, and exit with code `130`.
+- **Read-Only by Default Principle:**
+  - Opening the screen, navigating tabs, resizing the terminal, or unrecognized input **never creates or mutates files**, never creates `~/.forge614/.env`, never creates `engram.db`, and never registers projects.
+  - If uninitialized, displays clear uninitialized notice and points to `setup` or `init`; never creates files implicitly.
+- **Views and Available Metadata:**
+  - **Summary:** Initialization state, active SQLite schema (3 to 7), enabled capabilities, total project count, and aggregated shared memory counts.
+  - **Projects:** Lists projects by display name, abbreviated UUID, and active/archived memory counts. Pressing Enter opens Detail View with full canonical UUID, timestamps, and local bound directory paths (`bindings`).
+  - **Shared:** Active and archived shared memory counts and last update timestamp; explains that shared memory is a single global collection rather than per-project storage.
+  - **Storage:** Local SQLite database path, schema version, and PostgreSQL status (`configured` or `not-configured`).
+- **Strict Privacy and Sanitization:**
+  - **Zero Exposure:** Strictly conceals `POSTGRES_URL`, `.env` contents, passwords, secrets, memory titles, memory bodies, and assistant configs.
+  - **Sanitization:** Strips or replaces ANSI escapes, control characters, bidi overrides, zero-width characters, and unapproved URLs. Hiding the URL does not test remote connectivity.
+- **Confirmed Actions (`Actions`):**
+  - Available actions: `Create project`, `Rename project`, `Bind directory`, `Enable assistant integration` (Schema 5), `Enable sessions` (Schema 6), `Enable search reinforcement` (Schema 7), `Synchronize now` (only if PostgreSQL is configured; single-shot without format promotion or background services).
+  - **Confirmation Protocol:** Shows comprehensive preview, prompts for input if needed, and requires typing `confirm` (case-insensitive) followed by Enter. Pressing Enter alone never authorizes writes.
+  - **Safe Cancellation:** Pressing Escape or Ctrl+C before final confirmation writes nothing. During an in-flight confirmed action, duplicate keys are ignored; on exit, terminal is restored, though an already started action is not promised to revert.
+- **Sequential Assistant Subflow (`Assistants`):**
+  - Cleanly suspends the Control Center and restores standard terminal mode.
+  - Sequentially opens the assistant configurator (`assistantTui`) with Space selection, 5-second async self-test (`t`), preflight diffs, `0600`/UUID backups, and post-write verification.
+  - Exiting the assistant tool restores the terminal and reloads a fresh snapshot in the Control Center without nested raw modes.
+- **Exit Codes:** `0` on normal exit; `130` on cancellation; `1` on error or missing TTY (`INTERACTIVE_REQUIRED`).
 
 ---
 
