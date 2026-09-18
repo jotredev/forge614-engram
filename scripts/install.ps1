@@ -42,12 +42,29 @@ function Test-ReleaseUri([string] $Uri, [bool] $AllowLocalHttp) {
   throw 'Release URL must use HTTPS.'
 }
 
-function Write-TestAssetDiagnostics($Assets) {
+function Write-TestAssetDiagnostics($Response, $RawContent, $ParsedRelease) {
   if (-not $testEndpoint) { return }
+  $rawText = if ($null -eq $RawContent) {
+    ''
+  } elseif ($RawContent -is [byte[]]) {
+    [System.Text.Encoding]::UTF8.GetString($RawContent)
+  } else {
+    [string]$RawContent
+  }
+  $rawPreviewLength = [Math]::Min(512, $rawText.Length)
+  $rawPreview = $rawText.Substring(0, $rawPreviewLength)
+  $assets = if ($null -eq $ParsedRelease) { $null } else { $ParsedRelease.assets }
   $details = [ordered]@{
-    assetsType = if ($null -eq $Assets) { '<null>' } else { $Assets.GetType().FullName }
-    assetsCount = @($Assets).Count
-    assetNames = @($Assets | ForEach-Object { if ($null -eq $_) { '<null>' } else { [string]$_.name } })
+    responseType = if ($null -eq $Response) { '<null>' } else { $Response.GetType().FullName }
+    rawContentType = if ($null -eq $RawContent) { '<null>' } else { $RawContent.GetType().FullName }
+    rawContentCharacterLength = $rawText.Length
+    rawContentByteLength = [System.Text.Encoding]::UTF8.GetByteCount($rawText)
+    rawContentPreview = $rawPreview
+    parsedReleaseType = if ($null -eq $ParsedRelease) { '<null>' } else { $ParsedRelease.GetType().FullName }
+    parsedPropertyNames = if ($null -eq $ParsedRelease) { @() } else { @($ParsedRelease.PSObject.Properties | ForEach-Object { $_.Name }) }
+    assetsType = if ($null -eq $assets) { '<null>' } else { $assets.GetType().FullName }
+    assetsCount = @($assets).Count
+    assetNames = @($assets | ForEach-Object { if ($null -eq $_) { '<null>' } else { [string]$_.name } })
   } | ConvertTo-Json -Compress -Depth 3
   [Console]::Error.WriteLine("Test fixture asset diagnostics: $details")
 }
@@ -95,18 +112,19 @@ try {
   Test-ReleaseUri $releaseJsonUrl $testEndpoint
   try {
     $releaseResponse = Invoke-WebRequest -Uri $releaseJsonUrl -UseBasicParsing
-    $release = $releaseResponse.Content | ConvertFrom-Json
+    $releaseRawContent = $releaseResponse.Content
+    $release = $releaseRawContent | ConvertFrom-Json
   } catch {
     Stop-Install 'Could not download release metadata.'
   }
   $manifestAsset = @($release.assets | Where-Object { $_.name -eq 'SHA256SUMS' })
   $binaryAsset = @($release.assets | Where-Object { $_.name -eq $artifact })
   if ($manifestAsset.Count -ne 1) {
-    Write-TestAssetDiagnostics $release.assets
+    Write-TestAssetDiagnostics $releaseResponse $releaseRawContent $release
     Stop-Install 'The release is missing SHA256SUMS.'
   }
   if ($binaryAsset.Count -ne 1) {
-    Write-TestAssetDiagnostics $release.assets
+    Write-TestAssetDiagnostics $releaseResponse $releaseRawContent $release
     Stop-Install "The release is missing the $artifact binary."
   }
   Test-ReleaseUri $manifestAsset[0].browser_download_url $testEndpoint
