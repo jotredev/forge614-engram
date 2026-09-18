@@ -6,6 +6,21 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+function Resolve-NodeExecutable {
+  $candidates = @(
+    Get-Command node -CommandType Application -ErrorAction Stop |
+      Where-Object {
+        $_ -is [System.Management.Automation.ApplicationInfo] -and
+          -not [string]::IsNullOrWhiteSpace($_.Source) -and
+          (Test-Path -LiteralPath $_.Source -PathType Leaf)
+      }
+  )
+  if ($candidates.Count -eq 0) {
+    throw 'Could not find a valid Node.js executable in PATH.'
+  }
+  return [string] $candidates[0].Source
+}
+
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
   throw 'The Windows reparse addon must be built on Windows with Visual Studio 2022 C++ build tools.'
 }
@@ -15,7 +30,7 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $addonDirectory = Join-Path $repositoryRoot 'native/windows-reparse-guard'
 $nodeGyp = Join-Path $repositoryRoot 'node_modules/node-gyp/bin/node-gyp.js'
-$node = (Get-Command node -CommandType Application -ErrorAction Stop).Source
+$node = Resolve-NodeExecutable
 if (-not (Test-Path -LiteralPath $nodeGyp -PathType Leaf)) {
   throw 'Install the locked build dependencies first: bun install --frozen-lockfile --ignore-scripts'
 }
