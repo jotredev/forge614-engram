@@ -21,6 +21,15 @@ test("Windows path validation accepts ordinary writable config parents without t
 }));
 
 const nativeWindows = process.platform === "win32" ? test : test.skip;
+nativeWindows("diagnostic: Windows reparse query startup reports bounded process metadata", () => withDirectory(dir => {
+  const systemRoot=process.env.SystemRoot;
+  const executable=systemRoot?join(systemRoot,"System32","WindowsPowerShell","v1.0","powershell.exe"):null;
+  const started=Date.now();
+  const result=executable&&existsSync(executable)
+    ? spawnSync(executable,["-NoProfile","-NonInteractive","-Command","$ErrorActionPreference='Stop';$path=[Environment]::GetEnvironmentVariable('FORGE614_ENGRAM_REPARSE_PATH',[System.EnvironmentVariableTarget]::Process);$attributes=[System.IO.File]::GetAttributes($path);if(([int]$attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 1};exit 0"],{env:{...process.env,FORGE614_ENGRAM_REPARSE_PATH:dir},shell:false,stdio:"ignore",timeout:2000,windowsHide:true})
+    : null;
+  console.info(JSON.stringify({diagnostic:"windows-reparse-query",systemRootPresent:!!systemRoot,executableAvailable:!!executable&&existsSync(executable),status:result?.status??null,signal:result?.signal??null,errorCode:(result?.error as NodeJS.ErrnoException|undefined)?.code??null,elapsedMs:Date.now()-started}));
+}));
 nativeWindows("native Windows guarded publication accepts an ordinary writable directory", () => withDirectory(dir => {
   const path = join(dir, "config");
   guardedWrite({path,before:null,after:"new",kind:"config"},()=>{},()=>{});
