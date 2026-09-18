@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, parse } from "node:path";
+import { dirname, join, parse } from "node:path";
 import { assertSafePath, guardedWrite, readSafeFile } from "./private-files";
 import { withDirectory } from "../__test-support__/fixtures";
 
@@ -21,6 +21,21 @@ test("Windows path validation accepts ordinary writable config parents without t
 }));
 
 const nativeWindows = process.platform === "win32" ? test : test.skip;
+nativeWindows("diagnostic: batched Windows reparse query reports redacted failure detail", () => withDirectory(dir => {
+  const systemRoot=process.env.SystemRoot;
+  const executable=systemRoot?join(systemRoot,"System32","WindowsPowerShell","v1.0","powershell.exe"):null;
+  const target=join(dir,".gemini","config","mcp_config.json"),root=parse(target).root,paths:string[]=[];
+  let current=target;
+  while(current!==root){if(existsSync(current))paths.push(current);current=dirname(current);}
+  const script="$ErrorActionPreference='Stop';$raw=[Environment]::GetEnvironmentVariable('FORGE614_ENGRAM_REPARSE_PATHS',[System.EnvironmentVariableTarget]::Process);if([string]::IsNullOrEmpty($raw)){exit 2};try{$paths=@($raw|ConvertFrom-Json -ErrorAction Stop)}catch{exit 2};if($paths.Count -eq 0){exit 2};foreach($path in $paths){if($path -isnot [string] -or [string]::IsNullOrEmpty($path)){exit 2};$attributes=[System.IO.File]::GetAttributes($path);if(([int]$attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 1}};exit 0";
+  const started=Date.now();
+  const result=executable&&existsSync(executable)
+    ? spawnSync(executable,["-NoProfile","-NonInteractive","-Command",script],{env:{...process.env,FORGE614_ENGRAM_REPARSE_PATHS:JSON.stringify(paths)},shell:false,stdio:["ignore","ignore","pipe"],timeout:2000,windowsHide:true})
+    : null;
+  const stderr=(result?.stderr?.toString()??"").slice(0,1024).replace(/[A-Za-z]:[\\/][^\r\n]*/g,"<windows-path>").replace(/\\\\[^\\\r\n]+(?:\\[^\r\n]+)*/g,"<unc-path>");
+  console.info(JSON.stringify({diagnostic:"windows-reparse-batch",systemRootPresent:!!systemRoot,executableAvailable:!!executable&&existsSync(executable),pathCount:paths.length,spawnError:!!result?.error,status:result?.status??null,signal:result?.signal??null,errorCode:(result?.error as NodeJS.ErrnoException|undefined)?.code??null,elapsedMs:Date.now()-started,stderr}));
+  expect(paths.length).toBeGreaterThan(0);
+}));
 nativeWindows("native Windows guarded publication batches ordinary ancestor validation", () => withDirectory(dir => {
   const path = join(dir, "config");
   guardedWrite({path,before:null,after:"new",kind:"config"},()=>{},()=>{});
