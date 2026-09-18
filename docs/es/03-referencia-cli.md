@@ -205,11 +205,12 @@ forge614-engram mcp
 Adaptador nativo invocado por ganchos de asistentes de desarrollo al iniciar sesión o enviar prompts.
 
 ```bash
-forge614-engram memory-hook --client <claude-code|codex|cursor|opencode|gemini-cli>
+forge614-engram memory-hook --client <claude-code|codex|cursor|opencode|antigravity>
 ```
 - **Opciones obligatorias:** `--client <nombre>`
-- **Salida:** Emite una estructura JSON nativa comprensible para el cliente especificado inyectando recordatorios contextuales.
+- **Salida:** Emite una estructura JSON nativa comprensible para el cliente especificado inyectando recordatorios contextuales. Para `antigravity` y `opencode`, emite `{}` ya que no utilizan ganchos de eventos administrados en este formato.
 - **Efectos secundarios:** **No guarda recuerdos en la base de datos.** La persistencia de recuerdos la realiza el modelo mediante llamadas a `memory_save`.
+- **Aviso en Antigravity:** Opera actualmente como *MCP only*. No se instala ningún hook automático (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
 
 ---
 

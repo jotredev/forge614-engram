@@ -9,7 +9,7 @@ test("assistant detection previews absent clients without writing configuration"
   try {
     const results = detectAssistants({home,env:{},path:"",platform:"linux",engramExecutable:process.execPath});
     expect(results.map(result => [result.id,result.configuration.status])).toEqual([
-      ["claude-code","absent"],["codex","absent"],["cursor","absent"],["opencode","absent"],["gemini-cli","absent"],
+      ["claude-code","absent"],["codex","absent"],["cursor","absent"],["opencode","absent"],["antigravity","absent"],
     ]);
     expect(readdirSync(home)).toEqual([]);
   } finally { rmSync(home,{recursive:true,force:true}); }

@@ -1,6 +1,6 @@
 # Forge614 Engram — Documentación Oficial (Español)
 
-> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado ([sin embeddings](conceptos/que-son-los-embeddings.md)), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
 > **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas) / 7 (confirmaciones inmutables y orden reforzado) | Réplica PostgreSQL Formatos 1, 2 y 3 (promoción explícita con `sync --upgrade-format`; tabla física remota `state.format = 1`)
 > **Habilitaciones:** Explícitas y aditivas (`integration-enable` para Esquema 5; `sessions-enable` para Esquema 6; `reinforcement-enable` para Esquema 7; `sync --upgrade-format` para réplica Formato 2 o Formato 3). Nunca automáticas en lecturas ordinarias, apertura de base ni arranque del centro de control TUI.
 > **Estado:** Vigente y Verificado (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en 39.76s)
@@ -9,11 +9,15 @@
 > **Ejecutable autónomo:** `forge614-engram` en `$HOME/.local/bin/` (funciona de forma autónoma sin Bun ni Node en ejecución habitual)
 > **Espacio central de usuario:** `~/.forge614/` (`.env` de configuración única y `engram.db` de base única)
 
+> [!TIP]
+> **¿No te queda claro qué significa "sin embeddings" o qué es un embedding?**
+> Lee nuestra explicación ilustrada en lenguaje cotidiano (sin tecnicismos o con aclaración entre paréntesis): **[¿Qué son los Embeddings y por qué Forge614 Engram funciona SIN ellos?](conceptos/que-son-los-embeddings.md)**.
+
 ---
 
 ## 1. Resumen Ejecutivo (¿Qué es en una sola frase?)
 
-**Forge614 Engram** es un sistema de memoria personal y local que reside en la carpeta de tu usuario (`~/.forge614/`), estructurado internamente como un **monolito modular organizado por funcionalidad** (separando reglas puras de dominio, coordinación de aplicación, adaptadores de infraestructura e interfaces), diseñado para que tus asistentes de desarrollo (Claude Code, Codex, Cursor, OpenCode y Gemini CLI) y aplicaciones recuerden decisiones técnicas duraderas y preferencias compartidas a través de un servidor MCP nativo por stdio con 10 herramientas especializadas, asociaciones de proyecto basadas en Git, un **Centro de Control interactivo en terminal (TUI)** con lectura segura por defecto y confirmación estricta de dos pasos (`confirm` + Enter), sesiones de memoria progresiva con líneas temporales (`timeline`), contexto ensamblado clasificado (`context`), control inmutable de versiones, búsqueda local explicable reforzada por repeticiones sin embeddings (SQLite FTS5 trigram con ponderación por estabilidad y actualidad), y una réplica opcional directa con PostgreSQL con promoción segura a Formato 3.
+**Forge614 Engram** es un sistema de memoria personal y local que reside en la carpeta de tu usuario (`~/.forge614/`), estructurado internamente como un **monolito modular organizado por funcionalidad** (separando reglas puras de dominio, coordinación de aplicación, adaptadores de infraestructura e interfaces), diseñado para que tus asistentes de desarrollo (Claude Code, Codex, Cursor, OpenCode y Antigravity) y aplicaciones recuerden decisiones técnicas duraderas y preferencias compartidas a través de un servidor MCP nativo por stdio con 10 herramientas especializadas, asociaciones de proyecto basadas en Git, un **Centro de Control interactivo en terminal (TUI)** con lectura segura por defecto y confirmación estricta de dos pasos (`confirm` + Enter), sesiones de memoria progresiva con líneas temporales (`timeline`), contexto ensamblado clasificado (`context`), control inmutable de versiones, búsqueda local explicable reforzada por repeticiones [sin embeddings](conceptos/que-son-los-embeddings.md) (SQLite FTS5 trigram con ponderación por estabilidad y actualidad), y una réplica opcional directa con PostgreSQL con promoción segura a Formato 3.
 
 ---
 
@@ -70,7 +74,7 @@ Imagina que contratas a un archivero muy ordenado para custodiar la memoria de t
   - Esquema 6 (sesiones progresivas y líneas temporales): se activa con `sessions-enable` o en la TUI.
   - Esquema 7 (confirmaciones inmutables y orden reforzado): se activa con `reinforcement-enable`, en la TUI o en `setup`.
   - Las migraciones son estrictamente aditivas e irreversibles (sin marcha atrás / *no downgrade*). Ningún comando ordinario auto-migra la base.
-- **Sin Embeddings ni Modelos Evaluadores de Verdad:** La búsqueda es 100% textual y matemática sobre SQLite FTS5 trigram. No hay embeddings vectoriales, re-entrenamiento ni un modelo secundario juzgando contradicciones. Una confirmación refleja únicamente que el asistente volvió a registrar la nota; no representa verificación humana de verdad.
+- **[Sin Embeddings](conceptos/que-son-los-embeddings.md) ni Modelos Evaluadores de Verdad:** La búsqueda es 100% textual y matemática sobre SQLite FTS5 trigram. No hay embeddings vectoriales, re-entrenamiento ni un modelo secundario juzgando contradicciones. Una confirmación refleja únicamente que el asistente volvió a registrar la nota; no representa verificación humana de verdad.
 - **Claves de Petición Idempotentes (`requestKey`):** El asistente debe usar la misma `requestKey` para reintentar una operación fallida (devolviendo el resultado anterior sin sumar confirmaciones) y una clave nueva para observaciones independientes. Si se reutiliza una clave con contenido distinto, el sistema aborta de inmediato con `REQUEST_CONFLICT`.
 - **Límites Transparentes: Caracteres Unicode vs Bytes JSON vs Tokens:**
   - Las vistas previas acotan texto a **300 caracteres Unicode** (500 para foco y 150 para vecinos en `timeline`).
@@ -94,3 +98,8 @@ Imagina que contratas a un archivero muy ordenado para custodiar la memoria de t
 6. [**06. Resolución de Problemas y Catálogo de Errores (`06-resolucion-de-errores.md`)**](06-resolucion-de-errores.md): Catálogo completo de códigos de error (`INTERACTIVE_REQUIRED`, `REINFORCEMENT_REQUIRED`, `SYNC_UPGRADE_REQUIRED`, `CLOCK_SKEW`, `REQUEST_CONFLICT`, `MIGRATION_REQUIRED`, `AMBIGUOUS_SESSION`, `NO_SESSION_CONTEXT`, `SESSION_CONFLICT`, `SESSION_NOT_FOUND`, `SESSION_CLOSED`, `SUMMARY_TOPIC_RESERVED`, `SYNC_TOO_LARGE`, `CONFLICT`, etc.) con causas raíz y pasos de recuperación.
 7. [**07. Glosario de Conceptos en Lenguaje Cotidiano (`07-glosario.md`)**](07-glosario.md): Definiciones claras con analogías cotidianas y términos técnicos formales entre paréntesis: Centro de Control TUI, lectura por defecto, confirmación de dos pasos, saneamiento de salida en terminal, subflujo secuencial, confirmación inmutable, refuerzo FTS5 sin embeddings, ventana móvil de deduplicación, etc.
 8. [**08. Límites de la Etapa y Hoja de Ruta Futura (`08-limites-y-roadmap.md`)**](08-limites-y-roadmap.md): Capacidades completadas (Fases 1 a 4.3), límites operativos (TUI sin GUI ni daemon ni monitor remoto de salud, búsqueda puramente textual sin embeddings, confirmación no es verdad) y roadmap oficial con las fases pendientes.
+
+---
+
+## 💡 Conceptos Fundamentales Explicados para Todo Público
+- 📘 [**¿Qué son los Embeddings y por qué Forge614 Engram funciona SIN ellos? (`conceptos/que-son-los-embeddings.md`)**](conceptos/que-son-los-embeddings.md): Guía ilustrada con la analogía de la biblioteca, comparativa directa de por qué la memoria local sin embeddings es gratuita ($0), instantánea (<2ms), privada (100% offline) y quirúrgicamente exacta para código.

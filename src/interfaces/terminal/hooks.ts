@@ -4,11 +4,11 @@ import type { ClientId } from '../../modules/assistants';
 function response(client: ClientId, text: string): object {
   try {
     const input = JSON.parse(text); const event = input?.hook_event_name;
-    const allowed = client === 'cursor' ? ['sessionStart'] : client === 'gemini-cli' ? ['SessionStart','BeforeAgent'] : client === 'opencode' ? [] : ['SessionStart','UserPromptSubmit'];
+    const allowed = client === 'cursor' ? ['sessionStart'] : client === 'opencode' || client === 'antigravity' ? [] : ['SessionStart','UserPromptSubmit'];
     if(!allowed.includes(event)) return {};
     const context = MEMORY_PROTOCOL + (event === 'SessionStart' || event === 'sessionStart' ? '\n\n' + RECOVERY : '');
     if(client === 'cursor') return {additional_context:context};
-    return {hookSpecificOutput:{...(client === 'gemini-cli' ? {} : {hookEventName:event}),additionalContext:context}};
+    return {hookSpecificOutput:{hookEventName:event,additionalContext:context}};
   } catch { return {}; }
 }
 export async function runMemoryHook(client: ClientId): Promise<void> {

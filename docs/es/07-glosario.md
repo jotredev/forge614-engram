@@ -34,7 +34,7 @@ Como un informe financiero ejecutivo que resume cifras clave sin revelar las cla
 Como poner una muesca de lápiz en la portada de un manual cada vez que lo vuelves a consultar en el taller, sin arrancar hojas ni reimprimir el libro entero: un evento histórico fechado e inmutable que registra que un recuerdo activo existente fue observado nuevamente por el asistente, sin fabricar versiones 2 o 3 artificiales ni duplicar el contenido. Representa una nueva observación del dato; no certifica verdad absoluta ni verificación humana.
 
 ### Refuerzo de Búsqueda FTS5 sin Embeddings (FTS5 Reinforced Search without Embeddings)
-Como un bibliotecario experto que organiza los libros en el mostrador dando preferencia a los que consulta con frecuencia y a los que se han revisado recientemente, sin necesidad de escanearlos con rayos X ni usar complejos modelos neuronales: un mecanismo de ordenación matemática que pondera las coincidencias léxicas de BM25 multiplicándolas por factores de notas fijadas (`pinned`), actualidad temporal en escala de 30 días (`recencyBoost`), y estabilidad acumulada (`stabilityBoost`).
+Como un bibliotecario experto que organiza los libros en el mostrador dando preferencia a los que consulta con frecuencia y a los que se han revisado recientemente, sin necesidad de escanearlos con rayos X ni usar complejos modelos neuronales: un mecanismo de ordenación matemática que pondera las coincidencias léxicas de BM25 multiplicándolas por factores de notas fijadas (`pinned`), actualidad temporal en escala de 30 días (`recencyBoost`), y estabilidad acumulada (`stabilityBoost`). *(Para una explicación no técnica exhaustiva y comparativa con la búsqueda vectorial tradicional, consulta nuestra guía dedicada: [¿Qué son los Embeddings y por qué Forge614 Engram funciona SIN ellos?](conceptos/que-son-los-embeddings.md)).*
 
 ### Ventana Móvil de Deduplicación de 15 Minutos (15-Minute Sliding Deduplication Window)
 Como recordar lo que te dijeron hace diez minutos en la misma conversación sin confundirlo con lo que te contaron el mes pasado: una regla temporal estricta para notas generales sin tema (`topicKey: null`), donde solo se consideran duplicados los datos observados en los últimos 15 minutos exactos (`now - 900,000 ms` a `now`). Si transcurren más de 15 minutos, Engram crea un recuerdo independiente nuevo para no fusionar hechos distantes.
@@ -120,3 +120,10 @@ Como firmar una escritura notarial donde o se completan todos los sellos, firmas
 
 ### Bloqueo Optimista CAS (Compare-and-Swap / CAS)
 Como dos personas que intentan sellar el mismo documento numerado: cada una revisa primero qué número tiene el sello actual; la primera que llega estampa el nuevo sello avanzando la numeración, mientras que la segunda, al notar que el número ya no coincide con el que vio, se detiene amablemente sin arruinar el trabajo de la primera.
+
+### Antigravity (Asistente de Desarrollo Soportado / `antigravity`)
+Asistente de desarrollo compatible con Forge614 Engram que sustituye a Gemini CLI. Se conecta mediante el protocolo estándar MCP a través de `~/.gemini/config/mcp_config.json`, permitiendo al modelo consultar contexto (`memory_context`), buscar recuerdos (`memory_search`) y guardar decisiones (`memory_save`). Opera en modo *MCP only* y no instala hooks automáticos (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
+
+### Seguridad de Rutas en Windows (Windows Path Guard / Reparse Points)
+Mecanismo de seguridad específico para Windows que comprueba exhaustivamente que las rutas de configuración no apunten a enlaces simbólicos (*symbolic links*), uniones de directorios (*junctions*) ni puntos de reanálisis (*reparse points*) antes de escribir datos, neutralizando ataques de redirección maliciosa de archivos. (Estado: validación pendiente de CI hasta confirmación de job nativo).
+

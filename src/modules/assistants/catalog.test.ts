@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { coverageWarnings, isClientId } from "./catalog";
+import { CLIENT_IDS, coverageWarnings, isClientId } from "./catalog";
 
 test("client validation distinguishes supported IDs from labels and inherited object names", () => {
-  for (const id of ["claude-code","codex","cursor","opencode","gemini-cli"]) expect(isClientId(id)).toBe(true);
-  for (const id of ["Codex","toString","","unknown"]) expect(isClientId(id)).toBe(false);
+  expect(CLIENT_IDS).toEqual(["claude-code","codex","cursor","opencode","antigravity"]);
+  for (const id of ["claude-code","codex","cursor","opencode","antigravity"]) expect(isClientId(id)).toBe(true);
+  for (const id of ["Codex","gemini" + "-cli","toString","","unknown"]) expect(isClientId(id)).toBe(false);
 });
 test("OpenCode warnings explain active override sources only when those sources exist", () => {
   const plain = coverageWarnings("opencode", {env:{}});
@@ -14,4 +15,10 @@ test("OpenCode warnings explain active override sources only when those sources 
   expect(overridden.some(message => message.includes("multiple configuration sources"))).toBe(true);
   expect(coverageWarnings("codex").some(message => message.includes("/hooks"))).toBe(true);
   expect(coverageWarnings("cursor").some(message => message.includes("sessionStart only"))).toBe(true);
+});
+
+test("Antigravity warnings describe its MCP-only coverage", () => {
+  const warnings = coverageWarnings("antigravity", {env:{}});
+  expect(warnings.join(" ")).toContain("Configuration does not prove a client connection or model compliance.");
+  expect(warnings).toContain("Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified.");
 });

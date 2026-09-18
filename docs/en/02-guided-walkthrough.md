@@ -112,7 +112,7 @@ The `Actions` tab provides safe operational tasks:
 Selecting `Assistants`:
 - Suspends the Control Center and restores standard terminal mode.
 - Sequentially launches the assistant configurator (`assistantTui`).
-- Select clients with Space (Claude Code, Codex, Cursor, OpenCode, Gemini CLI), run the 5-second async self-test with `t`, review config diffs, and apply with private `0600`/UUID backups.
+- Select clients with Space (Claude Code, Codex, Cursor, OpenCode, Antigravity), run the 5-second async self-test with `t`, review config diffs, and apply with private `0600`/UUID backups.
 - Exiting the assistant configurator restores the terminal and reloads a fresh snapshot in the Control Center.
 - **Zero nested raw modes:** Two event loops never execute simultaneously.
 
@@ -163,7 +163,7 @@ forge614-engram project-bind \
 
 ### Step 5: Native Assistant Prompt Hooks (`memory-hook`)
 
-Injects native prompt orientation blocks for supported clients:
+Injects native prompt orientation blocks for supported clients (Claude Code, Codex, and Cursor via native hooks, and OpenCode via dedicated plugin). For **Antigravity**, it currently operates as **MCP only**; no automatic hook is installed (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*):
 
 ```bash
 forge614-engram memory-hook --client codex

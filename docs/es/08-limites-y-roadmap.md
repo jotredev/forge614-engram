@@ -30,7 +30,7 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 - [x] Servidor MCP nativo por stdio con canales limpios (stdout exclusivo para JSON-RPC).
 - [x] Menú TUI interactivo en terminal (`forge614-engram tui`) con navegación por teclado, vista previa y confirmación segura.
 - [x] Autoprueba asíncrona del servidor MCP verificando binario y herramientas en 5 segundos.
-- [x] Adaptadores seguros para 5 clientes (Claude Code, Codex, Cursor, OpenCode y Gemini CLI) con respaldos `0600`/UUID y verificación posterior de bytes publicados.
+- [x] Adaptadores seguros para 5 clientes (Claude Code, Codex, Cursor, OpenCode y Antigravity) con respaldos `0600`/UUID y verificación posterior de bytes publicados.
 - [x] Esquema 5 en SQLite con tabla `project_bindings` para resolver canónicamente identidades por Git.
 
 ### Fase 4: Sesiones Progresivas de Memoria y Contexto Clasificado — COMPLETADA
@@ -118,6 +118,12 @@ Para mantener expectativas estrictamente realistas, se declaran los siguientes l
     Engram mantiene una única base de datos centralizada `~/.forge614/engram.db`. Los proyectos se indexan por su identificador inmutable `projectId`, evitando la dispersión de archivos `.db` en cada carpeta del usuario.
 18. **Sin edición de notas individuales en el Centro de Control:**
     El Centro de Control administra proyectos, rutas, almacenamiento, migraciones y asistentes. La edición de textos y notas de recuerdos se canaliza a través de los comandos CLI dedicados (`save`, `get`, `delete`), las herramientas MCP o el futuro explorador detallado de recuerdos.
+19. **Antigravity configurado como MCP Only:**
+    Antigravity se integra exclusivamente como *MCP only* (`~/.gemini/config/mcp_config.json`). No instala hooks automáticos (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
+20. **Validación nativa de Windows pendiente de CI:**
+    La validación de publicación de configuración en Windows y el rechazo estricto de enlaces simbólicos, junctions y reparse points están implementados y configurados en CI, pero permanecen formalmente como **validación pendiente de CI hasta que el job nativo en GitHub Actions confirme su resultado**.
+21. **Cese de administración de Gemini CLI e indemnidad de configuraciones previas:**
+    Forge614 Engram deja de administrar Gemini CLI. No lee, modifica ni elimina `~/.gemini/settings.json`, el cual permanece intacto si existía previamente.
 
 ---
 

@@ -122,12 +122,12 @@ function buildPlan(client:ClientId,executable:string,options:AssistantOptions):C
     add(paths.config,before,after,'config');
   }else editJson(paths.config,'config',value=>{
     const key=client==='opencode'?'mcp':'mcpServers';addEntry(value,key,entry);
-    return [[key,{...(value[key]??{}),[NAME]:entry}],...(client==='gemini-cli'?[['hooks',mergeHooks(value.hooks,desiredHooks,client)] as [string,unknown]]:[])];
+    return [[key,{...(value[key]??{}),[NAME]:entry}]];
   });
   if(client==='opencode'){
     const before=inspect(paths.plugin),after=createOpenCodePlugin();
     if(before!==null&&before!==after)fail('CONFLICT','The dedicated Engram plugin already exists with different contents. Review it manually.');add(paths.plugin,before,after,'plugin');
-  }else if(client!=='gemini-cli')editJson(paths.hooks,'hooks',value=>{
+  }else if(client!=='antigravity')editJson(paths.hooks!,'hooks',value=>{
     if(client==='cursor'&&value.version!==undefined&&value.version!==1)fail('CONFLICT','Cursor hooks use an unsupported version.');
     return [...(client==='cursor'?[['version',1] as [string,unknown]]:[]),['hooks',mergeHooks(value.hooks,desiredHooks,client)]];
   });

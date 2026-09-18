@@ -30,7 +30,7 @@ The following development phases are **100% implemented and verified**:
 - [x] Native stdio MCP server with clean I/O channels (stdout reserved for JSON-RPC).
 - [x] Full-screen terminal UI menu (`forge614-engram tui`) with keyboard navigation and safe preview.
 - [x] Asynchronous MCP server self-test verifying binary and tools within a 5-second deadline.
-- [x] Safe adapters for 5 clients (Claude Code, Codex, Cursor, OpenCode, Gemini CLI) with `0600`/UUID backups and post-write verification.
+- [x] Safe adapters for 5 clients (Claude Code, Codex, Cursor, OpenCode, Antigravity) with `0600`/UUID backups and post-write verification.
 - [x] Schema 5 in SQLite with `project_bindings` resolving canonical repository identity via Git.
 
 ### Phase 4: Progressive Memory Sessions and Ranked Context — COMPLETED
@@ -118,6 +118,12 @@ To maintain realistic expectations, the following boundaries are formally declar
     Engram maintains a single centralized database at `~/.forge614/engram.db`. Projects are partitioned logically by immutable `projectId`, avoiding scattering `.db` files across workspace folders.
 18. **No Granular Note Content Editing in Control Center:**
     The Control Center manages projects, directory bindings, storage, migrations, and assistants. Authoring and editing granular memory notes is performed via CLI (`save`, `get`, `delete`), MCP tools, or future specialized explorers.
+19. **Antigravity Configured as MCP Only:**
+    Antigravity is integrated exclusively as *MCP only* (`~/.gemini/config/mcp_config.json`). No automatic hooks are installed (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
+20. **Windows Native Validation Pending CI:**
+    Native Windows configuration publication and strict rejection of symbolic links, junctions, and reparse points are implemented and configured in CI, but remain formally **pending CI validation until confirmed by the native GitHub Actions runner**.
+21. **Discontinuation of Gemini CLI and Protection of Legacy Configurations:**
+    Forge614 Engram no longer manages Gemini CLI. It does not read, modify, or delete `~/.gemini/settings.json`, leaving any preexisting file completely untouched.
 
 ---
 

@@ -77,7 +77,7 @@ bash scripts/install.sh
    ```bash
    bash scripts/install.sh --bin-dir /ruta/a/bin
    ```
-8. **Detección post-instalación de asistentes:** Tras publicar el ejecutable, ejecuta una inspección de solo lectura (`assistant-list`) que analiza qué asistentes de desarrollo (Claude Code, Codex, Cursor, OpenCode, Gemini CLI) están instalados en tu sistema.
+8. **Detección post-instalación de asistentes:** Tras publicar el ejecutable, ejecuta una inspección de solo lectura (`assistant-list`) que analiza qué asistentes de desarrollo (Claude Code, Codex, Cursor, OpenCode, Antigravity) están instalados en tu sistema.
 9. **Ofrecimiento interactivo del Centro de Control TUI:** Si la instalación se ejecuta en una terminal interactiva (donde la entrada y salida son una consola real TTY), el instalador te pregunta:
    ```text
    ¿Abrir ahora el menú de asistentes? [s/N]
@@ -131,7 +131,7 @@ reinforcement-enable
                 Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
-memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
+memory-hook     --client <claude-code|codex|cursor|opencode|antigravity>
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
@@ -430,9 +430,108 @@ Salida representativa en JSON (ideal para scripts de automatización o diagnóst
         "Managed policies and runtime trust can restrict MCP or hooks; this preview does not change them."
       ]
     }
+  },
+  {
+    "id": "antigravity",
+    "label": "Antigravity",
+    "detected": {
+      "installed": true,
+      "executable": "/Users/usuario/.local/bin/agy",
+      "configFound": true,
+      "evidence": ["executable-found", "config-found"]
+    },
+    "configuration": {
+      "status": "configured",
+      "paths": [
+        "/Users/usuario/.gemini/config/mcp_config.json"
+      ]
+    },
+    "automation": {
+      "coverage": "mcp-only",
+      "warnings": [
+        "Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified.",
+        "Configuration does not prove a client connection or model compliance. Durable saves depend on the assistant; abrupt termination cannot guarantee a final save."
+      ]
+    }
   }
 ]
 ```
+
+### 10.1. Integración con Antigravity
+
+Forge614 Engram soporta oficialmente a **Antigravity** como asistente de desarrollo:
+
+* **Compatibilidad mediante MCP (*Model Context Protocol*):** Antigravity se comunica con Engram a través del protocolo estándar MCP por canales de entrada/salida (`stdio`). Esto le permite consultar el contexto clasificado (`memory_context`), buscar recuerdos relevantes (`memory_search`) y registrar nuevas decisiones (`memory_save`).
+* **Decisión del modelo:** Configurar MCP conecta las herramientas con Antigravity, pero **no garantiza que el modelo guarde un recuerdo en cada interacción**. El asistente de inteligencia artificial decide de manera autónoma cuándo invocar las herramientas según las instrucciones de tu conversación.
+* **Cobertura actual (*MCP Only*):** Antigravity se configura exclusivamente como **MCP only**. **No se instala ningún hook automático** para Antigravity. Los ganchos de eventos (*hooks*) estarán disponibles en Engram solo si en el futuro existe un evento oficial, compatible y validado para recordatorios duraderos de memoria.
+  > [!WARNING]
+  > *Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified.*
+
+#### Ubicación del Archivo de Configuración:
+En todos los sistemas operativos (macOS, Linux y Windows), Engram administra únicamente el archivo de configuración global de MCP de Antigravity:
+```text
+~/.gemini/config/mcp_config.json
+```
+
+La entrada administrada dentro del archivo tiene la siguiente estructura conceptual:
+```json
+{
+  "mcpServers": {
+    "forge614-engram": {
+      "command": "/ruta/absoluta/a/forge614-engram",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+* **Ruta absoluta:** La propiedad `command` siempre almacena la ruta absoluta al ejecutable de Engram en tu disco.
+* **Argumento único:** `"args": ["mcp"]` es el único argumento pasado al ejecutable.
+* **Preservación de claves ajenas:** Engram respeta y conserva todas las claves y configuraciones de otros servidores MCP que ya existan en el archivo JSON.
+* **Detección de conflictos:** Si ya existe una entrada para `forge614-engram` con una ruta o argumentos diferentes, Engram **no la sobrescribe a ciegas**; detiene la operación y solicita revisión manual para evitar pérdida de configuraciones personalizadas.
+* **Copias de seguridad privadas:** Antes de escribir cambios, Engram crea un respaldo privado (`0600`) identificado por UUID.
+* **Verificación posterior:** Engram lee y comprueba los bytes exactos publicados en el archivo antes de reportar éxito.
+
+#### Orden de Detección de Antigravity:
+Al auditar el sistema, Engram busca el ejecutable de Antigravity en el siguiente orden estricto:
+1. Busca el comando `agy` en las carpetas de tu variable de entorno `PATH`.
+2. En macOS y Linux, comprueba la ruta estándar:
+   ```text
+   ~/.local/bin/agy
+   ```
+3. En Windows, comprueba la ruta estándar de aplicación local:
+   ```text
+   %LOCALAPPDATA%/agy/bin/agy.exe
+   ```
+
+*(Nota: Encontrar Antigravity no modifica ningún archivo automáticamente. El usuario siempre debe seleccionarlo deliberadamente y confirmar la operación en el asistente `setup` o en el menú `tui`).*
+
+#### Compatibilidad y Protección de Configuraciones Gemini Anteriores:
+* Forge614 Engram **ha dejado de administrar Gemini CLI**.
+* No realiza migraciones automáticas ni modifica configuraciones antiguas de Gemini.
+* Engram **no lee, no modifica y no elimina** el archivo:
+  ```text
+  ~/.gemini/settings.json
+  ```
+  Si este archivo existe en tu equipo, permanece completamente intacto.
+* El hecho de que Antigravity utilice la carpeta compartida `.gemini` para su configuración no autoriza a Engram a alterar configuraciones previas de Gemini.
+
+#### Seguridad de Rutas en Windows:
+* En sistemas POSIX (macOS y Linux), Engram valida la seguridad de los archivos verificando permisos octales privados (`0700` para carpetas y `0600` para archivos).
+* En Windows, los permisos POSIX no reflejan con precisión las listas de control de acceso (*Access Control Lists* / ACL) del sistema NTFS.
+* Por ello, Engram implementa una validación específica para Windows que **rechaza enlaces simbólicos (*symbolic links*), uniones de directorios (*junctions*) y puntos de reanálisis (*reparse points*)** antes de escribir cualquier archivo de configuración.
+* Esta protección impide que una ruta en apariencia inocente redirija la escritura de configuraciones hacia directorios no autorizados o comprometidos.
+* **Estado de verificación en Windows:** La validación nativa de Windows para publicación y puntos de reanálisis está configurada en la integración continua (CI) y **permanece como validación pendiente de CI hasta que el job nativo en GitHub Actions confirme su resultado**.
+
+#### Garantías de Calidad y Pruebas Documentadas:
+La integración con Antigravity y la seguridad multiplataforma están respaldadas por pruebas automatizadas:
+* Se comprobó que Antigravity escribe únicamente en `~/.gemini/config/mcp_config.json`.
+* Se comprobó que `~/.gemini/settings.json` permanece inalterado byte por byte.
+* Se comprobó que Antigravity no instala ni registra hooks.
+* Se comprobó que los comentarios y entradas JSON ajenas sobreviven intactos a la inserción.
+* Se comprobó que configuraciones inválidas, duplicadas, conflictivas, modificadas tras la vista previa o situadas tras enlaces inseguros son rechazadas.
+* Se restauró la prueba de fallo parcial: si un asistente aplica su configuración y el siguiente falla, Engram informa con transparencia el resultado real y conserva los respaldos privados sin simular un éxito total ficticio.
+* La ejecución nativa de Windows para publicación y reparse points permanece pendiente de validación en CI.
 
 ---
 

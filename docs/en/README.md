@@ -1,6 +1,6 @@
 # Forge614 Engram — Official Documentation (English)
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
+> **Stage:** TUI Control Center, Reinforced FTS5 ([no embeddings](concepts/what-are-embeddings.md)), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
 > **Status:** Current & Verified (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [Documentación en Español](../es/README.md)
@@ -8,11 +8,15 @@
 > **Standalone Binary:** `forge614-engram` in `$HOME/.local/bin/` (operates autonomously without Bun or Node at runtime)
 > **Central User Storage:** `~/.forge614/` (`.env` single global configuration and `engram.db` single database)
 
+> [!TIP]
+> **New to local AI memory or wondering what "without embeddings" means?**
+> Check out our plain-language illustrated guide (technical terms explained in parentheses): **[What are Embeddings and why does Forge614 Engram work WITHOUT them?](concepts/what-are-embeddings.md)**.
+
 ---
 
 ## 1. Executive Summary (What is it in a single sentence?)
 
-**Forge614 Engram** is a personal, local memory system residing in your user directory (`~/.forge614/`), structured internally as a **feature-oriented modular monolith** (separating pure domain rules, application flow coordination, concrete infrastructure adapters, and user/assistant delivery interfaces), designed for your developer coding assistants (Claude Code, Codex, Cursor, OpenCode, and Gemini CLI) and applications to retain durable technical decisions and shared preferences via a native stdio Model Context Protocol (MCP) server featuring 10 tools, progressive memory sessions, ranked context retrieval, Git-based local project bindings, an interactive **Terminal Control Center (TUI)** with safe read-only navigation by default and strict two-step action confirmation (`confirm` + Enter), immutable version history, explainable local FTS5 search reinforced by repetitions without embeddings, and an optional direct PostgreSQL replica with safe Format 3 promotion.
+**Forge614 Engram** is a personal, local memory system residing in your user directory (`~/.forge614/`), structured internally as a **feature-oriented modular monolith** (separating pure domain rules, application flow coordination, concrete infrastructure adapters, and user/assistant delivery interfaces), designed for your developer coding assistants (Claude Code, Codex, Cursor, OpenCode, and Antigravity) and applications to retain durable technical decisions and shared preferences via a native stdio Model Context Protocol (MCP) server featuring 10 tools, progressive memory sessions, ranked context retrieval, Git-based local project bindings, an interactive **Terminal Control Center (TUI)** with safe read-only navigation by default and strict two-step action confirmation (`confirm` + Enter), immutable version history, explainable local FTS5 search reinforced by repetitions [without embeddings](concepts/what-are-embeddings.md), and an optional direct PostgreSQL replica with safe Format 3 promotion.
 
 ---
 
@@ -67,7 +71,7 @@ Imagine hiring a meticulous office archivist to safeguard knowledge across all y
   - Schema 6 (progressive memory sessions and timelines): enabled exclusively via `sessions-enable` or TUI.
   - Schema 7 (immutable confirmations and reinforced search): enabled exclusively via `reinforcement-enable`, TUI, or `setup`.
   - Migrations are strictly additive and irreversible (no downgrade). Ordinary CLI commands and MCP tools never auto-migrate databases.
-- **No Embeddings and No Truth-Verifying Models:** Search is 100% textual and mathematical via SQLite FTS5 trigram. There are no vector embeddings, model training, or secondary LLMs auditing contradictions. A confirmation reflects solely that an assistant re-recorded identical knowledge; it is never a guarantee of factual truth.
+- **[No Embeddings](concepts/what-are-embeddings.md) and No Truth-Verifying Models:** Search is 100% textual and mathematical via SQLite FTS5 trigram. There are no vector embeddings, model training, or secondary LLMs auditing contradictions. A confirmation reflects solely that an assistant re-recorded identical knowledge; it is never a guarantee of factual truth.
 - **Idempotent Request Keys (`requestKey`):** Assistants should reuse a stable `requestKey` for retries of a logical operation (replaying the stored response without increasing confirmations) and a new key for independent observations. Reusing an existing key with altered payload aborts with `REQUEST_CONFLICT`.
 - **Unicode Code Point and UTF-8 Byte Caps (Not Token Budgets):** Previews are bounded in Unicode code points (300 for search/context; 500 for focus and 150 for neighbors in timeline). The `--max-bytes` parameter strictly bounds total serialized UTF-8 JSON bytes (1024..65536, default 16384). Neither is an LLM token budget.
 - **Reinforced Mathematical Ranking Formula (Schema 7):** BM25 lexical weighting combined with recency, stability, and pinned status:
@@ -90,3 +94,8 @@ Follow this chronological study path to master Forge614 Engram:
 6. [**06. Troubleshooting and Error Diagnostics (`06-troubleshooting.md`)**](06-troubleshooting.md): Comprehensive error catalog (`INTERACTIVE_REQUIRED`, `REINFORCEMENT_REQUIRED`, `SYNC_UPGRADE_REQUIRED`, `CLOCK_SKEW`, `REQUEST_CONFLICT`, `MIGRATION_REQUIRED`, `AMBIGUOUS_SESSION`, `SESSION_NOT_FOUND`, `SESSION_CLOSED`, `NO_SESSION_CONTEXT`, `CONFLICT`, `PROJECT_IDENTITY_UNAVAILABLE`, `PROJECT_BINDING_REQUIRED`, `PUBLISHED_UNVERIFIED`, `SYNC_CONFLICT`, `SYNC_TOO_LARGE`, etc.) with root causes and recovery steps.
 7. [**07. Plain-Language Glossary (`07-glossary.md`)**](07-glossary.md): Everyday definitions with real-world analogies and formal technical terms in parentheses: TUI Control Center, read-only by default, two-step action confirmation, terminal output sanitization, sequential subflow, immutable confirmation, FTS5 reinforcement without embeddings, sliding deduplication window, etc.
 8. [**08. Stage Boundaries and Evolutionary Roadmap (`08-boundaries-and-roadmap.md`)**](08-boundaries-and-roadmap.md): Consolidated delivery features (Phases 1 to 4.3), active boundaries (TUI without GUI/daemon/remote health check, pure textual search without embeddings, confirmation is not truth verification, 15-minute window, 8 MiB sync limit), and the remaining roadmap phases.
+
+---
+
+## 💡 Fundamental Concepts Explained for Everyone
+- 📘 [**What are Embeddings and why does Forge614 Engram work WITHOUT them? (`concepts/what-are-embeddings.md`)**](concepts/what-are-embeddings.md): Illustrated guide featuring the library analogy, detailing why local memory without embeddings is free ($0), instantaneous (<2ms), private (100% offline), and surgically precise for codebases.

@@ -9,6 +9,7 @@ const coverage={
   'session-and-prompt':'inicio de sesión + cada prompt',
   'session-only':'solo inicio de sesión',
   'experimental-system-and-compaction':'sistema + compactación (experimental)',
+  'mcp-only':'MCP only; no automatic hooks',
 };
 export function renderAssistantScreen(state:AssistantState,width:number,height:number):string{
   // ASCII path replacements keep width bounded even for full-width glyphs/emoji.

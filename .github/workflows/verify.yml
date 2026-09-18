@@ -1,0 +1,54 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  unix:
+    name: Unix checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Install PostgreSQL binaries for the disposable test fixture
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes postgresql
+            echo "FORGE614_TEST_POSTGRES_BIN=$(pg_config --bindir)" >> "$GITHUB_ENV"
+          else
+            brew install postgresql@17
+            echo "FORGE614_TEST_POSTGRES_BIN=$(brew --prefix postgresql@17)/bin" >> "$GITHUB_ENV"
+          fi
+      - run: bun test
+      - run: bun run typecheck
+      - run: git diff --check
+      - name: Run native Bash installer fixtures
+        run: bun test scripts/__tests__/install.sh.test.ts
+      - run: bash -n scripts/install.sh scripts/install-from-source.sh
+
+  windows:
+    name: Windows installer fixtures
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: git diff --check
+      - name: Verify guarded publication and reparse rejection on native Windows
+        run: bun test src/infrastructure/filesystem/private-files.test.ts src/infrastructure/assistants/windows-publication.test.ts
+      - run: pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1

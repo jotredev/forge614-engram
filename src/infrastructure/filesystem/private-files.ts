@@ -1,5 +1,6 @@
 import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, renameSync, unlinkSync, writeFileSync, fsyncSync } from 'node:fs';
-import { dirname, isAbsolute, parse, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 
 export const MAX_CONFIG_BYTES=1024*1024;
@@ -12,15 +13,29 @@ export function validPath(path:string):string {
   return resolve(path);
 }
 function stat(path:string){try{return lstatSync(path);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;}}
-export function assertSafePath(path:string):void{
+const WINDOWS_REPARSE_PATH_ENV='FORGE614_ENGRAM_REPARSE_PATH';
+const WINDOWS_REPARSE_QUERY="$ErrorActionPreference='Stop';$path=[Environment]::GetEnvironmentVariable('FORGE614_ENGRAM_REPARSE_PATH',[System.EnvironmentVariableTarget]::Process);if([string]::IsNullOrEmpty($path)){exit 2};$attributes=[System.IO.File]::GetAttributes($path);if(([int]$attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 1};exit 0";
+function assertNoWindowsReparsePoint(path:string):void{
+  const systemRoot=process.env.SystemRoot;
+  if(!systemRoot)fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');
+  let result:ReturnType<typeof spawnSync>;
+  try{result=spawnSync(join(systemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-NoProfile','-NonInteractive','-Command',WINDOWS_REPARSE_QUERY],{env:{...process.env,[WINDOWS_REPARSE_PATH_ENV]:path},shell:false,stdio:'ignore',timeout:2000,windowsHide:true});}
+  catch{fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');}
+  if(result.error||result.status===null)fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');
+  if(result.status===1)fail('UNSAFE_PATH','Configuration paths must not traverse Windows reparse points.');
+  if(result.status!==0)fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');
+}
+export function assertSafePath(path:string,platform:NodeJS.Platform=process.platform):void{
   validPath(path);let current=path;
   while(current!==parse(current).root){
     const entry=stat(current);
     // macOS ships these root-owned system aliases; user-controlled symlinks remain forbidden.
     const systemAlias=process.platform==='darwin'&&['/var','/tmp'].includes(current)&&entry?.uid===0;
+    if(platform==='win32'&&process.platform==='win32'&&entry)assertNoWindowsReparsePoint(current);
     if(entry?.isSymbolicLink()&&!systemAlias)fail('UNSAFE_PATH','Configuration paths must not traverse symbolic links.');
     if(entry&&current!==path&&!entry.isDirectory()&&!systemAlias)fail('UNSAFE_PATH','A configuration parent is not a directory.');
-    if(entry&&current!==path&&!systemAlias&&(entry.mode&0o002)&&!(entry.mode&0o1000))fail('UNSAFE_PATH','A configuration parent is writable by other users.');
+    // Windows mode bits are synthesized from the read-only attribute, not ACL permissions.
+    if(platform!=='win32'&&entry&&current!==path&&!systemAlias&&(entry.mode&0o002)&&!(entry.mode&0o1000))fail('UNSAFE_PATH','A configuration parent is writable by other users.');
     current=dirname(current);
   }
 }

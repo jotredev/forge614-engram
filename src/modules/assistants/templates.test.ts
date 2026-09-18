@@ -10,11 +10,8 @@ function root(){const path=mkdtempSync(join(tmpdir(),'engram-hooks-'));roots.pus
 
 test("hook configuration selects client events and timeout units", () => {
   expect(hookConfiguration("opencode","/tmp/engram")).toEqual({});
+  expect(hookConfiguration("antigravity","/tmp/engram")).toEqual({});
   expect(hookConfiguration("cursor","/tmp/engram")).toEqual({sessionStart:[{command:"'/tmp/engram' memory-hook --client cursor",timeout:3}]});
-  expect(hookConfiguration("gemini-cli","/tmp/engram")).toEqual({
-    SessionStart:[{hooks:[{type:"command",name:"forge614-engram",command:"'/tmp/engram' memory-hook --client gemini-cli",timeout:3000}]}],
-    BeforeAgent:[{hooks:[{type:"command",name:"forge614-engram",command:"'/tmp/engram' memory-hook --client gemini-cli",timeout:3000}]}],
-  });
   for (const client of ["codex","claude-code"] as const) {
     expect(Object.keys(hookConfiguration(client,"/tmp/engram"))).toEqual(["SessionStart","UserPromptSubmit"]);
   }
@@ -48,9 +45,7 @@ test('native hook commands quote binary paths and clients use their own timeout 
   const command=shellQuote(executable);
   const proc=Bun.spawnSync(['/bin/sh','-c',`printf '%s' ${command}`]);
   expect(proc.stdout.toString()).toBe(executable);
-  const gemini=hookConfiguration('gemini-cli',executable) as any;
   const claude=hookConfiguration('claude-code',executable) as any;
-  expect(gemini.SessionStart[0].hooks[0].timeout).toBe(3000);
   expect(claude.SessionStart[0].hooks[0].timeout).toBe(3);
   const substitution = "a'b $(printf unsafe)";
   const result = Bun.spawnSync(["/bin/sh","-c",`printf '%s' ${shellQuote(substitution)}`]);

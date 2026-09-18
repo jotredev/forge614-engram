@@ -14,7 +14,7 @@ reinforcement-enable
                 Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
-memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
+memory-hook     --client <claude-code|codex|cursor|opencode|antigravity>
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>

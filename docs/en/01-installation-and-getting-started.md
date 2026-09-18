@@ -77,7 +77,7 @@ bash scripts/install.sh
    ```bash
    bash scripts/install.sh --bin-dir /path/to/bin
    ```
-8. **Post-install Assistant Detection:** Following binary publication, it runs a read-only audit (`assistant-list`) detecting installed AI coding assistants (Claude Code, Codex, Cursor, OpenCode, Gemini CLI).
+8. **Post-install Assistant Detection:** Following binary publication, it runs a read-only audit (`assistant-list`) detecting installed AI coding assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity).
 9. **Interactive TUI Control Center Prompt:** If running in an interactive terminal (TTY stdin and stdout), the installer prompts:
    ```text
    ¿Abrir ahora el menú de asistentes? [s/N]
@@ -131,7 +131,7 @@ reinforcement-enable
                 Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
-memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
+memory-hook     --client <claude-code|codex|cursor|opencode|antigravity>
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
@@ -422,9 +422,108 @@ Representative JSON output:
         "Managed policies and runtime trust can restrict MCP or hooks; this preview does not change them."
       ]
     }
+  },
+  {
+    "id": "antigravity",
+    "label": "Antigravity",
+    "detected": {
+      "installed": true,
+      "executable": "/Users/usuario/.local/bin/agy",
+      "configFound": true,
+      "evidence": ["executable-found", "config-found"]
+    },
+    "configuration": {
+      "status": "configured",
+      "paths": [
+        "/Users/usuario/.gemini/config/mcp_config.json"
+      ]
+    },
+    "automation": {
+      "coverage": "mcp-only",
+      "warnings": [
+        "Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified.",
+        "Configuration does not prove a client connection or model compliance. Durable saves depend on the assistant; abrupt termination cannot guarantee a final save."
+      ]
+    }
   }
 ]
 ```
+
+### 10.1. Antigravity Integration
+
+Forge614 Engram officially supports **Antigravity** as a developer coding assistant:
+
+* **Compatibility via MCP (*Model Context Protocol*):** Antigravity interacts with Engram through the standard MCP protocol over standard input/output (`stdio`). This allows Antigravity to query ranked context (`memory_context`), perform lexical searches (`memory_search`), and persist new decisions (`memory_save`).
+* **Model Autonomy:** Configuring MCP exposes the tools to Antigravity, but **does not guarantee that the model will always save a memory**. The AI assistant autonomously decides when to invoke memory tools based on your conversational instructions.
+* **Current Coverage (*MCP Only*):** Antigravity is currently configured as **MCP only**. **No automatic hook is installed** for Antigravity. Event hooks will only be made available if an official, compatible, and validated durable-memory reminder event is verified in the future.
+  > [!WARNING]
+  > *Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified.*
+
+#### Configuration File Location:
+Across macOS, Linux, and Windows, Engram manages exclusively Antigravity's global MCP configuration file:
+```text
+~/.gemini/config/mcp_config.json
+```
+
+The managed entry within this file adheres to the following conceptual structure:
+```json
+{
+  "mcpServers": {
+    "forge614-engram": {
+      "command": "/absolute/path/to/forge614-engram",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+* **Absolute Command Path:** The `command` property always contains the exact absolute binary path to `forge614-engram` on your disk.
+* **Sole Argument:** `"args": ["mcp"]` is the single argument supplied to the executable.
+* **Preservation of Unrelated Keys:** Engram safely preserves all unrelated keys, comments, and third-party MCP servers present in the JSON file.
+* **Conflict Protection:** If an existing `forge614-engram` entry points to a different path or arguments, Engram **does not overwrite it blindly**; it halts execution and requests manual inspection (`CONFLICT`).
+* **Private Backups:** Before writing changes, Engram creates a private (`0600`) backup identified by UUID.
+* **Post-Write Verification:** Engram reads back and verifies the published byte content before reporting success.
+
+#### Antigravity Detection Order:
+When auditing your environment, Engram looks for the Antigravity executable in this strict sequence:
+1. Searches for `agy` in your `PATH` environment variable directories.
+2. On macOS and Linux, also inspects:
+   ```text
+   ~/.local/bin/agy
+   ```
+3. On Windows, also inspects:
+   ```text
+   %LOCALAPPDATA%/agy/bin/agy.exe
+   ```
+
+*(Note: Finding Antigravity never modifies any files automatically. The user must explicitly select it and confirm configuration during `setup` or via the `tui` menu).*
+
+#### Compatibility and Protection of Legacy Gemini Configurations:
+* Forge614 Engram **no longer manages Gemini CLI**.
+* It does not migrate existing Gemini configurations.
+* Engram **does not read, modify, or delete**:
+  ```text
+  ~/.gemini/settings.json
+  ```
+  If that file already exists on your machine, it remains completely untouched.
+* The fact that Antigravity shares a `.gemini` folder does not authorize Engram to touch legacy Gemini configurations.
+
+#### Windows Path Security:
+* On macOS and Linux, Engram validates file safety through octal POSIX permissions (`0700` for folders, `0600` for files).
+* On Windows, POSIX permission bits do not accurately represent NTFS Access Control Lists (ACLs).
+* Therefore, Engram applies dedicated Windows security validation that **rejects symbolic links, directory junctions, and reparse points** before writing configuration files.
+* This protection ensures an apparently normal path cannot redirect writes to arbitrary or untrusted locations.
+* **Windows CI Validation Status:** Native Windows validation for configuration publication and reparse points is configured in CI and **remains marked as pending until confirmed by the native GitHub Actions runner**.
+
+#### Documented Quality and Testing:
+Antigravity support and cross-platform safety are enforced by rigorous automated tests:
+* Verified that Antigravity writes only to `~/.gemini/config/mcp_config.json`.
+* Verified that `~/.gemini/settings.json` is byte-for-byte untouched.
+* Verified that Antigravity creates zero hooks.
+* Verified that foreign JSON keys and comments survive insertion intact.
+* Verified that invalid, duplicate, conflicting, post-preview modified, or insecurely linked configurations are rejected.
+* Restored partial-failure testing: if one assistant succeeds and the next fails, Engram transparently reports the actual outcome and retains private backups without feigning total success.
+* Native Windows execution for publication and reparse points remains pending CI verification.
 
 ---
 
