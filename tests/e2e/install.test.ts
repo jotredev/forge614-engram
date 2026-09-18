@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, copyFileSync, symlinkSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, copyFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { MemoryStore } from "../../src/app/memory-store";
@@ -67,6 +67,31 @@ test("developer installer help and invalid options create no destination", () =>
   expect(install(dir,["--bin-dir",bin,"--unknown"]).code).not.toBe(0);
   expect(existsSync(bin)).toBe(false);
 });
+
+const nativeMac = process.platform === "darwin" ? test : test.skip;
+nativeMac("diagnostic: compiled MCP records canonical-project Git invocation metadata",async()=>{
+  const dir=workspace(),bin=join(dir,"bin"),home=join(dir,"isolated-home"),project=join(dir,"project"),commands=join(dir,"commands"),diagnostic=join(dir,"git-diagnostic");
+  mkdirSync(project);mkdirSync(commands);
+  const git=join(commands,"git");
+  writeFileSync(git,[
+    "#!/bin/sh",
+    "/usr/bin/git \"$@\"",
+    "status=$?",
+    "printf 'gitExit=%s lcAll=%s global=%s noSystem=%s optionalLocks=%s\\n' \"$status\" \"$LC_ALL\" \"$GIT_CONFIG_GLOBAL\" \"$GIT_CONFIG_NOSYSTEM\" \"$GIT_OPTIONAL_LOCKS\" > \"$FORGE614_ENGRAM_GIT_DIAGNOSTIC\"",
+    "exit \"$status\"",
+    "",
+  ].join("\n"),{mode:0o700});chmodSync(git,0o700);
+  expect(install(dir,["--bin-dir",bin]).code).toBe(0);
+  const executable=join(bin,"forge614-engram"),env={PATH:`${bin}:${commands}:/usr/bin:/bin`,HOME:home,FORGE614_ENGRAM_GIT_DIAGNOSTIC:diagnostic};
+  expect(Bun.spawnSync([executable,"sessions-enable"],{cwd:dir,env}).exitCode).toBe(0);
+  const transport=new StdioClientTransport({command:executable,args:["mcp"],cwd:project,env,stderr:"pipe"});
+  const client=new Client({name:"installed-git-diagnostic",version:"1"},{capabilities:{}});await client.connect(transport);
+  try{
+    const result=await client.callTool({name:"memory_session_start",arguments:{directory:project,sessionId:"installed-git-diagnostic"}}) as CallToolResult;
+    const response=JSON.parse((result.content.find(block=>block.type==="text") as {text:string}).text) as {code?:string};
+    console.info(JSON.stringify({diagnostic:"compiled-canonical-project-git",wrapperInvoked:existsSync(diagnostic),wrapperMetadata:existsSync(diagnostic)?readFileSync(diagnostic,"utf8").trim():null,responseCode:response.code??null}));
+  }finally{await client.close();}
+},30000);
 
 test("developer-installed compiled binary executes progressive MCP session reads and writes",async()=>{
   const dir=workspace(),bin=join(dir,"bin"),home=join(dir,"isolated-home"),project=join(dir,"project");mkdirSync(project);
