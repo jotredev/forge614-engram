@@ -42,31 +42,9 @@ function Test-ReleaseUri([string] $Uri, [bool] $AllowLocalHttp) {
   throw 'Release URL must use HTTPS.'
 }
 
-function Write-TestAssetDiagnostics($Response, $RawContent, $ParsedRelease) {
+function Write-TestAssetSelectionFailure([string] $AssetName, [int] $AssetCount) {
   if (-not $testEndpoint) { return }
-  $rawText = if ($null -eq $RawContent) {
-    ''
-  } elseif ($RawContent -is [byte[]]) {
-    [System.Text.Encoding]::UTF8.GetString($RawContent)
-  } else {
-    [string]$RawContent
-  }
-  $rawPreviewLength = [Math]::Min(512, $rawText.Length)
-  $rawPreview = $rawText.Substring(0, $rawPreviewLength)
-  $assets = if ($null -eq $ParsedRelease) { $null } else { $ParsedRelease.assets }
-  $details = [ordered]@{
-    responseType = if ($null -eq $Response) { '<null>' } else { $Response.GetType().FullName }
-    rawContentType = if ($null -eq $RawContent) { '<null>' } else { $RawContent.GetType().FullName }
-    rawContentCharacterLength = $rawText.Length
-    rawContentByteLength = [System.Text.Encoding]::UTF8.GetByteCount($rawText)
-    rawContentPreview = $rawPreview
-    parsedReleaseType = if ($null -eq $ParsedRelease) { '<null>' } else { $ParsedRelease.GetType().FullName }
-    parsedPropertyNames = if ($null -eq $ParsedRelease) { @() } else { @($ParsedRelease.PSObject.Properties | ForEach-Object { $_.Name }) }
-    assetsType = if ($null -eq $assets) { '<null>' } else { $assets.GetType().FullName }
-    assetsCount = @($assets).Count
-    assetNames = @($assets | ForEach-Object { if ($null -eq $_) { '<null>' } else { [string]$_.name } })
-  } | ConvertTo-Json -Compress -Depth 3
-  [Console]::Error.WriteLine("Test fixture asset diagnostics: $details")
+  [Console]::Error.WriteLine("Test fixture asset selection failed: expected one $AssetName asset; received $AssetCount.")
 }
 
 if ($Help) { Show-Usage; exit 0 }
@@ -113,18 +91,23 @@ try {
   try {
     $releaseResponse = Invoke-WebRequest -Uri $releaseJsonUrl -UseBasicParsing
     $releaseRawContent = $releaseResponse.Content
-    $release = $releaseRawContent | ConvertFrom-Json
+    $releaseJson = if ($releaseRawContent -is [byte[]]) {
+      [System.Text.Encoding]::UTF8.GetString($releaseRawContent)
+    } else {
+      [string]$releaseRawContent
+    }
+    $release = ConvertFrom-Json -InputObject $releaseJson
   } catch {
     Stop-Install 'Could not download release metadata.'
   }
   $manifestAsset = @($release.assets | Where-Object { $_.name -eq 'SHA256SUMS' })
   $binaryAsset = @($release.assets | Where-Object { $_.name -eq $artifact })
   if ($manifestAsset.Count -ne 1) {
-    Write-TestAssetDiagnostics $releaseResponse $releaseRawContent $release
+    Write-TestAssetSelectionFailure 'SHA256SUMS' $manifestAsset.Count
     Stop-Install 'The release is missing SHA256SUMS.'
   }
   if ($binaryAsset.Count -ne 1) {
-    Write-TestAssetDiagnostics $releaseResponse $releaseRawContent $release
+    Write-TestAssetSelectionFailure $artifact $binaryAsset.Count
     Stop-Install "The release is missing the $artifact binary."
   }
   Test-ReleaseUri $manifestAsset[0].browser_download_url $testEndpoint

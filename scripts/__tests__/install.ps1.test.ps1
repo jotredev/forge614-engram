@@ -74,6 +74,7 @@ try {
           $assetNames = ($assets | ForEach-Object { $_.name }) -join ','
           [System.IO.File]::AppendAllText($Diagnostics, "release-asset-names=$assetNames`nrelease-json=$payload`n")
           $bytes = [Text.Encoding]::UTF8.GetBytes($payload)
+          $context.Response.ContentType = 'application/octet-stream'
         } elseif ($path.EndsWith('/download/SHA256SUMS')) {
           $sum = if ($mismatch) { '0' * 64 } else { $Digest }
           $bytes = [Text.Encoding]::UTF8.GetBytes("$sum  forge614-engram-windows-x64.exe`n$sum  forge614-engram-windows-arm64.exe`n")
@@ -109,7 +110,7 @@ try {
     $amd64Diagnostics = Get-FixtureDiagnostics
     Assert-That ($amd64Diagnostics.Contains('/good/repos/jotredev/forge614-engram/releases/tags/v1.2.3')) "AMD64 fixture route mismatch: $amd64Diagnostics"
     Assert-That ($amd64Diagnostics.Contains('release-asset-names=SHA256SUMS,forge614-engram-windows-x64.exe,forge614-engram-windows-arm64.exe')) "AMD64 fixture asset names mismatch: $amd64Diagnostics"
-    Assert-That ($amd64.ExitCode -eq 0) "AMD64 installer failed: $($amd64.Output) Fixture diagnostics: $amd64Diagnostics"
+    Assert-That ($amd64.ExitCode -eq 0) "AMD64 installer failed to parse the fixture UTF-8 byte response: $($amd64.Output) Fixture diagnostics: $amd64Diagnostics"
     Assert-That ([System.IO.File]::Exists((Join-Path $amd64Destination 'forge614-engram.exe'))) 'AMD64 binary was not installed.'
     Assert-That ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes((Join-Path $amd64Destination 'forge614-engram.exe'))) -eq [Convert]::ToBase64String($fixtureBytes)) 'AMD64 binary bytes changed.'
 
@@ -122,7 +123,7 @@ try {
     $missingManifestResult = Invoke-Installer 'AMD64' @('-ReleaseBaseUrl', "$releaseBaseUrl/missing-manifest", '-Version', 'v1.2.3', '-BinDir', $missingManifestDestination)
     Assert-That ($missingManifestResult.ExitCode -ne 0) 'Missing SHA256SUMS unexpectedly succeeded.'
     Assert-That ($missingManifestResult.Output.Contains('The release is missing SHA256SUMS.')) "Missing SHA256SUMS lost the normal error contract: $($missingManifestResult.Output)"
-    Assert-That ($missingManifestResult.Output.Contains('Test fixture asset diagnostics:')) "Missing SHA256SUMS omitted test diagnostics: $($missingManifestResult.Output)"
+    Assert-That ($missingManifestResult.Output.Contains('Test fixture asset selection failed: expected one SHA256SUMS asset; received 0.')) "Missing SHA256SUMS omitted concise fixture diagnostics: $($missingManifestResult.Output)"
     Assert-That (-not [System.IO.File]::Exists((Join-Path $missingManifestDestination 'forge614-engram.exe'))) 'Missing SHA256SUMS created an output binary.'
 
     $mismatchDestination = Join-Path $temporaryRoot 'mismatch-bin'
