@@ -97,9 +97,9 @@ case ":${PATH:-}:" in
 esac
 printf '%s\n' 'Detección de asistentes (solo lectura; no inicia clientes ni crea una base):'
 "$destination" assistant-list
-printf 'Para configurar asistentes con vista previa y confirmación, ejecuta: %q tui\n' "$destination"
+printf 'Para administrar proyectos, memoria, almacenamiento y asistentes desde el centro de control, ejecuta: %q tui\n' "$destination"
 if [ -t 0 ] && [ -t 1 ]; then
-  printf '%s' '¿Abrir ahora el menú de asistentes? [s/N] '
+  printf '%s' '¿Abrir ahora el centro de control? [s/N] '
   answer=''
   if IFS= read -r answer && [[ "$answer" == s || "$answer" == S || "$answer" == si || "$answer" == sí ]]; then
     "$destination" tui || {

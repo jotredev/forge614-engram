@@ -1,11 +1,11 @@
 # 05 (EN). Internal Architecture, Modular Monolith, FTS5, and Ranking Formulas
 
-> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
+> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [05. Arquitectura Interna, Monolito Modular por Funcionalidad, SQLite FTS5 y Fórmulas Matemáticas](../es/05-arquitectura-interna-y-formulas.md)
 
-This document presents the internal architecture of Forge614 Engram with thesis-level technical rigor: the foundations of the **Feature-Oriented Modular Monolith**, the concrete problems resolved, the physical directory structure and responsibilities, strict dependency rules enforced via TypeScript AST auditing, compound atomic transactions, directory change guidelines, colocated testing conventions, relational SQLite Schemas 3 to 7, the PostgreSQL Formats 1 to 3 replication protocol, and the exact mathematical formulas for weighted BM25, 30-day recency, asymptotic stability saturation via immutable confirmations, and sliding window deduplication without embeddings.
+This document presents the internal architecture of Forge614 Engram with thesis-level technical rigor: the foundations of the **Feature-Oriented Modular Monolith**, the concrete problems resolved, the physical directory structure and responsibilities, strict dependency rules enforced via TypeScript AST auditing, the design of the **Terminal Control Center (TUI)**, compound atomic transactions, directory change guidelines, colocated testing conventions, relational SQLite Schemas 3 to 7, the PostgreSQL Formats 1 to 3 replication protocol, and the exact mathematical formulas for weighted BM25, 30-day recency, asymptotic stability saturation via immutable confirmations, and sliding window deduplication without embeddings.
 
 ---
 
@@ -15,7 +15,7 @@ This document presents the internal architecture of Forge614 Engram with thesis-
 The architectural pattern implemented in Forge614 Engram is the **Feature-Oriented Modular Monolith**.
 
 - **Monolith:** The system is compiled, packaged, and distributed as a single executable binary (`forge614-engram`) running within a single local OS process. It is not partitioned into distributed network microservices, does not require internal IPC over networks, and requires no background daemon processes.
-- **Feature-Oriented Modular:** Internal source code is partitioned along cohesive domain boundaries (memory, confirmations, projects, sessions, search, synchronization, workspace, assistants) rather than purely by technical layer. Each module encapsulates its business logic and exposes an explicit public boundary (`index.ts`).
+- **Feature-Oriented Modular:** Internal source code is partitioned along cohesive domain boundaries (memory, confirmations, projects, sessions, search, control center, synchronization, workspace, assistants) rather than purely by technical layer. Each module encapsulates its business logic and exposes an explicit public boundary (`index.ts`).
 
 > [!NOTE]
 > **Contextual Design Choice, Not Universal Dogma:** The adoption of a feature-oriented modular monolith is a deliberate, contextual engineering decision tailored for a local CLI and synchronous SDK operating on a single environment file (`~/.forge614/.env`) and a single SQLite database (`~/.forge614/engram.db`). It is not presented as an abstract dogma for every software system.
@@ -71,6 +71,7 @@ src/
 │   ├── memory-store.ts            # Backwards-compatible MemoryStore Facade
 │   ├── workspace.ts               # Central workspace lifecycle & connection
 │   ├── project-context.ts         # Git identity & directory binding resolution
+│   ├── control-center.ts          # Safe read-only state assembly & TUI mutation coordinator
 │   ├── synchronization.ts         # Replica & snapshot coordination (no CLI I/O)
 │   ├── setup.ts                   # Guided setup flow (SetupIO interface)
 │   └── assistants.ts              # Assistant detection and configuration coordination
@@ -82,6 +83,9 @@ src/
 │   │   ├── validation.ts
 │   │   ├── confirmations.ts       # Pure confirmation interfaces & logic
 │   │   └── ranking.ts             # Ranking formulas & explanation builders
+│   ├── control-center/            # TUI snapshot, capabilities, & mutation types
+│   │   ├── index.ts
+│   │   └── types.ts
 │   ├── projects/                  # Immutable project identity (UUIDv4)
 │   ├── sessions/                  # Session lifecycle, stamping, & inference
 │   ├── search/                    # Query terms, Unicode code point/byte budgets
@@ -97,6 +101,7 @@ src/
 │   │   ├── connection.ts          # WAL mode, busy timeout, strict pragmas
 │   │   ├── schema.ts              # Schemas 3, 4, 5, 6, and 7 DDL migrations
 │   │   ├── projects.ts            # Project queries & bindings
+│   │   ├── control-center.ts      # Aggregated queries without memory content for TUI
 │   │   ├── memory.ts              # Memory queries & version history
 │   │   ├── confirmations.ts       # Confirmations & request persistence
 │   │   ├── writes.ts              # Outer compound atomic transactions
@@ -112,7 +117,12 @@ src/
 │   ├── cli/                       # Argument parser, commands, & JSON formatters
 │   ├── mcp/                       # Native stdio MCP server (10 tools)
 │   ├── terminal/                  # Native assistant hook adapters
-│   └── tui/                       # Full-screen interactive terminal UI
+│   └── tui/                       # Terminal Control Center and assistant configurator
+│       ├── control-center-state.ts  # Pure state machine (keys -> pages/intents)
+│       ├── control-center-render.ts # Bounded rendering and output sanitization
+│       ├── control-center.ts        # TTY terminal lifecycle and orchestration
+│       ├── controller.ts            # Sequential assistant subflow: selection & self-test
+│       └── render.ts                # Assistant configurator renderer
 │
 └── shared/                        # [Cross-Cutting Primitives]
     └── errors.ts                  # MemoryError class and official error codes
@@ -327,14 +337,20 @@ Format 3 expands the snapshot envelope by adding two collections:
 ## 8. Colocated Tests and Official Verification Metrics
 
 ### 8.1. One-to-One Colocated Test Layout
-All **53 production files containing business logic** have a colocated sibling test file (`<name>.test.ts`):
+All **58 production files containing business logic** have a colocated sibling test file (`<name>.test.ts`):
 - `src/infrastructure/sqlite/confirmations.ts` $\leftrightarrow$ `confirmations.test.ts`
+- `src/infrastructure/sqlite/control-center.ts` $\leftrightarrow$ `control-center.test.ts`
 - `src/modules/memory/ranking.ts` $\leftrightarrow$ `ranking.test.ts`
 - `src/modules/memory/confirmations.ts` $\leftrightarrow$ `confirmations.test.ts`
 - `src/modules/synchronization/confirmations.ts` $\leftrightarrow$ `confirmations.test.ts`
-- Collaborative integration test suites in `src/app/__tests__/`:
+- `src/app/control-center.ts` $\leftrightarrow$ `control-center.test.ts`
+- `src/interfaces/tui/control-center-state.ts` $\leftrightarrow$ `control-center-state.test.ts`
+- `src/interfaces/tui/control-center-render.ts` $\leftrightarrow$ `control-center-render.test.ts`
+- `src/interfaces/tui/control-center.ts` $\leftrightarrow$ `control-center.test.ts`
+- Collaborative integration test suites in `src/app/__tests__/` and `src/interfaces/tui/__tests__/`:
   - `confirmations.integration.test.ts`
   - `confirmations-sync.integration.test.ts`
+  - `control-center.integration.test.ts`
 
 ### 8.2. Test Suite Progression
 
@@ -351,10 +367,16 @@ All **53 production files containing business logic** have a colocated sibling t
 │ Reinforced FTS5 (Stage 11)    │ 439 pass**   │ 76 files      │ 2,274 assertions │
 │                               │ (430 pass /  │               │ (38.62s)         │
 │                               │  9 skip PG)  │               │                  │
+├───────────────────────────────┼──────────────┼───────────────┼──────────────────┤
+│ Control Center (Stage 12)     │ 504 pass***  │ 82 files      │ 2,566 assertions │
+│                               │ (495 pass /  │               │ (39.76s)         │
+│                               │  9 skip PG)  │               │                  │
 └───────────────────────────────┴──────────────┴───────────────┴──────────────────┘
 * Note: With temporary isolated PG binary configured (361 passed / 8 skipped without binary).
 ** Note: 430 passed and 9 skipped without isolated PG binary. With FORGE614_TEST_POSTGRES_BIN
    configured, runs and passes 439 pass, 0 fail, 2,274 assertions in 38.62s.
+*** Note: 495 passed and 9 skipped without isolated PG binary. With FORGE614_TEST_POSTGRES_BIN
+    configured, runs and passes 504 pass, 0 fail, 2,566 assertions in 39.76s.
 ```
 
 ---
@@ -363,10 +385,11 @@ All **53 production files containing business logic** have a colocated sibling t
 
 - **Gentleman Programming Inspiration:** The progressive retrieval model featuring bounded previews, on-demand version reads, session timelines, and relevance reinforcement is inspired by concepts developed by Gentleman (linked to commit `2cdda9041c1bff86f6b769171fd407fa677027cb`).
 - **Forge614 Innovations:**
+  - Interactive Terminal Control Center with read-only by default navigation, strict two-step confirmation (`confirm` + Enter), exhaustive ANSI/bidi/URL sanitization, and clean sequential assistant subflows.
   - Exact mathematical ordering formula $\text{BM25} \times \text{multiplier}$ with asymptotic saturation $\frac{n}{n+4}$ and smooth 30-day half-life decay.
   - Single evaluation clock `request_clock(nowMs)` per search query to prevent mid-query drift.
   - Dedicated `confirmations` table recording immutable observations without fabricating redundant versions.
   - 15-minute sliding window deduplication for memories without a topic.
   - Cryptographic SHA-256 idempotent request cache with `REQUEST_CONFLICT` detection.
   - Atomic CAS Format 3 promotion with physical schema stability on PostgreSQL (`state.format = 1`).
-  - Feature-oriented modular monolith with 53 logical components supported by colocated tests and AST import enforcement.
+  - Feature-oriented modular monolith with 58 logical components supported by colocated tests and AST import enforcement.

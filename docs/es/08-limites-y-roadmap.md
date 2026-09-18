@@ -1,8 +1,8 @@
 # 08. Límites de la Etapa y Hoja de Ruta Futura
 
-> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
 > **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Verificado (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
+> **Estado:** Vigente y Verificado (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [08 (EN). Stage Boundaries and Evolutionary Roadmap](../en/08-boundaries-and-roadmap.md)
 
 Este documento declara con total transparencia qué capacidades se encuentran implementadas y verificadas en la entrega actual, los límites técnicos y operativos vigentes, la distinción entre pruebas sintéticas y sesiones reales de clientes, y las fases de desarrollo pendientes en la hoja de ruta oficial.
@@ -66,7 +66,15 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 - [x] **Reloj único determinista de consulta:** `request_clock(nowMs)` evaluado una sola vez por búsqueda, aplicando ordenación antes de `LIMIT`.
 - [x] **Promoción a Formato 3 en PostgreSQL:** Replicación de confirmaciones y peticiones bajo bloqueo optimista CAS sobre la instantánea, manteniendo invariable la tabla física remota `state.format = 1`.
 - [x] **Guardaguardia en clientes pares:** Pares sin Esquema 7 abortan con `REINFORCEMENT_REQUIRED` ante paquetes en Formato 3.
-- [x] **439 pruebas automatizadas en 76 archivos:** 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en 38.62s.
+
+### Fase 4.3: Centro de Control TUI (`forge614-engram tui`) — COMPLETADA
+- [x] **Centro de control interactivo unificado:** Panel integral en terminal con pestañas `Resumen`, `Proyectos`, `Compartido`, `Almacenamiento`, `Acciones`, `Asistentes` y `Salir`.
+- [x] **Lectura estricta por defecto:** Abrir la interfaz, navegar pestañas, explorar proyectos y redimensionar la ventana operan 100% en modo de solo lectura sin escribir un solo byte en disco ni en base de datos.
+- [x] **Confirmación de dos pasos para mutaciones:** Exige previsualización de impacto, ingreso manual deliberado de la palabra `confirm` (o `CONFIRM`) en un cuadro de diálogo y confirmación con `Enter`.
+- [x] **Ocultación total de secretos y privacidad:** No expone `POSTGRES_URL`, contenidos íntegros de `.env`, textos de notas de memoria, títulos de notas ni archivos de configuración de asistentes.
+- [x] **Saneamiento exhaustivo de terminal:** Neutralización de secuencias ANSI, caracteres de control, anulaciones bidireccionales (bidi overrides), caracteres de ancho cero y URLs.
+- [x] **Subflujo secuencial de asistentes:** Pausa limpia del Centro de Control, restauración completa de la terminal, ejecución del menú de asistentes (`assistantTui`) y recarga atómica de instantánea al regresar, sin raw modes anidados.
+- [x] **504 pruebas automatizadas en 82 archivos:** 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2,566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en 39.76s.
 
 ---
 
@@ -100,12 +108,22 @@ Para mantener expectativas estrictamente realistas, se declaran los siguientes l
     Cada instantánea combinada de sincronización tiene un tope estricto de 8 MiB (`8,388,608 bytes`), arrojando `SYNC_TOO_LARGE` si se excede.
 13. **Sin resolución automática de conflictos en sincronización:**
     Modificaciones concurrentes sobre una misma entidad producen `SYNC_CONFLICT`. No existe fusión heurística de textos en conflicto en esta versión.
+14. **Sin interfaz gráfica web ni de escritorio (Cero GUI pesada):**
+    El Centro de Control opera exclusivamente en la consola de texto mediante terminal interactiva ANSI/POSIX. No utiliza Electron, servidores HTTP locales, vistas React ni navegadores web.
+15. **Sin demonio residente en segundo plano:**
+    El Centro de Control se inicia bajo demanda con `forge614-engram tui` y concluye inmediatamente al cerrarse con `Escape`, `q` o `Ctrl+C`. No consume ciclos de CPU ni memoria RAM cuando no está en uso.
+16. **Sin sondeos de red activos en navegación pasiva:**
+    La visualización del estado de PostgreSQL en la pestaña `Almacenamiento` inspecciona las variables locales de `.env` y el último estado registrado en SQLite. No abre conexiones remotas ni emite sondeos de red no solicitados mientras el usuario navega por las pantallas de lectura.
+17. **Sin fragmentación de bases de datos por proyecto:**
+    Engram mantiene una única base de datos centralizada `~/.forge614/engram.db`. Los proyectos se indexan por su identificador inmutable `projectId`, evitando la dispersión de archivos `.db` en cada carpeta del usuario.
+18. **Sin edición de notas individuales en el Centro de Control:**
+    El Centro de Control administra proyectos, rutas, almacenamiento, migraciones y asistentes. La edición de textos y notas de recuerdos se canaliza a través de los comandos CLI dedicados (`save`, `get`, `delete`), las herramientas MCP o el futuro explorador detallado de recuerdos.
 
 ---
 
 ## 3. Hoja de Ruta: Fases Pendientes Oficiales
 
-Habiéndose completado las Fases 1 a 4.2, el desarrollo futuro se concentra en las siguientes fases:
+Habiéndose completado las Fases 1 a 4.3, el desarrollo futuro se concentra en las siguientes fases:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -133,6 +151,10 @@ Habiéndose completado las Fases 1 a 4.2, el desarrollo futuro se concentra en l
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
+│ [x] Fase 4.3: Centro de Control TUI Integral           │ (Completada v0.5.0)
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
 │ [ ] Fase 5: Búsqueda Semántica y Ponderación Avanzada  │ (Pendiente)
 │     - Generación local de embeddings vectoriales       │
 │     - Búsqueda híbrida (FTS5 BM25 + similitud coseno)   │
@@ -140,7 +162,7 @@ Habiéndose completado las Fases 1 a 4.2, el desarrollo futuro se concentra en l
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│ [ ] Fase 6: Interfaz Visual Completa de Gestión (TUI)  │ (Pendiente)
+│ [ ] Fase 6: Explorador Detallado de Recuerdos en TUI   │ (Pendiente)
 │     - Explorador interactivo de recuerdos en terminal  │
 │     - Edición visual de temas, versiones y sesiones    │
 │     - Conciliación interactiva de conflictos de réplica │

@@ -1,12 +1,12 @@
 # 01. Instalación, Configuración y Primeros Pasos
 
-> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
 > **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas) / 7 (confirmaciones inmutables y orden reforzado) | Réplica PostgreSQL Formatos 1, 2 y 3 (promoción explícita con `sync --upgrade-format`; tabla física remota `state.format = 1`)
-> **Habilitaciones:** Explícitas y aditivas (`integration-enable` para Esquema 5; `sessions-enable` para Esquema 6; `reinforcement-enable` para Esquema 7; `sync --upgrade-format` para réplica Formato 2 o Formato 3). La apertura de base y los comandos ordinarios nunca migran automáticamente.
-> **Estado:** Vigente y Verificado (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
+> **Habilitaciones:** Explícitas y aditivas (`integration-enable` para Esquema 5; `sessions-enable` para Esquema 6; `reinforcement-enable` para Esquema 7; `sync --upgrade-format` para réplica Formato 2 o Formato 3). La apertura de base, el centro de control TUI y los comandos ordinarios nunca migran automáticamente.
+> **Estado:** Vigente y Verificado (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [01 (EN). Installation, Setup, and Getting Started](../en/01-installation-and-getting-started.md)
 
-Esta guía explica paso a paso cómo preparar las dependencias, compilar e instalar el comando `forge614-engram` en tu computadora, los requisitos indispensables (incluyendo Git obligatorio), cómo funciona la detección post-instalación de asistentes, el asistente interactivo `setup` con la oferta de refuerzo de búsqueda, la habilitación explícita de integración de asistentes (Esquema 5), sesiones progresivas (Esquema 6) y confirmaciones inmutables de FTS5 (Esquema 7), junto con la coordinación entre equipos pares.
+Esta guía explica paso a paso cómo preparar las dependencias, compilar e instalar el comando `forge614-engram` en tu computadora, los requisitos indispensables (incluyendo Git obligatorio), cómo funciona la detección post-instalación de asistentes, el asistente interactivo `setup` con la oferta de refuerzo de búsqueda, el **Centro de Control interactivo en terminal (`tui`)**, la habilitación explícita de integración de asistentes (Esquema 5), sesiones progresivas (Esquema 6) y confirmaciones inmutables de FTS5 (Esquema 7), junto con la coordinación entre equipos pares.
 
 ---
 
@@ -78,11 +78,11 @@ bash scripts/install.sh
    bash scripts/install.sh --bin-dir /ruta/a/bin
    ```
 8. **Detección post-instalación de asistentes:** Tras publicar el ejecutable, ejecuta una inspección de solo lectura (`assistant-list`) que analiza qué asistentes de desarrollo (Claude Code, Codex, Cursor, OpenCode, Gemini CLI) están instalados en tu sistema.
-9. **Ofrecimiento interactivo del menú TUI:** Si la instalación se ejecuta en una terminal interactiva (donde la entrada y salida son una consola real), el instalador te pregunta:
+9. **Ofrecimiento interactivo del Centro de Control TUI:** Si la instalación se ejecuta en una terminal interactiva (donde la entrada y salida son una consola real TTY), el instalador te pregunta:
    ```text
    ¿Abrir ahora el menú de asistentes? [s/N]
    ```
-   Si respondes afirmativamente (`s` o `si`), abre de inmediato la interfaz interactiva `tui`. Si se ejecuta sin terminal interactiva (por ejemplo en un script automatizado), el instalador no pregunta ni espera, no modifica configuraciones, no inicializa la base de datos e imprime el comando `forge614-engram tui` para ejecutarlo posteriormente.
+   Si respondes afirmativamente (`s` o `si`), abre de inmediato el Centro de Control interactivo `tui`. Si se ejecuta sin terminal interactiva (por ejemplo en un script automatizado), el instalador no pregunta ni espera, no modifica configuraciones, no inicializa la base de datos e imprime el comando `forge614-engram tui` para ejecutarlo posteriormente.
 10. **Sin selección de proyectos:** El instalador **jamás pide elegir ni configurar proyectos**.
 
 ---
@@ -120,7 +120,7 @@ Forge614 Engram — una base, recuerdos por proyecto y compartidos
 Uso: forge614-engram <comando> [opciones]
 
 setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
-tui             Asistentes: flechas, Espacio, vista previa y confirmación explícita.
+tui             Centro de control local. Asistentes con vista previa y confirmación explícita.
 init            Inicializa una sola configuración y base local, sin borrar datos.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
@@ -175,6 +175,16 @@ SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configura
 sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
 Antes de sync --upgrade-format, actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
 sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
+setup ofrece el refuerzo explícitamente; registrar repeticiones mejora el orden, no verifica la verdad.
+La habilitación local no promueve la réplica: ejecuta sync --upgrade-format por separado.
+Las consultas son literales; todas las palabras deben coincidir.
+En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
+El recuerdo compartido se conserva y se puede consultar con --scope shared.
+Actualizar un tema requiere --expected-version. Archivar conserva el historial.
+setup y tui muestran texto y requieren terminal; cancelar devuelve código 130.
+Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
+MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
+La resolución de directorios de proyecto requiere Git disponible, incluso para carpetas sin Git.
 ```
 
 ---
@@ -237,17 +247,66 @@ Resumen: configurar el almacenamiento global SQLite y mantener habilitado el ref
 
 ---
 
-## 6. Habilitar la Integración de Asistentes (Esquema 5)
+## 6. El Centro de Control Interactivo (`forge614-engram tui`)
+
+Una vez instalado, el comando `forge614-engram tui` abre el **Centro de Control interactivo en terminal**:
+
+```bash
+forge614-engram tui
+```
+
+### Menú Principal y Navegación
+La pantalla superior presenta las secciones disponibles:
+```text
+Summary | Projects | Shared | Storage | Actions | Assistants | Exit
+```
+*(En español: Resumen | Proyectos | Shared | Almacenamiento | Acciones | Asistentes | Salir)*
+
+- **Flechas Izquierda / Derecha / Arriba / Abajo:** Mueven el foco y navegan entre opciones y listas.
+- **Enter:** Abre la sección o selecciona el elemento enfocado.
+- **Escape:** Retrocede a la vista anterior o cancela la acción en curso.
+- **PgUp / PgDn:** Desplazan el texto cuando la información excede la altura de la terminal.
+- **Ctrl+C o EOF:** Termina la sesión inmediatamente y restaura la terminal a su estado original.
+
+### Principio de Solo Lectura por Defecto
+El Centro de Control abre siempre en modo de **estricta lectura**:
+- Abrir la pantalla, recorrer sus menús, redimensionar la ventana o ingresar teclas no reconocidas **jamás escribe en el disco**, no crea `~/.forge614/.env`, no crea `engram.db`, no inventa proyectos ni registra carpetas.
+- Si el espacio aún no ha sido inicializado, el Centro de Control muestra un mensaje claro explicando que se debe ejecutar `setup` o `init`, sin intentar crear archivos automáticamente.
+- Requiere una terminal interactiva real (TTY). En entornos sin TTY (como redirecciones de tuberías o scripts CI sin consola), termina de inmediato arrojando el código seguro `INTERACTIVE_REQUIRED`.
+
+### Información Visible vs. Información Oculta
+- **Metadatos Visibles:** Nombres de proyectos, identificadores UUID abreviados en listas y completos en la vista de detalle, fechas de creación y actualización, rutas locales de carpetas vinculadas, contadores de recuerdos activos y archivados, ruta de la base de datos SQLite local, versión de esquema (3 a 7), capacidades activadas y estado de PostgreSQL (`configured` o `not-configured`).
+- **Secretos Protegidos:** El Centro de Control **nunca** muestra `POSTGRES_URL`, contenidos del archivo `.env`, contraseñas, secretos, títulos de recuerdos, texto de recuerdos ni contenidos de archivos de configuración de asistentes.
+- **Saneamiento Exhaustivo:** Todas las cadenas de texto mostradas en pantalla pasan por un motor de filtrado que neutraliza códigos de escape ANSI maliciosos, caracteres de control, secuencias bidireccionales (bidi), caracteres de ancho cero y URLs no autorizadas.
+
+### Confirmación Estricta de Acciones (`confirm` + Enter)
+Para ejecutar cualquier cambio en el sistema desde la pestaña `Actions`:
+1. La pantalla muestra una **vista previa completa** de la acción seleccionada y sus consecuencias.
+2. Si requiere datos (como el nombre de un nuevo proyecto o una ruta absoluta para asociar), los solicita y valida previamente.
+3. El sistema exige escribir explícitamente la palabra `confirm` (sin importar si usas mayúsculas o minúsculas) y presionar Enter.
+4. **Presionar solo la tecla Enter jamás autoriza escrituras.**
+5. Si presionas Escape o Ctrl+C antes de la confirmación final, la acción se cancela de inmediato y el disco permanece idéntico al estado inicial.
+
+### Subflujo de Asistentes Integrado
+Al seleccionar la opción `Assistants`:
+- El Centro de Control suspende su pantalla y restaura el modo de la terminal de forma limpia.
+- Abre de forma secuencial el configurador de asistentes existente (`assistantTui`), permitiendo seleccionar editores, realizar la autoprueba de 5 segundos, previsualizar los cambios y aplicarlos con respaldos de seguridad.
+- Al salir del configurador de asistentes, la terminal se restaura y el Centro de Control recarga un resumen fresco y actualizado de la base de datos.
+- **Cero modos raw anidados:** No existen dos lectores de terminal activos simultáneamente.
+
+---
+
+## 7. Habilitar la Integración de Asistentes (Esquema 5)
 
 Para que los asistentes de inteligencia artificial puedan interactuar con la memoria y registrar asociaciones locales de carpetas a proyectos (`project_bindings`), la base de datos debe encontrarse en **Esquema 5**.
 
 Existen dos vías para habilitar el Esquema 5:
 
-### Vía A: Menú Interactivo de Asistentes (`tui`)
-Ejecutando `forge614-engram tui`, al seleccionar y confirmar los asistentes deseados, el menú valida los planes de configuración, inicializa el espacio global y ejecuta internamente la migración aditiva a Esquema 5 antes de aplicar los archivos de los clientes.
+### Vía A: Centro de Control TUI (`tui`)
+En `forge614-engram tui`, ve a la pestaña `Actions`, selecciona `Enable assistant integration`, escribe `confirm` y presiona Enter.
 
 ### Vía B: Comando Explícito (`integration-enable`)
-Si deseas preparar el espacio y habilitar el Esquema 5 sin alterar archivos de configuración de ningún cliente:
+Si deseas preparar el espacio y habilitar el Esquema 5 desde la línea de comandos:
 
 ```bash
 forge614-engram integration-enable
@@ -263,11 +322,14 @@ Salida esperada (en JSON puro):
 
 ---
 
-## 7. Habilitar el Ciclo de Sesiones Progresivas (Esquema 6)
+## 8. Habilitar el Ciclo de Sesiones Progresivas (Esquema 6)
 
 Para que los asistentes y la terminal puedan crear sesiones de trabajo (`session-start`), consultar líneas temporales (`timeline`), ensamblar contextos clasificados (`context`) y registrar resúmenes estructurados (`session-summary`), la base de datos debe encontrarse en **Esquema 6**.
 
-### Comando Explícito (`sessions-enable`)
+### Vía A: Centro de Control TUI (`tui`)
+En `forge614-engram tui`, ve a `Actions`, selecciona `Enable sessions`, escribe `confirm` y presiona Enter.
+
+### Vía B: Comando Explícito (`sessions-enable`)
 ```bash
 forge614-engram sessions-enable
 ```
@@ -293,11 +355,14 @@ Salida esperada (en JSON puro):
 
 ---
 
-## 8. Habilitar el Refuerzo de Búsqueda FTS5 (Esquema 7)
+## 9. Habilitar el Refuerzo de Búsqueda FTS5 (Esquema 7)
 
 Para que el motor de búsqueda SQLite FTS5 incorpore factores de repetición inmutable y estabilidad temporal sin embeddings, la base de datos debe encontrarse en **Esquema 7**.
 
-### Comando Explícito (`reinforcement-enable`)
+### Vía A: Centro de Control TUI (`tui`)
+En `forge614-engram tui`, ve a `Actions`, selecciona `Enable search reinforcement`, escribe `confirm` y presiona Enter.
+
+### Vía B: Comando Explícito (`reinforcement-enable`)
 ```bash
 forge614-engram reinforcement-enable
 ```
@@ -316,7 +381,7 @@ Salida esperada (en JSON puro):
 2. **Idempotencia y Protección ante Bases Desaparecidas:**
    Ejecutar `reinforcement-enable` en una base que ya tiene Esquema 7 es una operación segura que devuelve de inmediato el mismo JSON. Sin embargo, si existe un archivo `.env` configurado cuya base `engram.db` fue eliminada del disco, el comando **falla de forma segura** con error; jamás crea una base vacía silenciosa que oculte la pérdida de datos.
 3. **No Configura Asistentes Automáticamente:**
-   Habilitar el refuerzo no modifica los archivos de configuración de tus asistentes ni sus ganchos. Para actualizar las instrucciones de los asistentes previamente configurados, utiliza el menú interactivo `forge614-engram tui` con su mecanismo seguro de previsualización y respaldo.
+   Habilitar el refuerzo no modifica los archivos de configuración de tus asistentes ni sus ganchos. Para actualizar las instrucciones de los asistentes previamente configurados, utiliza la opción `Assistants` del Centro de Control `tui` con su mecanismo seguro de previsualización y respaldo.
 4. **Coordinación entre Equipos Pares (*Peer Devices*):**
    Si sincronizas tu memoria con otras computadoras mediante PostgreSQL:
    - Todas las computadoras deben actualizarse a la versión 0.5.0 compatible.
@@ -327,14 +392,11 @@ Salida esperada (en JSON puro):
    forge614-engram sync --upgrade-format
    ```
    > [!WARNING]
-   > `sync-watch` rechaza terminantemente la opción `--upgrade-format`. La promoción debe realizarse mediante el comando puntual `sync` para asegurar la confirmación consciente del usuario. Distingue claramente:
-   > - **Esquema SQLite 7:** Estructura física local en `engram.db`.
-   > - **Payload Formato 3:** Estructura serializada de sincronización con confirmaciones.
-   > - **PostgreSQL `state.format = 1`:** Estructura física relacional de la réplica remota (que no cambia).
+   > `sync-watch` y la acción de sincronización del Centro de Control TUI rechazan terminantemente la promoción de formato. La promoción debe realizarse exclusivamente mediante el comando puntual `sync --upgrade-format` en terminal para asegurar la confirmación consciente del usuario.
 
 ---
 
-## 9. Inspección de Asistentes en JSON (`assistant-list`)
+## 10. Inspección de Asistentes en JSON (`assistant-list`)
 
 Para auditar qué asistentes tienes instalados, qué rutas de configuración utilizan y qué nivel de cobertura de memoria ofrecen sin escribir archivos ni abrir menús interactivos:
 
@@ -374,7 +436,7 @@ Salida representativa en JSON (ideal para scripts de automatización o diagnóst
 
 ---
 
-## 10. Inicialización Programática Alternativa (`init`)
+## 11. Inicialización Programática Alternativa (`init`)
 
 Si estás configurando un entorno automatizado donde no deseas interacción humana con el asistente `setup`, puedes inicializar el espacio local básico directamente:
 
@@ -398,10 +460,10 @@ Este comando:
 
 ---
 
-## 11. Primer Proyecto y Primer Recuerdo Manual
+## 12. Primer Proyecto y Primer Recuerdo Manual
 
 ### Crear un Proyecto
-El identificador de proyecto es un identificador único e inmutable (UUID). El nombre visible es puramente descriptivo:
+El identificador de proyecto es un identificador único e inmutable (UUID). El nombre visible es puramente descriptivo. Puedes crearlo mediante el Centro de Control TUI (`Actions > Create project`) o por CLI:
 
 ```bash
 forge614-engram project-create --name "Motor de Recomendaciones"

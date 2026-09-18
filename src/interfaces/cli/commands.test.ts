@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { WorkspaceConfig } from "../../infrastructure/filesystem/workspace-config";
 import { MemoryWorkspace } from "../../app/workspace";
+import { parseArguments } from "./arguments";
+import { dispatch } from "./commands";
 
 const directories: string[] = [];
 function workspace() {
@@ -111,4 +113,46 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
   expect(missing.code).toBe(1);
   expect(JSON.parse(missing.stderr).code).toBe("DATABASE_MISSING");
   expect(existsSync(config.databasePath)).toBe(false);
+});
+
+test("tui dispatch composes assistants sequentially between fresh control-center sessions", async () => {
+  const order:string[] = [];
+  let centers = 0;
+  const previousExitCode = process.exitCode;
+  process.exitCode = undefined;
+  try {
+    await dispatch(parseArguments(["tui"]), {
+      controlCenter:async () => {
+        order.push("control-center");
+        centers += 1;
+        return {cancelled:false, openAssistants:centers === 1};
+      },
+      assistants:async () => { order.push("assistants"); return {cancelled:false}; },
+    });
+    expect(order).toEqual(["control-center", "assistants", "control-center"]);
+    expect(process.exitCode).toBeUndefined();
+  } finally { process.exitCode = previousExitCode ?? 0; }
+});
+
+test("tui dispatch stops with code 130 when either sequential screen cancels", async () => {
+  const previousExitCode = process.exitCode;
+  try {
+    for (const cancelledBy of ["control-center", "assistants"] as const) {
+      process.exitCode = undefined;
+      let centers = 0;
+      let assistants = 0;
+      await dispatch(parseArguments(["tui"]), {
+        controlCenter:async () => {
+          centers += 1;
+          return cancelledBy === "control-center"
+            ? {cancelled:true, openAssistants:false}
+            : {cancelled:false, openAssistants:true};
+        },
+        assistants:async () => { assistants += 1; return {cancelled:true}; },
+      });
+      expect(Number(process.exitCode)).toBe(130);
+      expect(centers).toBe(1);
+      expect(assistants).toBe(cancelledBy === "assistants" ? 1 : 0);
+    }
+  } finally { process.exitCode = previousExitCode ?? 0; }
 });

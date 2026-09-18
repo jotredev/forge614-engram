@@ -1,13 +1,34 @@
 # 07 (EN). Plain-Language Glossary
 
-> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
+> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2,566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
 This glossary explains each technical concept using everyday life analogies and metaphors first, followed immediately by its formal technical term in parentheses.
 
 ---
+
+### TUI Control Center (`controlCenterTui` / `forge614-engram tui`)
+Like a master dashboard in a vessel's central engine room: a full-screen interactive terminal interface that centralizes project inspection, local directory bindings, global shared memory oversight, SQLite and PostgreSQL storage status, and deliberate administrative action execution without needing to remember individual CLI subcommands.
+
+### Read-Only by Default
+Like visiting an archival museum where you can inspect artifacts through display cases without any risk of altering them: an architectural guarantee where opening the TUI Control Center, switching tabs, inspecting projects, or resizing windows executes exclusively in read-only mode, guaranteeing that inspection never writes a single byte to disk.
+
+### Two-Step Action Confirmation (`confirm` + Enter)
+Like a high-security vault door requiring a key turn followed by a distinct confirmation button: an interactive safety protocol where no destructive or state-altering write action (creating projects, binding directories, applying migrations, or triggering sync) can execute simply by pressing `Enter`. Operators must inspect the displayed impact preview, explicitly type `confirm` (or `CONFIRM`) into a prompt, and press `Enter`.
+
+### Terminal Output Sanitization (`sanitizeTerminalOutput`)
+Like an air-purification filter removing particulates before entering a sterile cleanroom: a string sanitization routine that filters project display names, directory paths, and external text, stripping ANSI escape sequences, non-printable control characters, bidirectional override markers (bidi overrides), zero-width characters, and URL hyperlinks to shield the terminal against injection exploits or visual layout corruption.
+
+### Sequential Terminal Subflow
+Like placing a call on hold to handle a secondary task cleanly before resuming the main conversation right where you left off: the operational technique where the Control Center pauses its own event loop, fully restores standard terminal mode, launches the assistant integration flow (`assistantTui`) as a clean sequential subflow, and upon return reloads a fresh snapshot and reactivates the Control Center without nested concurrent raw modes.
+
+### Strict Secret Concealment
+Like an executive summary disclosing company financial metrics without publishing bank account passwords: the privacy principle whereby the TUI Control Center never displays raw passwords, full connection URLs (`POSTGRES_URL`), unredacted `.env` contents, or sensitive memory note contents or titles, restricting output strictly to structural metrics and metadata.
+
+---
+
 
 ### Immutable Memory Confirmation (`Confirmation` / `confirmations`)
 Like making a pencil tally mark on the cover of a workshop manual every time you consult it, without tearing out pages or reprinting the whole book: a timestamped, immutable historical event recording that an existing active memory was observed again by an assistant, without creating artificial versions 2 or 3 or duplicating content. It denotes a repeated observation; it does not certify absolute truth or human verification.

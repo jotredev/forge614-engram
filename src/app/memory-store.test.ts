@@ -32,3 +32,16 @@ test("store facade explicitly reports and enables search reinforcement", () => {
     expect(store.reinforcementEnabled()).toBe(true);
   } finally { store.close(); }
 });
+
+test("store facade returns control-center summaries from its SQLite connection", () => {
+  const store = new MemoryStore(":memory:");
+  try {
+    const project = store.createProject("Facade summary");
+    store.save({projectId:project.projectId, title:"Private title", content:"Private content", type:"fact"});
+    expect(store.controlCenter()).toEqual({
+      capabilities:{schema:3, assistantIntegration:false, sessions:false, reinforcement:false},
+      projects:[{...project, bindings:[], memories:{active:1, archived:0, lastUpdatedAt:expect.any(String)}}],
+      shared:{active:0, archived:0, lastUpdatedAt:null},
+    });
+  } finally { store.close(); }
+});

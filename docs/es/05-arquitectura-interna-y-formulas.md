@@ -1,11 +1,11 @@
 # 05. Arquitectura Interna, Monolito Modular por Funcionalidad, SQLite FTS5 y Fórmulas Matemáticas
 
-> **Etapa:** FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo (439 pruebas totales en 76 archivos: 430 superadas y 9 omitidas sin binarios aislados PG; 439 superadas, 0 fallos, 2274 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 38.62s)
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [05 (EN). Internal Architecture, Modular Monolith, FTS5, and Ranking Formulas](../en/05-internal-architecture-and-formulas.md)
 
-Este documento expone con rigor de tesis técnica la arquitectura interna de Forge614 Engram: los fundamentos de la reorganización en **monolito modular por funcionalidad**, los problemas resueltos, el árbol de directorios real y responsabilidades, las reglas de dependencias y auditoría automática mediante AST, las transacciones compuestas, la guía de colocación de cambios, la organización de pruebas colocadas (*colocated tests*), los esquemas relacionales SQLite 3 a 7, el protocolo de replicación PostgreSQL Formatos 1 a 3, y las fórmulas matemáticas exactas de BM25 ponderado, recencia de 30 días, saturación asintótica por confirmaciones inmutables y deduplicación por ventana móvil sin embeddings.
+Este documento expone con rigor de tesis técnica la arquitectura interna de Forge614 Engram: los fundamentos de la reorganización en **monolito modular por funcionalidad**, los problemas resueltos, el árbol de directorios real y responsabilidades, las reglas de dependencias y auditoría automática mediante AST, el diseño del **Centro de Control TUI**, las transacciones compuestas, la guía de colocación de cambios, la organización de pruebas colocadas (*colocated tests*), los esquemas relacionales SQLite 3 a 7, el protocolo de replicación PostgreSQL Formatos 1 a 3, y las fórmulas matemáticas exactas de BM25 ponderado, recencia de 30 días, saturación asintótica por confirmaciones inmutables y deduplicación por ventana móvil sin embeddings.
 
 ---
 
@@ -15,7 +15,7 @@ Este documento expone con rigor de tesis técnica la arquitectura interna de For
 El patrón arquitectónico adoptado en Forge614 Engram es el **Monolito Modular por Funcionalidad (*Feature-Oriented Modular Monolith*)**.
 
 - **Monolito (*Monolith*):** Significa que el sistema se compila, empaqueta y distribuye como un único artefacto ejecutable desplegable en el sistema operativo (`forge614-engram`), que corre en un solo proceso local en tu computadora. No se divide en múltiples microservicios remotos, ni utiliza comunicación de red interna, ni requiere demonios adicionales para funcionar.
-- **Modular por Funcionalidad (*Feature-Oriented Modular*):** Significa que el código interno está dividido en fronteras lógicas cohesivas según el concepto de dominio al que sirven (memoria, confirmaciones, proyectos, sesiones, búsqueda, sincronización, espacio central, asistentes), en lugar de agruparse únicamente por el rol técnico de los archivos. Cada módulo es dueño exclusivo de sus reglas y define una puerta de entrada explícita (`index.ts`).
+- **Modular por Funcionalidad (*Feature-Oriented Modular*):** Significa que el código interno está dividido en fronteras lógicas cohesivas según el concepto de dominio al que sirven (memoria, confirmaciones, proyectos, sesiones, búsqueda, centro de control, sincronización, espacio central, asistentes), en lugar de agruparse únicamente por el rol técnico de los archivos. Cada módulo es dueño exclusivo de sus reglas y define una puerta de entrada explícita (`index.ts`).
 
 > [!NOTE]
 > **Elección Contextual, no Dogma Universal:** La adopción del monolito modular por funcionalidad es una decisión técnica deliberada y contextual para un CLI local y SDK síncrono que opera sobre un único archivo de configuración (`~/.forge614/.env`) y una única base SQLite (`~/.forge614/engram.db`). No se vende aquí como un estándar obligatorio ni universal para todo proyecto informático.
@@ -68,11 +68,12 @@ src/
 ├── cli.ts                         # [Arranque Mínimo] 2 líneas exactas de delegación
 ├── index.ts                       # [API Pública SDK] Barril único y estable
 │
-├── app/                           # [Coordinación de Flujos]
+├── app/                           # [Coordinación de Flujos de Caso de Uso]
 │   ├── index.ts                   # Exportaciones de coordinación
 │   ├── memory-store.ts            # Fachada compatible con MemoryStore histórico
 │   ├── workspace.ts               # Ciclo de vida y apertura del espacio central
 │   ├── project-context.ts         # Resolución de identidad Git y vinculaciones
+│   ├── control-center.ts          # Coordinación de lectura segura y mutaciones TUI
 │   ├── synchronization.ts         # Coordinación de réplica y snapshots (sin I/O terminal)
 │   ├── setup.ts                   # Secuencia de inicialización asistida (SetupIO)
 │   └── assistants.ts              # Coordinación de detección y configuración de asistentes
@@ -84,6 +85,9 @@ src/
 │   │   ├── validation.ts
 │   │   ├── confirmations.ts       # Interfaces y lógica pura de confirmaciones
 │   │   └── ranking.ts             # Fórmulas de multiplicador y explicación
+│   ├── control-center/            # Tipos de snapshot, capacidades y mutaciones TUI
+│   │   ├── index.ts
+│   │   └── types.ts
 │   ├── projects/                  # Identidad inmutable de proyectos (UUID)
 │   ├── sessions/                  # Ciclo de sesiones, timbrado e inferencia
 │   ├── search/                    # Términos, límites Unicode/bytes y proyecciones
@@ -99,6 +103,7 @@ src/
 │   │   ├── connection.ts          # Apertura con WAL y pragmas estrictos
 │   │   ├── schema.ts              # DDL de Esquemas 3, 4, 5, 6 y 7
 │   │   ├── projects.ts            # Consultas de proyectos y vínculos
+│   │   ├── control-center.ts      # Consultas agregadas sin contenido para TUI
 │   │   ├── memory.ts              # Consultas de recuerdos y versiones
 │   │   ├── confirmations.ts       # Persistencia y consultas de confirmaciones/requests
 │   │   ├── writes.ts              # Transacciones compuestas atómicas exteriores
@@ -114,7 +119,12 @@ src/
 │   ├── cli/                       # Intérprete de comandos y formateadores JSON
 │   ├── mcp/                       # Servidor MCP sobre stdio (10 herramientas)
 │   ├── terminal/                  # Adaptadores de ganchos nativos de asistentes
-│   └── tui/                       # Menú interactivo TUI en pantalla completa
+│   └── tui/                       # Centro de Control TUI y configurador de asistentes
+│       ├── control-center-state.ts  # Máquina pura de estados (teclas -> páginas/intents)
+│       ├── control-center-render.ts # Renderizado acotado y saneamiento de salida
+│       ├── control-center.ts        # Ciclo de vida de terminal TTY y orquestación
+│       ├── controller.ts            # Subflujo de asistentes: selección y autoprueba
+│       └── render.ts                # Renderizado del configurador de asistentes
 │
 └── shared/                        # [Primitivas Compartidas]
     └── errors.ts                  # Clase MemoryError y catálogo de códigos de error
@@ -329,14 +339,20 @@ El Formato 3 extiende la estructura de la instantánea añadiendo dos coleccione
 ## 8. Organización de Pruebas Colocadas (*Colocated Tests*) y Conteo Oficial
 
 ### 8.1. Correspondencia Uno a Uno
-Cada uno de los **53 archivos de producción que contienen lógica de negocio** cuenta con un archivo hermano colocado de prueba (`<nombre>.test.ts`):
+Cada uno de los **58 archivos de producción que contienen lógica de negocio** cuenta con un archivo hermano colocado de prueba (`<nombre>.test.ts`):
 - `src/infrastructure/sqlite/confirmations.ts` $\leftrightarrow$ `confirmations.test.ts`
+- `src/infrastructure/sqlite/control-center.ts` $\leftrightarrow$ `control-center.test.ts`
 - `src/modules/memory/ranking.ts` $\leftrightarrow$ `ranking.test.ts`
 - `src/modules/memory/confirmations.ts` $\leftrightarrow$ `confirmations.test.ts`
 - `src/modules/synchronization/confirmations.ts` $\leftrightarrow$ `confirmations.test.ts`
-- Pruebas de integración de colaboración en `src/app/__tests__/`:
+- `src/app/control-center.ts` $\leftrightarrow$ `control-center.test.ts`
+- `src/interfaces/tui/control-center-state.ts` $\leftrightarrow$ `control-center-state.test.ts`
+- `src/interfaces/tui/control-center-render.ts` $\leftrightarrow$ `control-center-render.test.ts`
+- `src/interfaces/tui/control-center.ts` $\leftrightarrow$ `control-center.test.ts`
+- Pruebas de integración de colaboración en `src/app/__tests__/` y `src/interfaces/tui/__tests__/`:
   - `confirmations.integration.test.ts`
   - `confirmations-sync.integration.test.ts`
+  - `control-center.integration.test.ts`
 
 ### 8.2. Historial Oficial de Pruebas
 
@@ -353,10 +369,16 @@ Cada uno de los **53 archivos de producción que contienen lógica de negocio** 
 │ FTS5 Reforzado (Entrega 11)   │ 439 pass**   │ 76 archivos   │ 2274 aserciones  │
 │                               │ (430 pass /  │               │ (38.62s)         │
 │                               │  9 skip PG)  │               │                  │
+├───────────────────────────────┼──────────────┼───────────────┼──────────────────┤
+│ Centro de Control (Entrega 12)│ 504 pass***  │ 82 archivos   │ 2566 aserciones  │
+│                               │ (495 pass /  │               │ (39.76s)         │
+│                               │  9 skip PG)  │               │                  │
 └───────────────────────────────┴──────────────┴───────────────┴──────────────────┘
 * Nota: Con binario PG temporal configurado (361 pass / 8 skip sin binario).
 ** Nota: 430 superadas y 9 omitidas sin binarios aislados PG. Con FORGE614_TEST_POSTGRES_BIN
    configurado, se ejecutan y superan 439 pass, 0 fail, 2274 aserciones en 38.62s.
+*** Nota: 495 superadas y 9 omitidas sin binarios aislados PG. Con FORGE614_TEST_POSTGRES_BIN
+    configurado, se ejecutan y superan 504 pass, 0 fail, 2566 aserciones en 39.76s.
 ```
 
 ---
@@ -365,10 +387,11 @@ Cada uno de los **53 archivos de producción que contienen lógica de negocio** 
 
 - **Inspiración en Gentleman Programming:** El modelo de recuperación progresiva mediante vistas previas acotadas, lectura de versiones históricas bajo demanda, reconstrucción de líneas temporales de sesión y refuerzo de relevancia se inspira en los conceptos desarrollados por Gentleman (vinculado al commit `2cdda9041c1bff86f6b769171fd407fa677027cb`).
 - **Innovaciones Propias de Forge614:**
+  - Centro de Control interactivo en terminal con navegación de solo lectura por defecto, confirmación estricta de dos pasos (`confirm` + Enter), saneamiento exhaustivo de caracteres ANSI/bidi/URLs, y subflujo secuencial de asistentes sin lectores anidados en crudo.
   - Fórmula matemática exacta de ordenamiento $BM25 \times \text{multiplier}$ con saturación asintótica $\frac{n}{n+4}$ y decaimiento suave en escala de 30 días.
   - Reloj único de evaluación de consulta `request_clock(nowMs)` para evitar derivas mid-query.
   - Confirmaciones inmutables en tabla dedicada `confirmations` sin fabricar versiones redundantes de recuerdos.
   - Deduplicación por ventana móvil de 15 minutos para recuerdos sin tema.
   - Caché de peticiones idempotentes por hash criptográfico SHA-256 con detección de conflicto `REQUEST_CONFLICT`.
   - Promoción explícita CAS atómica a Formato 3 en réplica PostgreSQL con invariabilidad del esquema físico (`state.format = 1`).
-  - Monolito modular con 53 componentes lógicos respaldados por pruebas hermanas colocadas y verificación estricta de imports por AST.
+  - Monolito modular con 58 componentes lógicos respaldados por pruebas hermanas colocadas y verificación estricta de imports por AST.

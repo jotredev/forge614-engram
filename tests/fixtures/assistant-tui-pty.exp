@@ -5,8 +5,20 @@ set binary [lindex $argv 0]
 set scenario [lindex $argv 1]
 spawn /bin/sh -c {before=$(/bin/stty -g); "$1" tui; code=$?; after=$(/bin/stty -g); if [ "$before" = "$after" ]; then printf '\nRESTORED:%s\n' "$code"; else printf '\nNOT_RESTORED\n'; fi} sh $binary
 expect {
-  "Asistentes" {}
+  "Forge614 Engram | Control Center" {}
   timeout { puts "FAIL initial TUI"; exit 1 }
+  eof { puts "FAIL early exit"; exit 1 }
+}
+send -- "\033\[B\033\[B\033\[B\033\[B\033\[B"
+expect {
+  "> Assistants" {}
+  timeout { puts "FAIL Assistants navigation"; exit 1 }
+  eof { puts "FAIL early exit"; exit 1 }
+}
+send -- "\r"
+expect {
+  "Forge614 Engram | Asistentes" {}
+  timeout { puts "FAIL assistant TUI"; exit 1 }
   eof { puts "FAIL early exit"; exit 1 }
 }
 send -- "\r"

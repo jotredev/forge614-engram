@@ -1,135 +1,156 @@
 # 02 (EN). Guided System Walkthrough
 
-> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, 10 MCP Tools, Local Memory & Optional PostgreSQL Synchronization
-> **Schemas:** SQLite Schemas 3 (local) / 4 (sync) / 5 (assistants & local bindings) / 6 (progressive sessions) / 7 (immutable confirmations & reinforced ranking) | PostgreSQL Replica Formats 1, 2, and 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
-> **Status:** Current & Active (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
+> **Stage:** TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
+> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
+> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
-This practical walkthrough guides you step-by-step through the complete lifecycle of Forge614 Engram: from setting up global storage interactively with `setup`, connecting developer coding assistants using the terminal UI menu `tui`, interacting across the 10 native Model Context Protocol (MCP) tools with automatic Git project resolution, managing progressive memory work sessions with event timelines (`timeline`), recording repeated memories as immutable confirmations without fabricating redundant revisions (Schema 7), assembling ranked prompt context dossiers (`context`), executing reinforced FTS5 searches with transparent mathematical factors without embeddings, safely managing OpenCode plugin updates, and synchronizing PostgreSQL replicas with explicit promotion to Format 3.
+This practical walkthrough guides you through the full operational lifecycle of Forge614 Engram: initializing global configuration via `setup`, supervising and managing the workspace through the interactive **Terminal Control Center (`tui`)**, connecting AI coding assistants via its safe subflow with an asynchronous 5-second self-test, interacting across 10 native MCP tools with Git-based canonical project resolution, tracking progressive sessions with event timelines (`timeline`), recording repeated observations as immutable confirmations without creating redundant versions (Schema 7), assembling ranked context dossiers (`context`), executing explainable FTS5 searches without embeddings, managing safe OpenCode plugin conflict resolution, and synchronizing snapshots with PostgreSQL using Format 3 promotion.
 
 ---
 
-## 1. The Project Concept & Identity (`projectId`)
+## 1. Project Concept and Identity (`projectId`)
 
-In Forge614 Engram, **all projects share a single database (`~/.forge614/engram.db`) and a single configuration file (`~/.forge614/.env`)**.
+In Forge614 Engram, **all projects share a single local SQLite database (`~/.forge614/engram.db`) and a single configuration file (`~/.forge614/.env`)**.
 
-Within that database, projects are formally registered with two attributes:
-1. **`projectId` (Immutable Unique Identifier):** An automatically generated lowercase UUIDv4 (e.g., `7c9e6679-7425-40de-944b-e07fc1f90ae7`). It permanently links all memories and sessions to that project.
-2. **`name` (Cosmetic Display Name):** A human-readable label (e.g., `"Online Store"`). Renaming with `project-rename` never changes the `projectId` or affects stored memories.
+Within that database, projects are registered with two attributes:
+1. **`projectId` (Immutable UUID Identifier):** An automatically generated lowercase UUIDv4 (e.g., `7c9e6679-7425-40de-944b-e07fc1f90ae7`). It forms the primary relational foreign key anchoring all project memories.
+2. **`name` (Descriptive Display Label):** A human-readable label (e.g., `"Online Store"`). Renaming a project with `project-rename` never alters `projectId` nor affects pre-existing memories.
 
 > [!WARNING]
-> **Logical isolation, not multi-tenant authorization:** Isolation by `projectId` organizes your data so one project never reads private notes belonging to another. However, it is not a multi-user operating system boundary. Any program running under your local user account can access the storage. **Never store plain-text passwords, private API secrets, or access tokens in memories.**
+> **Logical Partitioning, Not Multi-User Security:** Project isolation structures your local workspace so one project never reads private notes from another. It is not an encrypted multi-tenant boundary. Any process running under your operating system user can access the store. **Never store API keys, private passwords, or security secrets in memory notes.**
 
 ---
 
-## 2. The Two Memory Scopes (`scope`)
+## 2. Memory Scopes (`scope`)
 
-The `scope` property dictates where a stored note applies:
+The `scope` parameter governs memory visibility:
 
-| Scope (`scope`) | Identifier (`projectId`) | Purpose & Application |
+| Scope (`scope`) | Identifier (`projectId`) | Purpose and Behavior |
 | :--- | :--- | :--- |
-| **`project`** | UUID of a registered project | Decisions, facts, or rules applying **strictly to that specific project**. |
-| **`shared`** | `null` (no project) | Universal preferences or developer practices applying across **all projects**. |
+| **`project`** | Registered project UUID | Decisions, facts, or procedures that apply **strictly to this project**. |
+| **`shared`** | `null` (no project) | Universal preferences or standards that apply **across all projects**. |
 
-### Everyday examples:
-- *"This application uses SQLite"* $\rightarrow$ **Project** scope (`scope: project`).
-- *"I prefer technical explanations in English"* $\rightarrow$ **Shared** scope (`scope: shared`).
+### Practical Examples:
+- *"This application uses SQLite in WAL mode"* $\rightarrow$ **Project** scope (`scope: project`).
+- *"All documentation must be in Spanish with engineering rigor"* $\rightarrow$ **Shared** scope (`scope: shared`).
 
-A shared memory is stored **once in the central database**; it is never duplicated or cloned across individual projects.
+A shared memory is stored **exactly once in the database**; it is never duplicated or copied into individual projects.
 
 ---
 
 ## 3. Step-by-Step Lifecycle Walkthrough
 
-### Step 1: Initialize Global Storage (`setup` or `init`)
+### Step 1: Initialize the Central Workspace (`setup` or `init`)
 
-To configure your central storage interactively:
+To initialize your workspace with interactive guidance:
 
 ```bash
 forge614-engram setup
 ```
 
-**Interactive terminal walkthrough:**
-1. Explains central file locations: `~/.forge614/.env` and `~/.forge614/engram.db`.
-2. Prompts whether to enable PostgreSQL synchronization:
-   - Option 1: `No` (default, purely local mode).
-   - Option 2: `Yes, configure PostgreSQL` (prompts for masked connection URL and explains full workspace replication).
-3. Prompts whether to enable search reinforcement (Schema 7, immutable confirmations):
-   - Option 1: `Yes` (default, activates Schema 7 and reinforcement ranking).
-   - Option 2: `No` (keeps baseline Schema 6).
-4. Displays a plan summary and asks for confirmation (`Yes, apply changes` or `Cancel and exit`).
-5. On confirmation, sets directory permissions `0700`, writes `.env` in `0600`, and initializes `engram.db`.
-6. Exiting with `Ctrl+C` or `q` exits with **code 130** without touching disk.
+**Interactive Terminal Flow:**
+1. Shows central file paths: `~/.forge614/.env` and `~/.forge614/engram.db`.
+2. Asks whether to configure PostgreSQL synchronization:
+   - Option 1: `No` (default, 100% local and offline).
+   - Option 2: `Sí, configurar PostgreSQL` (prompts for masked connection string).
+3. Offers search reinforcement (Schema 7).
+4. Displays plan summary and asks for pre-flight confirmation.
+5. Sets `~/.forge614/` to `0700`, `.env` to `0600`, and creates `engram.db`.
+6. Cancelling via `Ctrl+C` exits with code **130** leaving zero bytes modified.
 
 ---
 
-### Step 2: Interactive Assistant Configuration Menu (`tui`)
+### Step 2: The Interactive Terminal Control Center (`tui`)
 
-To configure your coding assistants (Claude Code, Codex, Cursor, OpenCode, and Gemini CLI) without manually editing JSON or TOML files, open the interactive terminal menu:
+To supervise storage, projects, shared counters, and assistant configurations without memorizing commands or exposing secrets, open the Terminal Control Center:
 
 ```bash
 forge614-engram tui
 ```
 
 > [!NOTE]
-> `tui` requires a real interactive terminal (`TTY` with raw mode support). When invoked in a non-interactive environment (such as a pipe or automated script), it immediately fails with `INTERACTIVE_REQUIRED`. For scriptable inspection, use the read-only command `assistant-list`.
+> `tui` strictly requires an interactive terminal (`TTY`). Running without a TTY immediately aborts with `INTERACTIVE_REQUIRED`.
 
-#### Keyboard Controls:
-- **Up / Down Arrows (`↑` / `↓`):** Move cursor through the menu and assistant list.
-- **Spacebar (`Space`):** Select or deselect assistants for configuration.
-- **`r` key or "Rescan":** Rescans system PATH and default directories to update detected binary and configuration states.
-- **`c` key or "Customize":** Prompts for custom executable paths and configuration directories via masked inputs.
-- **`t` key or "Test own server":** Triggers an **asynchronous self-test** of Engram's installed MCP server:
-  - Spawns the installed executable (`forge614-engram`) via the official MCP SDK over stdio.
-  - Verifies that the server identifies as `forge614-engram` and registers all 10 tools.
-  - Governed by a strict **5-second deadline**. If timed out, reports `TIMED_OUT` and forcibly reaps the child process.
-  - Pressing `Escape` during the test cancels only the self-test and preserves user assistant selections.
-- **`Enter` key:** Advances through `List` $\rightarrow$ `Preview` $\rightarrow$ `Confirmation` $\rightarrow$ `Apply`.
-- **`Escape` key:** Steps back to the previous screen.
-- **`Ctrl+C`:** Cancels the session immediately, restores terminal state, and returns exit code **130**.
+#### 1. Read-Only by Default Principle:
+The Control Center launches strictly in **passive read-only mode**:
+- Does not create databases or `.env` files. If unconfigured, it explains that you should run `setup` or `init` and exits cleanly without creating storage.
+- Never creates ghost projects or mutates counters simply by navigating.
+- You can inspect all tabs without risking unintended modifications.
 
-#### Safety Guarantees:
-1. **Zero-write preview:** Selecting assistants and previewing never modifies files on disk.
-2. **Preflight verification:** Rejects unsafe symlinks, validates directory permissions, and checks file sizes.
-3. **Private backups:** Before modifying an existing configuration, creates an exact byte-for-byte backup in mode `0600` with a UUID suffix (e.g., `settings.json.019183ab-....bak`).
-4. **Comment preservation:** Uses tolerant parsers (JSONC and TOML) to preserve comments and foreign entries.
-5. **Post-publication byte verification:** After publishing, Engram re-reads the file and validates exact planned bytes. If modified concurrently, reports `PUBLISHED_UNVERIFIED`.
+#### 2. Menu Navigation and Core Tabs:
+```text
+Summary | Projects | Shared | Storage | Actions | Assistants | Exit
+```
+- **Summary:** Shows overall initialization status, current SQLite schema version (3 to 7), enabled capabilities (Assistants, Sessions, Search Reinforcement), total enrolled projects, and shared memory counts.
+- **Projects:** Lists every registered project with descriptive name, short UUID (e.g., `7c9e6679...`), and memory counts (active/archived). Pressing **Enter** opens the **Detail View**:
+  - Full canonical UUID (`7c9e6679-7425-40de-944b-e07fc1f90ae7`).
+  - Creation and update timestamps.
+  - Bound local directory paths (`bindings`) registered on this physical machine.
+- **Shared:** Displays active and archived shared memory counters and last update timestamp, reminding users that this is a single global collection rather than per-project storage.
+- **Storage:** Shows the exact local SQLite file path (`~/.forge614/engram.db`), schema version (3 to 7), capability statuses, and PostgreSQL status (`configured` or `not-configured`).
+  - **Zero Secret Exposure:** Strictly conceals PostgreSQL URLs, passwords, API secrets, memory titles, and memory content.
+
+#### 3. Two-Step Confirmed Actions (`Actions`):
+The `Actions` tab provides safe operational tasks:
+- `Create project`: Prompts for a descriptive name and assigns a fresh UUID.
+- `Rename project`: Updates the descriptive display name while preserving UUID and existing memories.
+- `Bind directory`: Binds an absolute directory path to an explicit UUID without guessing by name.
+- `Enable assistant integration`: Additive migration to Schema 5.
+- `Enable sessions`: Additive migration to Schema 6.
+- `Enable search reinforcement`: Additive migration to Schema 7.
+- `Synchronize now`: Displayed only if PostgreSQL is configured. Runs single-shot sync without format promotion or background services.
+
+**The Strict Confirmation Protocol:**
+1. Selecting an action renders a full preview detailing consequences.
+2. Required inputs (project name or absolute path) are captured and pre-validated.
+3. The interface requires **typing `confirm`** (case-insensitive) followed by Enter.
+4. **Pressing Enter alone never executes actions.**
+5. Pressing Escape or Ctrl+C immediately cancels the action and restores the screen, leaving storage bytes identical.
+
+#### 4. Sequential Assistant Subflow (`Assistants`):
+Selecting `Assistants`:
+- Suspends the Control Center and restores standard terminal mode.
+- Sequentially launches the assistant configurator (`assistantTui`).
+- Select clients with Space (Claude Code, Codex, Cursor, OpenCode, Gemini CLI), run the 5-second async self-test with `t`, review config diffs, and apply with private `0600`/UUID backups.
+- Exiting the assistant configurator restores the terminal and reloads a fresh snapshot in the Control Center.
+- **Zero nested raw modes:** Two event loops never execute simultaneously.
 
 ---
 
-### Step 3: The Native MCP Server and its 10 Tools
+### Step 3: Native Stdio MCP Server and 10 Tools
 
-When your AI client starts, it launches Engram's MCP server over standard input/output streams (`stdio`):
+When launching your AI coding assistant, it starts the background stdio MCP server:
 
 ```bash
 forge614-engram mcp
 ```
 
-The server reserves `stdout` exclusively for JSON-RPC frames. It provides **ten official tools**:
+The server reserves `stdout` exclusively for JSON-RPC messages, exposing **ten official tools**:
 
-1. **`memory_current_project` (`directory?`):** Resolves the Git context of the current project without creating a database record.
-2. **`memory_context` (`directory?`, `scope?`, `compact?`, `maxBytes?`):** Assembles a structured, ranked context view of pinned, recent, and summary items respecting strict serialized byte budgets.
-3. **`memory_search` (`query`, `directory?`, `limit?`, `scope?`, `preview?`):** Searches active memories using BM25 trigram FTS5 with transparent explanation factors.
-4. **`memory_get` (`id`, `directory?`, `scope?`, `version?`):** Retrieves a complete note by its UUID, allowing inspection of specific historical versions.
-5. **`memory_save` (`title`, `content`, `type`, `directory?`, `scope?`, `globalIntent?`, `topicKey?`, `pinned?`, `expectedVersion?`, `requestKey?`, `sessionId?`, `sessionProjectId?`):** Saves or updates durable knowledge, associating it explicitly or inferredly to a work session.
-6. **`memory_history` (`id`, `directory?`, `scope?`):** Chronologically lists all immutable past revisions of a note.
-7. **`memory_session_start` (`sessionId`, `directory?`):** Initiates an active work session in the current project.
-8. **`memory_session_end` (`sessionId`, `directory?`):** Formally closes an active work session.
-9. **`memory_session_summary` (`sessionId`, `summary`, `requestKey`, `directory?`, `expectedVersion?`):** Records a structured closing summary for the session under reserved topic `session/<sessionId>/summary`.
-10. **`memory_timeline` (`sessionId`, `id`, `version`, `directory?`, `before?`, `after?`):** Displays the narrative window of memories recorded before and after a decision within the same session.
+1. **`memory_current_project` (`directory?`):** Resolves current Git project context without creating records.
+2. **`memory_context` (`directory?`, `scope?`, `compact?`, `maxBytes?`):** Returns ranked context dossiers (pinned, recent, session summaries) bounded by serialized byte limit.
+3. **`memory_search` (`query`, `directory?`, `limit?`, `scope?`):** BM25 trigram FTS5 search with mathematical ranking explanations.
+4. **`memory_get` (`id`, `directory?`, `scope?`, `version?`):** Fetches full memory records, including historical revisions.
+5. **`memory_save` (`title`, `content`, `type`, `directory?`, `scope?`, `globalIntent?`, `topicKey?`, `pinned?`, `expectedVersion?`, `requestKey?`, `sessionId?`, `sessionProjectId?`):** Creates or updates memories with optional or inferred session association.
+6. **`memory_history` (`id`, `directory?`, `scope?`):** Lists immutable historical revisions for a memory ID.
+7. **`memory_session_start` (`sessionId`, `directory?`):** Opens an active session in the current project.
+8. **`memory_session_end` (`sessionId`, `directory?`):** Formally closes an active session.
+9. **`memory_session_summary` (`sessionId`, `summary`, `requestKey`, `directory?`, `expectedVersion?`):** Stores structured closing summaries under `session/<sessionId>/summary`.
+10. **`memory_timeline` (`sessionId`, `id`, `version`, `directory?`, `before?`, `after?`):** Displays before/after neighbor memories within a session.
 
 ---
 
-### Step 4: Canonical Git Identity & Manual Binding (`project-bind`)
+### Step 4: Canonical Git Project Identity and Binding (`project-bind`)
 
 #### Canonical Resolution:
-Engram executes `git rev-parse --path-format=absolute --git-common-dir`.
-- **Linked worktrees:** Point to the same common `.git` directory, sharing identical project identity and memories.
-- **Subdirectories:** Resolve automatically to the shared repository root.
-- **Directories without Git:** Require an explicit `--directory` or a single MCP root; the binary directory is never used as an implicit project.
+Resolves directories via `git rev-parse --path-format=absolute --git-common-dir`:
+- **Linked worktrees:** Share common `.git` root and access identical project memories.
+- **Subdirectories:** Resolve automatically to common repository root.
+- **Non-Git directories:** Require explicit `--directory` or single MCP workspace root; never defaults to binary path.
 
-#### Conservative Safeguards and Manual Binding:
-If any directory path registered in `project_bindings` no longer exists on disk (moved folder or unmounted volume), Engram halts defensively with `PROJECT_BINDING_REQUIRED` to avoid creating duplicate projects. You can inspect and manually bind paths with:
+#### Conservative Halting and Binding:
+If a path registered in `project_bindings` disappears, Engram halts with `PROJECT_BINDING_REQUIRED`. Bind manually via the TUI (`Actions > Bind directory`) or CLI:
 
 ```bash
 forge614-engram project-list
@@ -140,27 +161,25 @@ forge614-engram project-bind \
 
 ---
 
-### Step 5: Native Assistant Hooks (`memory-hook`)
+### Step 5: Native Assistant Prompt Hooks (`memory-hook`)
 
-For supported assistants (Claude Code, Codex, Cursor, OpenCode, Gemini CLI), Engram injects contextual guidance on lifecycle events such as session start (`SessionStart`) or prompt submission (`UserPromptSubmit`):
+Injects native prompt orientation blocks for supported clients:
 
 ```bash
 forge614-engram memory-hook --client codex
 ```
 
-- Emits native JSON advisory blocks encouraging the model to invoke `memory_context` and `memory_current_project`.
-- **Does not write memories directly.**
-- **Codex Approval Notice:** New hooks registered in Codex require explicit user approval via `/hooks` inside Codex before they can execute.
+- Injects guidance prompting the model to query `memory_context` and `memory_current_project`.
+- **Never writes memories directly.**
+- **Codex Approval:** New hooks in Codex must be explicitly approved by typing `/hooks`.
 
 ---
 
-### Step 6: The Progressive Memory Sessions Lifecycle
+### Step 6: Progressive Memory Sessions Lifecycle
 
-A progressive session groups notes generated during a specific task and allows auditing them in chronological sequence. It requires Schema 6 (`forge614-engram sessions-enable`).
+Enables chronological task tracking. Requires `sessions-enable` or enabling sessions via TUI.
 
-#### 1. Start a Session (`session-start`):
-Session identifiers must contain 1 to 200 Unicode characters without control codes or leading/trailing whitespace:
-
+#### 1. Starting a Session (`session-start`):
 ```bash
 forge614-engram session-start \
   --directory "/Users/usuario/Desktop/my-project" \
@@ -178,80 +197,44 @@ Output:
 }
 ```
 
-#### 2. Save Memories with Session Inference:
-When an assistant or user saves a project note without specifying `--session-id`:
-- **0 candidate sessions:** If no runtime session has been started in the last 7 days for that directory, Engram assigns it to the local manual notebook (`local_manual_sessions`), returning `sessionSource: "manual"`.
-- **1 candidate session:** If exactly one runtime session has been started in the last 7 days for that bound directory, Engram automatically links it, returning `sessionSource: "inferred"`.
-- **2+ candidate sessions:** If multiple runtime sessions remain open concurrently, Engram safely halts with `AMBIGUOUS_SESSION`, requiring an explicit `--session-id`.
+#### 2. Saving Memories with Session Inference:
+When saving a project note without `--session-id`:
+- **0 candidate sessions:** Bound to manual project session (`local_manual_sessions`), returning `sessionSource: "manual"`.
+- **1 candidate session:** Inferred automatically, returning `sessionSource: "inferred"`.
+- **Multiple candidate sessions:** Halts with `AMBIGUOUS_SESSION`, requiring explicit `--session-id`.
 
 ```bash
-# Explicit save specifying the session:
 forge614-engram save \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
   --session-id "session-auth-refactor-01" \
-  --title "Asymmetric JWT Tokens" \
-  --content "Tokens will be signed using Ed25519 private keys." \
+  --title "Asymmetric JWT Signing" \
+  --content "We will sign access tokens using Ed25519 private keys." \
   --type decision \
   --topic "jwt-signing"
 ```
 
-Output:
-```json
-{
-  "id": "e4a2d810-7215-46f9-bb20-56f7e4b2d351",
-  "projectId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-  "scope": "project",
-  "topicKey": "jwt-signing",
-  "type": "decision",
-  "title": "Asymmetric JWT Tokens",
-  "content": "Tokens will be signed using Ed25519 private keys.",
-  "pinned": false,
-  "version": 1,
-  "createdAt": "2026-09-17T12:05:00.000Z",
-  "updatedAt": "2026-09-17T12:05:00.000Z",
-  "sessionId": "session-auth-refactor-01",
-  "sessionSource": "explicit"
-}
-```
+#### 3. Saving Shared Memories within Sessions:
+To associate a universal rule with a project's session:
+- Specify `--globalIntent`, `--session-id`, and `--session-project-id <UUID>`.
+- Preserves privacy: response sets `projectId: null` and **omits `sessionId`**.
 
-#### 3. Saving Shared Memories with Session Association:
-To associate a universal rule (`scope: shared`) with a project session:
-- Specify `--globalIntent` explaining why the rule applies universally.
-- Specify `--session-id` and `--session-project-id <UUID>`.
-- The shared note is stored with `projectId: null`, and the response **never reveals the `sessionId` or private origin**, safeguarding user privacy.
-
-```bash
-forge614-engram save \
-  --scope shared \
-  --title "Token Expiration Policy" \
-  --content "Access tokens must expire within at most 15 minutes." \
-  --type preference \
-  --session-id "session-auth-refactor-01" \
-  --session-project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
-  --globalIntent "Applies to all authentication microservices in the organization."
-```
-
-#### 4. Record a Structured Session Summary (`session-summary`):
-Upon finishing work, record a closing log with six strict fields (`goal` required; `instructions`, `discoveries`, `accomplishments`, `nextSteps`, `files`):
-
+#### 4. Structured Session Summaries (`session-summary`):
 ```bash
 forge614-engram session-summary \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
   --session-id "session-auth-refactor-01" \
   --request-key "req-sum-01" \
   --summary-json '{
-    "goal": "Migrate authentication to asymmetric Ed25519 keys",
-    "instructions": "Maintain backward compatibility for 30 days",
-    "discoveries": "The legacy validator did not support JWK headers",
-    "accomplishments": "Ed25519 token issuance operational and verified",
+    "goal": "Migrate authentication to Ed25519 asymmetric keys",
+    "instructions": "Maintain backwards compatibility for 30 days",
+    "discoveries": "Legacy validator lacked JWK header support",
+    "accomplishments": "Ed25519 issuance fully operational and tested",
     "nextSteps": "Deploy key rotation middleware",
     "files": ["src/auth/jwt.ts", "src/auth/middleware.ts"]
   }'
 ```
 
-The summary is persisted under reserved topic `session/session-auth-refactor-01/summary` and indexed in `session_summaries`.
-
-#### 5. Close the Session (`session-end`):
+#### 5. Ending a Session (`session-end`):
 ```bash
 forge614-engram session-end \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
@@ -262,78 +245,53 @@ forge614-engram session-end \
 
 ### Step 7: Reinforced FTS5 Search and Immutable Confirmations (Schema 7)
 
-Schema 7 equips Forge614 Engram with the capability to record repeated observations as **immutable confirmations** and weight FTS5 search ranking without using embeddings or secondary LLM evaluator models.
+Schema 7 introduces **immutable confirmations** and deterministic FTS5 ranking multipliers without embeddings:
 
-#### 1. Local Activation (`reinforcement-enable`):
+#### 1. Enablement:
+Enable via TUI (`Actions > Enable search reinforcement`) or CLI:
 ```bash
 forge614-engram reinforcement-enable
 ```
-Output: `{"enabled": true, "schema": 7}`.
 
-#### 2. Saving an Initial Memory with a Request Key (`--request-key`):
-To ensure operations are idempotent and resilient across network timeouts or process interruptions, the assistant assigns a `requestKey`:
-
+#### 2. Initial Save with Request Key (`--request-key`):
 ```bash
 forge614-engram save \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
-  --title "Background Task Queues" \
-  --content "We will use SQLite WAL-based queues for asynchronous tasks." \
+  --title "Background Queue" \
+  --content "We will use SQLite WAL tables for async background jobs." \
   --type decision \
   --request-key "req-queue-01"
 ```
 
-The memory is created at version 1, with 0 prior revisions and 0 confirmations.
+#### 3. Idempotent Replay:
+Replaying the identical request with the same `request-key`:
+- Replays cached response without incrementing versions or confirmations.
 
-#### 3. Idempotent Replay with the Same Key (`Replay`):
-If the connection or assistant process is interrupted and the **exact same request is re-executed with key `req-queue-01`**:
-- The system recognizes the key stored in `requests`.
-- It immediately returns the previously cached response.
-- **No confirmations are added and no versions are incremented.**
+#### 4. Payload Conflict Guard (`REQUEST_CONFLICT`):
+Reusing `req-queue-01` with modified content triggers `REQUEST_CONFLICT`.
 
-#### 4. Payload Conflict on Key Reuse (`REQUEST_CONFLICT`):
-If the same key `req-queue-01` is reused while sending different content or title:
-- The system detects a discrepancy in the SHA-256 cryptographic hash of the payload.
-- It immediately aborts with the error `REQUEST_CONFLICT`.
+#### 5. Repeated Observation as Confirmation:
+Re-recording the same note with a fresh key `req-queue-02` within the 15-minute window:
+- Stays at version 1 without inflating history.
+- Appends an immutable confirmation event in `confirmations`.
+- Confers stability boost in search; **never certifies ontological truth**.
 
-#### 5. Repeated Save with New Key: Confirmation Event:
-If at a later time (within a **15-minute** sliding deduplication window for notes without a topic) the assistant observes and saves the exact same active note (identical title, content, type, and pinned status) using a **new key** `req-queue-02`:
-
-```bash
-forge614-engram save \
-  --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
-  --title "Background Task Queues" \
-  --content "We will use SQLite WAL-based queues for asynchronous tasks." \
-  --type decision \
-  --request-key "req-queue-02"
-```
-
-**Engram Behavior:**
-- **Does not create a redundant version 2.**
-- Records an immutable event in the `confirmations` table with its own UUID `confirmationId`, referenced version, UTC timestamp, and current session.
-- Returns version 1 intact with its updated session.
-- Inspecting history (`forge614-engram history --id <id>`) confirms there is **exactly 1 version**, keeping the revision history clean of artificial duplicates.
-- **Honest Semantic Meaning:** This records that the fact was observed again; **it does not certify absolute truth nor human verification**.
-
-#### 6. 15-Minute Sliding Deduplication Window (Notes without Topic):
-For general memories without a topic (`topicKey: null`), deduplication considers only active candidate notes observed within the last 15 minutes (between `now - 900,000 ms` and `now`). If more than 15 minutes have passed, Engram creates a separate new memory to avoid merging temporally distant events. If multiple candidates exist within the window, it selects the most recently observed and breaks ties with `id ASC`.
+#### 6. 15-Minute Sliding Window:
+For notes without topic keys (`topicKey: null`), deduplication evaluates candidates observed within the last 15 minutes (`now - 900,000 ms` to `now`). Notes separated by more than 15 minutes are created as distinct records.
 
 ---
 
-### Step 8: Progressive Retrieval & Reinforced Search (Previews, Timeline, Context)
+### Step 8: Progressive Retrieval (Previews, Timeline, Context)
 
-Engram implements a progressive retrieval model (inspired by **Gentleman** with **Forge614** adaptations):
-
-#### 1. FTS5 Search with Reinforcement Factors (`--preview`):
-Text search in SQLite FTS5 computes BM25 relevance and applies the ranking formula with recency and stability multipliers:
-
+#### 1. Reinforced FTS5 Preview Search (`--preview`):
 ```bash
 forge614-engram search \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
-  --query "sqlite queues" \
+  --query "sqlite queue" \
   --preview
 ```
 
-Representative output with detailed factor explanation:
+Returns previews with exact mathematical explanations:
 ```json
 [
   {
@@ -343,13 +301,13 @@ Representative output with detailed factor explanation:
       "scope": "project",
       "topicKey": null,
       "type": "decision",
-      "title": "Background Task Queues",
-      "preview": "We will use SQLite WAL-based queues for asynchronous tasks.",
+      "title": "Background Queue",
+      "preview": "We will use SQLite WAL tables for async background jobs.",
       "truncated": false,
       "pinned": false,
       "version": 1,
-      "createdAt": "2026-09-17T12:00:00.000Z",
-      "updatedAt": "2026-09-17T12:00:00.000Z"
+      "createdAt": "2026-09-17T12:05:00.000Z",
+      "updatedAt": "2026-09-17T12:05:00.000Z"
     },
     "explanation": {
       "mode": "fts5",
@@ -370,12 +328,7 @@ Representative output with detailed factor explanation:
 ]
 ```
 
-> [!NOTE]
-> In SQLite FTS5, ranking sorts ascending by `orderScore = bm25 * multiplier`. Since BM25 values are negative, a higher multiplier (from pinned notes, recency, or confirmations) results in a more negative number, ordering the note earlier in search results.
-
-#### 2. Reading a Specific Version (`get --version`):
-To inspect the full content of a past historical revision:
-
+#### 2. Specific Version Reading (`get --version`):
 ```bash
 forge614-engram get \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
@@ -383,9 +336,7 @@ forge614-engram get \
   --version 1
 ```
 
-#### 3. Session Event Timeline (`timeline`):
-Audits the train of thought by retrieving earlier and later notes recorded within the same session:
-
+#### 3. Session Timeline Inspection (`timeline`):
 ```bash
 forge614-engram timeline \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
@@ -396,15 +347,7 @@ forge614-engram timeline \
   --after 3
 ```
 
-Returns `{ "sessionId", "focus", "before", "after" }`, where `focus` displays up to 500 Unicode code points and neighboring notes display up to 150 Unicode code points.
-
 #### 4. Ranked Context Dossier (`context`):
-Automatically gathers the project's cognitive state at task startup or post-compaction:
-- Up to 20 prioritized pinned memories (`pinned`).
-- Up to 20 unpinned recent memories (`recent`).
-- Up to 5 past session summaries (`summaries`).
-- Strictly bounded by a serialized **UTF-8 JSON byte budget** (`--max-bytes`, default 16384; range 1024..65536) and allows omitting previews with `--compact`:
-
 ```bash
 forge614-engram context \
   --project-id "7c9e6679-7425-40de-944b-e07fc1f90ae7" \
@@ -414,38 +357,29 @@ forge614-engram context \
 
 ---
 
-### Step 9: Safe Plugin Updates in OpenCode
+### Step 9: Safe OpenCode Plugin Conflict Resolution
 
-In OpenCode, Engram generates an integration plugin at `plugins/forge614-engram.js` using upstream experimental callbacks.
-
-> [!IMPORTANT]
-> **Plugin Conflict Management:**
-> If an Engram plugin already exists in an active OpenCode directory with content differing from the planned version, the system flags a configuration conflict (`CONFLICT`) and **never overwrites it automatically**.
->
-> **Reconciliation Procedure:**
-> 1. Open `forge614-engram tui` and inspect the preview.
-> 2. If a conflict is reported, create a manual backup of your existing `plugins/forge614-engram.js` file.
-> 3. Remove or reconcile local changes in the file.
-> 4. Re-run `forge614-engram tui`, confirm the changes, and verify clean application.
+If an existing plugin differs in OpenCode:
+1. Open `forge614-engram tui` and navigate to `Assistants`.
+2. Review the conflict warning.
+3. Manually back up `plugins/forge614-engram.js`.
+4. Reconcile differences and re-apply cleanly via `Assistants`.
 
 ---
 
-### Step 10: PostgreSQL Synchronization and Format 3 Promotion (`sync --upgrade-format`)
+### Step 10: PostgreSQL Sync & Format 3 Promotion (`sync --upgrade-format`)
 
-If PostgreSQL replication was configured in `setup`:
-
-#### Ordinary Synchronization:
+#### Routine Sync:
+Run from TUI (`Actions > Synchronize now`) or CLI:
 ```bash
 forge614-engram sync
 ```
 
 #### Explicit Promotion to Format 3:
-When your local database is at Schema 7 (search reinforcement with confirmations) and you want the PostgreSQL replica to synchronize confirmation events and requests:
-- Ordinary synchronization without flags rejects promotion if the remote replica is in an older format, returning `SYNC_UPGRADE_REQUIRED`.
-- To intentionally promote the replica to **Format 3**, run:
+To replicate confirmations to PostgreSQL:
 ```bash
 forge614-engram sync --upgrade-format
 ```
-- Promotion is validated atomically using optimistic CAS (*Compare-And-Swap*) locking on the remote snapshot hash.
-- **Requirement Across All Peer Devices:** Before promoting to Format 3, **all peer devices must be updated** and have executed `reinforcement-enable`. If an unreinforced client attempts to sync a Format 3 package, it halts with `REINFORCEMENT_REQUIRED` to protect local storage from unrecognized confirmation tables.
-- **`sync-watch` Rejects Promotions:** `sync-watch --upgrade-format` is prohibited; promotion must be executed via the one-shot `sync` command.
+- Atomic CAS lock ensures single-winner promotion.
+- Unreinforced peer clients halt safely with `REINFORCEMENT_REQUIRED` until upgraded.
+- `sync-watch` strictly rejects `--upgrade-format`.

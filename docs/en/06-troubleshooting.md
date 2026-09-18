@@ -1,11 +1,11 @@
 # 06 (EN). Troubleshooting and Error Diagnostics
 
-> **Stage:** Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (439 total tests across 76 files: 430 passed and 9 skipped without isolated PostgreSQL test binaries; 439 passed, 0 failures, 2,274 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 38.62s)
+> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2,566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [06. Resolución de Problemas y Catálogo de Errores](../es/06-resolucion-de-errores.md)
 
-This troubleshooting guide provides an exhaustive diagnostic catalog of error codes, root causes, and recommended recovery procedures in Forge614 Engram, including reinforced FTS5 search ranking, immutable confirmations (Schema 7), Format 3 PostgreSQL replication, clock skew guards, idempotent retries, and assistant configuration conflicts.
+This troubleshooting guide provides an exhaustive diagnostic catalog of error codes, root causes, and recommended recovery procedures in Forge614 Engram, including the TUI Control Center, reinforced FTS5 search ranking, immutable confirmations (Schema 7), Format 3 PostgreSQL replication, clock skew guards, idempotent retries, and assistant configuration conflicts.
 
 ---
 
@@ -35,7 +35,7 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 | `SUMMARY_TOPIC_RESERVED` | *"El tema está reservado para un resumen de sesión."* | Attempted to save a standard memory using the reserved topic format `session/<id>/summary`. | Use an ordinary topic key or save summaries using the official `session-summary` command. |
 | `SUMMARY_TOPIC_CONFLICT` | *"El tema reservado ya pertenece a otro recuerdo."* or *"El resumen no coincide con su puntero."* | Pointer mismatch between `session_summaries` and the stored memory record. | Retrieve the prior summary with `get` and supply `--expected-version` or verify your request key. |
 | `CONFLICT` | *"The dedicated Engram plugin already exists with different contents..."* | In OpenCode, `plugins/forge614-engram.js` already exists with custom or divergent code. | Engram never overwrites modified plugins. Back up your existing plugin, remove or reconcile it, and re-run `forge614-engram tui`. |
-| `INTERACTIVE_REQUIRED` | *"tui necesita una terminal interactiva..."* or *"setup necesita..."* | Invocations of `tui` or `setup` without a real interactive TTY (`isTTY` false or no raw mode). | Run directly in an interactive terminal. In scripts, use `assistant-list` or `init`. |
+| `INTERACTIVE_REQUIRED` | *"tui necesita una terminal interactiva..."* or *"setup necesita..."* | The TUI Control Center (`tui`) or configuration assistant (`setup`) was invoked in an unattended environment, pipeline (`\|`), redirection (`< /dev/null`), or subshell without interactive raw mode TTY support. | Run the command directly in a real interactive terminal emulator. For scripts, automation, or CI/CD pipelines, use non-interactive CLI commands such as `project-list`, `assistant-list`, `status`, `health`, or TypeScript SDK helpers (`readControlCenter()`). |
 | `PROJECT_IDENTITY_UNAVAILABLE`| *"No se pudo determinar de forma segura la identidad Git..."* | Git is not installed, not in PATH, or `git rev-parse` failed. | Install Git (`git --version`) and ensure it is accessible in your system PATH. |
 | `PROJECT_DIRECTORY_REQUIRED` | *"Una carpeta sin Git requiere directory explícito o una raíz MCP única."* | Invoked MCP in a non-Git directory without passing directory, or tried to use binary path as project. | Pass `directory` explicitly in MCP tool calls or bind the directory beforehand with `project-bind`. |
 | `PROJECT_NOT_BOUND` | *"La carpeta todavía no está vinculada..."* | Attempted queries on an unbound folder before saving an initial memory or starting a session. | Save an initial note with `memory_save` (auto-creates binding) or link with `project-bind`. |
@@ -128,3 +128,14 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 - **Recovery Procedure:**
   - If intending to modify the memory content, use a fresh, unique request key (e.g., `--request-key "req-task-02"`).
   - If intending to retry an interrupted operation without changes, verify that the parameters and content match the original request exactly.
+
+---
+
+### 6. Safety Control, Safe Cancellation, and Non-Interactive Execution in TUI Control Center (`INTERACTIVE_REQUIRED`)
+- **Symptom:** Invoking `forge614-engram tui` in a script, pipe, or CI/CD runner halts immediately with exit code `1` and the message: *"tui necesita una terminal interactiva (TTY y raw mode) para renderizar el Centro de Control o configurar asistentes."*
+- **Root Cause:** The TUI Control Center requires an authentic physical terminal with raw mode to capture keyboard events, dynamic window resizes, and render full interactive views. To prevent runaway hangs or corrupted output in unattended automated environments, it preemptively halts without altering any system state.
+- **Recovery Procedure & Safety Safeguards:**
+  1. **For interactive use:** Run the command directly in a supported terminal emulator (Ghostty, iTerm2, Alacritty, Terminal.app).
+  2. **For scripts and CI/CD pipelines:** Do not invoke `tui`. Use specialized headless CLI commands that emit plain text or JSON (e.g., `forge614-engram project-list`, `forge614-engram assistant-list`, `forge614-engram status`, `forge614-engram health`) or inspect state using the TypeScript SDK helper (`readControlCenter()`).
+  3. **Zero-write cancellation safety:** The Control Center starts 100% read-only. Browsing tabs (`Summary`, `Projects`, `Shared`, `Storage`), resizing windows, or pressing `Escape`, `q`, or `Ctrl+C` exits immediately, restoring terminal settings without writing a single byte to disk.
+  4. **In-flight action input draining:** When executing a two-step confirmed action (explicitly typing `confirm` and pressing `Enter`), the Control Center locks input and drains all incoming keypresses while migrations or PostgreSQL sync run. This prevents buffered keystrokes from unintentionally executing follow-up actions upon completion.
