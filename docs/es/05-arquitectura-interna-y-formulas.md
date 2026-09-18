@@ -381,6 +381,58 @@ Cada uno de los **58 archivos de producción que contienen lógica de negocio** 
     configurado, se ejecutan y superan 504 pass, 0 fail, 2566 aserciones en 39.76s.
 ```
 
+### 8.3. Validación y Pruebas Nativas del Instalador en Windows (`scripts/__tests__/install.ps1.test.ps1`)
+
+Como una pista de pruebas hermética con un túnel de viento a escala para ensayar el comportamiento de un vehículo en condiciones extremas sin salir a la autopista real: la suite de validación de Windows ejecuta pruebas aisladas de extremo a extremo para garantizar que el instalador de PowerShell (`scripts/install.ps1`) opere con idéntica fiabilidad atómica y seguridad que su contraparte de Unix (`scripts/install.sh`).
+
+#### 1. Arquitectura de Simulación de Release por Servidor HTTP Efímero en Loopback
+Para no depender de conectividad externa con la API de GitHub ni agotar cuotas de red durante la integración continua, la prueba inicia un trabajo en segundo plano (`Start-Job`) que levanta un servidor HTTP local efímero mediante `[System.Net.HttpListener]` escuchando exclusivamente en la dirección de bucle local (`127.0.0.1`) en un puerto aleatorio no privilegiado (rango `49152`–`65535`):
+- **Simulación completa de API y assets:** El servidor responde a las peticiones del instalador entregando metadatos de release en formato JSON (`/releases/tags/v1.2.3`), el archivo oficial de firmas criptográficas `SHA256SUMS` (`/download/SHA256SUMS`) y binarios ejecutables de prueba (*fixture binaries*).
+- **Aislamiento absoluto:** Todo el entorno se ejecuta bajo una carpeta temporal desechable (`[System.IO.Path]::GetTempPath()\forge614-installer-<GUID>`), configurando una variable `HOME` temporal para garantizar que jamás se toque la configuración real del usuario ni se cree prematuramente la carpeta `~/.forge614`.
+
+#### 2. Matriz Exhaustiva de Casos Validados
+El script de prueba ejecuta y verifica cinco escenarios operacionales críticos:
+1. **Instalación en arquitectura AMD64:** Simula `$env:PROCESSOR_ARCHITECTURE = 'AMD64'`, descargando `forge614-engram-windows-x64.exe`, verificando que el binario instalado coincida byte a byte con el hash SHA-256 esperado.
+2. **Instalación en arquitectura ARM64:** Simula `$env:PROCESSOR_ARCHITECTURE = 'ARM64'`, verificando la descarga e instalación correcta de `forge614-engram-windows-arm64.exe`.
+3. **Rechazo estricto por discrepancia de suma de comprobación (*Checksum Mismatch*):** Simula una descarga corrupta a través de la ruta `/mismatch/` (donde `SHA256SUMS` contiene un hash inválido); valida que el instalador finalice inmediatamente con error (`ExitCode != 0`) y que **no se cree ningún archivo ejecutable en el directorio destino**.
+4. **Protección contra sobrescritura no autorizada:** Intenta instalar sobre un destino preexistente sin la opción `-Force`; valida que el instalador falle y que el archivo preexistente permanezca 100% inalterado.
+5. **Inexistencia de almacenamiento prematuro:** Verifica expresamente que el instalador no cree el directorio de datos `~/.forge614` en la máquina local.
+
+#### 3. Ejecución en Integración Continua (GitHub Actions)
+La suite se invoca dentro de los flujos de trabajo de GitHub Actions sobre ejecutores Windows mediante:
+```powershell
+pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1
+```
+
+#### 4. Instrumentación Diagnóstica Exclusiva de Pruebas ante Fallos Reales
+A raíz de un incidente real en entornos Windows donde el instalador reportó erróneamente la ausencia de `SHA256SUMS`, se implementó un canal de telemetría de diagnóstico exclusivo para el entorno de pruebas, el cual escribe en `$diagnosticFile` (`fixture-server.log`):
+1. **Registro de rutas HTTP solicitadas:** Cada petición recibida por el servidor local queda registrada cronológicamente (`request-path=$path`).
+2. **Nombres de assets emitidos en los metadatos:** Lista explícita de los archivos incluidos en el arreglo de release (`release-asset-names=$assetNames`).
+3. **Carga útil JSON íntegra:** La cadena JSON exacta generada y servida al cliente (`release-json=$payload`).
+
+Antes de validar la instalación de AMD64, la prueba realiza aserciones previas sobre este registro:
+- Comprueba que se haya solicitado la ruta canónica esperada (`/good/repos/jotredev/forge614-engram/releases/tags/v1.2.3`).
+- Comprueba que la lista de assets incluya con exactitud:
+  - `SHA256SUMS`
+  - `forge614-engram-windows-x64.exe`
+  - `forge614-engram-windows-arm64.exe`
+
+```powershell
+# Aserciones diagnósticas previas a la verificación del instalador
+$amd64Diagnostics = Get-FixtureDiagnostics
+Assert-That ($amd64Diagnostics.Contains('/good/repos/jotredev/forge614-engram/releases/tags/v1.2.3')) `
+  "AMD64 fixture route mismatch: $amd64Diagnostics"
+Assert-That ($amd64Diagnostics.Contains('release-asset-names=SHA256SUMS,forge614-engram-windows-x64.exe,forge614-engram-windows-arm64.exe')) `
+  "AMD64 fixture asset names mismatch: $amd64Diagnostics"
+Assert-That ($amd64.ExitCode -eq 0) `
+  "AMD64 installer failed: $($amd64.Output) Fixture diagnostics: $amd64Diagnostics"
+```
+
+#### 5. Capacidad de Depuración y Garantías de Seguridad
+- **Triage inmediato en logs de CI:** Si la prueba llega a fallar, el registro de salida de GitHub Actions imprime inmediatamente estos diagnósticos junto a la salida de PowerShell. Esto permite discriminar instantáneamente si el origen de un fallo reside en la construcción de la URL HTTP, en la serialización JSON del servidor de pruebas o en el deserializador de PowerShell (`ConvertFrom-Json`).
+- **Seguridad y privacidad absolutas:** Este mecanismo opera única y exclusivamente dentro de la prueba de fixture; no se capturan credenciales, variables de entorno sensibles, configuraciones de usuario ni memorias.
+- **Invariabilidad del instalador de producción:** El archivo ejecutable de producción `scripts/install.ps1` no sufrió alteraciones de comportamiento; la instrumentación es estrictamente un refuerzo de observabilidad de la suite de pruebas automatizadas.
+
 ---
 
 ## 9. Atribución y Linaje de Diseño

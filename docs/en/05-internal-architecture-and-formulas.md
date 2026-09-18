@@ -379,6 +379,58 @@ All **58 production files containing business logic** have a colocated sibling t
     configured, runs and passes 504 pass, 0 fail, 2,566 assertions in 39.76s.
 ```
 
+### 8.3. Native Windows Installer Validation and Testing (`scripts/__tests__/install.ps1.test.ps1`)
+
+Like a sealed aerodynamic wind tunnel designed to test vehicle performance under controlled extreme conditions before hitting public highways: the Windows validation suite executes isolated end-to-end integration tests ensuring the PowerShell installer (`scripts/install.ps1`) provides identical atomic guarantees, platform detection, and security safeguards as its Unix counterpart (`scripts/install.sh`).
+
+#### 1. Ephemeral Loopback HTTP Release Mock Server
+To avoid external dependencies on the GitHub API or exhausting rate limits during automated CI runs, the test suite launches a background job (`Start-Job`) hosting an ephemeral local HTTP server via `[System.Net.HttpListener]` bound strictly to loopback (`127.0.0.1`) on a dynamic unprivileged port (range `49152`–`65535`):
+- **Comprehensive API and asset simulation:** The mock server responds to installer requests by serving release metadata JSON (`/releases/tags/v1.2.3`), the cryptographic checksum manifest `SHA256SUMS` (`/download/SHA256SUMS`), and mock binary payloads (*fixture binaries*).
+- **Total test isolation:** The entire execution operates inside a disposable temporary folder (`[System.IO.Path]::GetTempPath()\forge614-installer-<GUID>`), redirecting the temporary `HOME` environment variable to ensure real user settings are never touched and `~/.forge614` is never created prematurely.
+
+#### 2. Exhaustive Validation Matrix
+The test script verifies five critical operational scenarios:
+1. **AMD64 architecture installation:** Simulates `$env:PROCESSOR_ARCHITECTURE = 'AMD64'`, downloading `forge614-engram-windows-x64.exe`, and asserting that the installed executable matches the expected SHA-256 digest byte-for-byte.
+2. **ARM64 architecture installation:** Simulates `$env:PROCESSOR_ARCHITECTURE = 'ARM64'`, verifying proper resolution and atomic placement of `forge614-engram-windows-arm64.exe`.
+3. **Strict checksum mismatch rejection:** Routes requests through `/mismatch/` (where `SHA256SUMS` serves an invalid hash); asserts that the installer immediately exits with an error code (`ExitCode != 0`) and that **no output binary is created in the destination directory**.
+4. **Overwrite protection without `-Force`:** Attempts to install into a destination with a pre-existing binary without passing `-Force`; asserts that the installer fails and that pre-existing destination bytes remain 100% unaltered.
+5. **No premature storage initialization:** Formally asserts that the installer does not create the `~/.forge614` user database folder.
+
+#### 3. Continuous Integration Execution (GitHub Actions)
+The suite runs on Windows runners in GitHub Actions via:
+```powershell
+pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1
+```
+
+#### 4. Test-Exclusive Diagnostics Following Real-World Failure Triage
+Prompted by an actual CI failure on Windows where the installer reported missing `SHA256SUMS`, dedicated diagnostic telemetry was introduced into `$diagnosticFile` (`fixture-server.log`):
+1. **Requested HTTP routes:** Every incoming request path is logged chronologically (`request-path=$path`).
+2. **Asset names served in release metadata:** An explicit list of assets packaged into the release manifest (`release-asset-names=$assetNames`).
+3. **Exact JSON payload string:** The exact JSON string generated and transmitted to the client (`release-json=$payload`).
+
+Prior to verifying the AMD64 installation, the test executes explicit assertions against this diagnostic stream:
+- Asserts that the expected canonical release route was requested (`/good/repos/jotredev/forge614-engram/releases/tags/v1.2.3`).
+- Asserts that the release manifest includes exactly:
+  - `SHA256SUMS`
+  - `forge614-engram-windows-x64.exe`
+  - `forge614-engram-windows-arm64.exe`
+
+```powershell
+# Diagnostic assertions prior to installer execution checks
+$amd64Diagnostics = Get-FixtureDiagnostics
+Assert-That ($amd64Diagnostics.Contains('/good/repos/jotredev/forge614-engram/releases/tags/v1.2.3')) `
+  "AMD64 fixture route mismatch: $amd64Diagnostics"
+Assert-That ($amd64Diagnostics.Contains('release-asset-names=SHA256SUMS,forge614-engram-windows-x64.exe,forge614-engram-windows-arm64.exe')) `
+  "AMD64 fixture asset names mismatch: $amd64Diagnostics"
+Assert-That ($amd64.ExitCode -eq 0) `
+  "AMD64 installer failed: $($amd64.Output) Fixture diagnostics: $amd64Diagnostics"
+```
+
+#### 5. Debuggability and Security Guarantees
+- **Actionable CI log triage:** If the Windows installer test fails, the GitHub Actions log prints these server diagnostics alongside the installer's stdout/stderr. This immediately isolates whether an issue stems from URL route routing, mock server JSON formatting, or PowerShell object parsing (`ConvertFrom-Json`).
+- **Privacy and zero leakage:** This telemetry exists solely within the mock fixture harness; no credentials, sensitive environment variables, user configurations, or memory notes are captured.
+- **Production code integrity:** The production `scripts/install.ps1` script remained completely unchanged; this update exclusively improves the observability and resilience of the automated Windows verification suite.
+
 ---
 
 ## 9. Design Attribution and Lineage

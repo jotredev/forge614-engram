@@ -4,11 +4,17 @@ $installer = Join-Path $PSScriptRoot '..\install.ps1'
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("forge614-installer-" + [Guid]::NewGuid().ToString('N'))
 $fixtureHome = Join-Path $temporaryRoot 'empty-home'
 $fixtureFile = Join-Path $temporaryRoot 'fixture-binary.exe'
+$diagnosticFile = Join-Path $temporaryRoot 'fixture-server.log'
 $fixtureBytes = [System.Text.Encoding]::UTF8.GetBytes("fixture release binary`n")
 $serverJob = $null
 
 function Assert-That([bool] $Condition, [string] $Message) {
   if (-not $Condition) { throw $Message }
+}
+
+function Get-FixtureDiagnostics {
+  if (-not [System.IO.File]::Exists($diagnosticFile)) { return '<fixture server wrote no diagnostics>' }
+  return [System.IO.File]::ReadAllText($diagnosticFile)
 }
 
 function Invoke-Installer([string] $Architecture, [string[]] $Arguments) {
@@ -27,8 +33,8 @@ try {
   New-Item -ItemType Directory -Path $fixtureHome -Force | Out-Null
   [System.IO.File]::WriteAllBytes($fixtureFile, $fixtureBytes)
   $sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $fixtureFile).Hash.ToLowerInvariant()
-  $serverJob = Start-Job -ArgumentList $fixtureFile, $sha256 -ScriptBlock {
-    param([string] $Fixture, [string] $Digest)
+  $serverJob = Start-Job -ArgumentList $fixtureFile, $sha256, $diagnosticFile -ScriptBlock {
+    param([string] $Fixture, [string] $Digest, [string] $Diagnostics)
     $listener = $null
     $port = $null
     for ($attempt = 0; $attempt -lt 20; $attempt += 1) {
@@ -50,6 +56,7 @@ try {
       while ($true) {
         $context = $listener.GetContext()
         $path = $context.Request.Url.AbsolutePath
+        [System.IO.File]::AppendAllText($Diagnostics, "request-path=$path`n")
         if ($path -eq '/stop') { $context.Response.StatusCode = 204; $context.Response.Close(); break }
         $mismatch = $path.StartsWith('/mismatch/')
         $prefix = if ($mismatch) { "/mismatch" } else { "/good" }
@@ -61,6 +68,8 @@ try {
             @{ name = 'forge614-engram-windows-arm64.exe'; browser_download_url = "$base/download/forge614-engram-windows-arm64.exe" }
           )
           $payload = @{ assets = $assets } | ConvertTo-Json -Compress
+          $assetNames = ($assets | ForEach-Object { $_.name }) -join ','
+          [System.IO.File]::AppendAllText($Diagnostics, "release-asset-names=$assetNames`nrelease-json=$payload`n")
           $bytes = [Text.Encoding]::UTF8.GetBytes($payload)
         } elseif ($path.EndsWith('/download/SHA256SUMS')) {
           $sum = if ($mismatch) { '0' * 64 } else { $Digest }
@@ -94,7 +103,10 @@ try {
   try {
     $amd64Destination = Join-Path $temporaryRoot 'amd64-bin'
     $amd64 = Invoke-Installer 'AMD64' @('-ReleaseBaseUrl', "$releaseBaseUrl/good", '-Version', 'v1.2.3', '-BinDir', $amd64Destination)
-    Assert-That ($amd64.ExitCode -eq 0) "AMD64 installer failed: $($amd64.Output)"
+    $amd64Diagnostics = Get-FixtureDiagnostics
+    Assert-That ($amd64Diagnostics.Contains('/good/repos/jotredev/forge614-engram/releases/tags/v1.2.3')) "AMD64 fixture route mismatch: $amd64Diagnostics"
+    Assert-That ($amd64Diagnostics.Contains('release-asset-names=SHA256SUMS,forge614-engram-windows-x64.exe,forge614-engram-windows-arm64.exe')) "AMD64 fixture asset names mismatch: $amd64Diagnostics"
+    Assert-That ($amd64.ExitCode -eq 0) "AMD64 installer failed: $($amd64.Output) Fixture diagnostics: $amd64Diagnostics"
     Assert-That ([System.IO.File]::Exists((Join-Path $amd64Destination 'forge614-engram.exe'))) 'AMD64 binary was not installed.'
     Assert-That ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes((Join-Path $amd64Destination 'forge614-engram.exe'))) -eq [Convert]::ToBase64String($fixtureBytes)) 'AMD64 binary bytes changed.'
 
