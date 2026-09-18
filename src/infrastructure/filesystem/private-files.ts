@@ -1,7 +1,7 @@
 import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, renameSync, unlinkSync, writeFileSync, fsyncSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
+import { dirname, isAbsolute, parse, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { hasWindowsReparsePoint } from './windows-reparse-guard';
 
 export const MAX_CONFIG_BYTES=1024*1024;
 export class AssistantConfigurationError extends Error {
@@ -13,18 +13,14 @@ export function validPath(path:string):string {
   return resolve(path);
 }
 function stat(path:string){try{return lstatSync(path);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;}}
-const WINDOWS_REPARSE_PATHS_ENV='FORGE614_ENGRAM_REPARSE_PATHS';
-const WINDOWS_REPARSE_QUERY="$ErrorActionPreference='Stop';$raw=[Environment]::GetEnvironmentVariable('FORGE614_ENGRAM_REPARSE_PATHS',[System.EnvironmentVariableTarget]::Process);if([string]::IsNullOrEmpty($raw)){exit 2};try{$paths=@($raw|ConvertFrom-Json -ErrorAction Stop)}catch{exit 2};if($paths.Count -eq 0){exit 2};foreach($path in $paths){if($path -isnot [string] -or [string]::IsNullOrEmpty($path)){exit 2};$attributes=[System.IO.File]::GetAttributes($path);if(([int]$attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 1}};exit 0";
-function assertNoWindowsReparsePoints(paths:readonly string[]):void{
-  if(paths.length===0)return;
-  const systemRoot=process.env.SystemRoot;
-  if(!systemRoot)fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');
-  let result:ReturnType<typeof spawnSync>;
-  try{result=spawnSync(join(systemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-NoProfile','-NonInteractive','-Command',WINDOWS_REPARSE_QUERY],{env:{...process.env,[WINDOWS_REPARSE_PATHS_ENV]:JSON.stringify(paths)},shell:false,stdio:'ignore',timeout:2000,windowsHide:true});}
-  catch{fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');}
-  if(result.error||result.status===null)fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');
-  if(result.status===1)fail('UNSAFE_PATH','Configuration paths must not traverse Windows reparse points.');
-  if(result.status!==0)fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');
+type WindowsReparsePointChecker = (path:string) => unknown;
+function assertNoWindowsReparsePoints(paths:readonly string[],checker:WindowsReparsePointChecker):void{
+  for(const path of paths){
+    let result:unknown;
+    try{result=checker(path);}catch{fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');}
+    if(result===true)fail('UNSAFE_PATH','Configuration paths must not traverse Windows reparse points.');
+    if(result!==false)fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');
+  }
 }
 export function assertSafePath(path:string,platform:NodeJS.Platform=process.platform):void{
   validPath(path);let current=path;const entries:{path:string;entry:ReturnType<typeof stat>}[]=[];
@@ -33,7 +29,7 @@ export function assertSafePath(path:string,platform:NodeJS.Platform=process.plat
     if(entry)entries.push({path:current,entry});
     current=dirname(current);
   }
-  if(platform==='win32'&&process.platform==='win32')assertNoWindowsReparsePoints(entries.map(({path})=>path));
+  if(platform==='win32'&&process.platform==='win32')assertNoWindowsReparsePoints(entries.map(({path})=>path),hasWindowsReparsePoint);
   for(const {path:current,entry} of entries){
     // macOS ships these root-owned system aliases; user-controlled symlinks remain forbidden.
     const systemAlias=process.platform==='darwin'&&['/var','/tmp'].includes(current)&&entry?.uid===0;

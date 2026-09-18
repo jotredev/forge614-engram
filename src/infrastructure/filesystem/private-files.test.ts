@@ -1,9 +1,31 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { dirname, join, parse } from "node:path";
+import { join, parse } from "node:path";
+import { fileURLToPath } from "node:url";
 import { assertSafePath, guardedWrite, readSafeFile } from "./private-files";
+import * as windowsReparseGuard from "./windows-reparse-guard";
 import { withDirectory } from "../__test-support__/fixtures";
+
+type Equal<Left,Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Value>() => Value extends Right ? 1 : 2) ? true : false;
+type Expect<Condition extends true> = Condition;
+
+const nativeGuardModule = { ...windowsReparseGuard };
+function withNativeWindowsGuard(checker:(path:string)=>unknown,operation:()=>void):void{
+  const platform=Object.getOwnPropertyDescriptor(process,"platform");if(!platform)throw new Error("Missing process.platform descriptor.");
+  mock.module("./windows-reparse-guard",()=>({...nativeGuardModule,hasWindowsReparsePoint:checker}));
+  Object.defineProperty(process,"platform",{...platform,value:"win32"});
+  try{operation();}finally{
+    Object.defineProperty(process,"platform",platform);
+    mock.module("./windows-reparse-guard",()=>nativeGuardModule);
+  }
+}
+
+test("assertSafePath exposes no checker bypass in its public API", () => {
+  type AssertSafePathPublicSignature = Expect<Equal<Parameters<typeof assertSafePath>,[path:string,platform?:NodeJS.Platform]>>;
+  const signature:AssertSafePathPublicSignature=true;
+  expect(signature).toBe(true);
+});
 
 test("guarded replacement retains exact backup and private published bytes", () => withDirectory(dir => {
   const path = join(dir, "config"); writeFileSync(path, "old");
@@ -20,27 +42,45 @@ test("Windows path validation accepts ordinary writable config parents without t
   expect(() => assertSafePath(join(writable, "config"), "win32")).not.toThrow();
 }));
 
-const nativeWindows = process.platform === "win32" ? test : test.skip;
-nativeWindows("diagnostic: batched Windows reparse query reports redacted failure detail", () => withDirectory(dir => {
-  const systemRoot=process.env.SystemRoot;
-  const executable=systemRoot?join(systemRoot,"System32","WindowsPowerShell","v1.0","powershell.exe"):null;
-  const target=join(dir,".gemini","config","mcp_config.json"),root=parse(target).root,paths:string[]=[];
-  let current=target;
-  while(current!==root){if(existsSync(current))paths.push(current);current=dirname(current);}
-  const script="$ErrorActionPreference='Stop';$raw=[Environment]::GetEnvironmentVariable('FORGE614_ENGRAM_REPARSE_PATHS',[System.EnvironmentVariableTarget]::Process);if([string]::IsNullOrEmpty($raw)){exit 21};try{$paths=@($raw|ConvertFrom-Json -ErrorAction Stop)}catch{exit 22};if($paths.Count -eq 0){exit 23};foreach($path in $paths){if($path -isnot [string] -or [string]::IsNullOrEmpty($path)){exit 24};$attributes=[System.IO.File]::GetAttributes($path);if(([int]$attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 1}};exit 0";
-  const started=Date.now();
-  const result=executable&&existsSync(executable)
-    ? spawnSync(executable,["-NoProfile","-NonInteractive","-Command",script],{env:{...process.env,FORGE614_ENGRAM_REPARSE_PATHS:JSON.stringify(paths)},shell:false,stdio:["ignore","ignore","pipe"],timeout:10000,windowsHide:true})
-    : null;
-  const stderr=(result?.stderr?.toString()??"").slice(0,1024).replace(/[A-Za-z]:[\\/][^\r\n]*/g,"<windows-path>").replace(/\\\\[^\\\r\n]+(?:\\[^\r\n]+)*/g,"<unc-path>");
-  const diagnosticReason=({21:"raw-absent",22:"json-parse-failed",23:"zero-paths",24:"invalid-path-item"} as Record<number,string>)[result?.status??0]??null;
-  console.info(JSON.stringify({diagnostic:"windows-reparse-batch",systemRootPresent:!!systemRoot,executableAvailable:!!executable&&existsSync(executable),pathCount:paths.length,spawnError:!!result?.error,status:result?.status??null,diagnosticReason,signal:result?.signal??null,errorCode:(result?.error as NodeJS.ErrnoException|undefined)?.code??null,elapsedMs:Date.now()-started,stderr}));
-  expect(paths.length).toBeGreaterThan(0);
-}),12000);
-nativeWindows("native Windows guarded publication batches ordinary ancestor validation", () => withDirectory(dir => {
+test("a native guard exception rejects the path", () => withDirectory(dir => {
   const path = join(dir, "config");
-  guardedWrite({path,before:null,after:"new",kind:"config"},()=>{},()=>{});
-  expect(readSafeFile(path)).toBe("new");
+  withNativeWindowsGuard(() => { throw new Error("native"); }, () => {
+    expect(() => assertSafePath(path, "win32")).toThrow(expect.objectContaining({ code: "UNSAFE_PATH" }));
+  });
+}));
+
+test("a native guard reparse result rejects the path", () => withDirectory(dir => {
+  const path = join(dir, "config"); writeFileSync(path, "config");
+  withNativeWindowsGuard(() => true, () => {
+    expect(() => assertSafePath(path, "win32")).toThrow(expect.objectContaining({ code: "UNSAFE_PATH" }));
+  });
+}));
+
+test("an unexpected native guard result rejects the path", () => withDirectory(dir => {
+  const path = join(dir, "config"); writeFileSync(path, "config");
+  withNativeWindowsGuard(() => "safe", () => {
+    expect(() => assertSafePath(path, "win32")).toThrow(expect.objectContaining({ code: "UNSAFE_PATH" }));
+  });
+}));
+
+const nativeWindows = process.platform === "win32" ? test : test.skip;
+nativeWindows("native Windows tests require a built, nonempty reparse addon", () => {
+  const addon = fileURLToPath(new URL("../../../native/windows-reparse-guard/build/Release/windows_reparse_guard.node", import.meta.url));
+  expect(statSync(addon).size).toBeGreaterThan(0);
+});
+
+nativeWindows("native Windows guarded publication accepts ordinary ancestors without shell lookup", () => withDirectory(dir => {
+  const path = join(dir, "config");
+  const previousPath = process.env.PATH, previousSystemRoot = process.env.SystemRoot;
+  process.env.PATH = "";
+  process.env.SystemRoot = dir;
+  try {
+    guardedWrite({path,before:null,after:"new",kind:"config"},()=>{},()=>{});
+    expect(readSafeFile(path)).toBe("new");
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+    if (previousSystemRoot === undefined) delete process.env.SystemRoot; else process.env.SystemRoot = previousSystemRoot;
+  }
 }));
 
 function mountvol(args:string[]){

@@ -10,3 +10,7 @@ engram.db-wal
 .env.*
 !.env.example
 .DS_Store
+native/windows-reparse-guard/build/*
+!native/windows-reparse-guard/build/Release/
+native/windows-reparse-guard/build/Release/*
+!native/windows-reparse-guard/build/Release/windows_reparse_guard.node
