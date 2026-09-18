@@ -1,0 +1,12 @@
+name: Windows installer tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1

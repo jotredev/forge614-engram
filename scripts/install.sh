@@ -3,108 +3,160 @@ set -euo pipefail
 
 usage() {
   printf '%s\n' \
-    'Instala forge614-engram desde este repositorio, sin npm.' \
-    'Uso: bash scripts/install.sh [--bin-dir RUTA] [--force]' \
-    'Requiere Bun >=1.3.8 para compilar; el ejecutable instalado no requiere Bun.' \
-    'Requiere Git disponible para resolver directorios de proyectos.' \
-    'Prepara dependencias: bun install --frozen-lockfile --ignore-scripts' \
-    'Destino predeterminado: $HOME/.local/bin/forge614-engram' \
-    '--force reemplaza una instalación existente. No cambia las bases de recuerdos.' \
-    'No modifica tu configuración de terminal ni descarga dependencias.'
+    'Install a verified Forge614 Engram release binary.' \
+    'Usage: bash scripts/install.sh [--version TAG] [--bin-dir PATH] [--force]' \
+    'Default destination: $HOME/.local/bin/forge614-engram' \
+    '--force explicitly replaces an existing installation.'
 }
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
-bin_dir="${HOME:?HOME no está definido}/.local/bin"
+
+is_loopback_test_url() {
+  local url="$1"
+  local port
+  [[ "$url" =~ ^http://(127\.0\.0\.1|localhost):([0-9]+)(/[^\?#]*)?$ ]] || return 1
+  port="${BASH_REMATCH[2]}"
+  (( 10#$port >= 1 && 10#$port <= 65535 ))
+}
+
+repo='jotredev/forge614-engram'
+bin_dir="${HOME:?HOME must be set}/.local/bin"
+version=''
 force=0
-seen_dir=0
+seen_bin_dir=0
+seen_version=0
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --help|-h) usage; exit 0 ;;
+    --version)
+      [ "$#" -ge 2 ] && [ -n "$2" ] && [ "$seen_version" -eq 0 ] || fail 'Specify one tag for --version.'
+      case "$2" in --*) fail 'Specify a valid tag for --version.' ;; esac
+      version="$2"
+      seen_version=1
+      shift 2 ;;
     --bin-dir)
-      [ "$#" -ge 2 ] && [ -n "$2" ] && [ "$seen_dir" -eq 0 ] || fail 'Especifica una sola ruta para --bin-dir.'
-      case "$2" in --*) fail 'Falta una ruta válida para --bin-dir.' ;; esac
+      [ "$#" -ge 2 ] && [ -n "$2" ] && [ "$seen_bin_dir" -eq 0 ] || fail 'Specify one path for --bin-dir.'
+      case "$2" in --*) fail 'Specify a valid path for --bin-dir.' ;; esac
       bin_dir="$2"
-      seen_dir=1
+      seen_bin_dir=1
       shift 2 ;;
     --force) force=1; shift ;;
-    *) fail 'Opción desconocida. Consulta: bash scripts/install.sh --help' ;;
+    *) fail 'Unknown option. See: bash scripts/install.sh --help' ;;
   esac
 done
 
-case "$(uname -s)" in Darwin|Linux) ;; *) fail 'Este instalador requiere macOS o Linux con Bash.' ;; esac
-command -v bun >/dev/null 2>&1 || fail 'Se necesita Bun >=1.3.8 para compilar. Instálalo desde https://bun.sh y repite.'
-command -v git >/dev/null 2>&1 || fail 'Se necesita Git disponible para resolver proyectos (también carpetas sin Git). Instálalo y repite; este instalador no descarga Git.'
-bun_version="$(bun --version)"
-IFS=. read -r bun_major bun_minor bun_patch <<< "$bun_version"
-[[ "$bun_major" =~ ^[0-9]+$ && "$bun_minor" =~ ^[0-9]+$ && "$bun_patch" =~ ^[0-9]+$ ]] || fail 'Se requiere una versión estable de Bun >=1.3.8.'
-if (( bun_major < 1 || (bun_major == 1 && bun_minor < 3) || (bun_major == 1 && bun_minor == 3 && bun_patch < 8) )); then
-  fail 'Actualiza Bun: se requiere >=1.3.8.'
+if [ -n "$version" ] && ! [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+  fail 'Invalid release tag. Use a semantic version tag such as v1.2.3.'
 fi
 
-repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-# Verify local dependency versions without downloading or changing the lockfile.
-if ! (cd -- "$repo_dir" && bun -e '
-  const fs = require("node:fs");
-  const expected = JSON.parse(fs.readFileSync("package.json", "utf8")).dependencies;
-  try {
-    for (const [name, version] of Object.entries(expected)) {
-      if (JSON.parse(fs.readFileSync("node_modules/" + name + "/package.json", "utf8")).version !== version) process.exit(1);
-    }
-  } catch { process.exit(1); }
-'); then
-  fail 'Faltan dependencias locales o sus versiones no coinciden. En el repositorio ejecuta: bun install --frozen-lockfile --ignore-scripts; luego repite la instalación.'
-fi
 case "$bin_dir" in /*) ;; *) bin_dir="$PWD/$bin_dir" ;; esac
 destination="$bin_dir/forge614-engram"
-[ ! -d "$destination" ] || fail 'El destino es una carpeta; elige otra ruta.'
+[ ! -d "$destination" ] || fail 'The destination is a directory; choose a different --bin-dir.'
 if { [ -e "$destination" ] || [ -L "$destination" ]; } && [ "$force" -ne 1 ]; then
-  fail 'El comando ya existe. Usa --force para reemplazarlo explícitamente.'
+  fail 'The command already exists. Use --force to replace it explicitly.'
 fi
 
-build_dir="$(mktemp -d "${TMPDIR:-/tmp}/forge614-build.XXXXXX")"
-staging=""
+case "$(uname -s)/$(uname -m)" in
+  Darwin/x86_64) artifact='forge614-engram-darwin-x64' ;;
+  Darwin/arm64) artifact='forge614-engram-darwin-arm64' ;;
+  Linux/x86_64) artifact='forge614-engram-linux-x64' ;;
+  Linux/aarch64) artifact='forge614-engram-linux-arm64' ;;
+  *) fail 'Unsupported operating system or architecture. Supported: macOS x64/arm64 and Linux x64/arm64.' ;;
+esac
+
+command -v curl >/dev/null 2>&1 || fail 'curl is required to download a release.'
+if command -v shasum >/dev/null 2>&1; then
+  checksum_tool='shasum'
+elif command -v sha256sum >/dev/null 2>&1; then
+  checksum_tool='sha256sum'
+else
+  fail 'A SHA-256 command is required: shasum or sha256sum.'
+fi
+
+selector='latest'
+if [ -n "$version" ]; then selector="tags/$version"; fi
+release_json_url="https://api.github.com/repos/${repo}/releases/${selector}"
+curl_protocol='=https'
+test_endpoint=0
+
+# This endpoint is intentionally available only to the disposable installer tests.
+# It is neither a supported installation option nor part of the user help.
+if [ -n "${FORGE614_ENGRAM_TEST_RELEASE_BASE_URL:-}" ]; then
+  [ "${FORGE614_ENGRAM_INSTALLER_TEST:-}" = '1' ] || fail 'The release endpoint override is reserved for test fixtures.'
+  test_base_url="${FORGE614_ENGRAM_TEST_RELEASE_BASE_URL%/}"
+  is_loopback_test_url "$test_base_url" || fail 'The test release endpoint must be a loopback HTTP URL with an explicit numeric port.'
+  release_json_url="${test_base_url}/repos/${repo}/releases/${selector}"
+  curl_protocol='=http,https'
+  test_endpoint=1
+fi
+
+download_dir="$(mktemp -d "${TMPDIR:-/tmp}/forge614-engram-release.XXXXXX")"
+staging=''
 cleanup() {
-  if [ -n "$staging" ]; then rm -f -- "$staging"; fi
-  rm -f -- "$build_dir/forge614-engram"
-  rmdir -- "$build_dir" 2>/dev/null || true
+  [ -z "$staging" ] || rm -f -- "$staging"
+  rm -rf -- "$download_dir"
 }
 trap cleanup EXIT
 
-# Compile the checkout the user selected; no network install and no global config changes.
-if ! (cd -- "$repo_dir" && bun build ./src/cli.ts --compile --outfile "$build_dir/forge614-engram"); then
-  fail 'No se pudo compilar. Comprueba el código y prepara dependencias con: bun install --frozen-lockfile --ignore-scripts'
+download() {
+  curl --fail --location --proto "$curl_protocol" --tlsv1.2 --silent --show-error "$1" --output "$2"
+}
+
+asset_url() {
+  local asset_name="$1"
+  tr '{' '\n' < "$download_dir/release.json" \
+    | sed -n 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"[:space:]]*\)".*/\1/p' \
+    | awk -v asset_name="$asset_name" '
+        substr($0, length($0) - length(asset_name) + 1) == asset_name {
+          count += 1
+          url = $0
+        }
+        END {
+          if (count != 1) exit 1
+          print url
+        }
+      '
+}
+
+download "$release_json_url" "$download_dir/release.json" || fail 'Could not download release metadata.'
+manifest_url="$(asset_url SHA256SUMS)" || fail 'The release is missing SHA256SUMS.'
+binary_url="$(asset_url "$artifact")" || fail "The release is missing the ${artifact} binary."
+if [ "$test_endpoint" -eq 1 ]; then
+  is_loopback_test_url "$manifest_url" || fail 'Release metadata contains an unsafe test fixture URL.'
+  is_loopback_test_url "$binary_url" || fail 'Release metadata contains an unsafe test fixture URL.'
+else
+  case "$manifest_url/$binary_url" in https://*/*) ;; *) fail 'Release assets must use HTTPS URLs.' ;; esac
 fi
-"$build_dir/forge614-engram" --version
+
+download "$manifest_url" "$download_dir/SHA256SUMS" || fail 'Could not download SHA256SUMS.'
+download "$binary_url" "$download_dir/$artifact" || fail "Could not download ${artifact}."
+expected_digest="$(awk -v artifact="$artifact" '
+  $2 == artifact && length($1) == 64 && $1 ~ /^[0-9a-f]+$/ { count += 1; digest = $1 }
+  END { if (count != 1) exit 1; print digest }
+' "$download_dir/SHA256SUMS")" || fail "SHA256SUMS does not contain one valid digest for ${artifact}."
+if [ "$checksum_tool" = 'shasum' ]; then
+  actual_digest="$(shasum -a 256 -- "$download_dir/$artifact" | awk '{print $1}')"
+else
+  actual_digest="$(sha256sum -- "$download_dir/$artifact" | awk '{print $1}')"
+fi
+[ "$expected_digest" = "$actual_digest" ] || fail "Checksum verification failed for ${artifact}."
+
 mkdir -p -- "$bin_dir"
+[ -d "$bin_dir" ] || fail 'The selected --bin-dir is not a directory.'
+[ ! -d "$destination" ] || fail 'The destination is a directory; choose a different --bin-dir.'
+if { [ -e "$destination" ] || [ -L "$destination" ]; } && [ "$force" -ne 1 ]; then
+  fail 'The command already exists. Use --force to replace it explicitly.'
+fi
 staging="$(mktemp "$bin_dir/.forge614-engram.XXXXXX")"
-cp -- "$build_dir/forge614-engram" "$staging"
+cp -- "$download_dir/$artifact" "$staging"
 chmod 755 "$staging"
 if [ "$force" -eq 1 ]; then
   mv -f -- "$staging" "$destination"
 else
-  # Hard-link publication is atomic and refuses a concurrently created destination.
-  ln -- "$staging" "$destination"
+  ln -- "$staging" "$destination" || fail 'The command was created concurrently; rerun with --force only if replacement is intended.'
   rm -f -- "$staging"
 fi
-staging=""
-printf 'Instalado: %s\n' "$destination"
-case ":${PATH:-}:" in
-  *":$bin_dir:"*) printf '%s\n' 'Listo: forge614-engram help' ;;
-  *)
-    printf '%s\n' 'Añade esta carpeta al PATH de tu terminal para usar el comando por nombre:'
-    printf 'export PATH=%q:"$PATH"\n' "$bin_dir"
-    printf '%s\n' 'La línea anterior sirve en Bash/Zsh; guárdala en la configuración de tu terminal si quieres conservarla.' ;;
-esac
-printf '%s\n' 'Detección de asistentes (solo lectura; no inicia clientes ni crea una base):'
-"$destination" assistant-list
-printf 'Para administrar proyectos, memoria, almacenamiento y asistentes desde el centro de control, ejecuta: %q tui\n' "$destination"
-if [ -t 0 ] && [ -t 1 ]; then
-  printf '%s' '¿Abrir ahora el centro de control? [s/N] '
-  answer=''
-  if IFS= read -r answer && [[ "$answer" == s || "$answer" == S || "$answer" == si || "$answer" == sí ]]; then
-    "$destination" tui || {
-      code=$?
-      [ "$code" -eq 130 ] || exit "$code"
-    }
-  fi
-fi
+staging=''
+printf 'Installed: %s\n' "$destination"
+printf '%s\n' 'forge614-engram setup'
