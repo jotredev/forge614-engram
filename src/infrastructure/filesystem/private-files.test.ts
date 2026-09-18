@@ -27,13 +27,14 @@ nativeWindows("diagnostic: batched Windows reparse query reports redacted failur
   const target=join(dir,".gemini","config","mcp_config.json"),root=parse(target).root,paths:string[]=[];
   let current=target;
   while(current!==root){if(existsSync(current))paths.push(current);current=dirname(current);}
-  const script="$ErrorActionPreference='Stop';$raw=[Environment]::GetEnvironmentVariable('FORGE614_ENGRAM_REPARSE_PATHS',[System.EnvironmentVariableTarget]::Process);if([string]::IsNullOrEmpty($raw)){exit 2};try{$paths=@($raw|ConvertFrom-Json -ErrorAction Stop)}catch{exit 2};if($paths.Count -eq 0){exit 2};foreach($path in $paths){if($path -isnot [string] -or [string]::IsNullOrEmpty($path)){exit 2};$attributes=[System.IO.File]::GetAttributes($path);if(([int]$attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 1}};exit 0";
+  const script="$ErrorActionPreference='Stop';$raw=[Environment]::GetEnvironmentVariable('FORGE614_ENGRAM_REPARSE_PATHS',[System.EnvironmentVariableTarget]::Process);if([string]::IsNullOrEmpty($raw)){exit 21};try{$paths=@($raw|ConvertFrom-Json -ErrorAction Stop)}catch{exit 22};if($paths.Count -eq 0){exit 23};foreach($path in $paths){if($path -isnot [string] -or [string]::IsNullOrEmpty($path)){exit 24};$attributes=[System.IO.File]::GetAttributes($path);if(([int]$attributes -band [int][System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 1}};exit 0";
   const started=Date.now();
   const result=executable&&existsSync(executable)
     ? spawnSync(executable,["-NoProfile","-NonInteractive","-Command",script],{env:{...process.env,FORGE614_ENGRAM_REPARSE_PATHS:JSON.stringify(paths)},shell:false,stdio:["ignore","ignore","pipe"],timeout:10000,windowsHide:true})
     : null;
   const stderr=(result?.stderr?.toString()??"").slice(0,1024).replace(/[A-Za-z]:[\\/][^\r\n]*/g,"<windows-path>").replace(/\\\\[^\\\r\n]+(?:\\[^\r\n]+)*/g,"<unc-path>");
-  console.info(JSON.stringify({diagnostic:"windows-reparse-batch",systemRootPresent:!!systemRoot,executableAvailable:!!executable&&existsSync(executable),pathCount:paths.length,spawnError:!!result?.error,status:result?.status??null,signal:result?.signal??null,errorCode:(result?.error as NodeJS.ErrnoException|undefined)?.code??null,elapsedMs:Date.now()-started,stderr}));
+  const diagnosticReason=({21:"raw-absent",22:"json-parse-failed",23:"zero-paths",24:"invalid-path-item"} as Record<number,string>)[result?.status??0]??null;
+  console.info(JSON.stringify({diagnostic:"windows-reparse-batch",systemRootPresent:!!systemRoot,executableAvailable:!!executable&&existsSync(executable),pathCount:paths.length,spawnError:!!result?.error,status:result?.status??null,diagnosticReason,signal:result?.signal??null,errorCode:(result?.error as NodeJS.ErrnoException|undefined)?.code??null,elapsedMs:Date.now()-started,stderr}));
   expect(paths.length).toBeGreaterThan(0);
 }),12000);
 nativeWindows("native Windows guarded publication batches ordinary ancestor validation", () => withDirectory(dir => {
