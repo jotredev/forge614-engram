@@ -42,6 +42,16 @@ function Test-ReleaseUri([string] $Uri, [bool] $AllowLocalHttp) {
   throw 'Release URL must use HTTPS.'
 }
 
+function Write-TestAssetDiagnostics($Assets) {
+  if (-not $testEndpoint) { return }
+  $details = [ordered]@{
+    assetsType = if ($null -eq $Assets) { '<null>' } else { $Assets.GetType().FullName }
+    assetsCount = @($Assets).Count
+    assetNames = @($Assets | ForEach-Object { if ($null -eq $_) { '<null>' } else { [string]$_.name } })
+  } | ConvertTo-Json -Compress -Depth 3
+  [Console]::Error.WriteLine("Test fixture asset diagnostics: $details")
+}
+
 if ($Help) { Show-Usage; exit 0 }
 if ($Version -and $Version -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$') {
   Stop-Install 'Invalid release tag. Use a semantic version tag such as v1.2.3.'
@@ -91,8 +101,14 @@ try {
   }
   $manifestAsset = @($release.assets | Where-Object { $_.name -eq 'SHA256SUMS' })
   $binaryAsset = @($release.assets | Where-Object { $_.name -eq $artifact })
-  if ($manifestAsset.Count -ne 1) { Stop-Install 'The release is missing SHA256SUMS.' }
-  if ($binaryAsset.Count -ne 1) { Stop-Install "The release is missing the $artifact binary." }
+  if ($manifestAsset.Count -ne 1) {
+    Write-TestAssetDiagnostics $release.assets
+    Stop-Install 'The release is missing SHA256SUMS.'
+  }
+  if ($binaryAsset.Count -ne 1) {
+    Write-TestAssetDiagnostics $release.assets
+    Stop-Install "The release is missing the $artifact binary."
+  }
   Test-ReleaseUri $manifestAsset[0].browser_download_url $testEndpoint
   Test-ReleaseUri $binaryAsset[0].browser_download_url $testEndpoint
 

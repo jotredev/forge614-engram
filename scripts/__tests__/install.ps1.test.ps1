@@ -59,14 +59,17 @@ try {
         [System.IO.File]::AppendAllText($Diagnostics, "request-path=$path`n")
         if ($path -eq '/stop') { $context.Response.StatusCode = 204; $context.Response.Close(); break }
         $mismatch = $path.StartsWith('/mismatch/')
-        $prefix = if ($mismatch) { "/mismatch" } else { "/good" }
+        $missingManifest = $path.StartsWith('/missing-manifest/')
+        $prefix = if ($mismatch) { "/mismatch" } elseif ($missingManifest) { "/missing-manifest" } else { "/good" }
         $base = "http://127.0.0.1:$Port$prefix"
         if ($path.EndsWith('/releases/tags/v1.2.3')) {
           $assets = @(
-            @{ name = 'SHA256SUMS'; browser_download_url = "$base/download/SHA256SUMS" },
             @{ name = 'forge614-engram-windows-x64.exe'; browser_download_url = "$base/download/forge614-engram-windows-x64.exe" },
             @{ name = 'forge614-engram-windows-arm64.exe'; browser_download_url = "$base/download/forge614-engram-windows-arm64.exe" }
           )
+          if (-not $missingManifest) {
+            $assets = @(@{ name = 'SHA256SUMS'; browser_download_url = "$base/download/SHA256SUMS" }) + $assets
+          }
           $payload = @{ assets = $assets } | ConvertTo-Json -Compress
           $assetNames = ($assets | ForEach-Object { $_.name }) -join ','
           [System.IO.File]::AppendAllText($Diagnostics, "release-asset-names=$assetNames`nrelease-json=$payload`n")
@@ -114,6 +117,13 @@ try {
     $arm64 = Invoke-Installer 'ARM64' @('-ReleaseBaseUrl', "$releaseBaseUrl/good", '-Version', 'v1.2.3', '-BinDir', $arm64Destination)
     Assert-That ($arm64.ExitCode -eq 0) "ARM64 installer failed: $($arm64.Output)"
     Assert-That ([System.IO.File]::Exists((Join-Path $arm64Destination 'forge614-engram.exe'))) 'ARM64 binary was not installed.'
+
+    $missingManifestDestination = Join-Path $temporaryRoot 'missing-manifest-bin'
+    $missingManifestResult = Invoke-Installer 'AMD64' @('-ReleaseBaseUrl', "$releaseBaseUrl/missing-manifest", '-Version', 'v1.2.3', '-BinDir', $missingManifestDestination)
+    Assert-That ($missingManifestResult.ExitCode -ne 0) 'Missing SHA256SUMS unexpectedly succeeded.'
+    Assert-That ($missingManifestResult.Output.Contains('The release is missing SHA256SUMS.')) "Missing SHA256SUMS lost the normal error contract: $($missingManifestResult.Output)"
+    Assert-That ($missingManifestResult.Output.Contains('Test fixture asset diagnostics:')) "Missing SHA256SUMS omitted test diagnostics: $($missingManifestResult.Output)"
+    Assert-That (-not [System.IO.File]::Exists((Join-Path $missingManifestDestination 'forge614-engram.exe'))) 'Missing SHA256SUMS created an output binary.'
 
     $mismatchDestination = Join-Path $temporaryRoot 'mismatch-bin'
     $mismatch = Invoke-Installer 'AMD64' @('-ReleaseBaseUrl', "$releaseBaseUrl/mismatch", '-Version', 'v1.2.3', '-BinDir', $mismatchDestination)
