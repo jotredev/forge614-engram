@@ -575,14 +575,34 @@ Para compilar el módulo nativo en Windows se utiliza el script oficial `scripts
 - **Visual Studio 2026 Build Tools (v18):** Conjunto oficial de compiladores C++ de Microsoft provisto en los ejecutores `windows-latest`.
 - **Resolución Unívoca de `node.exe` (`Resolve-NodeExecutable`):** En máquinas virtuales de integración continua con múltiples versiones de Node.js instaladas, la función filtra la salida del comando y selecciona estrictamente una sola ruta ejecutable válida, previniendo errores de concatenación de cadenas en PowerShell.
 
-### 9.6. Evidencia en CI y Tareas Pendientes para la Versión Estable (v1.0.0)
-* **Evidencia Verificada en CI:** En el flujo de trabajo `Verify` de GitHub Actions (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`), el trabajo nativo `windows-latest` compiló el addon C++ y superó con éxito las pruebas `windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts` y los 5 escenarios del instalador `install.ps1.test.ps1`.
-* **Tareas Pendientes para v1.0.0:**
-  1. **Incrustación del addon nativo en el ejecutable standalone:** Integrar `build-windows-reparse-addon.ps1` en el flujo de empaquetado (`release.yml`) para que el binario de distribución contenga el módulo compilado y cargue sin requerir archivos `.node` adyacentes.
-  2. **Compilación y verificación en Windows ARM64:** Validar la compilación y ejecución de pruebas en ejecutores Windows ARM64 nativos (`windows-11-arm`).
-  3. **Validación en entorno Windows limpio:** Probar el binario generado en un sistema Windows sin herramientas de desarrollo ni repositorios clonados.
-  4. **Verificación de dependencias de tiempo de ejecución:** Confirmar que el ejecutable no dependa de redistribuibles de C++ (*MSVC CRT*) ausentes en instalaciones estándar de Windows.
-  5. **Verificación del flujo completo de release:** Comprobar la generación y firma de los 6 artefactos de release antes de publicar la versión 1.0.0 definitiva.
+### 9.6. Empaquetado en Release, Incrustación de Addon y Verificación de Ejecutables Autónomos (release.yml)
+Para distribuir ejecutables autónomos de un solo archivo sin exigir herramientas de desarrollo al usuario final, el flujo de trabajo de release (`.github/workflows/release.yml`) implementa una arquitectura rigurosa:
+* **Doble Modo de Disparo (Manual y Oficial):**
+  - Disparo manual (`workflow_dispatch`): Permite fabricar los 6 instaladores, ejecutar comprobaciones en perfiles aislados y validar sumas criptográficas `SHA256SUMS` sin crear una GitHub Release ni tocar tags.
+  - Disparo oficial (`push: tags: ['v*']`): Publica formalmente los artefactos en GitHub Releases únicamente ante una decisión humana deliberada de versionado.
+* **Orden Estricto de Compilación en Windows:**
+  1. Instalación de dependencias (`bun install --frozen-lockfile --ignore-scripts`).
+  2. Compilación del módulo nativo C++ Node-API (`scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}`) para la arquitectura correspondiente (`x64` o `arm64`).
+  3. Creación del ejecutable único con Bun (`bun build ./src/cli.ts --compile ...`). Bun incrusta automáticamente el archivo `.node` en el binario standalone gracias a la sentencia `require()` directa en el cargador.
+* **Prueba de Ejecución Empaquetada Fuera del Repositorio:**
+  En los runners de Windows, el `.exe` recién compilado se ejecuta bajo un perfil temporal aislado (`RUNNER_TEMP`, GUID aleatorio) invocando `assistant-list`:
+  - Certifica que el `.exe` arranca de forma autónoma.
+  - Comprueba que el addon C++ nativo incrustado se carga en memoria y evalúa rutas de asistentes.
+  - Detecta los 5 asistentes soportados (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`).
+  - Certifica la ausencia de almacenamiento residual (no crea la carpeta `~/.forge614/`).
+* **Prueba de Protección de Contrato de Release:**
+  El archivo `scripts/__tests__/release-windows-native-addon.test.ts` valida que el workflow mantenga intacto el contrato de empaquetado, la precedencia de compilación, el perfil aislado y la ausencia de directivas inválidas como `shell: ${{ matrix.shell }}`.
+* **Resolución de Incidencia de Shell Dinámico:**
+  Se eliminó `shell: ${{ matrix.shell }}` de los pasos del workflow ya que GitHub Actions no permite evaluar el contexto `matrix` en la propiedad `shell` de un paso; se adoptaron los valores predeterminados del sistema operativo (Bash en Linux/macOS, PowerShell en Windows).
+* **Evidencia Verificada en CI:**
+  1. Flujo `Verify` (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`): Superó con éxito las pruebas `windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts` y los 5 escenarios del instalador `install.ps1.test.ps1`.
+  2. Flujo `Release standalone artifacts` (**Run ID `35423226279`**, commit `7ee9de8`): Completó con éxito la compilación de los 6 binarios (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64), ensamblado y validación de `SHA256SUMS`, omitiéndose correctamente la publicación de release.
+
+### 9.7. Tareas Pendientes para la Versión Estable (v1.0.0)
+Habiéndose superado la incrustación del módulo nativo en los ejecutables de release, la cobertura de Windows ARM64 y la verificación de `SHA256SUMS` en CI, los requisitos pendientes para v1.0.0 son:
+1. **Validación en máquina Windows física limpia:** Probar la instalación y ejecución del binario en un entorno Windows sin herramientas de desarrollo (sin Node.js, Python, Visual Studio ni Git instalados).
+2. **Certificación de independencia de tiempo de ejecución (MSVC CRT):** Certificar que el binario autónomo cargue sin requerir paquetes externos redistribuibles de Visual C++ en sistemas Windows estándar.
+3. **Publicación deliberada de la versión oficial:** Crear y enviar la etiqueta oficial `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) para activar la publicación final en GitHub Releases tras la aprobación humana.
 
 ---
 

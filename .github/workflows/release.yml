@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,46 +41,53 @@ jobs:
           - runner: macos-14
             target: bun-darwin-arm64
             artifact: forge614-engram-darwin-arm64
-            shell: bash
             bun_version: 1.3.8
           - runner: macos-15-intel
             target: bun-darwin-x64
             artifact: forge614-engram-darwin-x64
-            shell: bash
             bun_version: 1.3.8
           - runner: ubuntu-latest
             target: bun-linux-x64
             artifact: forge614-engram-linux-x64
-            shell: bash
             bun_version: 1.3.8
           - runner: ubuntu-24.04-arm
             target: bun-linux-arm64
             artifact: forge614-engram-linux-arm64
-            shell: bash
             bun_version: 1.3.8
           - runner: windows-latest
             target: bun-windows-x64
             artifact: forge614-engram-windows-x64.exe
-            shell: pwsh
             bun_version: 1.3.8
+            addon_architecture: x64
           # Bun 1.3.10 is the first release with a native Windows ARM64 runtime.
           # Keep this exception limited to the target Bun 1.3.8 cannot produce.
           - runner: windows-11-arm
             target: bun-windows-arm64
             artifact: forge614-engram-windows-arm64.exe
-            shell: pwsh
             bun_version: 1.3.10
+            addon_architecture: arm64
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ matrix.bun_version }}
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Windows'
+        with:
+          node-version: 22.14.0
+          architecture: ${{ matrix.addon_architecture }}
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Build Windows reparse addon
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}
       - name: Create the disposable build directory
-        shell: ${{ matrix.shell }}
         run: mkdir dist
       - name: Compile standalone artifact
-        shell: ${{ matrix.shell }}
         run: bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.artifact }}
       - name: Smoke-test the native standalone artifact
         if: runner.os != 'Windows'
@@ -88,9 +96,29 @@ jobs:
       - name: Smoke-test the native standalone artifact
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .\\dist\\${{ matrix.artifact }} --help
+        run: |
+          $profile = Join-Path $env:RUNNER_TEMP ("forge614-release-" + [Guid]::NewGuid().ToString('N'))
+          try {
+            New-Item -ItemType Directory -Path $profile -Force | Out-Null
+            $env:HOME = $profile
+            $env:USERPROFILE = $profile
+            $env:LOCALAPPDATA = Join-Path $profile 'AppData\\Local'
+            $env:APPDATA = Join-Path $profile 'AppData\\Roaming'
+            $env:CLAUDE_CONFIG_DIR = Join-Path $profile '.claude'
+            $env:CODEX_HOME = Join-Path $profile '.codex'
+            $env:XDG_CONFIG_HOME = Join-Path $profile '.config'
+            $env:OPENCODE_CONFIG_DIR = Join-Path $profile '.config\\opencode'
+            $env:GEMINI_CLI_HOME = $profile
+            $assistants = & .\\dist\\${{ matrix.artifact }} assistant-list | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw 'The packaged executable could not inspect assistant configuration paths.' }
+            foreach ($id in @('claude-code', 'codex', 'cursor', 'opencode', 'antigravity')) {
+              if ($id -notin @($assistants.id)) { throw "The packaged executable did not report $id." }
+            }
+            if (Test-Path -LiteralPath (Join-Path $profile '.forge614')) { throw 'assistant-list created user storage.' }
+          } finally {
+            Remove-Item -LiteralPath $profile -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Preserve the artifact mode for collection
-        shell: ${{ matrix.shell }}
         run: tar -C dist -czf dist/${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
       - uses: actions/upload-artifact@v4
         with:
@@ -163,6 +191,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [verify, assemble]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
