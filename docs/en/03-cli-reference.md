@@ -60,13 +60,26 @@ forge614-engram help
 ---
 
 ### 2.3. `setup`
-Interactive terminal wizard to configure the central workspace (`~/.forge614/.env` and `~/.forge614/engram.db`), offering optional PostgreSQL replication and search reinforcement enablement (Schema 7).
+Guided interactive onboarding wizard that first configures central storage (`~/.forge614/.env` and `~/.forge614/engram.db`, offering optional PostgreSQL replication and Schema 7 FTS5 search reinforcement), and upon successful storage confirmation, cleanly closes its terminal reader and automatically launches the Assistant Selection TUI (`assistantTui`).
 
 ```bash
 forge614-engram setup
 ```
-- **Requirements:** Interactive TTY (`stdin` and `stdout`).
-- **Exit Codes:** `0` on apply; `130` on cancellation; `1` on error.
+- **Options:** None.
+- **Requirements:** Interactive terminal (`stdin` and `stdout` TTY). Running without a TTY immediately aborts with exit code `1` and error `INTERACTIVE_REQUIRED`.
+- **Execution Flow:**
+  1. Configures local SQLite storage (`~/.forge614/`), optional PostgreSQL sync, and search reinforcement offer.
+  2. Displays summary and requests pre-flight confirmation (`¿Confirmar? [si/NO]`).
+  3. Upon confirmation, initializes storage and sequentially hands off control to the Assistant Selection TUI.
+  4. The TUI detects the 5 supported assistants (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`), allowing selective enrollment, configuration path inspection, automated private backups, and explicit confirmation (zero silent modifications).
+- **Cancellation Semantics:**
+  - Cancelling during memory setup (`Ctrl+C`, `Escape`, or `no`) exits with code `130` (*Cancelled*) without launching the assistant TUI and writing zero bytes to disk.
+  - Cancelling or exiting the assistant TUI after memory setup preserves the initialized memory store intact and exits cleanly with code `0`.
+- **Differences from `init` and `assistant-list`:**
+  - `setup`: Full interactive onboarding flow (storage setup + interactive assistant TUI).
+  - `init`: Non-interactive headless storage initialization only (creates/checks `~/.forge614`; never touches assistants).
+  - `assistant-list`: Read-only JSON inspection (never creates `.forge614`, never writes files, non-interactive).
+- **Exit Codes:** `0` on completed setup; `130` on cancellation during storage; `1` on error or missing TTY (`INTERACTIVE_REQUIRED`).
 
 ---
 

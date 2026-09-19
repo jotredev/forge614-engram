@@ -473,14 +473,14 @@ Assert-That ($amd64.ExitCode -eq 0) `
   "AMD64 installer failed: $($amd64.Output) Fixture diagnostics: $amd64Diagnostics"
 ```
 
-#### 8. CI Validation Status and Cross-Platform Stability Criteria
+##### 8. CI Validation Status and Cross-Platform Stability Criteria
 The suite is executed in automated workflows using:
 ```powershell
 pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1
 ```
 
 > [!NOTE]
-> **CI Validation Status:** The PowerShell installer test suite was successfully executed and verified in GitHub Actions on `windows-latest` runners (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`), cleanly passing all 5 test scenarios against the ephemeral loopback HTTP server (`127.0.0.1`).
+> **CI Validation Status:** The PowerShell installer test suite was successfully executed and verified in GitHub Actions on `windows-latest` runners (**Verify Run ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`). The suite utilizes in-memory `PathReader` and `PathWriter` abstractions to guarantee runner registry and user PATH isolation, and includes regression tests against blocked assistant descriptors.
 
 ---
 
@@ -499,22 +499,22 @@ To solve this Windows security challenge without sacrificing performance, three 
                          ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0);
    ```
 
-### 9.2. Redirection Coverage and Fail-Closed Security Model
-The attribute `FILE_ATTRIBUTE_REPARSE_POINT` (hexadecimal mask `0x400`) identifies any NTFS filesystem object whose standard behavior is modified by an installed file system filter driver. This provides comprehensive detection and blocking for:
+### 9.2. Cobertura de Redirecciones y Modelo a Prueba de Fallos (*Fail-Closed*)
+The attribute `FILE_ATTRIBUTE_REPARSE_POINT` (hex `0x400`) identifies any NTFS filesystem object whose standard resolution is altered by a system filter driver. This allows comprehensive detection and blocking of:
 - **File symbolic links** (*file symlinks*, `symlinkSync(..., 'file')`).
 - **Directory symbolic links** (*directory symlinks*).
-- **NTFS directory junctions** (*directory junctions*, `symlinkSync(..., 'junction')` or `mklink /J`).
-- **Volume mount points** (*volume mount points*, generated via `mountvol.exe`).
+- **Directory junctions** (*junctions*, `symlinkSync(..., 'junction')` or `mklink /J`).
+- **Volume mount points** (*volume mount points*, created via `mountvol.exe`).
 
-#### Upward Recursive Inspection:
-The validator `assertNoWindowsReparsePoints` in `src/infrastructure/filesystem/private-files.ts` does not simply check the leaf path; it iteratively traverses the entire hierarchy of existing parent directories up to the volume root (`while (current !== root)`):
-- If the target path or any existing ancestor possesses the reparse point attribute, the operation immediately aborts with `UNSAFE_PATH`.
-- **Fail-Closed Architecture:** If the native binary fails to load, throws an unhandled Win32 operating system exception, or returns a non-boolean result, the validator fails closed immediately by throwing `UNSAFE_PATH`.
-- **Concurrency Limits (TOCTOU):** Pre-write inspection effectively certifies that no malicious redirection points exist at inspection time. However, it does not provide an absolute mathematical guarantee against concurrent race conditions (*Time-of-Check to Time-of-Use*, TOCTOU) where another privileged process modifies directory hierarchy between inspection and file opening.
+#### Ascending Recursive Path Traversal:
+The validator `assertNoWindowsReparsePoints` in `src/infrastructure/filesystem/private-files.ts` does not simply check the leaf file, but recursively ascends through all existing ancestor directories until reaching the volume root (`while (current !== root)`):
+- If the destination or any existing parent directory possesses the reparse point attribute, execution halts immediately with `UNSAFE_PATH`.
+- **Fail-Closed Architecture:** If the native addon cannot be loaded, throws an unhandled Win32 error, or returns a non-boolean result, validation fails closed with `UNSAFE_PATH`.
+- **Concurrency and TOCTOU Boundaries:** Strict pre-write inspection ensures no redirection exists at check time. However, it cannot provide absolute guarantees against concurrent race conditions where a privileged external process alters directories between check time and open time (*Time-of-Check to Time-of-Use*). Engram mitigates this via re-validations before directory creation, atomic renaming, and post-publication byte verification.
 
-### 9.3. Protected Publication Protocol Sequence Diagram (`guardedWrite`)
+### 9.3. Sequence Diagram of Protected Publication Protocol (`guardedWrite`)
 
-The protected write protocol guarantees that assistant configurations (such as Antigravity, Cursor, or Claude Code) are never corrupted or redirected:
+The protected write protocol guarantees assistant configurations (such as Antigravity, Cursor, or Claude Code) are never corrupted or diverted:
 
 ```mermaid
 sequenceDiagram
@@ -528,22 +528,22 @@ sequenceDiagram
     CLI->>GW: Request publication (write.path, write.before, write.after)
     GW->>Val: Validate target path (assertSafePath)
     Val->>Guard: GetFileAttributesW (target and ancestors)
-    Guard-->>Val: Clean / No reparse points (OK)
-    GW->>FS: Read current on-disk content
+    Guard-->>Val: Clean of reparse points (OK)
+    GW->>FS: Read current disk content
     alt Content changed relative to preview (write.before)
-        GW-->>CLI: Abort with CHANGED error
+        GW-->>CLI: Abort with error CHANGED
     end
     GW->>FS: mkdirSync(parent directory, 0700)
     GW->>Val: Re-validate parent directory
-    opt If previous file existed
+    opt Pre-existing file found
         GW->>FS: Create backup .forge614-backup-<UUID> (0600, flag: 'wx')
     end
     GW->>FS: openSync(.forge614-tmp-<UUID>, safeOpenFlag("wx"))
     GW->>FS: writeFileSync(temporary, write.after)
     GW->>FS: fsyncSync(temporary file descriptor)
-    GW->>FS: Re-verify original file has not changed
-    alt Original file modified during preparation
-        GW-->>CLI: Abort with CHANGED error (retaining backup)
+    GW->>FS: Re-verify original file did not change
+    alt Original changed during preparation
+        GW-->>CLI: Abort with error CHANGED (retaining backup)
     end
     GW->>Val: Re-validate path before atomic replacement
     GW->>FS: rename(temporary, write.path)
@@ -551,29 +551,29 @@ sequenceDiagram
     alt Read bytes do not match write.after exactly
         GW-->>CLI: Throw PUBLISHED_UNVERIFIED (retaining backup)
     end
-    GW-->>CLI: Publication confirmed successful
+    GW-->>CLI: Confirmed publication successful
 ```
 
-### 9.4. Platform File Opening Differences and CI Incident Resolution
-To materialize temporary files and backups safely, Engram uses secured descriptors managed by `safeOpenFlag`:
+### 9.4. Platform Differences in File Opening and CI Incident
+To materialize temporary files and backups on disk, Engram uses secure descriptors managed by `safeOpenFlag`:
 * **Textual Modes on Windows (`"r"` and `"wx"`):**
-  - `"r"`: Read-only opening.
-  - `"wx"`: Exclusive write mode (*write exclusive*). The `"x"` modifier requires that the file must not already exist on disk; if it exists, the operating system rejects the call immediately with `EEXIST`.
+  - `"r"`: Simple read mode.
+  - `"wx"`: Exclusive write mode (*write exclusive*). The `"x"` flag requires the file not to exist previously; if present, the operating system immediately rejects the call with `EEXIST`.
 * **Numeric Bitwise Flags on Unix (macOS and Linux):**
-  - Read: `constants.O_RDONLY | constants.O_NOFOLLOW`.
-  - Exclusive creation: `constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW` with octal permissions `0600`.
-* **Technical Incident in Windows CI:**
-  During automated GitHub Actions testing, `openSync` calls under Bun on Windows threw `ENOENT` when passed bitwise numeric constants (`O_WRONLY | O_CREAT | O_EXCL`). However, backup creation with textual mode `{ flag: 'wx' }` succeeded in that same test environment. The resolution unified safe opening under the helper `safeOpenFlag(unixFlags, windowsFlag)`, applying `"r"` and `"wx"` on Windows, and POSIX flags with `O_NOFOLLOW` on Unix. *(Note: this does not imply that Windows lacks secure opening or that all numeric flags fail; the issue was specific to Bun's runtime mapping of numeric open flags in that call).*
+  - Reading: `constants.O_RDONLY | constants.O_NOFOLLOW`.
+  - Exclusive creation: `constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW` with octal `0600`.
+* **CI Technical Incident on Windows Runners:**
+  During GitHub Actions test execution, calling `openSync` in Bun on Windows returned `ENOENT` when supplied with bitwise numeric flags (`O_WRONLY | O_CREAT | O_EXCL`). However, backup creation using textual mode `{ flag: 'wx' }` succeeded reliably. Centralizing file creation under `safeOpenFlag(unixFlags, windowsFlag)` resolved the issue.
 
-### 9.5. Compilation Toolchain and Executable Resolution
-Compiling the native module on Windows relies on `scripts/build-windows-reparse-addon.ps1`:
+### 9.5. Native Compilation Toolchain and Executable Resolution
+Compiling the native addon on Windows utilizes `scripts/build-windows-reparse-addon.ps1`:
 - **Node.js (22.14.0 in CI):** Required strictly at compile time to run `node-gyp`. Not needed by end users at runtime.
 - **`node-gyp` (version 12.1.0 pinned in `devDependencies`):** Pinned version required to ensure full compatibility between Node.js 22 and Visual Studio 2026.
 - **Python (3.12+):** Required internally by GYP for generating MSBuild project files.
 - **Visual Studio 2026 Build Tools (v18):** Official Microsoft C++ compiler toolset on `windows-latest` runners.
 - **Single-Candidate `node.exe` Resolution (`Resolve-NodeExecutable`):** In CI virtual machines with multiple Node.js installations in PATH, this function filters output to select strictly one valid executable path, preventing PowerShell string concatenation bugs.
 
-### 9.6. Standalone Release Packaging, Addon Embedding, and Packaged Verification (release.yml)
+### 9.6. Standalone Release Packaging, Addon Embedding, and Strengthened Smoke Test (release.yml)
 To distribute single-file standalone executables without requiring developer tools on the end user's machine, the release workflow (`.github/workflows/release.yml`) implements a rigorous packaging architecture:
 * **Dual Execution Modes (Manual vs. Official Release):**
   - Manual execution (`workflow_dispatch`): Allows compiling all 6 platform installers, running isolated profile packaged checks, and verifying `SHA256SUMS` without publishing a GitHub Release or touching tags.
@@ -582,24 +582,23 @@ To distribute single-file standalone executables without requiring developer too
   1. Dependency installation (`bun install --frozen-lockfile --ignore-scripts`).
   2. Native Node-API C++ addon compilation (`scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}`) for the target architecture (`x64` or `arm64`).
   3. Standalone executable compilation with Bun (`bun build ./src/cli.ts --compile ...`). Bun automatically embeds the `.node` binary into the standalone executable via literal `require()` detection.
-* **Packaged Executable Verification Outside Repository:**
-  On Windows runners, the newly compiled `.exe` is executed under an isolated temporary user profile (`RUNNER_TEMP`, random GUID) invoking `assistant-list`:
-  - Certifies the standalone `.exe` boots independently.
-  - Verifies that the embedded native C++ addon loads into memory and evaluates assistant paths.
-  - Detects all 5 supported assistants (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`).
-  - Certifies zero storage footprint (does not create `~/.forge614/`).
+* **Packaged Executable Verification and Strengthened Smoke Test:**
+  On Windows runners, each newly compiled `.exe` is tested under an isolated temporary user profile (`RUNNER_TEMP`, random GUID) invoking `assistant-list`:
+  - **Defect observed and resolved:** It was observed that `assistant-list` returned all 5 assistant identifiers even if the native addon failed to load (catching the error and assigning `configuration.status = "blocked"`). Checking only exit code and IDs did not guarantee in-memory addon loading.
+  - **Strict `absent` assertion:** The smoke test now strictly requires that, under an empty temporary profile, all 5 assistants (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`) report exactly one entry with status `absent`. Any `blocked`, missing, or duplicate result immediately fails the job.
+  - **Isolation verification:** Certifies zero storage footprint (does not create `~/.forge614/`).
 * **Release Contract Regression Prevention Test:**
-  The test file `scripts/__tests__/release-windows-native-addon.test.ts` statically verifies workflow syntax and contract: manual dispatch presence, x64/ARM64 addon matrices, isolated temporary profile checks, tag-gated publication, and absence of invalid dynamic matrix directives like `shell: ${{ matrix.shell }}`.
-* **Dynamic Shell Matrix Directive Resolution:**
-  Removed invalid `shell: ${{ matrix.shell }}` step directives (unsupported in GitHub Actions workflow syntax), allowing GitHub Actions to use platform defaults (Bash on Linux/macOS, PowerShell on Windows).
+  The test file `scripts/__tests__/release-windows-native-addon.test.ts` statically verifies workflow syntax, isolated profiles, and proper failure behavior when blocked descriptors are returned.
 * **Verified CI Evidence:**
-  1. `Verify` Workflow (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`): Successfully built the C++ addon and passed `windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts`, and all 5 scenarios of the `install.ps1.test.ps1` installer suite.
-  2. `Release standalone artifacts` Workflow (**Run ID `35423226279`**, commit `7ee9de8`): Successfully built and validated all 6 standalone binaries (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64), verified `SHA256SUMS`, and safely skipped public release publication.
+  1. `Verify` Workflow (**Run ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`): Successfully passed on Ubuntu, macOS, and Windows x64 native (543/545 passed, 0 failures).
+  2. `Release standalone artifacts` Workflow (**Run ID `35427429725`**, and reference run `35428406085`): Successfully built and validated all 6 standalone binaries (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64 with embedded addon), verified `SHA256SUMS` (six `OK` checks), and safely skipped public release publication.
+* **Local Test Suite Evidence:**
+  The full test suite finished with **536 pass, 13 skip, 0 fail**, 2,606 assertions in 88 files; `bun run typecheck`, `git diff --check`, and `bash -n` all completed with exit code 0.
 
 ### 9.7. Pending Tasks for Stable Release (v1.0.0)
-With native addon embedding, Windows ARM64 coverage, and `SHA256SUMS` validation completed in CI, the remaining requirements for v1.0.0 are:
-1. **Clean Environment Validation:** Test binary installation and execution on a clean physical or virtual Windows machine without developer tools (no Node.js, Python, Visual Studio, or Git installed).
-2. **Runtime Dependency Verification (MSVC CRT):** Certify that the standalone executable does not require external C++ redistributable packages (*MSVC CRT*) on standard Windows installations.
+With native addon embedding, empty-profile smoke test verification, and `SHA256SUMS` validation completed in CI, the remaining requirements for v1.0.0 are:
+1. **Clean Environment Validation:** Test binary installation and execution on a clean physical or virtual Windows machine without developer tools (no Node.js, Python, or Visual Studio installed previously).
+2. **Runtime Dependency Verification (MSVC CRT):** Certify that the standalone executable does not require external C++ redistributable packages (*MSVC CRT*) on that base Windows installation.
 3. **Deliberate Official Version Release:** Create and push the official release tag `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) to trigger GitHub Release publication following human verification.
 
 ---

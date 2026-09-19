@@ -54,9 +54,13 @@ forge614-engram setup
 2. Pregunta si deseas habilitar sincronización con PostgreSQL:
    - Opción 1: `No` (predeterminada, modo exclusivamente local).
    - Opción 2: `Sí, configurar PostgreSQL` (solicita URL con entrada oculta y advertencia de réplica total).
-3. Presenta el resumen de cambios y pide confirmación explícita (`Sí, aplicar cambios` o `Cancelar y salir`).
-4. Al confirmar, prepara la carpeta `0700`, escribe el archivo `.env` en `0600` e inicializa `engram.db`.
-5. Si cancelas con `Ctrl+C` o `q`, termina con código **130** sin tocar el disco.
+3. Pregunta si deseas activar el refuerzo de recuerdos FTS5 (Esquema 7):
+   - Opción predeterminada: `NO`.
+   - Si respondes `sí`, registrará la activación de confirmaciones inmutables y orden reforzado sin embeddings.
+4. Presenta el resumen de cambios y pide confirmación explícita (`¿Confirmar? [si/NO]`).
+5. Al confirmar, prepara la carpeta `0700`, escribe el archivo `.env` en `0600` e inicializa `engram.db`.
+6. **Transición automática a la incorporación de asistentes:** Al concluir la memoria, `setup` cierra de forma limpia el lector de terminal y abre de inmediato la TUI de selección de asistentes (`assistantTui`). Detecta los 5 asistentes compatibles (Claude Code, Codex, Cursor, OpenCode y Antigravity), permitiendo seleccionarlos, previsualizar cambios exactos, crear respaldos automáticos y aplicar la conexión sin modificaciones silenciosas.
+7. **Cancelación segura:** Cancelar durante la configuración de memoria (`Ctrl+C` o `no`) sale con código **130** sin abrir la TUI y sin tocar el disco. Si completas la memoria y cancelas en la TUI de asistentes, la memoria inicializada se preserva intacta.
 
 ---
 

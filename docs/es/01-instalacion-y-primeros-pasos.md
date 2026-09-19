@@ -6,99 +6,127 @@
 > **Estado:** Vigente y Verificado (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [01 (EN). Installation, Setup, and Getting Started](../en/01-installation-and-getting-started.md)
 
-Esta guía explica paso a paso cómo preparar las dependencias, compilar e instalar el comando `forge614-engram` en tu computadora, los requisitos indispensables (incluyendo Git obligatorio), cómo funciona la detección post-instalación de asistentes, el asistente interactivo `setup` con la oferta de refuerzo de búsqueda, el **Centro de Control interactivo en terminal (`tui`)**, la habilitación explícita de integración de asistentes (Esquema 5), sesiones progresivas (Esquema 6) y confirmaciones inmutables de FTS5 (Esquema 7), junto con la coordinación entre equipos pares.
+Esta guía explica paso a paso cómo instalar el comando `forge614-engram`, usar el asistente interactivo `setup`, conectar asistentes con aprobación explícita, trabajar con sesiones progresivas y confirmaciones inmutables de FTS5, y coordinar equipos pares.
 
 ---
 
 ## 1. ¿Qué es este programa y cómo se distribuye?
 
-Forge614 Engram es un sistema de memoria personal y local para modelos de inteligencia artificial y desarrolladores, construido en **TypeScript**. A diferencia de los paquetes públicos de internet:
-- **No se descarga desde npm:** `npm install forge614-engram` no existe porque se trata de un paquete privado de desarrollo.
-- **Se compila localmente:** Se empaqueta directamente desde el código fuente del repositorio usando el script de instalación (`scripts/install.sh`).
-- **Produce un ejecutable binario autónomo:** El resultado es un archivo binario independiente llamado `forge614-engram`. Una vez instalado, **no requiere tener Bun ni Node.js en el PATH** para su ejecución habitual.
+Forge614 Engram es un sistema de memoria personal y local para modelos de inteligencia artificial y desarrolladores, construido en **TypeScript y Bun**, con un componente nativo mínimo de seguridad para Windows.
 
-### Requisitos del Sistema
+### Métodos de Distribución
 
-1. **Bun (versión estable >= 1.3.8):**
-   Requisito exclusivo para **compilar e instalar** el programa desde el código fuente o ejecutar la suite de pruebas automatizadas.
-   ```bash
-   bun --version
-   ```
-   Si no lo tienes instalado, descárgalo desde [bun.sh](https://bun.sh).
+A diferencia de los paquetes públicos de internet:
+- **No se descarga desde npm:** `npm install forge614-engram` no existe porque se trata de un paquete privado y autónomo.
+- **Instalación oficial mediante instalador de bootstrap (Recomendada):** Descarga el binario autónomo precompilado correspondiente a tu sistema y arquitectura desde GitHub Releases, verifica su integridad criptográfica contra `SHA256SUMS` y configura automáticamente el PATH de tu terminal.
+- **Compilación local desde código fuente (Desarrolladores):** Se puede empaquetar directamente desde el código fuente del repositorio clonado mediante `scripts/install-from-source.sh` o `scripts/install.sh`.
+- **Produce un ejecutable binario autónomo:** El resultado es un único archivo binario independiente llamado `forge614-engram` (o `forge614-engram.exe` en Windows). Una vez instalado, **el usuario final no requiere tener Bun, Node.js, Python ni compiladores de C++** para su ejecución habitual.
 
-2. **Git (Disponible en PATH — Obligatorio):**
-   **Git es un requisito indispensable del sistema**, no solo para clonar el repositorio, sino porque el motor de resolución de identidades de proyectos de Engram utiliza Git internamente (`git rev-parse --path-format=absolute --git-common-dir`) para identificar el directorio raíz común de proyectos, ramas vinculadas (*worktrees*) y subcarpetas. Además, Git es obligatorio para certificar de forma segura que una carpeta común **no** pertenece a Git. Si Git no está instalado o no se encuentra en el PATH, la resolución de proyectos falla cerrada arrojando el error `PROJECT_IDENTITY_UNAVAILABLE`.
+### Requisitos del Sistema para el Usuario Final
+
+1. **Git (solo necesario para identidad de proyecto):**
+   Git **no es necesario para instalar Forge614 Engram, inicializar su memoria global ni conectar un asistente**. Se necesita después únicamente cuando Engram identifica una carpeta de proyecto y sus *worktrees* mediante `git rev-parse --path-format=absolute --git-common-dir`. Si Git no está disponible, la resolución específica de proyectos se detiene de forma segura con `PROJECT_IDENTITY_UNAVAILABLE`; el instalador no se ve afectado.
    ```bash
    git --version
    ```
 
-3. **Sistema Operativo y Entornos de Compilación:**
-   - **macOS o Linux:** Shell compatible con Bash (`bash`).
-   - **Windows (Compilación desde código fuente para desarrolladores):** Si compilas o ejecutas pruebas del proyecto desde el código fuente en Windows, se requiere **Visual Studio 2026 C++ Build Tools** (compilador C/C++ y MSBuild), **Node.js 22.14.0 o superior** (para ejecutar `node-gyp`), **node-gyp 12.1.0** (fijado en `devDependencies`) y **Python 3.12 o superior** para compilar el componente nativo de seguridad de archivos (`windows-reparse-guard`).
-   - **Nota sobre el usuario final en Windows:** Estas herramientas de compilación (Node.js, Python, node-gyp, Visual Studio) son necesarias **exclusivamente para desarrolladores que compilan el código fuente**. El usuario final que descargue un instalador o ejecutable autónomo no requerirá instalar Node.js, Python ni Visual Studio.
+2. **Cero herramientas de desarrollo para la instalación estándar:**
+   El usuario final que instala mediante los comandos oficiales **no necesita instalar Bun, Node.js, Python, node-gyp ni Visual Studio Build Tools**. El ejecutable binario incluye todas sus dependencias y el componente nativo de Windows incrustado.
+
+3. **Requisitos exclusivos para desarrolladores (compilación desde fuente):**
+   - **Bun (versión estable >= 1.3.8):** Requisito exclusivo para compilar desde fuente o ejecutar la suite de pruebas automatizadas (`bun test`).
+   - **Windows Build Tools (solo compilación desde fuente):** Requiere Visual Studio 2026 C++ Build Tools, Node.js 22+, node-gyp 12.1.0 y Python 3.12+ para compilar el módulo nativo C++ `windows_reparse_guard.node`.
 
 4. **Servidor PostgreSQL (Opcional):**
    Únicamente si decides habilitar la sincronización de réplica. Se requiere PostgreSQL 14 o superior. El usuario debe contar con privilegios para crear y escribir en el esquema `forge614_sync`. Debe emplearse una base de datos vacía y dedicada o una ya compatible con Forge614.
 
 ---
 
-## 2. Preparación de Dependencias e Instalación
+## 2. Instalación Oficial y Verificación Criptográfica
 
-### Paso 2.1 — Preparar dependencias locales en un clon nuevo
+### Comandos Oficiales de Instalación
 
-El script de instalación **no descarga dependencias de la red automáticamente** ni altera tu archivo de bloqueo (`bun.lock`). En un clon nuevo del repositorio, antes de compilar debes preparar las dependencias congeladas:
+Los comandos oficiales previstos, una vez integrado el cambio en `main` y disponible una GitHub Release pública con sus artefactos, son:
+
+#### En macOS y Linux (Bash / Zsh):
+```bash
+curl -fsSL https://raw.githubusercontent.com/jotredev/forge614-engram/main/scripts/install.sh | bash
+```
+
+#### En Windows (PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/jotredev/forge614-engram/main/scripts/install.ps1 | iex
+```
+
+> [!NOTE]
+> **Disponibilidad de Release:** Los instaladores oficiales descargan la última GitHub Release pública (o una versión específica si se indica `--version <tag>` en Unix o `-Version <tag>` en Windows) y verifican el hash SHA-256 del binario contra `SHA256SUMS` antes de colocarlo en el sistema. Los comandos que apuntan a `main` requieren que exista una release pública oficial en GitHub; este trabajo de ingeniería preparó los instaladores y el flujo de verificación sin forzar la publicación prematura de una release.
+
+### ¿Qué realiza exactamente el instalador oficial?
+
+1. **Detección automática de plataforma y arquitectura:** Detecta automáticamente el sistema operativo y arquitectura de tu equipo (macOS ARM64/x64, Linux x64/ARM64, Windows x64/ARM64).
+2. **Descarga y verificación criptográfica íntegra:** Descarga el binario autónomo y el manifiesto oficial `SHA256SUMS`. Calcula el hash SHA-256 localmente y aborta de inmediato si existe cualquier discrepancia, impidiendo la ejecución de binarios alterados o descargas truncadas.
+3. **Publicación atómica en el directorio estándar de ejecutables:**
+   - **macOS / Linux:** `$HOME/.local/bin/forge614-engram` con permisos de ejecución `0755`.
+   - **Windows:** `%LOCALAPPDATA%\Forge614\bin\forge614-engram.exe`.
+4. **Protección contra sobreescritura accidental:** Si el archivo ya existe en el destino, el instalador se detiene para evitar sobrescribir ejecutables existentes sin tu permiso. Para actualizar una instalación previa, suministra la opción de forzado:
+   ```bash
+   # En macOS / Linux
+   curl -fsSL ... | bash -s -- --force
+   # En Windows
+   & { irm ... | iex } -Force
+   ```
+   *(Nota: `--force` / `-Force` actualiza únicamente el archivo binario ejecutable; jamás altera tus recuerdos en `engram.db` ni tu configuración `.env`).*
+5. **Directorio personalizado:** Si deseas instalar en otra carpeta:
+   ```bash
+   # En macOS / Linux
+   curl -fsSL ... | bash -s -- --bin-dir /ruta/a/bin
+   # En Windows
+   & { irm ... | iex } -BinDir C:\MiRuta\bin
+   ```
+6. **Configuración automática e idempotente de la variable PATH:** Configura la variable PATH de tu terminal (ver Sección 3).
+7. **Cero almacenamiento prematuro:** El instalador **jamás crea la carpeta `~/.forge614` ni inicializa la base de datos** durante la instalación. Ese paso se realiza deliberadamente durante el flujo de bienvenida (`setup`).
+
+### Opción alternativa: Compilación desde código fuente (Desarrolladores)
+
+Si eres colaborador del proyecto y deseas compilar desde un clon local:
 
 ```bash
 cd /Users/jorgeetrejoo/Desktop/forge614-engram
 bun install --frozen-lockfile --ignore-scripts
-```
-
-> [!IMPORTANT]
-> Si faltan dependencias locales en `node_modules/` o las versiones instaladas no coinciden exactamente con las declaradas en `package.json`, el instalador mostrará un mensaje de error claro y fallará antes de compilar o publicar cualquier archivo, protegiendo la integridad del entorno.
-
-### Paso 2.2 — Ejecutar el instalador autónomo
-
-Desde la carpeta raíz del repositorio:
-
-```bash
 bash scripts/install.sh
 ```
-
-#### ¿Qué realiza exactamente el instalador?
-1. Verifica que Bun esté disponible y sea versión >= 1.3.8.
-2. Verifica que Git esté disponible en el PATH del sistema.
-3. Comprueba las dependencias locales contra `package.json` sin descargas de red ni modificaciones silenciosas a `bun.lock`.
-4. Compila `src/cli.ts` en un ejecutable nativo autónomo mediante `bun build ./src/cli.ts --compile`.
-5. Publica atómicamente el binario en `$HOME/.local/bin/forge614-engram` con permisos `0755` mediante enlace duro (*hard-link*).
-6. **Protección contra sobreescritura accidental:** Si el archivo ya existe, se detiene para evitar sobrescribir ejecutables sin autorización. Para actualizar la instalación, utiliza la bandera `--force`:
-   ```bash
-   bash scripts/install.sh --force
-   ```
-   *(Nota: `--force` reemplaza únicamente el binario; jamás altera tu configuración `.env` ni tus recuerdos en `engram.db`).*
-7. **Directorio personalizado:** Si deseas instalar en otra ruta de ejecutables:
-   ```bash
-   bash scripts/install.sh --bin-dir /ruta/a/bin
-   ```
-8. **Detección post-instalación de asistentes:** Tras publicar el ejecutable, ejecuta una inspección de solo lectura (`assistant-list`) que analiza qué asistentes de desarrollo (Claude Code, Codex, Cursor, OpenCode, Antigravity) están instalados en tu sistema.
-9. **Ofrecimiento interactivo del Centro de Control TUI:** Si la instalación se ejecuta en una terminal interactiva (donde la entrada y salida son una consola real TTY), el instalador te pregunta:
-   ```text
-   ¿Abrir ahora el menú de asistentes? [s/N]
-   ```
-   Si respondes afirmativamente (`s` o `si`), abre de inmediato el Centro de Control interactivo `tui`. Si se ejecuta sin terminal interactiva (por ejemplo en un script automatizado), el instalador no pregunta ni espera, no modifica configuraciones, no inicializa la base de datos e imprime el comando `forge614-engram tui` para ejecutarlo posteriormente.
-10. **Sin selección de proyectos:** El instalador **jamás pide elegir ni configurar proyectos**.
 
 ---
 
 ## 3. Configurar tu Terminal (La Variable PATH)
 
-Para escribir `forge614-engram` directamente desde cualquier carpeta sin tener que escribir la ruta completa (`$HOME/.local/bin/forge614-engram`), añade la carpeta a tu PATH:
+### ¿Qué es la variable PATH en lenguaje cotidiano?
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+La variable **PATH** (ruta de búsqueda) es como la libreta de direcciones rápidas de tu sistema operativo. Cuando escribes `forge614-engram` en la consola, el sistema operativo no adivina dónde está guardado el programa: consulta una por una las carpetas anotadas en tu lista de PATH. Si la carpeta donde se instaló el programa está en esa lista, el comando se ejecuta de inmediato desde cualquier ubicación sin tener que escribir su ruta completa (como `$HOME/.local/bin/forge614-engram`).
 
-> [!TIP]
-> Para que este cambio sea permanente al abrir nuevas terminales, agrégalo a tu archivo de inicio (`~/.zshrc` en macOS o `~/.bashrc` en Linux).
+### Publicación Automática e Idempotente de PATH
+
+Los instaladores configuran automáticamente el directorio de ejecutables en tu entorno de terminal según tu sistema y shell:
+
+| Plataforma / Shell | Destino del ejecutable | Método de publicación de PATH |
+| :--- | :--- | :--- |
+| **macOS / Linux, Zsh** | `$HOME/.local/bin` | Bloque marcado en `~/.zshrc` |
+| **Linux, Bash** | `$HOME/.local/bin` | Bloque marcado en `~/.bashrc` |
+| **macOS, Bash** | `$HOME/.local/bin` | Bloque marcado en `~/.bash_profile`, salvo que otro archivo de inicio de Bash ya sea el responsable; entonces muestra una guía manual |
+| **macOS / Linux, Fish** | `$HOME/.local/bin` | Archivo dedicado `~/.config/fish/conf.d/forge614-engram.fish` mediante `fish_add_path` |
+| **Windows (PowerShell / CMD)** | `%LOCALAPPDATA%\Forge614\bin` | Variable PATH del usuario vía API .NET y difusión de `WM_SETTINGCHANGE` |
+
+#### Características de Seguridad de la Publicación de PATH:
+- **Bloques delimitados en Unix:** En Zsh y Bash, el instalador escribe un bloque claramente delimitado:
+  ```bash
+  # >>> forge614-engram initialize >>>
+  export PATH="$HOME/.local/bin:$PATH"
+  # <<< forge614-engram initialize <<<
+  ```
+  Si reinstalas o actualizas, el bloque existente se reemplaza limpiamente sin duplicar líneas y preservando el 100% del contenido ajeno de tu archivo de configuración.
+- **Preservación de enlaces simbólicos y dotfiles personalizados:** Si un archivo de inicio es un enlace simbólico o pertenece a un gestor de dotfiles, el instalador no lo reemplaza ni lo sigue. Lo deja intacto, conserva el ejecutable verificado y muestra instrucciones claras para agregar el directorio manualmente. En Bash de macOS también evita crear `~/.bash_profile` cuando `~/.bash_login` o `~/.profile` ya controlan el inicio de sesión.
+- **Windows seguro sin `setx`:** En Windows, el instalador modifica exclusivamente la variable PATH del **usuario actual** utilizando la API oficial de .NET (`[Environment]::SetEnvironmentVariable('Path', ..., 'User')`). No requiere privilegios de Administrador, no toca el PATH de la máquina, no usa la utilidad obsoleta `setx` (la cual trunca rutas a 1024 caracteres provocando pérdida de rutas del sistema), normaliza mayúsculas/minúsculas y diagonales para no añadir entradas duplicadas, y difunde el mensaje de sistema `WM_SETTINGCHANGE` para que las aplicaciones del entorno detecten la actualización.
+- **Requisito indispensable:** La variable PATH se actualiza para **nuevas sesiones de terminal**. Para que el comando esté disponible, debes **abrir una nueva ventana de terminal** (o ejecutar la instrucción manual de exportación impresa por el instalador en la sesión actual).
 
 ---
 
@@ -241,11 +269,45 @@ Resumen: configurar el almacenamiento global SQLite y mantener habilitado el ref
 ¿Confirmar? [si/NO]:
 ```
 
-> [!NOTE]
-> Si eliges `no` o presionas `Ctrl+C` en cualquier punto:
-> - El comando termina con código de salida **130** (*Cancelled*).
-> - **No se escribe ningún archivo.** Si la carpeta `~/.forge614/` no existía, permanecerá inexistente.
-> - Si ya existía una base de datos con recuerdos previos, estos se preservan intactos sin alteraciones.
+### Transición Automática al Selector de Asistentes (Onboarding TUI)
+
+Una vez confirmada y aplicada la inicialización de memoria, `setup` cierra de forma limpia su lector de terminal (`readline`) y **abre automáticamente el Centro de Selección de Asistentes (`assistantTui`)** para completar tu incorporación:
+
+1. **Detección exhaustiva de los 5 asistentes soportados:** Inspecciona la presencia y configuración de:
+   - **Claude Code** (`claude-code`)
+   - **Codex** (`codex`)
+   - **Cursor** (`cursor`)
+   - **OpenCode** (`opencode`)
+   - **Antigravity** (`antigravity`)
+2. **Cero modificaciones silenciosas:** El instalador y el comando `setup` **jamás alteran la configuración de ningún asistente sin tu autorización explícita**. Encontrar un asistente en tu máquina no escribe ni modifica archivos automáticamente.
+3. **Vista previa completa y detallada:** Puedes seleccionar o deseleccionar qué asistentes deseas integrar (usando la barra espaciadora o la autoprueba `t`). Antes de tocar el disco, el asistente presenta un plan pormenorizado que detalla:
+   - Rutas exactas de archivos de configuración a modificar.
+   - Entradas del servidor MCP `forge614-engram` que se añadirán o verificarán.
+   - Ganchos (*hooks*) de memoria que se registrarán o advertencias de ausencia de hooks (como en Antigravity).
+   - Copias de seguridad automáticas con sufijo privado `.forge614-backup-<UUID>` con permisos estrictos `0600`.
+4. **Confirmación explícita indispensable:** Solo tras tu confirmación manual final se aplican los cambios a los archivos de configuración mediante el protocolo protegido de escritura atómica.
+
+### Semántica Estricta de Cancelación
+
+El flujo de incorporación `setup` maneja la cancelación de forma independiente y segura en cada fase:
+- **Cancelación durante la configuración de memoria:** Si presionas `Ctrl+C`, `Escape` o respondes `no` antes de confirmar la memoria:
+  - El comando finaliza de inmediato con código de salida **130** (*Cancelled*).
+  - **No se abre la TUI de asistentes.**
+  - **No se escribe ningún archivo en disco.** Si `~/.forge614/` no existía, permanece inexistente.
+- **Cancelación o salida en la TUI de asistentes:** Si completaste y confirmaste la configuración de memoria pero decides salir o cancelar el selector de asistentes:
+  - El espacio de memoria inicializado **se conserva intacto** en `~/.forge614/`.
+  - No se revierte ni se destruye la base de datos recién configurada.
+  - La salida no se convierte en un error; el comando termina con código `0` de forma segura.
+
+### Distinción Clave entre Comandos de Inicialización
+
+Para evitar confusiones operativas:
+
+| Comando | Tipo de Interfaz | ¿Configura Memoria (`~/.forge614`)? | ¿Detecta o Conecta Asistentes? |
+| :--- | :--- | :--- | :--- |
+| **`forge614-engram setup`** | Interactiva (TTY) | Sí (guiado paso a paso con confirmación) | **Sí:** Abre automáticamente la TUI de asistentes tras configurar memoria |
+| **`forge614-engram init`** | No interactiva (Headless / JSON) | Sí (crea/verifica almacenamiento en modo silencioso) | **No:** No detecta asistentes ni abre interfaces interactivas |
+| **`forge614-engram assistant-list`** | De solo lectura (JSON) | **No:** Jamás crea `.forge614` ni escribe archivos | **Sí (Solo lectura):** Audita ejecutables y estado sin alterar configuraciones |
 
 ---
 
@@ -577,27 +639,23 @@ El guardado de archivos de configuración (`private-files.ts`) sigue un protocol
 
 #### Evidencia de Validación en CI y Pruebas Automatizadas:
 * **Ejecución exitosa del flujo Verify en CI:**
-  El flujo de trabajo `Verify` en GitHub Actions (**ejecución ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`) finalizó con resultado exitoso (**Verde / Pass**) en todas sus plataformas (`ubuntu-latest`, `macos-latest` y `windows-latest`).
-* **Pruebas ejecutadas en el job nativo de Windows x64 (`verify.yml`):**
-  1. Compilación del addon nativo y comprobación de archivo no vacío (`windows_reparse_guard.node`).
-  2. Aceptación inmediata de rutas normales en directorios temporales sin invocar subprocesos de shell.
-  3. Rechazo estricto con `UNSAFE_PATH` de enlaces simbólicos de archivo (`symlinkSync(..., 'file')`).
-  4. Rechazo estricto de uniones de directorio (*junctions* creadas con `symlinkSync(..., 'junction')`).
-  5. Rechazo estricto de puntos de montaje de volumen (*volume mount points* creados mediante `mountvol.exe`).
-  6. Rechazo cerrado ante excepciones o resultados no booleanos del comprobador.
-  7. Publicación de configuración de Antigravity en `%USERPROFILE%\.gemini\config\mcp_config.json` en un entorno temporal aislado, verificando la persistencia de los datos planificados.
-  8. Suite de pruebas del instalador PowerShell (`install.ps1.test.ps1`), que valida 5 escenarios mediante un servidor HTTP local efímero en loopback (`127.0.0.1`).
+  El flujo de trabajo `Verify` en GitHub Actions (**ejecución ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`) finalizó con resultado exitoso (**Verde / Pass**) en todas sus plataformas (`ubuntu-latest`, `macos-latest` y `windows-latest`):
+  - **Ubuntu y macOS:** 543/545 pruebas pasadas (9 de PostgreSQL pasadas con binarios configurados; 0 fallos); validación de sintaxis y fixtures de shells Bash/Zsh/Fish.
+  - **Windows x64 nativo:** Validación del guardián nativo, suite `install.ps1.test.ps1` con lectores/escritores de PATH en memoria y comprobación de regresión del smoke test.
 * **Validación completa del flujo de empaquetado de Release (`release.yml`):**
-  El flujo de empaquetado y distribución (**ejecución manual ID `35423226279`**, commit `7ee9de8`) validó con éxito (**Verde / Pass**) la construcción y ensamblado de los 6 artefactos de release:
-  1. **Incrustación del módulo nativo en Windows x64 y ARM64:** El flujo compila el addon C++ con `scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}` antes de invocar `bun build --compile`. Bun incrusta el archivo `.node` compilado dentro de los binarios autónomos `forge614-engram-windows-x64.exe` y `forge614-engram-windows-arm64.exe`.
-  2. **Prueba de ejecución empaquetada fuera del repositorio:** Cada ejecutable de Windows se prueba bajo un perfil temporal aislado (`RUNNER_TEMP`, GUID aleatorio) ejecutando `forge614-engram assistant-list`, comprobando la carga del addon nativo en memoria, la detección de los 5 asistentes (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`) y certificando que no se genera la carpeta `~/.forge614/`.
-  3. **Ensamblado y sumas criptográficas:** Se generó y validó el archivo `SHA256SUMS` con los 6 binarios de release (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64).
+  El flujo de empaquetado y distribución (**ejecución manual ID `35427429725`**, y corrida de referencia `35428406085`) validó con éxito (**Verde / Pass**) la construcción y ensamblado de los 6 artefactos de release:
+  1. **Incrustación del módulo nativo en Windows x64 y ARM64:** El flujo compila el addon C++ con `scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}` antes de invocar `bun build --compile`. Bun incrusta automáticamente el archivo `.node` compilado dentro de los binarios autónomos `forge614-engram-windows-x64.exe` (111,104 bytes de addon) y `forge614-engram-windows-arm64.exe` (110,592 bytes de addon).
+  2. **Comprobación de humo reforzada fuera del repositorio (*Strengthened Release Smoke Test*):**
+     Anteriormente, `assistant-list` devolvía los 5 identificadores de asistentes incluso ante un fallo de carga del complemento nativo, capturando la excepción y reportando `configuration.status = blocked`. Comprobar solo el código de salida no garantizaba que el addon nativo hubiera cargado en memoria. La validación en CI fue reforzada para exigir que, bajo un perfil temporal aislado (`RUNNER_TEMP`, sin configuración previa), los 5 asistentes devuelvan exactamente un resultado con estado `absent`. Cualquier resultado `blocked`, ausente o duplicado provoca el fallo inmediato del flujo. Ambos ejecutables (`windows-x64` y `windows-arm64`) superaron esta comprobación sin polución residual (cero creación de `~/.forge614/`).
+  3. **Ensamblado y sumas criptográficas:** Se generó y validó el archivo `SHA256SUMS` con los 6 binarios de release (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64), confirmando seis comprobaciones `OK`.
   4. **Salvaguarda de publicación:** La ejecución manual mediante `workflow_dispatch` omitió (*skipped*) deliberadamente la publicación de la GitHub Release; la publicación real queda estrictamente reservada para etiquetas oficiales `v*`.
+* **Verificación de la suite local de pruebas:**
+  La suite completa terminó con **536 superadas, 13 omitidas (4 nativas de Windows en macOS y 9 de PG sin binarios locales), 0 fallos** y 2,606 aserciones en 88 archivos. Finalizaron con código 0: `bun run typecheck`, `git diff --check` y `bash -n scripts/install.sh scripts/install-from-source.sh`.
 
 #### Tareas Pendientes para una Versión Estable (v1.0.0):
-Con la incrustación del módulo nativo en los ejecutables de release, la cobertura de Windows ARM64 y la verificación de `SHA256SUMS` completadas en CI, los requisitos pendientes para v1.0.0 son:
-1. **Validación del ejecutable fuera del repositorio en máquina limpia:** Probar la instalación y ejecución del binario `.exe` en una máquina Windows física o virtual limpia, sin dependencias de desarrollo (sin Node.js, Python, Visual Studio ni Git instalados).
-2. **Verificación de dependencias de tiempo de ejecución (MSVC CRT):** Certificar que el binario autónomo cargue sin requerir paquetes externos redistribuibles de Visual C++ en sistemas Windows estándar.
+Con la incrustación del módulo nativo, la verificación reforzada de carga en perfil vacío y la validación de `SHA256SUMS` completadas en CI, los requisitos pendientes para v1.0.0 son:
+1. **Validación del ejecutable fuera del repositorio en máquina limpia:** Probar la instalación y ejecución del binario `.exe` en una máquina Windows física o virtual limpia, sin dependencias de desarrollo (sin Node.js, Python ni Visual Studio instalados previamente).
+2. **Verificación de dependencias de tiempo de ejecución (MSVC CRT):** Certificar que el binario autónomo cargue sin requerir paquetes externos redistribuibles de Visual C++ en esa instalación base de Windows.
 3. **Publicación deliberada de la versión oficial:** Crear y enviar la etiqueta oficial `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) para activar la publicación final en GitHub Releases tras la aprobación humana.
 
 ---

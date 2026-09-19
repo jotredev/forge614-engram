@@ -125,7 +125,7 @@ Like two notaries stamping a sequentially numbered ledger: each checks the curre
 Supported coding assistant replacing Gemini CLI. Connects via standard Model Context Protocol (MCP) using `~/.gemini/config/mcp_config.json`, allowing the model to consult context (`memory_context`), search memories (`memory_search`), and save decisions (`memory_save`). Configured as *MCP only* with no automatic hooks (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
 
 ### Windows Path Guard / Reparse Points Validation
-A Windows-specific security validation mechanism that verifies configuration paths do not point to symbolic links, directory junctions, or reparse points before writing data, preventing malicious path redirection attacks. (Status: CI functional validation on x64 successfully passed in GitHub Actions Run ID 35414475529, and standalone release embedding on x64 and ARM64 passed in Run ID 35423226279; external clean machine testing pending for v1.0.0).
+A Windows-specific security validation mechanism that verifies configuration paths do not point to symbolic links, directory junctions, or reparse points before writing data, preventing malicious path redirection attacks. (Status: CI functional validation on x64 successfully passed in GitHub Actions Verify Run ID 35427426902, and standalone release embedding on x64 and ARM64 passed in Release Run ID 35427429725 and reference run 35428406085; external clean machine testing pending for v1.0.0).
 
 ### Native Reparse-Point Guard (Node-API C++ Addon / `windows_reparse_guard.node`)
 Like a bilingual customs officer stationed at the border inspecting official passports directly without slow intermediaries: an ultralightweight native C++ module loaded by Bun directly into memory that queries the Windows kernel function `GetFileAttributesW` in microseconds to certify whether a directory or file is a redirection point.
@@ -144,3 +144,12 @@ Like packing a specialized precision tool directly into a technician's sealed ca
 
 ### Manual Non-Publishing Release (workflow_dispatch)
 Like conducting a full dress rehearsal behind closed doors before opening night: a manual trigger mode in GitHub Actions that compiles all six platform installers, executes isolated packaged smoke checks, computes and validates `SHA256SUMS`, and packages artifacts without publishing a GitHub Release or creating git tags, reserving official releases strictly for deliberate `v*` tag pushes.
+
+### Idempotent PATH Publishing
+Like neatly inserting a new business card into an organized rolodex without duplicate entries or scratching out other cards: the automated procedure whereby installers configure the binary directory in Unix startup dotfiles (`.zshrc`, `.bashrc`, `.bash_profile` when safe, or `forge614-engram.fish`) using bounded blocks, or in the Windows user PATH variable via the .NET API without `setx` or Administrator privileges. Repeated installations do not duplicate PATH entries. Symbolic-link and custom-managed dotfiles are left untouched and receive manual guidance instead. Requires opening a new terminal window for changes to take effect.
+
+### Setup Onboarding Flow (`setup` -> `assistantTui`)
+Like finishing the outfitting of a new workspace and immediately welcoming team members inside: the guided interactive workflow where `forge614-engram setup` first configures the central SQLite storage and, upon explicit confirmation, seamlessly transitions to the interactive Assistant Selection TUI to connect up to 5 AI development tools (Claude Code, Codex, Cursor, OpenCode, and Antigravity) with configuration path previews and explicit confirmation (zero silent modifications).
+
+### Strengthened Addon Release Smoke Test
+Like firing up an engine on a clean test bench with zero leftover residue to verify every valve moves correctly: an automated verification in release CI where compiled Windows executables run `assistant-list` inside an empty temporary profile (`RUNNER_TEMP`), requiring that all 5 supported assistants report status `absent` and failing on any `blocked` status, thereby certifying that the embedded native C++ addon is genuinely loaded and operating in memory without storage pollution.

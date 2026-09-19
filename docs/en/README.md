@@ -2,10 +2,10 @@
 
 > **Stage:** TUI Control Center, Reinforced FTS5 ([no embeddings](concepts/what-are-embeddings.md)), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
 > **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
-> **Status:** Current & Verified (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
+> **Status:** Current & Verified (536 passed, 13 skipped platform/local PG, 0 failures, 2606 assertions across 88 files on macOS ARM64 with Bun 1.3.8; native CI verification across Ubuntu, macOS, and Windows x64 Verify Run ID 35427426902 and Release Run ID 35427429725)
 > **Sister translation:** [Documentación en Español](../es/README.md)
 > **Build Runtime:** Bun >= 1.3.8 | Strict TypeScript 5.9 | Git available (mandatory for project identity resolution)
-> **Standalone Binary:** `forge614-engram` in `$HOME/.local/bin/` (operates autonomously without Bun or Node at runtime)
+> **Standalone Binary:** `forge614-engram` in `$HOME/.local/bin/` or `%LOCALAPPDATA%\Forge614\bin\` (operates autonomously without Bun or Node at runtime)
 > **Central User Storage:** `~/.forge614/` (`.env` single global configuration and `engram.db` single database)
 
 > [!TIP]
@@ -86,7 +86,7 @@ Imagine hiring a meticulous office archivist to safeguard knowledge across all y
 
 Follow this chronological study path to master Forge614 Engram:
 
-1. [**01. Installation, Setup, and Getting Started (`01-installation-and-getting-started.md`)**](01-installation-and-getting-started.md): Build requirements (Bun >=1.3.8, mandatory Git), dependencies, install script, standalone executable, interactive `setup` with reinforcement offer, TUI Control Center (`forge614-engram tui`), assistant discovery, `integration-enable`, `sessions-enable`, `reinforcement-enable`, peer device coordination, and `sync --upgrade-format`.
+1. [**01. Installation, Setup, and Getting Started (`01-installation-and-getting-started.md`)**](01-installation-and-getting-started.md): Official installation commands (`curl`/`irm`), cryptographic verification against `SHA256SUMS`, automatic and idempotent PATH publishing (Unix and Windows), zero developer tools required for end users, interactive `setup` wizard with automatic assistant onboarding TUI, strict cancellation semantics, TUI Control Center (`forge614-engram tui`), 5 supported assistants, and explicit Schemas 5, 6, and 7 enablement.
 2. [**02. Guided System Walkthrough (`02-guided-walkthrough.md`)**](02-guided-walkthrough.md): Complete lifecycle walkthrough: interactive TUI Control Center overview, session lifecycle (`session-start`, `session-end`, `session-summary`), session inference scenarios, repeated saves without redundant versions, 15-minute sliding window, reinforced previews, timeline, context retrieval, safe OpenCode plugin conflict resolution, and PostgreSQL replication to Format 3.
 3. [**03. Terminal CLI Command Reference (`03-cli-reference.md`)**](03-cli-reference.md): Detailed command reference (`tui`, `reinforcement-enable`, `sessions-enable`, `setup`, `mcp`, `assistant-list`, `integration-enable`, `project-bind`, `memory-hook`, `project-create`, `project-list`, `project-rename`, `save [--request-key]`, `search`, `get`, `history`, `session-start`, `session-end`, `session-summary`, `timeline`, `context`, `sync [--upgrade-format]`, `sync-watch`) with flags, exit codes, and JSON schemas.
 4. [**04. TypeScript SDK Guide (`04-typescript-sdk.md`)**](04-typescript-sdk.md): TypeScript SDK guide: stable public exports from `src/index.ts`, compatible `MemoryStore` facade in `app/` (`controlCenter()`, `enableSearchReinforcement()`, `reinforcementEnabled()`), application function `readControlCenter()`, summary types, and synchronous local engine architecture.

@@ -60,14 +60,26 @@ forge614-engram help
 ---
 
 ### 2.3. `setup`
-Asistente interactivo guiado para configurar el espacio central (`~/.forge614/.env` y `~/.forge614/engram.db`), ofreciendo sincronización opcional con PostgreSQL y habilitación de refuerzo de búsqueda (Esquema 7).
+Asistente interactivo guiado de incorporación (*onboarding*) que primero configura el espacio central de almacenamiento (`~/.forge614/.env` y `~/.forge614/engram.db`, ofreciendo sincronización opcional con PostgreSQL y refuerzo de búsqueda FTS5 del Esquema 7) y, tras la confirmación exitosa de memoria, cierra limpiamente su lector de terminal y abre automáticamente la TUI de selección de asistentes (`assistantTui`).
 
 ```bash
 forge614-engram setup
 ```
 - **Opciones:** Ninguna.
-- **Requisitos:** Terminal interactiva (`stdin` y `stdout` TTY).
-- **Códigos de salida:** `0` al confirmar y aplicar; `130` al cancelar voluntariamente; `1` ante error.
+- **Requisitos:** Terminal interactiva (`stdin` y `stdout` TTY). Si se ejecuta sin TTY, termina inmediatamente con código `1` y error `INTERACTIVE_REQUIRED`.
+- **Flujo de Ejecución:**
+  1. Configuración de almacenamiento SQLite local (`~/.forge614/`), opción de PostgreSQL y oferta de refuerzo de búsqueda.
+  2. Resumen y confirmación previa del almacenamiento (`¿Confirmar? [si/NO]`).
+  3. Al confirmar, inicializa la base y entrega el control secuencialmente a la TUI de asistentes.
+  4. La TUI audita y detecta los 5 asistentes compatibles (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`), permitiendo seleccionarlos, previsualizar rutas y respaldos, y aplicar la integración con confirmación explícita (cero modificaciones silenciosas).
+- **Semántica de Cancelación:**
+  - Cancelar durante la configuración de memoria (`Ctrl+C`, `Escape` o `no`) sale con código `130` (*Cancelled*) sin abrir la TUI de asistentes y sin escribir archivos en disco.
+  - Cancelar o salir de la TUI de asistentes tras completar la memoria conserva el almacenamiento inicializado y finaliza limpiamente con código `0`.
+- **Diferencia con `init` y `assistant-list`:**
+  - `setup`: Flujo completo interactivo (almacenamiento + TUI interactiva de asistentes).
+  - `init`: Inicialización no interactiva de almacenamiento únicamente (crea/verifica `~/.forge614` en modo headless; no detecta ni conecta asistentes).
+  - `assistant-list`: Inspección de solo lectura en JSON (no crea archivos, no crea `.forge614`, no abre interfaces interactivas).
+- **Códigos de salida:** `0` al confirmar y aplicar; `130` al cancelar durante la memoria; `1` ante error o falta de terminal interactiva (`INTERACTIVE_REQUIRED`).
 
 ---
 

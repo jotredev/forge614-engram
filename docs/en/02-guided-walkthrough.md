@@ -54,10 +54,13 @@ forge614-engram setup
 2. Asks whether to configure PostgreSQL synchronization:
    - Option 1: `No` (default, 100% local and offline).
    - Option 2: `Sí, configurar PostgreSQL` (prompts for masked connection string).
-3. Offers search reinforcement (Schema 7).
-4. Displays plan summary and asks for pre-flight confirmation.
+3. Offers search reinforcement (Schema 7):
+   - Default: `NO`.
+   - Replying `sí` / `yes` stages Schema 7 immutable confirmations and reinforced ranking without embeddings.
+4. Displays plan summary and asks for pre-flight confirmation (`¿Confirmar? [si/NO]`).
 5. Sets `~/.forge614/` to `0700`, `.env` to `0600`, and creates `engram.db`.
-6. Cancelling via `Ctrl+C` exits with code **130** leaving zero bytes modified.
+6. **Automatic Transition to Assistant Onboarding:** Following storage completion, `setup` cleanly closes the terminal reader and automatically launches the Assistant Selection TUI (`assistantTui`). It detects the 5 supported assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity), allowing selective enrollment, path previews, automatic private backups, and explicit confirmation (zero silent file modifications).
+7. **Safe Cancellation Semantics:** Cancelling during memory setup (`Ctrl+C` or `no`) exits with code **130** without launching the assistant TUI and without touching disk. Cancelling inside the assistant TUI after memory setup leaves the initialized memory store intact.
 
 ---
 

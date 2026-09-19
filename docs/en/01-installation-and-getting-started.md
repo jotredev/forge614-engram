@@ -6,98 +6,127 @@
 > **Status:** Current & Verified (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [01. Instalación, Configuración y Primeros Pasos](../es/01-instalacion-y-primeros-pasos.md)
 
-This step-by-step guide walks through preparing dependencies, compiling and installing the `forge614-engram` command, mandatory prerequisites (including Git), post-install assistant detection, the interactive `setup` wizard with the search reinforcement offer, the **interactive Terminal Control Center (`tui`)**, explicit enablement of assistant integration (Schema 5), progressive sessions (Schema 6), immutable FTS5 confirmations (Schema 7), and peer device coordination.
+This step-by-step guide walks through installing the `forge614-engram` command, the interactive `setup` wizard, assistant connection with explicit approval, progressive sessions, immutable FTS5 confirmations, and peer device coordination.
 
 ---
 
 ## 1. What is this program and how is it distributed?
 
-Forge614 Engram is a personal local memory system for artificial intelligence models and developers, written in **TypeScript**. Unlike public web packages:
-- **Not downloaded from npm:** `npm install forge614-engram` does not exist because this is a private development package.
-- **Compiled locally:** Packaged directly from repository source code using the install script (`scripts/install.sh`).
-- **Produces a standalone binary:** Outputs a standalone binary named `forge614-engram`. Once installed, **it does not require Bun or Node.js in PATH** for routine execution.
+Forge614 Engram is a personal local memory system for artificial intelligence models and developers, written in **TypeScript and Bun**, featuring a minimal native C++ security component for Windows.
 
-### System Prerequisites
+### Distribution Methods
 
-1. **Bun (stable version >= 1.3.8):**
-   Required strictly to **build and install** the program from source code or execute the automated test suite.
-   ```bash
-   bun --version
-   ```
-   If not yet installed, download from [bun.sh](https://bun.sh).
+Unlike public web packages:
+- **Not downloaded from npm:** `npm install forge614-engram` does not exist because this is a private standalone package.
+- **Official bootstrap installer (Recommended):** Downloads the precompiled standalone binary for your OS and architecture directly from GitHub Releases, cryptographically verifies its integrity against `SHA256SUMS`, and automatically configures your terminal's PATH.
+- **Local compilation from source (Developers):** Packaged directly from repository source code using `scripts/install-from-source.sh` or `scripts/install.sh`.
+- **Produces a standalone executable binary:** Outputs a single standalone executable named `forge614-engram` (or `forge614-engram.exe` on Windows). Once installed, **the end user does not require Bun, Node.js, Python, or C++ compilers in PATH** for routine execution.
 
-2. **Git (Available in PATH — Mandatory):**
-   **Git is a mandatory system requirement**, not only for cloning the repository, but because Engram's project identity resolver relies on Git (`git rev-parse --path-format=absolute --git-common-dir`) to resolve common roots, linked worktrees, and subdirectories. Git is also strictly required to certify that a folder does **not** belong to Git. If Git is missing or unavailable in PATH, project resolution halts safely with `PROJECT_IDENTITY_UNAVAILABLE`.
+### System Prerequisites for End Users
+
+1. **Git (needed only for project identity):**
+   Git is **not required to install Forge614 Engram, initialize its global memory, or connect an assistant**. It is required later only when Engram needs to identify a project folder and its linked worktrees using `git rev-parse --path-format=absolute --git-common-dir`. If Git is unavailable, project-specific resolution stops safely with `PROJECT_IDENTITY_UNAVAILABLE`; the installer itself is unaffected.
    ```bash
    git --version
    ```
 
-3. **Operating System:**
-   - **macOS or Linux:** With a Bash-compatible shell (`bash`).
-   - **Windows:** Requires PowerShell 7+ (`pwsh`) for the official installer (`install.ps1`). To compile the native security addon from source on Windows, you require **Node.js (>= 22.14.0)**, **`node-gyp` (version 12.1.0 pinned in `devDependencies`)**, **Python (3.12+)**, and **Visual Studio 2026 Build Tools** (Microsoft C++ compiler). *(Note: once the standalone binary is installed, the end user does not need compilers or Node.js dependencies in their PATH).*
+2. **Zero development tools for standard installation:**
+   End users installing via the official bootstrap commands **do not need to install Bun, Node.js, Python, node-gyp, or Visual Studio Build Tools**. The standalone executable bundles all runtime requirements and the embedded Windows security addon.
+
+3. **Developer-only build prerequisites (compiling from source):**
+   - **Bun (stable version >= 1.3.8):** Required strictly to build from source or run the automated test suite (`bun test`).
+   - **Windows Build Tools (source build only):** Requires Visual Studio 2026 C++ Build Tools, Node.js 22+, node-gyp 12.1.0, and Python 3.12+ to compile the native module `windows_reparse_guard.node`.
 
 4. **PostgreSQL Server (Optional):**
    Required only if enabling remote replication. Requires PostgreSQL 14 or higher with permissions to create and write to the `forge614_sync` schema.
 
 ---
 
-## 2. Dependency Preparation and Installation
+## 2. Official Installation and Cryptographic Verification
 
-### Step 2.1 — Prepare local dependencies in a clean checkout
+### Official Installation Commands
 
-The installer **never downloads network dependencies automatically** nor alters your lockfile (`bun.lock`). In a clean repository checkout, prepare frozen dependencies prior to building:
+The planned official commands, once merged to `main` and an official GitHub Release with published assets is available, are:
+
+#### On macOS and Linux (Bash / Zsh):
+```bash
+curl -fsSL https://raw.githubusercontent.com/jotredev/forge614-engram/main/scripts/install.sh | bash
+```
+
+#### On Windows (PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/jotredev/forge614-engram/main/scripts/install.ps1 | iex
+```
+
+> [!NOTE]
+> **Release Availability Requirement:** The official installers fetch the latest GitHub Release (or an explicit version via `--version <tag>` on Unix or `-Version <tag>` on Windows) and verify the binary against `SHA256SUMS` before publishing it. Commands targeting `main` require an official public GitHub Release to exist; this engineering milestone prepared the installers and verification flow without prematurely creating a release or pushing a `v*` tag.
+
+### What does the official installer do?
+
+1. **Automatic OS and architecture detection:** Detects macOS ARM64/x64, Linux x64/ARM64, and Windows x64/ARM64 automatically.
+2. **Download and strict checksum verification:** Fetches the standalone binary and official `SHA256SUMS` manifest, validates the SHA-256 hash locally, and halts immediately on any mismatch.
+3. **Atomic publication to default executable directory:**
+   - **macOS / Linux:** `$HOME/.local/bin/forge614-engram` with `0755` permissions.
+   - **Windows:** `%LOCALAPPDATA%\Forge614\bin\forge614-engram.exe`.
+4. **Overwrite Protection:** If the target binary exists, the installer stops to prevent accidental overwrites. To update an existing installation, pass the force flag:
+   ```bash
+   # On macOS / Linux
+   curl -fsSL ... | bash -s -- --force
+   # On Windows
+   & { irm ... | iex } -Force
+   ```
+   *(Note: `--force` / `-Force` updates only the executable binary; it never alters `.env` configuration or memories in `engram.db`).*
+5. **Custom Directory:** To install into an alternate location:
+   ```bash
+   # On macOS / Linux
+   curl -fsSL ... | bash -s -- --bin-dir /path/to/bin
+   # On Windows
+   & { irm ... | iex } -BinDir C:\MyPath\bin
+   ```
+6. **Automatic and idempotent PATH configuration:** Configures your shell environment PATH (see Section 3).
+7. **Zero premature storage creation:** The installer **never creates `~/.forge614` or initializes database files** during installation. Storage setup occurs deliberately during `setup`.
+
+### Alternative: Building from Source (Developers)
+
+If contributing to the repository and compiling locally:
 
 ```bash
 cd /Users/jorgeetrejoo/Desktop/forge614-engram
 bun install --frozen-lockfile --ignore-scripts
-```
-
-> [!IMPORTANT]
-> If local dependencies in `node_modules/` are missing or versions do not match `package.json` exactly, the installer prints an explicit error message and halts before compiling or publishing any files.
-
-### Step 2.2 — Run the standalone installer
-
-From the repository root directory:
-
-```bash
 bash scripts/install.sh
 ```
-
-#### What does the installer do?
-1. Verifies Bun availability (version >= 1.3.8).
-2. Verifies Git availability in system PATH.
-3. Verifies local dependencies against `package.json` without network downloads or silent lockfile modifications.
-4. Compiles `src/cli.ts` into a native standalone executable using `bun build ./src/cli.ts --compile`.
-5. Atomically hard-links the binary to `$HOME/.local/bin/forge614-engram` with `0755` permissions.
-6. **Overwrite Protection:** If the target binary exists, it stops to prevent unauthorized overwrites. To update an existing installation, use `--force`:
-   ```bash
-   bash scripts/install.sh --force
-   ```
-   *(Note: `--force` updates only the executable binary; it never alters `.env` or memories in `engram.db`).*
-7. **Custom Directory:** To install into an alternate directory:
-   ```bash
-   bash scripts/install.sh --bin-dir /path/to/bin
-   ```
-8. **Post-install Assistant Detection:** Following binary publication, it runs a read-only audit (`assistant-list`) detecting installed AI coding assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity).
-9. **Interactive TUI Control Center Prompt:** If running in an interactive terminal (TTY stdin and stdout), the installer prompts:
-   ```text
-   ¿Abrir ahora el menú de asistentes? [s/N]
-   ```
-   Answering yes (`s` or `si`) immediately launches the interactive `tui` Control Center. If running non-interactively (e.g., CI script), it skips without modifying configuration or initializing storage and prints the command to launch later.
-10. **Zero Project Prompting:** The installer **never prompts for project selection or creation**.
 
 ---
 
 ## 3. Terminal PATH Configuration
 
-To invoke `forge614-engram` directly from any directory without typing its full path (`$HOME/.local/bin/forge614-engram`), ensure the binary directory is in your PATH:
+### What is the PATH environment variable in plain language?
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+The **PATH** variable is like your operating system's speed-dial directory. When you type `forge614-engram` in a terminal, the operating system doesn't guess where it is stored: it checks each folder listed in your PATH one by one. If the directory containing `forge614-engram` is in that list, the command runs immediately from any folder without needing to type its full path (`$HOME/.local/bin/forge614-engram`).
 
-> [!TIP]
-> Make this change persistent by adding it to your shell configuration (`~/.zshrc` on macOS or `~/.bashrc` on Linux).
+### Automatic Idempotent PATH Publishing
+
+The official installers automatically configure the executable directory in your shell environment:
+
+| Platform / Shell | Default Binary Location | PATH Publishing Method |
+| :--- | :--- | :--- |
+| **macOS / Linux, Zsh** | `$HOME/.local/bin` | Marked block in `~/.zshrc` |
+| **Linux, Bash** | `$HOME/.local/bin` | Marked block in `~/.bashrc` |
+| **macOS, Bash** | `$HOME/.local/bin` | Marked block in `~/.bash_profile`, unless another login file already owns Bash startup; then manual guidance |
+| **macOS / Linux, Fish** | `$HOME/.local/bin` | Dedicated file `~/.config/fish/conf.d/forge614-engram.fish` via `fish_add_path` |
+| **Windows (PowerShell / CMD)** | `%LOCALAPPDATA%\Forge614\bin` | User PATH variable via .NET API and `WM_SETTINGCHANGE` broadcast |
+
+#### Safety Properties of PATH Publishing:
+- **Delimited blocks in Unix:** On Zsh and Bash, the installer writes a clearly bounded block:
+  ```bash
+  # >>> forge614-engram initialize >>>
+  export PATH="$HOME/.local/bin:$PATH"
+  # <<< forge614-engram initialize <<<
+  ```
+  Reinstalling or updating replaces the block cleanly without adding duplicate lines and preserves 100% of your existing shell configuration.
+- **Preserving symlinks and custom dotfiles:** If a startup file is a symbolic link or managed by a dotfile manager, the installer does not replace or follow it. It leaves that file untouched, preserves the verified binary, and prints clear manual instructions instead. On macOS Bash, it likewise avoids creating `~/.bash_profile` when `~/.bash_login` or `~/.profile` already controls login startup.
+- **Safe Windows configuration without `setx`:** On Windows, the installer modifies exclusively the **user-level** PATH using the official .NET API (`[Environment]::SetEnvironmentVariable('Path', ..., 'User')`). It requires no Administrator privileges, never modifies machine PATH, avoids the obsolete `setx` command (which truncates at 1024 characters and risks destroying system variables), normalizes slashes and case to prevent duplicates, and broadcasts `WM_SETTINGCHANGE` so newly launched terminal sessions inherit the update.
+- **Mandatory requirement:** PATH changes apply to **new terminal sessions**. To start using the command, **open a new terminal window** (or run the printed export/source command in your current shell).
 
 ---
 
@@ -240,11 +269,45 @@ Resumen: configurar el almacenamiento global SQLite y mantener habilitado el ref
 ¿Confirmar? [si/NO]:
 ```
 
-> [!NOTE]
-> If choosing `no` or pressing `Ctrl+C` at any point:
-> - The command exits with standard code **130** (*Cancelled*).
-> - **Zero bytes are written.** If `~/.forge614/` did not exist, it remains uncreated.
-> - Pre-existing databases and memories remain intact.
+### Seamless Continuation to Assistant Onboarding (`assistantTui`)
+
+Once memory storage initialization is confirmed and completed, `setup` cleanly closes its terminal reader (`readline`) and **automatically launches the Assistant Selection TUI (`assistantTui`)** to finish onboarding:
+
+1. **Exhaustive Detection of all 5 Supported Assistants:** Audits presence and configuration of:
+   - **Claude Code** (`claude-code`)
+   - **Codex** (`codex`)
+   - **Cursor** (`cursor`)
+   - **OpenCode** (`opencode`)
+   - **Antigravity** (`antigravity`)
+2. **Zero Silent Modifications:** The installer and `setup` **never modify any assistant configuration files without explicit user consent**. Finding an assistant binary on your system does not automatically modify its files.
+3. **Comprehensive Action Plan Preview:** You can select or deselect which assistants to connect (using the spacebar or self-test `t`). Before modifying the disk, the assistant presents an exact preview detailing:
+   - Target configuration paths to be edited.
+   - MCP server definitions (`forge614-engram`) being added or verified.
+   - Memory hooks being installed or explicit notifications when hooks are unavailable (such as Antigravity).
+   - Automated private backups generated with suffix `.forge614-backup-<UUID>` under strict `0600` permissions.
+4. **Mandatory Explicit Confirmation:** File modifications are only executed after final human confirmation, utilizing the guarded atomic write protocol.
+
+### Strict Cancellation Semantics
+
+The onboarding flow isolates cancellation cleanly between storage and assistant setup:
+- **Cancelling During Memory Configuration:** Pressing `Ctrl+C`, `Escape`, or answering `no` before confirming storage:
+  - Exits immediately with code **130** (*Cancelled*).
+  - **Does not launch the Assistant TUI.**
+  - **Writes zero bytes to disk.** If `~/.forge614/` was absent, it remains uncreated.
+- **Cancelling or Exiting the Assistant TUI:** If you confirmed and initialized storage, but later choose to exit or cancel the assistant selector:
+  - The initialized memory store in `~/.forge614/` is **retained intact**.
+  - Newly initialized databases and `.env` settings are preserved without rollback.
+  - The exit is treated as a clean completion with code `0`.
+
+### Key Differences Between Initialization Commands
+
+To avoid operational confusion:
+
+| Command | Interface Mode | Configures Storage (`~/.forge614`)? | Detects / Connects Assistants? |
+| :--- | :--- | :--- | :--- |
+| **`forge614-engram setup`** | Interactive (TTY) | Yes (guided step-by-step with confirmation) | **Yes:** Seamlessly launches assistant onboarding TUI following storage setup |
+| **`forge614-engram init`** | Non-interactive (Headless / JSON) | Yes (creates/verifies storage silently) | **No:** Never detects assistants or launches interactive interfaces |
+| **`forge614-engram assistant-list`** | Read-only (JSON) | **No:** Never creates `.forge614` or writes files | **Yes (Audit only):** Detects assistants and coverage without touching files |
 
 ---
 
@@ -565,27 +628,23 @@ When Engram writes or modifies configuration files (e.g., publishing MCP tools f
 
 #### CI Validation Evidence and Automated Tests:
 * **Successful CI Execution on Verify Workflow:**
-  The `Verify` workflow in GitHub Actions (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`) completed with successful status (**Pass / Green**) across all platforms (`ubuntu-latest`, `macos-latest`, and `windows-latest`).
-* **Tests Executed in the Native Windows x64 Job (`verify.yml`):**
-  1. Native addon compilation and non-empty file check (`windows_reparse_guard.node`).
-  2. Immediate acceptance of normal paths in temporary directories without spawning shell processes.
-  3. Strict rejection with `UNSAFE_PATH` of file symlinks (`symlinkSync(..., 'file')`).
-  4. Strict rejection of directory junctions (*junctions* created via `symlinkSync(..., 'junction')`).
-  5. Strict rejection of volume mount points (*volume mount points* created via `mountvol.exe`).
-  6. Fail-closed rejection on exceptions or non-boolean checker results.
-  7. Antigravity configuration publication to `%USERPROFILE%\.gemini\config\mcp_config.json` in an isolated temporary environment, verifying persisted data.
-  8. PowerShell installer test suite (`install.ps1.test.ps1`), validating 5 scenarios against an ephemeral loopback HTTP server (`127.0.0.1`).
+  The `Verify` workflow in GitHub Actions (**Run ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`) completed with successful status (**Pass / Green**) across all platforms (`ubuntu-latest`, `macos-latest`, and `windows-latest`):
+  - **Ubuntu and macOS:** 543/545 passed tests (9 PostgreSQL tests passed with configured binaries; 0 failures); shell syntax and fixture checks for Bash, Zsh, and Fish.
+  - **Windows x64 Native:** Native guard tests, in-memory PATH reader/writer fixtures in `install.ps1.test.ps1`, and smoke test regression validation.
 * **Full Release Packaging Workflow Validation (`release.yml`):**
-  The standalone release packaging workflow (**manual run ID `35423226279`**, commit `7ee9de8`) validated successfully (**Pass / Green**) the compilation and assembly of all 6 release artifacts:
-  1. **Native Addon Bundling for Windows x64 and ARM64:** The workflow compiles the C++ addon via `scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}` before invoking `bun build --compile`. Bun embeds the compiled `.node` binary inside standalone executables `forge614-engram-windows-x64.exe` and `forge614-engram-windows-arm64.exe`.
-  2. **Isolated Packaged-Executable Verification:** Each Windows executable is tested under an isolated temporary user profile (`RUNNER_TEMP`, random GUID) by executing `forge614-engram assistant-list`, verifying in-memory native addon loading, detection of all 5 supported assistants (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`), and asserting that no `~/.forge614/` storage folder is created.
-  3. **Release Artifact Assembly and Cryptographic Checksums:** Generated and verified `SHA256SUMS` across all 6 standalone release binaries (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64).
+  The standalone release packaging workflow (**manual run ID `35427429725`**, and reference run `35428406085`) validated successfully (**Pass / Green**) the compilation and assembly of all 6 release artifacts:
+  1. **Native Addon Bundling for Windows x64 and ARM64:** The workflow compiles the C++ addon via `scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}` before invoking `bun build --compile`. Bun automatically embeds the compiled `.node` binary inside standalone executables `forge614-engram-windows-x64.exe` (111,104 bytes addon) and `forge614-engram-windows-arm64.exe` (110,592 bytes addon).
+  2. **Strengthened Packaged-Executable Smoke Test Outside Repository:**
+     Previously, `assistant-list` returned all 5 assistant identifiers even if the native addon failed to load, capturing the exception and reporting `configuration.status = blocked`. Checking only the exit code did not guarantee in-memory addon loading. The CI verification was strengthened to strictly require that, under an empty temporary user profile (`RUNNER_TEMP`), all 5 assistants return exactly one entry with status `absent`. Any `blocked`, missing, or duplicate result immediately fails the workflow. Both `windows-x64` and `windows-arm64` passed with zero residual pollution (no `~/.forge614/` folder created).
+  3. **Release Artifact Assembly and Cryptographic Checksums:** Generated and verified `SHA256SUMS` across all 6 standalone release binaries (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64), confirming six `OK` verifications.
   4. **Publication Guard:** Manual execution via `workflow_dispatch` safely skipped GitHub Release publication; actual public release creation is strictly gated on official `v*` tag pushes.
+* **Local Test Suite Verification:**
+  The full local test suite finished with **536 passed, 13 skipped (4 Windows native on macOS, 9 PG without local binaries), 0 failed**, and 2,606 assertions across 88 files. In addition, `bun run typecheck`, `git diff --check`, and `bash -n scripts/install.sh scripts/install-from-source.sh` all completed with exit code 0.
 
 #### Pending Tasks for a Stable Release (v1.0.0):
-With native addon embedding, Windows ARM64 coverage, and `SHA256SUMS` verification completed in CI, the remaining requirements for v1.0.0 are:
-1. **Standalone Binary Validation Outside Repository on Clean Machine:** Test binary installation and execution on a clean physical or virtual Windows machine without development tools (no Node.js, Python, Visual Studio, or Git installed).
-2. **Runtime Dependency Verification (MSVC CRT):** Certify that the standalone binary loads without requiring external Microsoft Visual C++ Redistributable packages on standard Windows systems.
+With native addon embedding, empty-profile smoke test verification, and `SHA256SUMS` verification completed in CI, the remaining requirements for v1.0.0 are:
+1. **Standalone Binary Validation Outside Repository on Clean Machine:** Test binary installation and execution on a clean physical or virtual Windows machine without development tools (no Node.js, Python, or Visual Studio installed previously).
+2. **Runtime Dependency Verification (MSVC CRT):** Certify that the standalone binary loads without requiring external Microsoft Visual C++ Redistributable packages on that base Windows installation.
 3. **Deliberate Official Version Release:** Create and push the official release tag `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) to trigger GitHub Release publication following human verification.
 
 ---
