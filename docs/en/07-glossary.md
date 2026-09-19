@@ -125,5 +125,16 @@ Like two notaries stamping a sequentially numbered ledger: each checks the curre
 Supported coding assistant replacing Gemini CLI. Connects via standard Model Context Protocol (MCP) using `~/.gemini/config/mcp_config.json`, allowing the model to consult context (`memory_context`), search memories (`memory_search`), and save decisions (`memory_save`). Configured as *MCP only* with no automatic hooks (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
 
 ### Windows Path Guard / Reparse Points Validation
-A Windows-specific security validation mechanism that verifies configuration paths do not point to symbolic links, directory junctions, or reparse points before writing data, preventing malicious path redirection attacks. (Status: pending CI validation until confirmed by native runner).
+A Windows-specific security validation mechanism that verifies configuration paths do not point to symbolic links, directory junctions, or reparse points before writing data, preventing malicious path redirection attacks. (Status: CI validation on x64 successfully passed in GitHub Actions Run ID 35414475529; standalone binary embedding and ARM64 pending for v1.0.0).
 
+### Native Reparse-Point Guard (Node-API C++ Addon / `windows_reparse_guard.node`)
+Like a bilingual customs officer stationed at the border inspecting official passports directly without slow intermediaries: an ultralightweight native C++ module loaded by Bun directly into memory that queries the Windows kernel function `GetFileAttributesW` in microseconds to certify whether a directory or file is a redirection point.
+
+### NTFS Reparse Points (Reparse Points, Directory Junctions, and Volume Mount Points)
+Like a detour sign on a highway misleading drivers into thinking they are staying on the main avenue while redirecting them into a private alley: special NTFS filesystem objects in Windows (symbolic links, directory junctions, and volume mount points) that redirect I/O to an alternate physical location, which Engram strictly rejects (`UNSAFE_PATH`) to prevent unauthorized writes.
+
+### Atomic Guarded Write Protocol (Guarded Write / `guardedWrite`)
+Like a surgeon carefully sterilizing all instruments, photographing the surgical site beforehand, performing the procedure within an isolated sterile field, verifying that vital signs match the plan byte-for-byte, and only then finalizing the incision: a 10-step atomic protocol that validates path safety, compares against interactive plan previews (`write.before`), writes a UUID-stamped exclusive backup (`flag: 'wx'`), commits and flushes a temporary file (`fsyncSync`), performs an atomic rename, and verifies read bytes against planned bytes (`readSafeFile`), halting with `PUBLISHED_UNVERIFIED` if any external deviation is detected.
+
+### Exclusive On-Disk Creation Mode (Exclusive File Mode / `"wx"`)
+Like attempting to claim a numbered locker with a lock that immediately jams if a padlock is already present: a file opening flag on Windows that combines write intent (`"w"`) with strict exclusivity (`"x"`), ensuring that if the temporary or backup file already exists on disk, the operating system call immediately fails with `EEXIST` rather than overwriting existing data.

@@ -45,8 +45,10 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
 | `SHARED_INTENT_REQUIRED` | *"scope shared requiere explicar la intención global explícita del usuario."* | El asistente intentó llamar a `memory_save` con `scope: "shared"` sin incluir el campo explicativo `globalIntent`. | Proporciona una explicación detallada en `globalIntent` justificando por qué la nota aplica a todos los proyectos. |
 | `INSTALLATION_REQUIRED` | *"Requisito: ejecuta forge614-engram tui con el binario instalado..."* | Se intentó ejecutar la autoprueba en `tui` ejecutando desde el código fuente con Bun sin tener instalado el binario compilado. | Instala el binario oficial ejecutando `bash scripts/install.sh` y repite la prueba con el ejecutable instalado. |
 | `TIMED_OUT` | Autoprueba del servidor reportada como fallida por límite de tiempo. | La autoprueba del servidor MCP superó el plazo máximo estricto de 5 segundos para responder y listar herramientas. | Verifica la carga de CPU de tu equipo y que el ejecutable cuente con permisos de ejecución (`0755`). |
-| `MCP_FAILED` | Autoprueba del servidor reportada como fallida. | El servidor MCP falló al responder o no expuso las 10 herramientas esperadas. | Comprueba que la base de datos tenga el Esquema 6 o 7 habilitado mediante `sessions-enable` o `reinforcement-enable`. |
-| `PUBLISHED_UNVERIFIED` | *"Publicado sin verificar: [ruta]"* | Se aplicó la configuración al archivo del cliente, pero la verificación posterior de bytes falló por escrituras concurrentes. | Engram retiene la copia de respaldo `.bak`. Cierra el editor o cliente y vuelve a aplicar la configuración desde `tui`. |
+| `PUBLISHED_UNVERIFIED` | *"The file was published but its planned bytes could not be safely verified..."* | Se aplicó la configuración al archivo del cliente, pero la verificación posterior de bytes falló por escrituras concurrentes de otro proceso. | Engram retiene la copia de respaldo `.forge614-backup-<UUID>` sin ejecutar rollback destructivo. Cierra el editor y vuelve a aplicar la configuración desde `tui`. |
+| `UNSAFE_PATH` | *"Configuration paths must not traverse Windows reparse points."* o *"Could not verify Windows reparse-point safety."* o *"Configuration paths must not traverse symbolic links."* | La ruta de destino o alguno de sus directorios ancestros contiene enlaces simbólicos, *junctions*, *reparse points* (en Windows), permisos de escritura para otros usuarios (en Unix), o el módulo nativo de Windows falló (*fail-closed*). | Elimina cualquier enlace simbólico o junction en la ruta. En Windows, si compilas desde fuentes, compila el módulo nativo con `scripts/build-windows-reparse-addon.ps1`. |
+| `CHANGED` | *"Configuration changed after preview..."* o *"Configuration changed before replacement..."* | El contenido del archivo de configuración cambió en el disco mientras el usuario revisaba la vista previa o mientras se preparaba el temporal. | Se detiene para evitar sobrescribir cambios ajenos. Cierra editores en segundo plano y vuelve a generar la vista previa en `tui`. |
+| `UNSAFE_FILE` | *"Configuration must be a regular file owned by the current user."* | El archivo de destino no es un archivo regular, tiene enlaces duros múltiples (`nlink !== 1`), o pertenece a otro usuario del sistema. | Asegúrate de que el archivo de configuración pertenezca a tu usuario actual y no tenga enlaces duros compartidos. |
 | `AMBIGUOUS` | *"Both OpenCode JSON and JSONC configs exist..."* | En OpenCode existen archivos simultáneos `.json` y `.jsonc`, o múltiples fuentes de configuración activas sin selección. | Selecciona el archivo deseado en el menú interactivo o retira la configuración duplicada en OpenCode. |
 | `INVALID_INPUT` | *"El campo [campo] debe ser texto no vacío..."* | Opciones vacías, caracteres nulos (`\0`), números fuera de rango o argumentos incompatibles (ej. `--upgrade-format` en `sync-watch`). | Consulta las opciones válidas con `forge614-engram help`. |
 | `PROJECT_NOT_FOUND` | *"Proyecto no encontrado en esta base."* | El `projectId` no existe en la tabla `projects` de `~/.forge614/engram.db`. | Ejecuta `forge614-engram project-list` para verificar los UUIDs de tus proyectos registrados. |
@@ -139,3 +141,39 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
   2. **Para scripts automatizados y pipelines CI/CD:** No invoques `tui`. Utiliza los subcomandos CLI especializados que emiten salidas directas o JSON (ej. `forge614-engram project-list`, `forge614-engram assistant-list`, `forge614-engram status`, `forge614-engram health`) o consume la API mediante el SDK TypeScript (`readControlCenter()`).
   3. **Cancelación segura sin escrituras:** El Centro de Control inicia 100% en modo de solo lectura. Navegar pestañas (`Resumen`, `Proyectos`, `Compartido`, `Almacenamiento`), redimensionar la ventana o presionar `Escape`, `q` o `Ctrl+C` finaliza la interfaz de inmediato y restaura el cursor y la terminal sin haber escrito un solo byte en disco.
   4. **Protección durante acciones en curso:** Si ejecutas una acción confirmada (escribiendo deliberadamente `confirm` y presionando `Enter`), el Centro de Control bloquea el teclado y descarta cualquier pulsación de teclas entrante mientras la operación está en curso (por ejemplo, migraciones o sincronización con PostgreSQL). Esto previene la acumulación de comandos accidentales en el búfer de entrada.
+
+---
+
+### 7. Diagnóstico de Rutas Inseguras, Enlaces Simbólicos y Reparse Points en Windows (`UNSAFE_PATH`)
+- **Síntoma:** Al configurar un asistente o guardar una configuración, la operación se interrumpe arrojando `UNSAFE_PATH` con uno de los siguientes mensajes:
+  - *"Configuration paths must not traverse Windows reparse points."*
+  - *"Could not verify Windows reparse-point safety."*
+  - *"Configuration paths must not traverse symbolic links."*
+  - *"A configuration parent is not a directory."*
+  - *"A configuration parent is writable by other users."*
+- **Causa Raíz:**
+  1. En **Windows**: La ruta destino o alguno de sus directorios ancestros existentes es un enlace simbólico, una unión de directorio NTFS (*junction* creada con `mklink /J`), o un punto de montaje de volumen (*volume mount point* creado con `mountvol.exe`). El módulo nativo `windows_reparse_guard.node` detectó el atributo `FILE_ATTRIBUTE_REPARSE_POINT`.
+  2. En **Windows (*Fail-Closed*)**: El módulo nativo C++ no está disponible en la ruta esperada, arrojó una excepción no controlada del sistema operativo, o devolvió un valor anómalo.
+  3. En **macOS/Linux**: La ruta o sus ancestros atraviesan enlaces simbólicos no reconocidos como alias del sistema (excluyendo `/var` y `/tmp` propiedad de root), o algún directorio padre tiene permisos de escritura abiertos para otros usuarios (`chmod o+w`).
+- **Procedimiento de Recuperación:**
+  1. Si estás en Windows y usas carpetas vinculadas con `mklink` o junctions hacia otro disco, debes utilizar la ruta real física del disco destino en lugar de la unión simbólica.
+  2. Si estás compilando Engram desde el código fuente en Windows, verifica que el módulo nativo esté compilado ejecutando en PowerShell:
+     ```powershell
+     pwsh -File scripts/build-windows-reparse-addon.ps1
+     ```
+  3. En sistemas Unix, restringe los permisos de los directorios contenedores:
+     ```bash
+     chmod 0700 ~/.forge614
+     ```
+
+---
+
+### 8. Modificaciones Concurrentes y Publicación no Verificada (`CHANGED` y `PUBLISHED_UNVERIFIED`)
+- **Síntoma:** El configurador de asistentes se interrumpe arrojando `CHANGED` o `PUBLISHED_UNVERIFIED`.
+- **Causa Raíz:**
+  - `CHANGED`: El archivo de configuración en disco cambió de contenido mientras estabas en la pantalla de vista previa (`write.before`) o durante la preparación del archivo temporal en `guardedWrite`.
+  - `PUBLISHED_UNVERIFIED`: El archivo temporal fue renombrado atómicamente sobre el destino final, pero al realizar la lectura inmediata posterior de verificación (*post-publication verification*), los bytes leídos no coincidieron exactamente con los bytes planificados (`write.after`).
+- **Procedimiento de Recuperación:**
+  1. Engram **preserva intacta la copia de respaldo** `.forge614-backup-<UUID>` con permisos `0600` y modo exclusivo (`flag: 'wx'`). No ejecuta ningún rollback destructivo que pudiera sobreescribir datos externos.
+  2. Cierra cualquier editor de código (VS Code, Cursor, Zed) o asistente que pueda estar escribiendo automáticamente sobre los archivos de configuración (`settings.json`, `mcp_config.json`).
+  3. Comprueba el estado del archivo y vuelve a lanzar `forge614-engram tui` para generar una nueva vista previa limpia.

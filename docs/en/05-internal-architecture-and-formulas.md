@@ -62,11 +62,16 @@ Prior to modularization, Engram's codebase suffered from cohesion degradation:
 The production code in `src/` is structured across four concentric layers, plus an entry binary and a public shared library:
 
 ```text
+native/                                # [Native Operating System Extensions]
+└── windows-reparse-guard/             # Windows native C++ Node-API addon
+    ├── addon.cc                       # Direct query to Win32 GetFileAttributesW
+    └── binding.gyp                    # MSBuild build configuration
+
 src/
-├── cli.ts                         # [Minimal Startup] Exactly 2 lines of delegation
-├── index.ts                       # [Public SDK API] Stable, immutable public barrel
+├── cli.ts                             # [Minimal Startup] Exactly 2 lines of delegation
+├── index.ts                           # [Public SDK API] Stable, immutable public barrel
 │
-├── app/                           # [Flow Orchestration]
+├── app/                               # [Flow Orchestration]
 │   ├── index.ts                   # Coordination exports
 │   ├── memory-store.ts            # Backwards-compatible MemoryStore Facade
 │   ├── workspace.ts               # Central workspace lifecycle & connection
@@ -76,7 +81,7 @@ src/
 │   ├── setup.ts                   # Guided setup flow (SetupIO interface)
 │   └── assistants.ts              # Assistant detection and configuration coordination
 │
-├── modules/                       # [Pure Domain Rules & Types] (Zero I/O)
+├── modules/                           # [Pure Domain Rules & Types] (Zero I/O)
 │   ├── memory/                    # Types, validation, confirmations, and ranking
 │   │   ├── index.ts
 │   │   ├── types.ts
@@ -96,7 +101,7 @@ src/
 │   ├── workspace/                 # Workspace environment configuration contracts
 │   └── assistants/                # Assistant catalog, protocol & hook contracts
 │
-├── infrastructure/                # [Concrete I/O Adapters]
+├── infrastructure/                    # [Concrete I/O Adapters]
 │   ├── sqlite/                    # SQLite connection, schemas, & queries
 │   │   ├── connection.ts          # WAL mode, busy timeout, strict pragmas
 │   │   ├── schema.ts              # Schemas 3, 4, 5, 6, and 7 DDL migrations
@@ -111,6 +116,10 @@ src/
 │   │   └── workspace-database.ts  # Database lifecycle manager
 │   ├── postgres/                  # CAS optimistic replica adapter (replica.ts)
 │   ├── filesystem/                # File I/O (.env, permissions 0700/0600, locks)
+│   │   ├── windows-reparse-guard.ts # Node-API native addon TypeScript loader
+│   │   ├── private-files.ts       # Path safety validation & assertSafePath
+│   │   ├── guarded-write.ts       # Atomic publication and backup protocol
+│   │   └── file-locks.ts          # On-disk concurrency locks
 │   └── assistants/                # Client adapters, JSONC, TOML, & async self-test
 │
 ├── interfaces/                    # [Presentation & Ingress Adapters]
@@ -464,18 +473,118 @@ Assert-That ($amd64.ExitCode -eq 0) `
   "AMD64 installer failed: $($amd64.Output) Fixture diagnostics: $amd64Diagnostics"
 ```
 
-#### 8. Pending Validation and Cross-Platform Stability Criteria
+#### 8. CI Validation Status and Cross-Platform Stability Criteria
 The suite is executed in automated workflows using:
 ```powershell
 pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1
 ```
 
-> [!IMPORTANT]
-> **Publication Criterion:** This test suite must run and pass cleanly in GitHub Actions on `windows-latest` runners before declaring the cross-platform distribution stable and ready for release.
+> [!NOTE]
+> **CI Validation Status:** The PowerShell installer test suite was successfully executed and verified in GitHub Actions on `windows-latest` runners (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`), cleanly passing all 5 test scenarios against the ephemeral loopback HTTP server (`127.0.0.1`).
 
 ---
 
-## 9. Design Attribution and Lineage
+## 9. Windows Native Reparse Point Guard Architecture and Protected Publication Protocol (`guardedWrite`)
+
+### 9.1. Rationale for Native C++ Component (Node-API vs FFI vs Subprocesses)
+On Unix platforms (macOS and Linux), security against malicious symbolic links is natively enforced via POSIX octal permissions (`0700` and `0600`) and direct kernel open flags (`O_NOFOLLOW`). On Windows, POSIX permissions do not exist natively (they map onto NTFS Access Control Lists, ACLs) and Bun on Windows lacks direct `O_NOFOLLOW` flag equivalents in standard file opening.
+
+To solve this Windows security challenge without sacrificing performance, three alternatives were evaluated:
+1. **Subprocess Spawning (`powershell.exe` or `fsutil.exe`):** Rejected. Spawning a PowerShell subprocess or console utility for each path check consumes 150 ms to 400 ms per call, degrades user responsiveness, and requires elevated administrative privileges for certain `fsutil` operations.
+2. **Bun FFI (*Foreign Function Interface*):** Rejected. While Bun FFI allows invoking dynamic libraries at runtime, official Bun documentation explicitly characterizes its FFI subsystem as experimental and advises against its use in standalone compiled production executables.
+3. **Native C++ Node-API Module (`native/windows-reparse-guard/addon.cc`):** **Chosen.** Bun supports Node-API (.node) as its stable native binary interface for C/C++ extensions. It compiles into an ultralightweight shared library loaded directly into Engram's process memory, querying Microsoft's official Win32 API without external overhead:
+   ```c
+   DWORD attributes = GetFileAttributesW(path);
+   bool isReparsePoint = (attributes != INVALID_FILE_ATTRIBUTES) &&
+                         ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0);
+   ```
+
+### 9.2. Redirection Coverage and Fail-Closed Security Model
+The attribute `FILE_ATTRIBUTE_REPARSE_POINT` (hexadecimal mask `0x400`) identifies any NTFS filesystem object whose standard behavior is modified by an installed file system filter driver. This provides comprehensive detection and blocking for:
+- **File symbolic links** (*file symlinks*, `symlinkSync(..., 'file')`).
+- **Directory symbolic links** (*directory symlinks*).
+- **NTFS directory junctions** (*directory junctions*, `symlinkSync(..., 'junction')` or `mklink /J`).
+- **Volume mount points** (*volume mount points*, generated via `mountvol.exe`).
+
+#### Upward Recursive Inspection:
+The validator `assertNoWindowsReparsePoints` in `src/infrastructure/filesystem/private-files.ts` does not simply check the leaf path; it iteratively traverses the entire hierarchy of existing parent directories up to the volume root (`while (current !== root)`):
+- If the target path or any existing ancestor possesses the reparse point attribute, the operation immediately aborts with `UNSAFE_PATH`.
+- **Fail-Closed Architecture:** If the native binary fails to load, throws an unhandled Win32 operating system exception, or returns a non-boolean result, the validator fails closed immediately by throwing `UNSAFE_PATH`.
+- **Concurrency Limits (TOCTOU):** Pre-write inspection effectively certifies that no malicious redirection points exist at inspection time. However, it does not provide an absolute mathematical guarantee against concurrent race conditions (*Time-of-Check to Time-of-Use*, TOCTOU) where another privileged process modifies directory hierarchy between inspection and file opening.
+
+### 9.3. Protected Publication Protocol Sequence Diagram (`guardedWrite`)
+
+The protected write protocol guarantees that assistant configurations (such as Antigravity, Cursor, or Claude Code) are never corrupted or redirected:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CLI as Configurator / CLI
+    participant GW as guardedWrite
+    participant Val as assertSafePath
+    participant Guard as windows-reparse-guard (Win32)
+    participant FS as File System
+
+    CLI->>GW: Request publication (write.path, write.before, write.after)
+    GW->>Val: Validate target path (assertSafePath)
+    Val->>Guard: GetFileAttributesW (target and ancestors)
+    Guard-->>Val: Clean / No reparse points (OK)
+    GW->>FS: Read current on-disk content
+    alt Content changed relative to preview (write.before)
+        GW-->>CLI: Abort with CHANGED error
+    end
+    GW->>FS: mkdirSync(parent directory, 0700)
+    GW->>Val: Re-validate parent directory
+    opt If previous file existed
+        GW->>FS: Create backup .forge614-backup-<UUID> (0600, flag: 'wx')
+    end
+    GW->>FS: openSync(.forge614-tmp-<UUID>, safeOpenFlag("wx"))
+    GW->>FS: writeFileSync(temporary, write.after)
+    GW->>FS: fsyncSync(temporary file descriptor)
+    GW->>FS: Re-verify original file has not changed
+    alt Original file modified during preparation
+        GW-->>CLI: Abort with CHANGED error (retaining backup)
+    end
+    GW->>Val: Re-validate path before atomic replacement
+    GW->>FS: rename(temporary, write.path)
+    GW->>FS: readSafeFile(write.path)
+    alt Read bytes do not match write.after exactly
+        GW-->>CLI: Throw PUBLISHED_UNVERIFIED (retaining backup)
+    end
+    GW-->>CLI: Publication confirmed successful
+```
+
+### 9.4. Platform File Opening Differences and CI Incident Resolution
+To materialize temporary files and backups safely, Engram uses secured descriptors managed by `safeOpenFlag`:
+* **Textual Modes on Windows (`"r"` and `"wx"`):**
+  - `"r"`: Read-only opening.
+  - `"wx"`: Exclusive write mode (*write exclusive*). The `"x"` modifier requires that the file must not already exist on disk; if it exists, the operating system rejects the call immediately with `EEXIST`.
+* **Numeric Bitwise Flags on Unix (macOS and Linux):**
+  - Read: `constants.O_RDONLY | constants.O_NOFOLLOW`.
+  - Exclusive creation: `constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW` with octal permissions `0600`.
+* **Technical Incident in Windows CI:**
+  During automated GitHub Actions testing, `openSync` calls under Bun on Windows threw `ENOENT` when passed bitwise numeric constants (`O_WRONLY | O_CREAT | O_EXCL`). However, backup creation with textual mode `{ flag: 'wx' }` succeeded in that same test environment. The resolution unified safe opening under the helper `safeOpenFlag(unixFlags, windowsFlag)`, applying `"r"` and `"wx"` on Windows, and POSIX flags with `O_NOFOLLOW` on Unix. *(Note: this does not imply that Windows lacks secure opening or that all numeric flags fail; the issue was specific to Bun's runtime mapping of numeric open flags in that call).*
+
+### 9.5. Compilation Toolchain and Executable Resolution
+Compiling the native module on Windows relies on `scripts/build-windows-reparse-addon.ps1`:
+- **Node.js (22.14.0 in CI):** Required strictly at compile time to run `node-gyp`. Not needed by end users at runtime.
+- **`node-gyp` (version 12.1.0 pinned in `devDependencies`):** Pinned version required to ensure full compatibility between Node.js 22 and Visual Studio 2026.
+- **Python (3.12+):** Required internally by GYP for generating MSBuild project files.
+- **Visual Studio 2026 Build Tools (v18):** Official Microsoft C++ compiler toolset on `windows-latest` runners.
+- **Single-Candidate `node.exe` Resolution (`Resolve-NodeExecutable`):** In CI virtual machines with multiple Node.js installations in PATH, this function filters output to select strictly one valid executable path, preventing PowerShell string concatenation bugs.
+
+### 9.6. Verified CI Evidence and Pending Tasks for Stable Release (v1.0.0)
+* **Verified CI Evidence:** In the GitHub Actions `Verify` workflow (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`), the native `windows-latest` job successfully built the C++ addon and passed `windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts`, and all 5 scenarios of the `install.ps1.test.ps1` installer suite.
+* **Pending Tasks for v1.0.0:**
+  1. **Embed Native Addon into Standalone Executable:** Integrate `build-windows-reparse-addon.ps1` into `release.yml` so the standalone binary bundles the compiled addon and loads it without requiring external `.node` files.
+  2. **Compile and Test on Windows ARM64:** Verify compilation and test execution on native Windows ARM64 runners (`windows-11-arm`).
+  3. **Clean Environment Validation:** Test the standalone binary on a clean Windows system lacking developer tools or cloned repositories.
+  4. **Runtime Dependency Verification:** Certify that the standalone executable does not require external C++ redistributable packages (*MSVC CRT*) missing on standard Windows installations.
+  5. **Full Release Pipeline Verification:** Validate generation and cryptographic signing of all 6 release artifacts prior to publishing v1.0.0.
+
+---
+
+## 10. Design Attribution and Lineage
 
 - **Gentleman Programming Inspiration:** The progressive retrieval model featuring bounded previews, on-demand version reads, session timelines, and relevance reinforcement is inspired by concepts developed by Gentleman (linked to commit `2cdda9041c1bff86f6b769171fd407fa677027cb`).
 - **Forge614 Innovations:**
@@ -487,3 +596,4 @@ pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1
   - Cryptographic SHA-256 idempotent request cache with `REQUEST_CONFLICT` detection.
   - Atomic CAS Format 3 promotion with physical schema stability on PostgreSQL (`state.format = 1`).
   - Feature-oriented modular monolith with 58 logical components supported by colocated tests and AST import enforcement.
+  - Native C++ reparse point guard and atomic `guardedWrite` protocol for secure configuration and tool publication across Windows and Unix.

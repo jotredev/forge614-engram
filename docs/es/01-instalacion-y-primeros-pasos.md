@@ -32,8 +32,10 @@ Forge614 Engram es un sistema de memoria personal y local para modelos de inteli
    git --version
    ```
 
-3. **Sistema Operativo:**
-   macOS o Linux con shell compatible con Bash (`bash`).
+3. **Sistema Operativo y Entornos de Compilación:**
+   - **macOS o Linux:** Shell compatible con Bash (`bash`).
+   - **Windows (Compilación desde código fuente para desarrolladores):** Si compilas o ejecutas pruebas del proyecto desde el código fuente en Windows, se requiere **Visual Studio 2026 C++ Build Tools** (compilador C/C++ y MSBuild), **Node.js 22.14.0 o superior** (para ejecutar `node-gyp`), **node-gyp 12.1.0** (fijado en `devDependencies`) y **Python 3.12 o superior** para compilar el componente nativo de seguridad de archivos (`windows-reparse-guard`).
+   - **Nota sobre el usuario final en Windows:** Estas herramientas de compilación (Node.js, Python, node-gyp, Visual Studio) son necesarias **exclusivamente para desarrolladores que compilan el código fuente**. El usuario final que descargue un instalador o ejecutable autónomo no requerirá instalar Node.js, Python ni Visual Studio.
 
 4. **Servidor PostgreSQL (Opcional):**
    Únicamente si decides habilitar la sincronización de réplica. Se requiere PostgreSQL 14 o superior. El usuario debe contar con privilegios para crear y escribir en el esquema `forge614_sync`. Debe emplearse una base de datos vacía y dedicada o una ya compatible con Forge614.
@@ -516,22 +518,85 @@ Al auditar el sistema, Engram busca el ejecutable de Antigravity en el siguiente
   Si este archivo existe en tu equipo, permanece completamente intacto.
 * El hecho de que Antigravity utilice la carpeta compartida `.gemini` para su configuración no autoriza a Engram a alterar configuraciones previas de Gemini.
 
-#### Seguridad de Rutas en Windows:
-* En sistemas POSIX (macOS y Linux), Engram valida la seguridad de los archivos verificando permisos octales privados (`0700` para carpetas y `0600` para archivos).
-* En Windows, los permisos POSIX no reflejan con precisión las listas de control de acceso (*Access Control Lists* / ACL) del sistema NTFS.
-* Por ello, Engram implementa una validación específica para Windows que **rechaza enlaces simbólicos (*symbolic links*), uniones de directorios (*junctions*) y puntos de reanálisis (*reparse points*)** antes de escribir cualquier archivo de configuración.
-* Esta protección impide que una ruta en apariencia inocente redirija la escritura de configuraciones hacia directorios no autorizados o comprometidos.
-* **Estado de verificación en Windows:** La validación nativa de Windows para publicación y puntos de reanálisis está configurada en la integración continua (CI) y **permanece como validación pendiente de CI hasta que el job nativo en GitHub Actions confirme su resultado**.
+#### Seguridad de Rutas en Windows y Componente Nativo:
 
-#### Garantías de Calidad y Pruebas Documentadas:
-La integración con Antigravity y la seguridad multiplataforma están respaldadas por pruebas automatizadas:
-* Se comprobó que Antigravity escribe únicamente en `~/.gemini/config/mcp_config.json`.
-* Se comprobó que `~/.gemini/settings.json` permanece inalterado byte por byte.
-* Se comprobó que Antigravity no instala ni registra hooks.
-* Se comprobó que los comentarios y entradas JSON ajenas sobreviven intactos a la inserción.
-* Se comprobó que configuraciones inválidas, duplicadas, conflictivas, modificadas tras la vista previa o situadas tras enlaces inseguros son rechazadas.
-* Se restauró la prueba de fallo parcial: si un asistente aplica su configuración y el siguiente falla, Engram informa con transparencia el resultado real y conserva los respaldos privados sin simular un éxito total ficticio.
-* La ejecución nativa de Windows para publicación y reparse points permanece pendiente de validación en CI.
+Forge614 Engram sigue desarrollado principalmente en **TypeScript y Bun**, pero incorpora un componente nativo mínimo exclusivo para Windows en C/C++ (`native/windows-reparse-guard/addon.cc`) para consultar atributos del sistema de archivos de forma directa y atómica:
+
+* **Qué es un componente nativo y por qué se añadió:**
+  Un componente nativo (módulo Node-API compilado en formato binario `.node`) es una pequeña biblioteca que se comunica directamente con las funciones del sistema operativo. Se añadió para reemplazar las consultas de seguridad que anteriormente se realizaban ejecutando scripts auxiliares de PowerShell. Invocar PowerShell introducía un retardo considerable (1 a 2 segundos por proceso), lo que provocaba que las comprobaciones de seguridad excedieran los límites de tiempo de las pruebas y abortaran operaciones legítimas por falso positivo. La consulta nativa mediante la API oficial de Windows se ejecuta de manera instantánea (en microsegundos).
+* **Qué hace `GetFileAttributesW`:**
+  Es la función oficial de la API Win32 provista por `Kernel32.dll` para consultar los atributos de un archivo o carpeta mediante una ruta absoluta en formato de caracteres anchos UTF-16 (*wide string*). Devuelve una máscara de bits con los atributos del sistema de archivos o el valor `INVALID_FILE_ATTRIBUTES` si la ruta no existe, es inaccesible o si ocurre un fallo interno del sistema.
+* **Qué indica `FILE_ATTRIBUTE_REPARSE_POINT`:**
+  Es la constante de bits oficial de Windows (`0x400`) que identifica si una entrada del sistema de archivos NTFS tiene asignado un punto de reanálisis (*reparse point*).
+* **Peligro de redirección (enlaces simbólicos, junctions y puntos de montaje):**
+  - **Enlaces simbólicos (*symbolic links*):** Punteros que redirigen transparentemente una ruta de archivo o carpeta hacia otra ubicación arbitraria.
+  - **Uniones de directorio (*directory junctions*):** Mecanismo tradicional de NTFS para enlazar carpetas locales sin requerir permisos elevados de administrador.
+  - **Puntos de montaje de volumen (*volume mount points*):** Carpetas enlazadas a otra partición o unidad de disco mediante utilidades del sistema como `mountvol.exe`.
+  - **Riesgo real:** Si una ruta en apariencia legítima (como `C:\Users\usuario\.gemini\config\mcp_config.json`) o cualquiera de sus carpetas intermedias (como `.gemini` o `config`) apunta a una junction o symlink controlado por un proceso externo, escribir allí redirigiría los datos a un archivo ajeno, pudiendo sobrescribir archivos críticos o alterar configuraciones sin autorización.
+* **Recorrido e inspección estricta de componentes existentes:**
+  La función de seguridad `assertSafePath` valida primero que la ruta sea absoluta y sintácticamente correcta (`validPath`), y luego asciende recursivamente examinando el archivo destino y cada uno de los directorios padres existentes hasta alcanzar la raíz de la unidad de disco. En Windows, cada componente existente es evaluado por el componente nativo; si cualquiera de ellos posee el atributo `FILE_ATTRIBUTE_REPARSE_POINT`, la operación se aborta de inmediato con el error `UNSAFE_PATH` (*"Configuration paths must not traverse Windows reparse points."*).
+* **Política de fallo cerrado (*fail-closed*):**
+  Si `GetFileAttributesW` devuelve `INVALID_FILE_ATTRIBUTES`, si el complemento nativo no puede cargarse, o si devuelve un valor que no sea estrictamente el booleano `false`, el sistema **falla cerrado** y lanza inmediatamente el error `UNSAFE_PATH` (*"Could not verify Windows reparse-point safety."*). Jamás se asume que una ruta es segura ante la duda o ante un fallo del comprobador.
+* **Límites reales de seguridad:**
+  Comprobar los componentes de una ruta antes de usarla previene de forma efectiva la escritura accidental a través de enlaces o uniones preexistentes. Sin embargo, en sistemas de archivos concurrentes, una comprobación previa no constituye una garantía matemática absoluta frente a modificaciones que otro proceso malicioso pudiera realizar exactamente entre el momento de la comprobación y el momento de apertura (*Time-of-Check to Time-of-Use* / TOCTOU). Engram mitiga este riesgo realizando comprobaciones repetidas antes de crear directorios, antes del reemplazo final y mediante una lectura de verificación posterior de los bytes exactos publicados.
+
+#### Protocolo de Escritura Segura de Configuraciones (`guardedWrite`):
+
+El guardado de archivos de configuración (`private-files.ts`) sigue un protocolo riguroso de 10 pasos atómicos:
+1. **Inspección de ruta y preexistencia:** Se valida la seguridad de la ruta con `readSafeFile`. Si el archivo ya existe, se comprueba que sea un archivo regular, que no supere el límite de 1 MiB (`MAX_CONFIG_BYTES`), que pertenezca al usuario actual y que su contenido sea UTF-8 válido.
+2. **Comparación con la vista previa:** Se comprueba que el contenido actual en disco coincida exactamente con el texto observado durante la vista previa (`write.before`). Si otro proceso modificó el archivo mientras el usuario revisaba la pantalla, se aborta con `CHANGED`.
+3. **Creación segura de directorios padres:** Se asegura la existencia del directorio contenedor mediante `mkdirSync` con permisos restringidos (`0700`) y se vuelve a validar inmediatamente la seguridad de la ruta con `assertSafePath`.
+4. **Respaldo con identificador único:** Si existía un archivo previo, se crea una copia de seguridad exacta agregando el sufijo `.forge614-backup-<UUID>` con permisos `0600` y modo de creación exclusiva (`flag: 'wx'`).
+5. **Creación exclusiva del archivo temporal:** Se genera un archivo temporal único con sufijo `.forge614-tmp-<UUID>` mediante `openSync` utilizando el descriptor seguro `safeOpenFlag`.
+6. **Escritura y volcado forzado a disco:** Se escribe el nuevo contenido (`writeFileSync`) y se invoca `fsyncSync` sobre el descriptor para garantizar que los datos se sincronicen físicamente en el disco antes de continuar.
+7. **Re-verificación previa al reemplazo:** Se vuelve a leer el archivo original para certificar que no cambió mientras se preparaba el temporal. Si cambió, se detiene con `CHANGED` y se conserva el respaldo original.
+8. **Reemplazo atómico:** Tras una nueva validación de ruta, se realiza el reemplazo atómico mediante `io.rename(temporary, write.path)`.
+9. **Verificación posterior de bytes (*Post-Publication Verification*):** Se lee de nuevo el archivo publicado con `readSafeFile`. Si su contenido no coincide byte por byte con lo planificado (`write.after`), se arroja `PUBLISHED_UNVERIFIED`. Las copias de respaldo se conservan intactas y no se ejecuta una marcha atrás destructiva que pudiera alterar datos externos.
+10. **Limpieza segura:** Si ocurrió algún error antes de publicar el archivo, el bloque `finally` elimina el archivo temporal pendiente con `unlinkSync`.
+
+#### Diferencias de Plataforma en la Apertura de Archivos:
+* **Modos textuales en Windows ("r" y "wx"):**
+  - Para la lectura segura de archivos, Windows utiliza el modo `"r"` (lectura simple).
+  - Para la creación de archivos temporales y respaldos, Windows utiliza el modo `"wx"`. El modificador `"w"` abre para escritura y `"x"` (*exclusive*) exige que el archivo se cree de forma exclusiva: si el archivo ya existía previamente, la llamada falla de inmediato arrojando `EEXIST`.
+* **Banderas numéricas en macOS y Linux:**
+  - En sistemas Unix, la apertura se realiza con las constantes numéricas bit a bit de POSIX combinadas con la bandera de no seguimiento de enlaces: `constants.O_RDONLY | constants.O_NOFOLLOW` para lectura, y `constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW` con permisos octales `0600` para creación exclusiva.
+* **Incidente técnico observado en CI:**
+  Durante las pruebas automatizadas en GitHub Actions sobre ejecutores Windows, la creación del archivo temporal mediante la combinación numérica de banderas (`O_WRONLY | O_CREAT | O_EXCL`) devolvía un error de sistema `ENOENT` en el entorno de Bun en Windows. En el mismo archivo, la creación de respaldos ya funcionaba correctamente porque utilizaba el modo textual `{ flag: 'wx' }`. Al unificar la apertura de archivos en Windows bajo la función `safeOpenFlag` para emplear modos textuales (`"r"` y `"wx"`), las operaciones de lectura y creación temporal pasaron exitosamente. *(Nota: no se generaliza que todas las banderas numéricas fallen en Windows ni que Windows carezca de apertura segura; la incompatibilidad residía en la interacción entre Bun y las banderas numéricas en esa llamada concreta).*
+
+#### Construcción del Componente Nativo y Herramientas:
+* **Script de compilación (`scripts/build-windows-reparse-addon.ps1`):**
+  Orquesta la compilación del addon nativo para las arquitecturas `x64` o `arm64`.
+* **Herramientas y versiones fijadas:**
+  - **Bun (`>=1.3.8`):** Motor de ejecución principal de TypeScript.
+  - **Node.js (`22.14.0` en CI):** Requerido exclusivamente en tiempo de compilación para ejecutar `node-gyp`.
+  - **`node-gyp` (`12.1.0` fijado en `devDependencies`):** Herramienta que genera el proyecto MSBuild y compila `addon.cc`. Se fijó en la versión `12.1.0` para garantizar compatibilidad completa simultánea con Node.js 22 y Visual Studio 2026.
+  - **Python (`3.12+`):** Utilizado internamente por el motor GYP (`gyp_main.py`).
+  - **Visual Studio 2026 Build Tools (versión interna `18`):** Compilador C/C++ oficial de Microsoft en ejecutores `windows-latest`.
+* **Resolución segura de `node.exe`:**
+  En máquinas virtuales con múltiples instalaciones de Node.js en el PATH, el script implementa `Resolve-NodeExecutable` para filtrar y seleccionar **una única ruta ejecutable válida**, evitando concatenaciones erróneas de comandos.
+
+#### Evidencia de Validación en CI y Pruebas Automatizadas:
+* **Ejecución exitosa en CI:**
+  El flujo de trabajo `Verify` en GitHub Actions (**ejecución ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`) finalizó con resultado exitoso (**Verde / Pass**) en todas sus plataformas (`ubuntu-latest`, `macos-latest` y `windows-latest`).
+* **Pruebas ejecutadas en el job nativo de Windows x64:**
+  1. Compilación del addon nativo y comprobación de archivo no vacío (`windows_reparse_guard.node`).
+  2. Aceptación inmediata de rutas normales en directorios temporales sin invocar subprocesos de shell.
+  3. Rechazo estricto con `UNSAFE_PATH` de enlaces simbólicos de archivo (`symlinkSync(..., 'file')`).
+  4. Rechazo estricto de uniones de directorio (*junctions* creadas con `symlinkSync(..., 'junction')`).
+  5. Rechazo estricto de puntos de montaje de volumen (*volume mount points* creados mediante `mountvol.exe`).
+  6. Rechazo cerrado ante excepciones o resultados no booleanos del comprobador.
+  7. Publicación de configuración de Antigravity en `%USERPROFILE%\.gemini\config\mcp_config.json` en un entorno temporal aislado, verificando la persistencia de los datos planificados.
+  8. Suite de pruebas del instalador PowerShell (`install.ps1.test.ps1`), que valida 5 escenarios mediante un servidor HTTP local efímero en loopback (`127.0.0.1`).
+* **Alcance de la validación:**
+  El trabajo de Windows en CI ejecuta un conjunto seleccionado de archivos de prueba (`windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts` e `install.ps1.test.ps1`), no la suite completa del proyecto. La validación se realizó exclusivamente en arquitectura **x64** sobre Windows; la arquitectura ARM64 no fue ejecutada en este job.
+
+#### Tareas Pendientes para una Versión Estable (v1.0.0):
+Un flujo de integración continua verde confirma que las pruebas implementadas funcionan en ese entorno, pero no demuestra por sí solo que la distribución final esté lista para su entrega general:
+1. **Incrustar el componente nativo en el ejecutable distribuido:** Falta configurar el flujo de empaquetado (`release.yml`) para que compile el addon nativo y lo incruste dentro del binario standalone de Windows (`bun build --compile`), verificando que el `.exe` final cargue el addon sin requerir archivos externos.
+2. **Construcción y prueba en Windows ARM64:** Probar la compilación y ejecución en ejecutores Windows ARM64 nativos (`windows-11-arm`).
+3. **Validación del ejecutable fuera del repositorio:** Probar la instalación y ejecución del binario en una máquina Windows limpia, sin dependencias de desarrollo ni código fuente clonado.
+4. **Verificación de dependencias de tiempo de ejecución:** Certificar que el binario autónomo no dependa de librerías redistribuibles de C++ (*MSVC CRT*) ausentes en sistemas Windows comunes.
+5. **Comprobación completa del proceso de release:** Validar la generación y firma criptográfica de los seis artefactos de release antes de publicar la versión 1.0.0.
 
 ---
 

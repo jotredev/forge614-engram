@@ -120,8 +120,8 @@ To maintain realistic expectations, the following boundaries are formally declar
     The Control Center manages projects, directory bindings, storage, migrations, and assistants. Authoring and editing granular memory notes is performed via CLI (`save`, `get`, `delete`), MCP tools, or future specialized explorers.
 19. **Antigravity Configured as MCP Only:**
     Antigravity is integrated exclusively as *MCP only* (`~/.gemini/config/mcp_config.json`). No automatic hooks are installed (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
-20. **Windows Native Validation Pending CI:**
-    Native Windows configuration publication and strict rejection of symbolic links, junctions, and reparse points are implemented and configured in CI, but remain formally **pending CI validation until confirmed by the native GitHub Actions runner**.
+20. **Windows Native CI Validation Completed on x64 and Pending Tasks for Stable Release (v1.0.0):**
+    Windows configuration publication, the native C++ Node-API addon (`windows_reparse_guard.node`), strict rejection of reparse points (symlinks, junctions, volume mount points) via `GetFileAttributesW`, and the `guardedWrite` protocol were executed and verified in GitHub Actions on `windows-latest` runners (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`). However, release v1.0.0 retains the following pending distribution items: (1) embed the compiled native addon inside the distributed standalone binary in `release.yml`, (2) compile and test on native Windows ARM64 runners, (3) test execution on a clean Windows machine lacking development tools, (4) certify absence of missing C++ runtime dependencies (*MSVC CRT*), and (5) validate generation and cryptographic signing of all 6 release artifacts.
 21. **Discontinuation of Gemini CLI and Protection of Legacy Configurations:**
     Forge614 Engram no longer manages Gemini CLI. It does not read, modify, or delete `~/.gemini/settings.json`, leaving any preexisting file completely untouched.
 
