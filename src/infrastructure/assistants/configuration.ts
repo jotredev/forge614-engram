@@ -162,3 +162,99 @@ export function applyAssistantConfiguration(plan:ConfigurationPlan,io?:Configura
   }catch(error){result.error=error instanceof AssistantConfigurationError?{code:error.code,message:error.message}:{code:'IO_ERROR',message:'Could not safely apply all configuration files. Applied files and retained backups are listed; review them before retrying.'};}
   return result;
 }
+
+
+function removalJson(before:string, changes:readonly [string, unknown][]):string {
+  let after=before;
+  for(const [key,value] of changes) after=applyEdits(after,modify(after,[key],value,{formattingOptions:{insertSpaces:true,tabSize:2,eol:'\n'}}));
+  json(after);return after;
+}
+function ownedHook(hook:unknown):boolean {
+  return typeof (hook as any)?.command==='string' &&
+    (/\bmemory-hook\b/.test((hook as any).command)||(hook as any).command.includes(NAME));
+}
+function removalHooks(value:unknown, desired:Record<string,unknown>, client:ClientId):ObjectValue {
+  if(value===undefined)return {};
+  if(!object(value))fail('MALFORMED','The existing hooks section is not an object.');
+  const output=structuredClone(value) as ObjectValue;
+  for(const [event,targetGroups] of Object.entries(desired)){
+    const groups=output[event];if(groups===undefined)continue;
+    if(!Array.isArray(groups))fail('MALFORMED','A native hooks event must contain an array.');
+    const expected=client==='cursor'?(targetGroups as any[])[0]:(targetGroups as any[])[0]?.hooks?.[0];
+    const retained:any[]=[];
+    for(const group of groups){
+      const hooks=client==='cursor'?[group]:group?.hooks;
+      if(!Array.isArray(hooks))fail('MALFORMED','A native hook group has an invalid shape.');
+      const own=hooks.filter(ownedHook);
+      if(own.length===0){retained.push(group);continue;}
+      if(own.length!==1||!isDeepStrictEqual(own[0],expected))fail('CONFLICT','An existing Forge614 Engram hook differs. It was not removed.');
+      if(client==='cursor')continue;
+      const other=hooks.filter((hook:any)=>!ownedHook(hook));
+      if(other.length===0)continue;
+      retained.push({...group,hooks:other});
+    }
+    if(retained.length===0)delete output[event];else output[event]=retained;
+  }
+  return output;
+}
+function exactEntry(client:ClientId, executable:string):unknown {
+  return client==='opencode'?{type:'local',command:[executable,'mcp']}:{command:executable,args:['mcp']};
+}
+function removalWrite(path:string,before:string|null,after:string|null,kind:PrivateWrite['kind'],writes:PrivateWrite[]):void {
+  if(before===after)return;
+  if(after!==null&&Buffer.byteLength(after)>MAX_CONFIG_BYTES)fail('FILE_TOO_LARGE','The planned configuration exceeds the 1 MiB limit.');
+  writes.push({path,before,after,kind});
+}
+
+/** A symmetric, fail-closed plan that removes only exact Forge614 Engram entries. */
+export function planAssistantRemoval(client:ClientId,executable:string,options:AssistantOptions={}):ConfigurationPlan {
+  try {
+    executable=validPath(executable);
+    const paths=resolveAssistantPaths(client,options),writes:PrivateWrite[]=[];
+    const observed=new Map<string,string|null>();
+    const inspect=(path:string)=>{const before=readSafeFile(path);observed.set(path,before);return before;};
+    const entry=exactEntry(client,executable),desired=hookConfiguration(client,executable);
+    if(client==='codex'){
+      const before=inspect(paths.config);if(before!==null){
+        const value=toml(before),existing=value.mcp_servers?.[NAME];
+        if(existing!==undefined){
+          if(!isDeepStrictEqual(existing,entry))fail('CONFLICT','An existing Forge614 Engram MCP entry differs. It was not removed.');
+          const section='[mcp_servers.'+NAME+']\ncommand = '+JSON.stringify(executable)+'\nargs = ["mcp"]\n';
+          const index=before.indexOf(section);
+          if(index<0)fail('CONFLICT','The managed Codex MCP entry has been edited. It was not removed.');
+          removalWrite(paths.config,before,before.slice(0,index)+before.slice(index+section.length).replace(/^\n/,''),'config',writes);
+        }
+      }
+    } else {
+      const key=client==='opencode'?'mcp':'mcpServers',before=inspect(paths.config);
+      if(before!==null){
+        const value=json(before),existing=value[key]?.[NAME];
+        if(existing!==undefined){
+          if(!isDeepStrictEqual(existing,entry))fail('CONFLICT','An existing Forge614 Engram MCP entry differs. It was not removed.');
+          const next={...(value[key]??{})};delete next[NAME];
+          removalWrite(paths.config,before,removalJson(before,[[key,next]]),'config',writes);
+        }
+      }
+    }
+    if(client==='opencode'){
+      const before=inspect(paths.plugin);
+      if(before!==null){
+        if(before!==createOpenCodePlugin())fail('CONFLICT','The dedicated Engram plugin has been edited. It was not removed.');
+        removalWrite(paths.plugin,before,null,'plugin',writes);
+      }
+    } else if(client!=='antigravity'&&paths.hooks){
+      const before=inspect(paths.hooks);
+      if(before!==null){
+        const value=json(before),next=removalHooks(value.hooks,desired,client);
+        if(!isDeepStrictEqual(value.hooks,next))removalWrite(paths.hooks,before,removalJson(before,[['hooks',next]]),'hooks',writes);
+      }
+    }
+    const plan:ConfigurationPlan=Object.freeze({client,executable,writes:Object.freeze(writes.map(write=>Object.freeze({path:write.path,kind:write.kind,expectedHash:hash(write.before)}))),warnings:Object.freeze([])});
+    const written=new Set(writes.map(write=>write.path));
+    contents.set(plan,{writes,guards:[...observed].filter(([path])=>!written.has(path)).map(([path,before])=>({path,before}))});
+    return plan;
+  } catch(error) { if(error instanceof AssistantConfigurationError)throw error;fail('IO_ERROR','Could not safely plan removal of assistant configuration.'); }
+}
+export function applyAssistantRemoval(plan:ConfigurationPlan,io?:ConfigurationFileIO):ConfigurationResult {
+  return applyAssistantConfiguration(plan,io);
+}
