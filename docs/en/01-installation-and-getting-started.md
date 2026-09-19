@@ -1,9 +1,9 @@
 # 01 (EN). Installation, Setup, and Getting Started
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
-> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
+> **Stage:** Engram Product Home (`~/.forge614/engram/`), Safe Legacy Workspace Migration, Guarded Uninstall (`uninstall`), TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, 10 MCP Tools, Assistant Detection for Atlas, Local Memory & PostgreSQL Replica Format 3
+> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
 > **Enrollments:** Explicit and additive (`integration-enable` for Schema 5; `sessions-enable` for Schema 6; `reinforcement-enable` for Schema 7; `sync --upgrade-format` for replica Format 2 or Format 3). Database opening, the TUI control center, and ordinary commands never auto-migrate databases.
-> **Status:** Current & Verified (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
+> **Status:** Current & Verified (572 passed, 15 skipped platform/local PG, 0 failures, 2786 assertions across 90 files on macOS ARM64 with Bun 1.3.8; native release validation for 6 release binaries in GitHub Actions)
 > **Sister translation:** [01. Instalación, Configuración y Primeros Pasos](../es/01-instalacion-y-primeros-pasos.md)
 
 This step-by-step guide walks through installing the `forge614-engram` command, the interactive `setup` wizard, assistant connection with explicit approval, progressive sessions, immutable FTS5 confirmations, and peer device coordination.
@@ -12,14 +12,14 @@ This step-by-step guide walks through installing the `forge614-engram` command, 
 
 ## 1. What is this program and how is it distributed?
 
-Forge614 Engram is a personal local memory system for artificial intelligence models and developers, written in **TypeScript and Bun**, featuring a minimal native C++ security component for Windows.
+Forge614 Engram is a personal local memory system for artificial intelligence models and developers, written in **TypeScript and Bun**, featuring a minimal native C++ security component for Windows. In version 1.1.0, Engram resides in its own isolated product home (`~/.forge614/engram/`), coexisting harmoniously within the shared family container `~/.forge614/` alongside sibling products such as Forge614 Shell and Forge614 Atlas without touching their workspaces.
 
 ### Distribution Methods
 
 Unlike public web packages:
 - **Not downloaded from npm:** `npm install forge614-engram` does not exist because this is a private standalone package.
-- **Official bootstrap installer (Recommended):** Downloads the precompiled standalone binary for your OS and architecture directly from GitHub Releases, cryptographically verifies its integrity against `SHA256SUMS`, and automatically configures your terminal's PATH.
-- **Local compilation from source (Developers):** Packaged directly from repository source code using `scripts/install-from-source.sh` or `scripts/install.sh`.
+- **Official bootstrap installer (Recommended):** Downloads the precompiled standalone binary for your OS and architecture directly from GitHub Releases, cryptographically verifies its integrity against `SHA256SUMS`, places it in `~/.forge614/engram/bin/`, and automatically configures your terminal's PATH.
+- **Local compilation from source (Developers):** Packaged directly from repository source code using `bash scripts/install-from-source.sh`.
 - **Produces a standalone executable binary:** Outputs a single standalone executable named `forge614-engram` (or `forge614-engram.exe` on Windows). Once installed, **the end user does not require Bun, Node.js, Python, or C++ compilers in PATH** for routine execution.
 
 ### System Prerequisites for End Users
@@ -35,7 +35,7 @@ Unlike public web packages:
 
 3. **Developer-only build prerequisites (compiling from source):**
    - **Bun (stable version >= 1.3.8):** Required strictly to build from source or run the automated test suite (`bun test`).
-   - **Windows Build Tools (source build only):** Requires Visual Studio 2026 C++ Build Tools, Node.js 22+, node-gyp 12.1.0, and Python 3.12+ to compile the native module `windows_reparse_guard.node`.
+   - **Windows Build Tools (source build only in Windows):** Requires Visual Studio 2026 C++ Build Tools, Node.js 22+, node-gyp 12.1.0, and Python 3.12+ to compile the native module `windows_reparse_guard.node`.
 
 4. **PostgreSQL Server (Optional):**
    Required only if enabling remote replication. Requires PostgreSQL 14 or higher with permissions to create and write to the `forge614_sync` schema.
@@ -46,28 +46,40 @@ Unlike public web packages:
 
 ### Official Installation Commands
 
-The planned official commands, once merged to `main` and an official GitHub Release with published assets is available, are:
+The official installation commands from GitHub Releases are:
 
 #### On macOS and Linux (Bash / Zsh):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jotredev/forge614-engram/main/scripts/install.sh | bash
+curl -fsSL https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh | bash
 ```
 
 #### On Windows (PowerShell):
 ```powershell
-irm https://raw.githubusercontent.com/jotredev/forge614-engram/main/scripts/install.ps1 | iex
+irm https://github.com/jotredev/forge614-engram/releases/latest/download/install.ps1 | iex
 ```
 
 > [!NOTE]
-> **Release Availability Requirement:** The official installers fetch the latest GitHub Release (or an explicit version via `--version <tag>` on Unix or `-Version <tag>` on Windows) and verify the binary against `SHA256SUMS` before publishing it. Commands targeting `main` require an official public GitHub Release to exist; this engineering milestone prepared the installers and verification flow without prematurely creating a release or pushing a `v*` tag.
+> **Release Availability Requirement:** The official installers fetch the latest GitHub Release (or an explicit version via `--version <tag>` on Unix or `-Version <tag>` on Windows) and verify the binary against the official `SHA256SUMS` manifest before publishing it.
+
+### Testing the `1.1.0-beta.1` prerelease
+
+`latest` continues to mean the stable release. To test this prerelease explicitly, use:
+
+```bash
+curl -fsSL https://github.com/jotredev/forge614-engram/releases/download/v1.1.0-beta.1/install.sh | bash
+```
+
+```powershell
+irm https://github.com/jotredev/forge614-engram/releases/download/v1.1.0-beta.1/install.ps1 | iex
+```
 
 ### What does the official installer do?
 
 1. **Automatic OS and architecture detection:** Detects macOS ARM64/x64, Linux x64/ARM64, and Windows x64/ARM64 automatically.
 2. **Download and strict checksum verification:** Fetches the standalone binary and official `SHA256SUMS` manifest, validates the SHA-256 hash locally, and halts immediately on any mismatch.
-3. **Atomic publication to default executable directory:**
-   - **macOS / Linux:** `$HOME/.local/bin/forge614-engram` with `0755` permissions.
-   - **Windows:** `%LOCALAPPDATA%\Forge614\bin\forge614-engram.exe`.
+3. **Atomic publication to Engram's dedicated product home:**
+   - **macOS / Linux:** `$HOME/.forge614/engram/bin/forge614-engram` with `0755` permissions on the binary, and restricted `0700` permissions on Engram's own `~/.forge614/engram/` and `bin/` directories. The shared `~/.forge614/` container is not chmodded by Engram.
+   - **Windows:** `%USERPROFILE%\.forge614\engram\bin\forge614-engram.exe`.
 4. **Overwrite Protection:** If the target binary exists, the installer stops to prevent accidental overwrites. To update an existing installation, pass the force flag:
    ```bash
    # On macOS / Linux
@@ -84,7 +96,7 @@ irm https://raw.githubusercontent.com/jotredev/forge614-engram/main/scripts/inst
    & { irm ... | iex } -BinDir C:\MyPath\bin
    ```
 6. **Automatic and idempotent PATH configuration:** Configures your shell environment PATH (see Section 3).
-7. **Zero premature storage creation:** The installer **never creates `~/.forge614` or initializes database files** during installation. Storage setup occurs deliberately during `setup`.
+7. **Zero premature storage creation:** The installer prepares the binary directory but **never initializes the database or creates `.env` prematurely** during installation. Storage setup occurs deliberately during `setup` or `init`.
 
 ### Alternative: Building from Source (Developers)
 
@@ -93,7 +105,7 @@ If contributing to the repository and compiling locally:
 ```bash
 cd /Users/jorgeetrejoo/Desktop/forge614-engram
 bun install --frozen-lockfile --ignore-scripts
-bash scripts/install.sh
+bash scripts/install-from-source.sh
 ```
 
 ---
@@ -102,7 +114,7 @@ bash scripts/install.sh
 
 ### What is the PATH environment variable in plain language?
 
-The **PATH** variable is like your operating system's speed-dial directory. When you type `forge614-engram` in a terminal, the operating system doesn't guess where it is stored: it checks each folder listed in your PATH one by one. If the directory containing `forge614-engram` is in that list, the command runs immediately from any folder without needing to type its full path (`$HOME/.local/bin/forge614-engram`).
+The **PATH** variable is like your operating system's speed-dial directory. When you type `forge614-engram` in a terminal, the operating system doesn't guess where it is stored: it checks each folder listed in your PATH one by one. If the directory containing `forge614-engram` is in that list, the command runs immediately from any folder without needing to type its full path (`$HOME/.forge614/engram/bin/forge614-engram`).
 
 ### Automatic Idempotent PATH Publishing
 
@@ -110,20 +122,31 @@ The official installers automatically configure the executable directory in your
 
 | Platform / Shell | Default Binary Location | PATH Publishing Method |
 | :--- | :--- | :--- |
-| **macOS / Linux, Zsh** | `$HOME/.local/bin` | Marked block in `~/.zshrc` |
-| **Linux, Bash** | `$HOME/.local/bin` | Marked block in `~/.bashrc` |
-| **macOS, Bash** | `$HOME/.local/bin` | Marked block in `~/.bash_profile`, unless another login file already owns Bash startup; then manual guidance |
-| **macOS / Linux, Fish** | `$HOME/.local/bin` | Dedicated file `~/.config/fish/conf.d/forge614-engram.fish` via `fish_add_path` |
-| **Windows (PowerShell / CMD)** | `%LOCALAPPDATA%\Forge614\bin` | User PATH variable via .NET API and `WM_SETTINGCHANGE` broadcast |
+| **macOS / Linux, Zsh** | `$HOME/.forge614/engram/bin` | Marked block in `~/.zshrc` |
+| **Linux, Bash** | `$HOME/.forge614/engram/bin` | Marked block in `~/.bashrc` |
+| **macOS, Bash** | `$HOME/.forge614/engram/bin` | Marked block in `~/.bash_profile`, unless another login file already owns Bash startup; then manual guidance |
+| **macOS / Linux, Fish** | `$HOME/.forge614/engram/bin` | Dedicated file `~/.config/fish/conf.d/forge614-engram.fish` via safe conditional block |
+| **Windows (PowerShell / CMD)** | `%USERPROFILE%\.forge614\engram\bin` | User PATH variable via .NET API and `WM_SETTINGCHANGE` broadcast |
 
 #### Safety Properties of PATH Publishing:
-- **Delimited blocks in Unix:** On Zsh and Bash, the installer writes a clearly bounded block:
+- **Delimited blocks in Unix (Bash / Zsh):** On Zsh and Bash, the installer writes a clearly bounded block with deduplication checks:
   ```bash
-  # >>> forge614-engram initialize >>>
-  export PATH="$HOME/.local/bin:$PATH"
-  # <<< forge614-engram initialize <<<
+  # >>> forge614-engram PATH >>>
+  case ":$PATH:" in
+    *:"$HOME/.forge614/engram/bin":*) ;;
+    *) export PATH="$HOME/.forge614/engram/bin:$PATH" ;;
+  esac
+  # <<< forge614-engram PATH <<<
   ```
   Reinstalling or updating replaces the block cleanly without adding duplicate lines and preserves 100% of your existing shell configuration.
+- **Delimited blocks in Fish:**
+  ```fish
+  # >>> forge614-engram PATH >>>
+  if not contains -- "$HOME/.forge614/engram/bin" $PATH
+    set -gx PATH "$HOME/.forge614/engram/bin" $PATH
+  end
+  # <<< forge614-engram PATH <<<
+  ```
 - **Preserving symlinks and custom dotfiles:** If a startup file is a symbolic link or managed by a dotfile manager, the installer does not replace or follow it. It leaves that file untouched, preserves the verified binary, and prints clear manual instructions instead. On macOS Bash, it likewise avoids creating `~/.bash_profile` when `~/.bash_login` or `~/.profile` already controls login startup.
 - **Safe Windows configuration without `setx`:** On Windows, the installer modifies exclusively the **user-level** PATH using the official .NET API (`[Environment]::SetEnvironmentVariable('Path', ..., 'User')`). It requires no Administrator privileges, never modifies machine PATH, avoids the obsolete `setx` command (which truncates at 1024 characters and risks destroying system variables), normalizes slashes and case to prevent duplicates, and broadcasts `WM_SETTINGCHANGE` so newly launched terminal sessions inherit the update.
 - **Mandatory requirement:** PATH changes apply to **new terminal sessions**. To start using the command, **open a new terminal window** (or run the printed export/source command in your current shell).
@@ -137,7 +160,7 @@ Verify the installed version and command help without writing to disk or creatin
 ```bash
 # Verify installed version
 forge614-engram --version
-# Expected output: forge614-engram 1.0.0
+# Expected beta output: forge614-engram 1.1.0-beta.1
 
 # Print official help reference
 forge614-engram help
@@ -152,6 +175,7 @@ Uso: forge614-engram <comando> [opciones]
 setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
 tui             Centro de control local. Asistentes con vista previa y confirmación explícita.
 init            Inicializa una sola configuración y base local, sin borrar datos.
+uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
 sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
@@ -195,12 +219,12 @@ context [--project-id <UUID> | --scope shared] [--compact] [--max-bytes <1024..6
 help      Muestra esta ayuda sin crear archivos.
 --version Muestra la versión instalada.
 
-Una configuración: ~/.forge614/.env. Una base SQLite: ~/.forge614/engram.db.
+Una configuración: ~/.forge614/engram/.env. Una base SQLite: ~/.forge614/engram/engram.db.
 No hay conexiones, carpetas .env ni bases diferentes por proyecto.
 --db, --project y --id-project no se admiten. El identificador se llama projectId.
 project-create inicializa el espacio si aún no existe configuración.
 Para guardar shared sin crear un proyecto, ejecuta init primero.
-No se migran ni borran bases o configuraciones antiguas automáticamente.
+init y setup pueden mover la ubicación antigua de Engram a ~/.forge614/engram cuando es seguro; nunca reemplazan datos en conflicto.
 SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada en setup.
 sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
 Antes de sync --upgrade-format, actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
@@ -214,6 +238,7 @@ Actualizar un tema requiere --expected-version. Archivar conserva el historial.
 setup y tui muestran texto y requieren terminal; cancelar devuelve código 130.
 Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
 MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
+uninstall requiere REMOVE FORGE614-ENGRAM; si Atlas existe requiere REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS.
 La resolución de directorios de proyecto requiere Git disponible, incluso para carpetas sin Git.
 ```
 
@@ -233,8 +258,8 @@ The wizard requires an interactive terminal (`stdin` and `stdout`). It guides th
 === Asistente de configuración de Forge614 Engram ===
 
 Este asistente configurará el espacio de trabajo local en:
-  Configuración : /Users/usuario/.forge614/.env
-  Base de datos : /Users/usuario/.forge614/engram.db
+  Configuración : /Users/usuario/.forge614/engram/.env
+  Base de datos : /Users/usuario/.forge614/engram/engram.db
 
 ¿Quieres habilitar la sincronización con una base de datos PostgreSQL?
 No
@@ -242,11 +267,45 @@ Sí, configurar PostgreSQL
 Elige [si/NO]:
 ```
 
-### Prior Automatic Private Workspace Permission Repair (`0700`)
-Before reading configuration or prompting with interactive questions, `setup` checks whether the `~/.forge614/` directory already exists. If it exists, is an ordinary directory, is owned by the current user, and has permissions more open than `0700` (such as `0755`), the command automatically tightens its permissions to `0700` (`rwx------`).
-- **Why is permission `0700` indispensable?** The Engram workspace directory stores personal memories, the local SQLite database (`engram.db`), WAL journals, and potentially PostgreSQL connection credentials in `.env`. Mode `0700` ensures that only the account owner can access or read these records, preventing access by any other local user on the system.
-- **No manual `chmod` needed:** End users do not need to understand UNIX octal permissions or manually run commands such as `chmod 0700 ~/.forge614`.
-- **Strict Fail-Closed Boundaries:** This automatic repair is intentionally restricted to ordinary directories owned by the current user. It never creates a missing directory (`ENOENT`), never repairs or follows symbolic links, and immediately rejects non-directories, paths owned by other users, or directories whose final permissions cannot be made private.
+### Dedicated Engram Product Home (`~/.forge614/engram/`)
+
+Beginning in version 1.1.0, Forge614 Engram no longer stores files directly in the root of `~/.forge614/`. The shared multi-product hierarchy is organized as follows:
+
+```text
+~/.forge614/                       ← Shared Forge614 family container
+  shell/                           ← Owned by Forge614 Shell; Engram never touches or deletes it
+  atlas/                           ← Owned by Forge614 Atlas; Engram never touches or deletes it
+  engram/                          ← Owned exclusively by Forge614 Engram (0700 permissions)
+    bin/
+      forge614-engram              ← Standalone binary on macOS / Linux (0755 permissions)
+      forge614-engram.exe          ← Standalone binary on Windows
+    .env                           ← Private single configuration file (0600 permissions)
+    engram.db                      ← Private single SQLite database (0600 permissions)
+    engram.db-wal                  ← SQLite WAL transaction journal
+    engram.db-shm                  ← SQLite shared memory file
+    .config-lock                   ← Safe concurrency mutation lock
+```
+
+- **Shared family container:** The `~/.forge614/` directory belongs to the general Forge614 product family. Engram strictly respects sibling products (`shell/`, `atlas/`) and never deletes, renames, or scans them.
+- **Product isolation:** Engram manages solely its `~/.forge614/engram/` subfolder.
+- **Single database:** All projects reside in `~/.forge614/engram/engram.db`. Each project is logically partitioned by its `projectId`. Shared memories (`scope: shared`) reside in this same database without separate files.
+
+### Safe Automatic Migration from Legacy Workspaces
+
+If you had a previous version storing its database directly inside `~/.forge614/`, both `setup` and `init` automatically execute a non-destructive legacy migration (`EngramProductHome.migrateLegacyWorkspace`):
+
+1. **Recognized legacy files:** Only exact Engram filenames directly in `~/.forge614/` are relocated: `.env`, `engram.db`, `engram.db-wal`, `engram.db-shm`, and `.config-lock`. Unrecognized files or subdirectories are completely ignored.
+2. **Pre-flight safety inspection:**
+   - If any legacy file or the parent directory is a symbolic link or owned by another operating system user, migration aborts immediately with `LEGACY_UNSAFE`.
+   - If orphaned WAL or SHM temporary journals exist without `engram.db`, migration aborts with `LEGACY_CONFLICT` to prevent database corruption.
+   - If destination `~/.forge614/engram/` already contains files that would conflict with legacy files, migration aborts with `LEGACY_CONFLICT` preserving both sets of data.
+3. **Atomic move with rollback:** If an unexpected filesystem error occurs during file transfers, Engram attempts an atomic rollback of already-moved files to their original location and raises `LEGACY_MIGRATION_FAILED`.
+
+### Automatic Private Permissions Repair (`0700` and `0600`)
+Before reading configuration or prompting with interactive questions, `setup` validates the shared `~/.forge614/` container without changing it, then checks Engram's own `~/.forge614/engram/` directory. If that product directory exists, is ordinary, and belongs to the current user, Engram can tighten its permissions to `0700` (`rwx------`).
+- **Why are permissions `0700` and `0600` indispensable?** The Engram workspace directory stores personal memories, the local SQLite database (`engram.db`), WAL journals, and potentially PostgreSQL connection credentials in `.env`. Mode `0700` on directories and `0600` on files ensures that only the account owner can access or read these records, preventing access by any other local user on the system.
+- **No manual `chmod` needed:** End users do not need to understand UNIX octal permissions or manually run commands such as `chmod 0700 ~/.forge614/engram`.
+- **Strict Fail-Closed Boundaries:** This automatic repair is intentionally restricted to ordinary directories owned by the current user. It never creates a missing directory during passive checks, never repairs or follows symbolic links, and immediately rejects non-directories, paths owned by other users, or directories whose final permissions cannot be made private.
 
 ### Synchronization Options
 - **Option `No` (Default):**
@@ -299,7 +358,7 @@ The onboarding flow isolates cancellation cleanly between storage and assistant 
 - **Cancelling During Memory Configuration:** Pressing `Ctrl+C`, `Escape`, or answering `no` before confirming storage:
   - Exits immediately with code **130** (*Cancelled*).
   - **Does not launch the Assistant TUI.**
-  - **Creates no `.env`, `engram.db`, projects, or memories:** If `~/.forge614/` was absent, it remains uncreated. If it already existed as an ordinary user-owned directory with open permissions, only its directory permissions were tightened to `0700` to safeguard privacy; zero additional files are created.
+  - **Creates no `.env`, `engram.db`, projects, or memories:** If `~/.forge614/` was absent, it remains uncreated. If it already existed, Engram only validates it and does not change its permissions; zero additional files are created.
 - **Cancelling or Exiting the Assistant TUI:** If you confirmed and initialized storage, but later choose to exit or cancel the assistant selector:
   - The initialized memory store in `~/.forge614/` is **retained intact**.
   - Newly initialized databases and `.env` settings are preserved without rollback.
@@ -645,13 +704,13 @@ When Engram writes or modifies configuration files (e.g., publishing MCP tools f
   3. **Release Artifact Assembly and Cryptographic Checksums:** Generated and verified `SHA256SUMS` across all 6 standalone release binaries (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64), confirming six `OK` verifications.
   4. **Publication Guard:** Manual execution via `workflow_dispatch` safely skipped GitHub Release publication; actual public release creation is strictly gated on official `v*` tag pushes.
 * **Local Test Suite Verification:**
-  The full local test suite finished with **536 passed, 13 skipped (4 Windows native on macOS, 9 PG without local binaries), 0 failed**, and 2,606 assertions across 88 files. In addition, `bun run typecheck`, `git diff --check`, and `bash -n scripts/install.sh scripts/install-from-source.sh` all completed with exit code 0.
+  The full local test suite finished with **572 passed, 15 skipped platform/local PG, 0 failed**, and 2,786 assertions across 90 files. In addition, `bun run typecheck`, `git diff --check`, and `bash -n scripts/install.sh scripts/install-from-source.sh` all completed with exit code 0. Native Windows tests execute in automated GitHub Actions runners on PR and release workflows, not locally on macOS.
 
-#### Pending Tasks for a Stable Release (v1.0.0):
-With native addon embedding, empty-profile smoke test verification, and `SHA256SUMS` verification completed in CI, the remaining requirements for v1.0.0 are:
-1. **Standalone Binary Validation Outside Repository on Clean Machine:** Test binary installation and execution on a clean physical or virtual Windows machine without development tools (no Node.js, Python, or Visual Studio installed previously).
-2. **Runtime Dependency Verification (MSVC CRT):** Certify that the standalone binary loads without requiring external Microsoft Visual C++ Redistributable packages on that base Windows installation.
-3. **Deliberate Official Version Release:** Create and push the official release tag `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) to trigger GitHub Release publication following human verification.
+#### Preparation for Stable Releases:
+With native addon embedding, empty-profile smoke test verification, dedicated product home migration (`~/.forge614/engram/`), and `SHA256SUMS` verification completed in CI, the validation requirements are:
+1. **Standalone Binary Validation Outside Repository on Clean Machine:** Test binary installation and execution on clean machines without prior development tools.
+2. **Runtime Dependency Verification:** Certify that the standalone binary loads without requiring external runtime packages.
+3. **Deliberate Official Version Release:** Create and push the official release tag (`git tag vX.Y.Z && git push origin vX.Y.Z`) to trigger GitHub Release publication following human verification.
 
 ---
 
@@ -672,10 +731,11 @@ JSON output:
 ```
 
 This command:
-1. Automatically repairs `~/.forge614/` to `0700` if it already existed with open permissions, or creates it with strict `0700` permissions if absent.
-2. Writes `~/.forge614/.env` in Format 2 (`0600`) if absent.
-3. Initializes `~/.forge614/engram.db` in WAL mode (`0600`).
-4. Is **strictly idempotent**: never deletes or alters pre-existing memories.
+1. Prepares Engram's dedicated product home: if legacy loose files exist directly in `~/.forge614/`, it migrates them automatically and safely to `~/.forge614/engram/`.
+2. Validates the shared `~/.forge614/` container without changing it, then creates or repairs only `~/.forge614/engram/` with strict `0700` permissions.
+3. Writes `~/.forge614/engram/.env` in Format 2 (`0600`) if absent.
+4. Initializes `~/.forge614/engram/engram.db` in WAL mode (`0600`).
+5. Is **strictly idempotent**: never deletes or alters pre-existing memories.
 
 ---
 
@@ -724,3 +784,55 @@ forge614-engram save \
 
 > [!TIP]
 > Notice that with `--scope shared`, `--project-id` is omitted because the note belongs to the user's universal scope rather than a single project.
+
+---
+
+## 13. Guarded System Uninstall (`uninstall`)
+
+Forge614 Engram incorporates a surgical, coordinated uninstaller that guarantees no orphaned files or external data corruptions occur.
+
+### Strict Confirmation Rules
+
+To prevent accidental uninstalls by scripts or typographical errors, `uninstall` mandates the `--confirm` flag with an exact uppercase confirmation phrase:
+
+#### Case A: Standalone Engram (Without Forge614 Atlas)
+```bash
+forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM"
+```
+
+#### Case B: Multi-Product Setup (Forge614 Atlas is present at `~/.forge614/atlas/`)
+Because Forge614 Atlas directly depends on Engram's shared memory facilities, Engram detects its presence and enforces a dual confirmation phrase:
+```bash
+forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"
+```
+If you pass an incorrect phrase or the single-product phrase when Atlas is present, the command halts immediately with `UNINSTALL_CONFIRMATION` without modifying any files.
+
+### Execution Phases of the Uninstall Process
+
+1. **Prior Coordination with Forge614 Atlas:**
+   If `~/.forge614/atlas/` exists, Engram invokes Atlas's own uninstaller:
+   `~/.forge614/atlas/bin/forge614-atlas uninstall --from forge614-engram --confirmed`
+   - If the Atlas executable is missing, it aborts with `ATLAS_UNINSTALL_REQUIRED`.
+   - If the Atlas uninstaller fails or returns a non-zero code, it aborts with `ATLAS_UNINSTALL_FAILED`. In both cases, **Engram halts immediately and preserves 100% of its data and configuration**.
+2. **Assistant Configuration Removal:**
+   Engram inspects all supported assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity). It removes strictly the managed MCP server definitions and memory hooks installed by Engram.
+   - If it detects corrupted files or permission issues, it aborts with `ASSISTANT_REMOVE_FAILED` without touching memory data.
+3. **Surgical PATH Removal:**
+   Engram checks your shell startup files (`.zshrc`, `.bashrc`, `.bash_profile`, `forge614-engram.fish`, or Windows User PATH):
+   - It searches for the exact delimited block (`# >>> forge614-engram PATH >>>` ... `# <<< forge614-engram PATH <<<`).
+   - If the block was manually edited or duplicated, Engram refuses to touch it and raises `PATH_CONFLICT` to avoid overwriting user edits.
+   - Under normal conditions, it cleanly slices out the block while preserving the rest of your file.
+4. **Exclusive Product Home Deletion:**
+   Once all prior steps succeed, Engram deletes **strictly** its own `~/.forge614/engram/` subfolder.
+   - **The shared parent container `~/.forge614/` and sibling folders like `shell/` remain completely untouched.**
+
+### Successful JSON Output:
+```json
+{
+  "removed": true,
+  "atlasRemoved": false,
+  "assistantPaths": [
+    "/Users/user/.zshrc"
+  ]
+}
+```

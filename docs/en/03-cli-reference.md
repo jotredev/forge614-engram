@@ -1,8 +1,8 @@
 # 03 (EN). Terminal CLI Command Reference
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
+> **Stage:** Engram Product Home (`~/.forge614/engram/`), Safe Legacy Workspace Migration, Guarded Uninstall (`uninstall`), TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, 10 MCP Tools, Assistant Detection for Atlas, Local Memory & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active (572 passed, 15 skipped platform/local PG, 0 failures, 2786 assertions across 90 files on macOS ARM64 with Bun 1.3.8; native release validation for 6 release binaries in GitHub Actions)
 > **Sister translation:** [03. Manual Exhaustivo de Terminal (CLI)](../es/03-referencia-cli.md)
 
 This manual provides an exhaustive reference for all CLI commands, options, syntax rules, exit codes, and response formats for Forge614 Engram.
@@ -26,9 +26,9 @@ This manual provides an exhaustive reference for all CLI commands, options, synt
    - **Interactive Commands (`setup`, `tui`):** Emit human-readable text via `stdout`. Return exit code `0` on success/confirmation; code `130` on voluntary cancellation (`Ctrl+C`, `Escape`, `cancelar`, `q`, or `no`); and code `1` on error or non-interactive execution (`INTERACTIVE_REQUIRED`).
    - **MCP Server (`mcp`):** Reserves `stdout` exclusively for JSON-RPC frames. On `Ctrl+C` (SIGINT) returns code `130`; on SIGTERM returns code `143`.
    - **Sync Watcher (`sync-watch`):** Emits successful sync rounds in JSON to `stdout` and retry notices to `stderr`. On `Ctrl+C` exits with code `130`.
-   - **Data and Automation Commands (`init`, `sync`, `assistant-list`, `integration-enable`, `sessions-enable`, `reinforcement-enable`, `project-*`, `save`, `search`, `session-*`, `timeline`, `context`, etc.):** Emit structured JSON responses to `stdout` with exit code `0` on success. On error, emit a JSON error payload to `stderr` with exit code `1`.
+   - **Data and Automation Commands (`init`, `uninstall`, `sync`, `assistant-list`, `integration-enable`, `sessions-enable`, `reinforcement-enable`, `project-*`, `save`, `search`, `session-*`, `timeline`, `context`, etc.):** Emit structured JSON responses to `stdout` with exit code `0` on success. On error, emit a JSON error payload to `stderr` with exit code `1`.
 6. **Disallowed Legacy Flags:**
-   - `--db`: Not accepted. Database path is fixed: `~/.forge614/engram.db`.
+   - `--db`: Not accepted. Database path is fixed: `~/.forge614/engram/engram.db`.
    - `--project` (by name): Not accepted. The identifier is strictly `--project-id <UUID>`.
    - `--id-project`: Not accepted. The official parameter is `--project-id`.
 
@@ -44,7 +44,7 @@ Displays the program name and installed version.
 ```bash
 forge614-engram --version
 ```
-- **Output:** `forge614-engram 1.0.0`
+- **Output:** `forge614-engram 1.1.0`
 - **Options:** Accepts no additional options.
 - **Side Effects:** None. Does not read or write disk files.
 
@@ -60,26 +60,26 @@ forge614-engram help
 ---
 
 ### 2.3. `setup`
-Guided interactive onboarding wizard that first configures central storage (`~/.forge614/.env` and `~/.forge614/engram.db`, offering optional PostgreSQL replication and Schema 7 FTS5 search reinforcement), and upon successful storage confirmation, cleanly closes its terminal reader and automatically launches the Assistant Selection TUI (`assistantTui`).
+Interactive onboarding wizard that configures the dedicated storage workspace (`~/.forge614/engram/.env` and `~/.forge614/engram/engram.db`, migrating legacy loose files safely if present, offering optional PostgreSQL synchronization and Schema 7 FTS5 search reinforcement), and upon successful storage confirmation, closes its terminal reader and opens the assistant selection TUI (`assistantTui`).
 
 ```bash
 forge614-engram setup
 ```
 - **Options:** None.
-- **Requirements:** Interactive terminal (`stdin` and `stdout` TTY). Running without a TTY immediately aborts with exit code `1` and error `INTERACTIVE_REQUIRED`.
+- **Requirements:** Interactive terminal (TTY on `stdin` and `stdout`). Non-TTY invocations halt with exit code `1` and `INTERACTIVE_REQUIRED`.
 - **Execution Flow:**
-  1. Configures local SQLite storage (`~/.forge614/`), optional PostgreSQL sync, and search reinforcement offer.
-  2. Displays summary and requests pre-flight confirmation (`¿Confirmar? [si/NO]`).
-  3. Upon confirmation, initializes storage and sequentially hands off control to the Assistant Selection TUI.
-  4. The TUI detects the 5 supported assistants (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`), allowing selective enrollment, configuration path inspection, automated private backups, and explicit confirmation (zero silent modifications).
+  1. Product home preparation in `~/.forge614/engram/`, permission checks (`0700`), safe automatic migration of legacy loose files in `~/.forge614/`, PostgreSQL setup, and search reinforcement offer.
+  2. Storage preview and confirmation (`Confirm? [yes/NO]`).
+  3. Upon confirmation, initializes storage and passes execution seamlessly to the assistant selection TUI.
+  4. The TUI detects 5 supported assistants (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`), showing paths, backups, and applying integrations with explicit confirmation (zero silent mutations).
 - **Cancellation Semantics:**
-  - Cancelling during memory setup (`Ctrl+C`, `Escape`, or `no`) exits with code `130` (*Cancelled*) without launching the assistant TUI and writing zero bytes to disk.
-  - Cancelling or exiting the assistant TUI after memory setup preserves the initialized memory store intact and exits cleanly with code `0`.
-- **Differences from `init` and `assistant-list`:**
-  - `setup`: Full interactive onboarding flow (storage setup + interactive assistant TUI).
-  - `init`: Non-interactive headless storage initialization only (creates/checks `~/.forge614`; never touches assistants).
-  - `assistant-list`: Read-only JSON inspection (never creates `.forge614`, never writes files, non-interactive).
-- **Exit Codes:** `0` on completed setup; `130` on cancellation during storage; `1` on error or missing TTY (`INTERACTIVE_REQUIRED`).
+  - Cancelling during memory setup (`Ctrl+C`, `Escape`, or `no`) exits with code `130` (*Cancelled*) without launching assistant TUI and without writing files.
+  - Exiting assistant TUI after memory setup preserves initialized storage and exits with code `0`.
+- **Distinction from `init` and `assistant-list`:**
+  - `setup`: Full interactive flow (storage + interactive assistant TUI).
+  - `init`: Non-interactive storage initialization only (creates/verifies `~/.forge614/engram/` headless; does not configure assistants).
+  - `assistant-list`: Read-only JSON inspection (creates no files, mutates no storage, opens no TUI).
+- **Exit codes:** `0` on success; `130` on cancellation during memory setup; `1` on error or non-TTY.missing TTY (`INTERACTIVE_REQUIRED`).
 
 ---
 
@@ -100,7 +100,7 @@ forge614-engram tui
   - `PgUp` / `PgDn`: Scroll detail text when output exceeds viewport height.
   - `Ctrl+C` or `EOF`: Immediately terminate session, restore terminal, and exit with code `130`.
 - **Read-Only by Default Principle:**
-  - Opening the screen, navigating tabs, resizing the terminal, or unrecognized input **never creates or mutates files**, never creates `~/.forge614/.env`, never creates `engram.db`, and never registers projects.
+  - Opening the screen, navigating tabs, resizing the terminal, or unrecognized input **never creates or mutates files**, never creates `~/.forge614/engram/.env`, never creates `engram.db`, and never registers projects.
   - If uninitialized, displays clear uninitialized notice and points to `setup` or `init`; never creates files implicitly.
 - **Views and Available Metadata:**
   - **Summary:** Initialization state, active SQLite schema (3 to 7), enabled capabilities, total project count, and aggregated shared memory counts.
@@ -223,17 +223,18 @@ forge614-engram project-bind \
 ---
 
 ### 2.12. `init`
-Programmatically initializes central storage (`~/.forge614/.env` and `~/.forge614/engram.db`) in local mode. Idempotent and never overwrites existing memories.
+Programmatically initializes central storage in the product home (`~/.forge614/engram/.env` and `~/.forge614/engram/engram.db`) in purely local mode. If it detects legacy loose files in `~/.forge614/`, it migrates them automatically and safely.
 
 ```bash
 forge614-engram init
 ```
 - **JSON Output:** `{"initialized":true,"storage":"sqlite"}`
+- **Side Effects:** Idempotent. If the database already exists with previous memories, it never erases or modifies data.
 
 ---
 
 ### 2.13. `sync`
-Executes an immediate 3-way snapshot merge synchronization round against the configured PostgreSQL replica.
+Executes an immediate 3-way snapshot merge synchronization round against the PostgreSQL replica configured in `~/.forge614/engram/.env`.
 
 ```bash
 # Standard sync:
@@ -271,7 +272,40 @@ Executes an initial sync round and maintains a foreground polling loop.
 ```bash
 forge614-engram sync-watch [--interval <1..3600>]
 ```
-- **Restriction:** Rejects `--upgrade-format` with `INVALID_INPUT` ("sync-watch no acepta --upgrade-format."). Format promotions must be performed deliberately with single-shot `sync --upgrade-format`. Exits with code `130` on `Ctrl+C`.
+- **Optional Options:** `--interval <seconds>` (integer between 1 and 3600; defaults to `30`).
+- **Strict Restriction:** Rejects `--upgrade-format` with `INVALID_INPUT` ("sync-watch no acepta --upgrade-format."). Format promotions must be performed deliberately with single-shot `sync --upgrade-format`. Exits with code `130` on `Ctrl+C`.
+- **Behavior:** Does not install background daemons or services. Exiting the terminal or pressing `Ctrl+C` terminates cleanly with code `130` while local SQLite data remains intact.
+
+---
+
+### 2.15. `uninstall`
+Guarded and coordinated uninstaller for Forge614 Engram. Performs surgical removal of assistant configurations, PATH publications, and exclusively removes its product subdirectory `~/.forge614/engram/`.
+
+```bash
+# Case A: Engram standalone
+forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM"
+
+# Case B: If Forge614 Atlas is present (~/.forge614/atlas/)
+forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"
+```
+- **Mandatory Options:**
+  - `--confirm <exact phrase>`: Literal uppercase confirmation phrase.
+- **Safety Protocol:**
+  1. If Atlas exists in `~/.forge614/atlas/`, Engram runs the Atlas uninstaller first (`~/.forge614/atlas/bin/forge614-atlas uninstall --from forge614-engram --confirmed`). If the Atlas executable is missing or fails, Engram immediately aborts with `ATLAS_UNINSTALL_REQUIRED` or `ATLAS_UNINSTALL_FAILED` without modifying any data.
+  2. Surgically removes managed MCP server definitions and hooks from Claude Code, Codex, Cursor, OpenCode, and Antigravity. If an error occurs while inspecting or modifying assistant configs, aborts with `ASSISTANT_REMOVE_FAILED`.
+  3. Surgically removes the delimited block from your shell startup files (`.zshrc`, `.bashrc`, `.bash_profile`, `forge614-engram.fish`) or Windows User PATH. If the block was manually altered or duplicated, aborts with `PATH_CONFLICT` to protect your dotfiles.
+  4. Deletes exclusively `~/.forge614/engram/`. The family root container `~/.forge614/` and sibling directories like `shell/` remain untouched.
+- **Successful JSON Output:**
+  ```json
+  {
+    "removed": true,
+    "atlasRemoved": false,
+    "assistantPaths": [
+      "/Users/usuario/.zshrc"
+    ]
+  }
+  ```
+- **Exit codes:** `0` on success; `1` on incorrect confirmation phrase (`UNINSTALL_CONFIRMATION`), Atlas uninstall failure (`ATLAS_UNINSTALL_FAILED`), PATH conflict (`PATH_CONFLICT`), or assistant configuration error (`ASSISTANT_REMOVE_FAILED`).
 
 ---
 
@@ -576,6 +610,16 @@ When a CLI command fails, it outputs a JSON object to `stderr` with exit code `1
 | Error Code | Root Cause | Remediation |
 | :--- | :--- | :--- |
 | `INVALID_INPUT` | Incorrect syntax, unknown flags, repeated or conflicting options. | Check arguments against this manual. |
+| `LEGACY_UNSAFE` | Legacy workspace path or loose file is unsafe for migration (symbolic link, foreign owner, permissions). | Fix ownership and permissions on `~/.forge614` or remove unsafe symlinks. |
+| `LEGACY_CONFLICT` | Destination directory unsafe, file collision in `engram/`, or orphaned WAL/SHM journals without main db. | Verify that `~/.forge614/engram/` does not contain conflicting files and that `engram.db` accompanies journal files. |
+| `LEGACY_MIGRATION_FAILED` | I/O failure while moving legacy Engram files; atomic rollback was applied. | Check disk space and write permissions in `~/.forge614/`. |
+| `UNINSTALL_CONFIRMATION` | Confirmation phrase passed to `--confirm` did not match the required phrase exactly. | Specify `--confirm "REMOVE FORGE614-ENGRAM"` (or add `AND FORGE614-ATLAS` if Atlas exists). |
+| `UNINSTALL_UNSAFE` | Target uninstallation directory or Atlas directory is a symbolic link or unsafe. | Verify that `~/.forge614/engram` or `~/.forge614/atlas` are not symbolic links. |
+| `ATLAS_UNINSTALL_REQUIRED` | Forge614 Atlas is installed but its uninstaller executable is unavailable. | Install or repair the Atlas executable at `~/.forge614/atlas/bin/forge614-atlas`. |
+| `ATLAS_UNINSTALL_FAILED` | Atlas uninstaller failed; Engram state was preserved untouched to protect consistency. | Review Atlas error logs before retrying uninstallation. |
+| `ASSISTANT_REMOVE_FAILED` | Failed to safely inspect or remove assistant configurations. | Verify configuration files and permissions for your assistants. |
+| `PATH_REMOVE_FAILED` | Failed to safely remove PATH publication entry. | Check permissions on your shell startup file or Windows user registry. |
+| `PATH_CONFLICT` | Delimited PATH block was edited manually or duplicated. | Manually clean the `# >>> forge614-engram PATH >>>` block in your shell dotfile. |
 | `REINFORCEMENT_REQUIRED` | Local client lacks Schema 7 while remote syncs Format 3. | Run `forge614-engram reinforcement-enable` locally. |
 | `SYNC_UPGRADE_REQUIRED` | Remote replica or local client requires explicit format promotion. | Run `forge614-engram sync --upgrade-format` deliberately. |
 | `CLOCK_SKEW` | Local system clock is earlier than confirmed memory version timestamp. | Synchronize system clock with NTP. |
@@ -589,7 +633,7 @@ When a CLI command fails, it outputs a JSON object to `stderr` with exit code `1
 | `CONFLICT` | OpenCode has existing divergent plugin file. | Backup and reconcile local file before running `tui`. |
 | `PUBLISHED_UNVERIFIED` | Assistant configuration file was modified concurrently after write. | Review configuration files and re-run. |
 | `INTERACTIVE_REQUIRED` | `setup` or `tui` invoked without interactive TTY terminal. | Run command in an interactive terminal. |
-| `SYNC_DISABLED` | `sync` invoked but PostgreSQL replication is not configured in `.env`. | Run `forge614-engram setup` to configure replica. |
+| `SYNC_DISABLED` | `sync` invoked but PostgreSQL replication is not configured in `~/.forge614/engram/.env`. | Run `forge614-engram setup` to configure replica. |
 | `SYNC_CONFLICT` | Irreconcilable 3-way merge conflict between local and remote snapshots. | Review conflicting versions and resolve divergence. |
 | `SYNC_TOO_LARGE` | Combined sync snapshot exceeds 8 MiB size limit. | Prune or archive historical records to reduce snapshot size. |
 | `POSTGRES_UNAVAILABLE` | Remote PostgreSQL server unreachable or rejected connection. | Verify network, server status, and credentials. |
@@ -602,6 +646,8 @@ When a CLI command fails, it outputs a JSON object to `stderr` with exit code `1
 | :--- | :--- | :--- | :--- |
 | `setup` | None | None | Interactive text |
 | `tui` | None | None | Interactive screen |
+| `init` | None | None | JSON |
+| `uninstall` | `--confirm` | None | JSON |
 | `assistant-list` | None | None | JSON |
 | `integration-enable` | None | None | JSON |
 | `sessions-enable` | None | None | JSON |
@@ -609,7 +655,6 @@ When a CLI command fails, it outputs a JSON object to `stderr` with exit code `1
 | `mcp` | None | None | JSON-RPC (stdio) |
 | `memory-hook` | `--client` | None | Native JSON |
 | `project-bind` | `--directory`, `--project-id` | None | JSON |
-| `init` | None | None | JSON |
 | `sync` | None | `--upgrade-format` | JSON |
 | `sync-watch` | None | `--interval` | Streaming JSON |
 | `project-create` | `--name` | None | JSON |

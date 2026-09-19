@@ -18,7 +18,7 @@ function terminal(input: string) {
     "--preload", rawMode,
     resolve(import.meta.dir, "../../cli.ts"), "setup",
   ], { cwd: dir, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: dir }, stdin: Buffer.from(input), timeout: 5000 });
-  return { result, config: new WorkspaceConfig(join(dir, ".forge614")) };
+  return { result, config: new WorkspaceConfig(join(dir, ".forge614", "engram")) };
 }
 async function terminalAfterSetup(input: string) {
   const dir = mkdtempSync(join(tmpdir(), "forge614-terminal-"));
@@ -40,7 +40,7 @@ async function terminalAfterSetup(input: string) {
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ]);
-  return { result: { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }, config: new WorkspaceConfig(join(dir, ".forge614")) };
+  return { result: { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }, config: new WorkspaceConfig(join(dir, ".forge614", "engram")) };
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 

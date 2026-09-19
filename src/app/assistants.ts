@@ -1,5 +1,5 @@
 export { resolveAssistantPaths, coverageWarnings } from "../infrastructure/assistants/catalog";
-export { AssistantConfigurationError, planAssistantConfiguration, preflightAssistantConfiguration, applyAssistantConfiguration } from "../infrastructure/assistants/configuration";
+export { AssistantConfigurationError, planAssistantConfiguration, preflightAssistantConfiguration, applyAssistantConfiguration, planAssistantRemoval, applyAssistantRemoval } from "../infrastructure/assistants/configuration";
 export type { ConfigurationPlan, ConfigurationResult } from "../infrastructure/assistants/configuration";
 export { testInstalledServer } from "../infrastructure/assistants/self-test";
 export type { ServerTestResult } from "../infrastructure/assistants/self-test";

@@ -14,6 +14,12 @@ test("parser accepts reinforcement enrollment only as an optionless explicit com
   expect(() => parseArguments(["reinforcement-enable", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+test("parser requires one explicit uninstall confirmation", () => {
+  expect(parseArguments(["uninstall", "--confirm", "REMOVE FORGE614-ENGRAM"]).need("confirm")).toBe("REMOVE FORGE614-ENGRAM");
+  expect(() => parseArguments(["uninstall"])).not.toThrow();
+  expect(() => parseArguments(["uninstall", "--confirm", "x", "--confirm", "x"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
+});
+
 test.each([
   ["unknown"], ["save", "--query", "x"], ["search", "--query", "x", "--query", "y"],
   ["search", "--query"], ["search", "--query", "  "], ["search", "--query", "x\0y"],

@@ -56,7 +56,7 @@ export function readSafeFile(path:string):string|null{
   }finally{closeSync(fd);}
 }
 export function hash(value:string|null):string|null{return value===null?null:createHash('sha256').update(value).digest('hex');}
-export interface PrivateWrite {path:string;before:string|null;after:string;kind:'config'|'hooks'|'plugin';}
+export interface PrivateWrite {path:string;before:string|null;after:string|null;kind:'config'|'hooks'|'plugin';}
 export interface ConfigurationFileIO {rename:(from:string,to:string)=>void;}
 export function guardedWrite(write:PrivateWrite,onBackup:(path:string)=>void,onPublished:(path:string)=>void,io:ConfigurationFileIO={rename:renameSync}):void{
   if(readSafeFile(write.path)!==write.before)fail('CHANGED','Configuration changed after preview. Preview again before applying.');
@@ -64,6 +64,12 @@ export function guardedWrite(write:PrivateWrite,onBackup:(path:string)=>void,onP
   if(write.before!==null){
     const backup=write.path+'.forge614-backup-'+randomUUID();
     writeFileSync(backup,write.before,{flag:'wx',mode:0o600});onBackup(backup);
+  }
+  if(write.after===null){
+    if(write.before===null)return;
+    try{unlinkSync(write.path);}catch{fail('DELETE_FAILED','The managed configuration file could not be removed.');}
+    if(readSafeFile(write.path)!==null)fail('PUBLISHED_UNVERIFIED','The managed configuration file was removed but could not be verified.');
+    onPublished(write.path);return;
   }
   const temporary=write.path+'.forge614-tmp-'+randomUUID();let created=false;
   try{

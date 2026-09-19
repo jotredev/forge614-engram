@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -359,6 +359,27 @@ test("downloads a verified release binary without writing user state", async () 
   } finally {
     server.stop(true);
   }
+});
+
+test("default install uses the product bin and preserves Forge614 Shell", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const fakeHome = join(root, "home");
+  const shellFile = join(fakeHome, ".forge614", "shell", "keep");
+  mkdirSync(resolve(shellFile, ".."), { recursive: true });
+  writeFileSync(shellFile, "unchanged");
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller([]), true, "/bin/unknown");
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(existsSync(join(fakeHome, ".forge614", "engram", "bin", "forge614-engram"))).toBe(true);
+    expect(readFileSync(shellFile, "utf8")).toBe("unchanged");
+    if (process.platform !== "win32") {
+      expect(statSync(join(fakeHome, ".forge614", "engram")).mode & 0o777).toBe(0o700);
+      expect(statSync(join(fakeHome, ".forge614", "engram", "bin")).mode & 0o777).toBe(0o700);
+    }
+  } finally { server.stop(true); }
 });
 
 test("refuses replacement without force", async () => {

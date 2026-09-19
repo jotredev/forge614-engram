@@ -66,8 +66,9 @@ test("all projects and working directories share exactly one workspace configura
   expect(JSON.parse(runAs(b,user,"project-list").stdout)).toHaveLength(2);
   expect(existsSync(join(a,".forge614"))).toBe(false);
   expect(existsSync(join(b,".forge614"))).toBe(false);
-  expect(readdirSync(join(user,".forge614")).filter(n=>!n.endsWith("-wal")&&!n.endsWith("-shm")).sort()).toEqual([".env","engram.db"]);
-  expect(readFileSync(join(user,".forge614",".env"),"utf8")).not.toContain(id);
+  expect(readdirSync(join(user,".forge614")).sort()).toEqual(["engram"]);
+  expect(readdirSync(join(user,".forge614","engram")).filter(n=>!n.endsWith("-wal")&&!n.endsWith("-shm")).sort()).toEqual([".env","engram.db"]);
+  expect(readFileSync(join(user,".forge614","engram",".env"),"utf8")).not.toContain(id);
 });
 
 test("SDK workspace and CLI share the same identity and database", () => {
@@ -122,7 +123,7 @@ test("explicit reinforcement enrollment is repeatable and exact CLI saves stay o
 });
 
 test("init is repeatable and rename retains identity without per-project registration", () => {
-  const dir = workspace(); const id = create(dir); const root = join(dir,"user",".forge614");
+  const dir = workspace(); const id = create(dir); const root = join(dir,"user",".forge614","engram");
   const before = readFileSync(join(root,"engram.db")); const config = readFileSync(join(root,".env"));
   expect(run(dir,"init").code).toBe(0);
   expect(readFileSync(join(root,"engram.db"))).toEqual(before);
@@ -146,7 +147,7 @@ test("missing configuration and configured missing database never cause silent r
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
   const id = create(dir);
   expect(JSON.parse(run(dir,"get","--project-id",id,"--id","missing").stderr).code).toBe("NOT_FOUND");
-  const path = join(dir,"user",".forge614","engram.db"); rmSync(path);
+  const path = join(dir,"user",".forge614","engram","engram.db"); rmSync(path);
   for (const args of [["init"],["project-create","--name","No"],["search","--scope","shared","--query","SQLite"]]) {
     expect(run(dir,...args).code).toBe(1); expect(existsSync(path)).toBe(false);
   }
@@ -182,7 +183,7 @@ test("concurrent initializers keep a single config and preserve all projects", a
 test("concurrent init of existing workspace leaves existing memories and configuration intact", async () => {
   const dir = workspace(); const id = create(dir);
   expect(run(dir,"save","--project-id",id,"--title","Keep","--content","SQLite").code).toBe(0);
-  const path = join(dir,"user",".forge614",".env"); const before = readFileSync(path);
+  const path = join(dir,"user",".forge614","engram",".env"); const before = readFileSync(path);
   const results = await parallel(dir,["init"]);
   for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
   expect(readFileSync(path)).toEqual(before);

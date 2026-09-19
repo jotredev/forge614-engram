@@ -7,6 +7,7 @@ export function resolveInstalledEngram(options:{home?:string;path?:string;execut
   const candidates=options.executable?[options.executable]:[
     ...(basename(process.execPath)==='forge614-engram'?[process.execPath]:[]),
     Bun.which('forge614-engram',{PATH:options.path??process.env.PATH??''}),
+    join(options.home??homedir(),'.forge614','engram','bin','forge614-engram'),
     join(options.home??homedir(),'.local/bin/forge614-engram'),
   ];
   for(const candidate of candidates){

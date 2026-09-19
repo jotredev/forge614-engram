@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseJson } from 'jsonc-parser';
 import { parse as parseToml } from 'smol-toml';
-import { planAssistantConfiguration, applyAssistantConfiguration, preflightAssistantConfiguration } from '../../infrastructure/assistants/configuration';
+import { planAssistantConfiguration, applyAssistantConfiguration, preflightAssistantConfiguration, planAssistantRemoval, applyAssistantRemoval } from '../../infrastructure/assistants/configuration';
 import type { AssistantOptions, ClientId } from '../../modules/assistants';
 import { createOpenCodePlugin } from '../../modules/assistants';
 
@@ -87,6 +87,32 @@ test.each(['claude-code','codex','cursor','opencode','antigravity'] as ClientId[
   expect(result.ok).toBe(true);
   if(process.platform!=="win32") for(const path of result.appliedPaths) expect(statSync(path).mode & 0o777).toBe(0o600);
   expect(planAssistantConfiguration(id,executable,options).writes).toHaveLength(0);
+});
+
+test.each(['claude-code','codex','cursor','opencode','antigravity'] as ClientId[])('%s removes only its exact managed configuration', id => {
+  const {home,executable,options}=fixture();
+  expect(applyAssistantConfiguration(planAssistantConfiguration(id,executable,options)).ok).toBe(true);
+  const removed=applyAssistantRemoval(planAssistantRemoval(id,executable,options));
+  expect(removed.ok).toBe(true);
+  expect(planAssistantRemoval(id,executable,options).writes).toHaveLength(0);
+  if(id==='opencode') expect(existsSync(join(home,'.config','opencode','plugins','forge614-engram.js'))).toBe(false);
+});
+
+test('OpenCode removal deletes exact plugins from every active personal directory', () => {
+  const {home,executable,options}=fixture();const global=join(home,'.config/opencode');
+  mkdirSync(join(global,'plugins'),{recursive:true});
+  const custom=join(home,'custom-opencode');mkdirSync(join(custom,'plugins'),{recursive:true});
+  const plugin=join(global,'plugins/forge614-engram.js'),customPlugin=join(custom,'plugins/forge614-engram.js');
+  writeFileSync(plugin,createOpenCodePlugin());writeFileSync(customPlugin,createOpenCodePlugin());
+  options.env={OPENCODE_CONFIG_DIR:custom};
+  const removed=applyAssistantRemoval(planAssistantRemoval('opencode',executable,options));
+  expect(removed.ok).toBe(true);expect(existsSync(plugin)).toBe(false);expect(existsSync(customPlugin)).toBe(false);
+});
+
+test('refuses to remove a hand-edited managed MCP entry', () => {
+  const {home,executable,options}=fixture();mkdirSync(join(home,'.cursor'));
+  writeFileSync(join(home,'.cursor','mcp.json'),'{"mcpServers":{"forge614-engram":{"command":"other","args":["mcp"]}}}\n');
+  expect(()=>planAssistantRemoval('cursor',executable,options)).toThrow('differs');
 });
 
 test.each(['claude-code','codex','cursor','opencode','antigravity'] as ClientId[])('%s publishes configuration with Windows path inputs', id => {

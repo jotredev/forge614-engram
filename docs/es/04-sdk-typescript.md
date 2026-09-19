@@ -1,8 +1,8 @@
 # 04. Guía de Integración con el SDK de TypeScript
 
-> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Detección e Inspección de Asistentes para Atlas, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 1.0.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo (561 pruebas superadas, 0 fallos, tipos y valores de SDK verificados en macOS ARM64 con Bun 1.3.8)
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Detección e Inspección de Asistentes para Atlas, Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.1.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo v1.1.0 (572 pruebas superadas, 15 omitidas en 90 archivos, tipos y valores de SDK verificados en macOS ARM64 con Bun 1.3.8)
 > **Traducción hermana:** [04 (EN). TypeScript SDK Guide (MemoryStore)](../en/04-typescript-sdk.md)
 
 Esta guía documenta la API pública en TypeScript de Forge614 Engram, cómo utilizar las clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` en tus propias herramientas o extensiones, el soporte del Esquema 7 para confirmaciones inmutables y refuerzo de búsqueda FTS5 sin embeddings, los tipos formales de recuperación progresiva y del Centro de Control, y la superficie pública de detección e inspección de asistentes de IA utilizada por productos hermanos como Forge614 Atlas.
@@ -92,11 +92,13 @@ import {
 ## 2. Arquitectura de Clases del SDK
 
 1. **`MemoryWorkspace` (Gestor de Alto Nivel):**
-   Administra el espacio central del usuario (`~/.forge614/`), inicializa el entorno, gestiona el ciclo de vida de los proyectos (`createProject`, `listProjects`, `renameProject`) y abre conexiones seguras a la base de datos (`open()`).
+   Administra el espacio central del usuario en su hogar propio (`~/.forge614/engram/`), inicializa el entorno asegurando permisos (`0700`) y ejecutando la migración segura y automática de archivos de versiones anteriores, gestiona el ciclo de vida de los proyectos (`createProject`, `listProjects`, `renameProject`) y abre conexiones seguras a la base de datos (`open()`).
 2. **`WorkspaceConfig` (Gestor de Configuración):**
-   Gestiona la lectura y escritura atómica del archivo `~/.forge614/.env`. Valida permisos (`0700` en carpeta, `0600` en archivo), formatos (Formato 2 local y Formato 3 con sincronización) y previene concurrencias con el cerrojo `.config-lock`. Incluye `repairExistingRoot()` para restringir automáticamente a `0700` directorios ordinarios preexistentes propiedad del usuario, y `prepare()` para crear o asegurar el espacio de trabajo con `0700`.
+   Gestiona la lectura y escritura atómica del archivo de configuración `~/.forge614/engram/.env`. Valida permisos (`0700` en carpeta, `0600` en archivo), formatos (Formato 2 local y Formato 3 con sincronización) y previene concurrencias con el cerrojo `.config-lock`. Su método `prepare()` ejecuta la migración atómica de archivos antiguos sueltos en `~/.forge614/` hacia `~/.forge614/engram/` antes de asegurar la carpeta en `0700`. Su propiedad `databasePath` apunta de forma predeterminada a `~/.forge614/engram/engram.db`. Incluye `repairExistingRoot()` para restringir automáticamente a `0700` directorios ordinarios preexistentes propiedad del usuario.
 3. **`MemoryStore` (Motor de Base de Datos SQLite):**
    Ejecuta las operaciones directas sobre las tablas de SQLite (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, `controlCenter`, etc.).
+4. **`defaultDatabasePath(): string` (Ruta Predeterminada de Base de Datos):**
+   Función auxiliar exportada que devuelve la ruta canónica hacia la base de datos local SQLite: `join(engramHome(), "engram.db")` (por defecto `~/.forge614/engram/engram.db`).
 
 ---
 
@@ -107,7 +109,7 @@ const workspace = new MemoryWorkspace();
 ```
 
 ### `workspace.init(): void`
-Repara automáticamente los permisos de un directorio preexistente propiedad del usuario a `0700` (`config.repairExistingRoot()`), y asegura el archivo `.env` y la base `engram.db` con permisos seguros (`0700`/`0600`). Si ya existen y son válidos, no altera ni reinicia datos.
+Repara automáticamente los permisos de un directorio preexistente propiedad del usuario a `0700` (`config.repairExistingRoot()`), migra de forma automática archivos antiguos sueltos si existen (`config.prepare()`), y asegura el archivo `.env` y la base `engram.db` con permisos seguros (`0700`/`0600`) dentro de `~/.forge614/engram/`. Si ya existen y son válidos, no altera ni reinicia datos.
 
 ### `workspace.createProject(name: string): Project`
 Crea y registra un nuevo proyecto en la base de datos, asignándole un identificador UUID `projectId` único.
@@ -362,7 +364,7 @@ Esta capacidad opera bajo estrictas garantías de aislamiento y seguridad:
 - **Inspección y cálculo de rutas de solo lectura:** No ejecuta comandos arbitrarios, no inicia procesos de asistentes ni altera archivos del sistema.
 - **No conecta, configura, instala ni modifica asistentes:** No descarga programas, no modifica archivos de configuración ajenos (`.claude.json`, `config.toml`, `mcp.json`, `opencode.json`) ni altera permisos.
 - **No agrega servidores MCP automáticamente:** La vinculación de herramientas MCP requiere los flujos explícitos de configuración de Engram (`forge614-engram setup` o `assistant-config`); este SDK solo informa si el asistente está instalado y en qué rutas se ubicaría su configuración.
-- **No toca la base de datos ni abre archivos de memoria:** No inicializa `~/.forge614/`, no lee ni escribe `.env`, y no abre conexiones SQLite (`engram.db`) ni PostgreSQL.
+- **No toca la base de datos ni abre archivos de memoria:** No inicializa `~/.forge614/engram/`, no lee ni escribe `.env`, y no abre conexiones SQLite (`engram.db`) ni PostgreSQL.
 - **Separación estricta de responsabilidades:** Atlas toma las decisiones operativas sobre qué motor invocar; Engram se limita a proporcionar información objetiva, uniforme y segura sobre la presencia y rutas de los asistentes en el equipo.
 - **Sin importaciones internas profundas:** El consumidor debe importar exclusivamente desde `forge614-engram`. No se debe importar desde rutas internas como `forge614-engram/src/...` ni `forge614-engram/src/modules/...`.
 

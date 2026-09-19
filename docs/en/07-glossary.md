@@ -1,8 +1,8 @@
 # 07 (EN). Plain-Language Glossary
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2,566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Coordinated Uninstaller, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active v1.1.0 (572 total tests across 90 files: 572 passed, 15 skipped on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
 This glossary explains each technical concept using everyday life analogies and metaphors first, followed immediately by its formal technical term in parentheses.
@@ -155,7 +155,19 @@ Like finishing the outfitting of a new workspace and immediately welcoming team 
 Like firing up an engine on a clean test bench with zero leftover residue to verify every valve moves correctly: an automated verification in release CI where compiled Windows executables run `assistant-list` inside an empty temporary profile (`RUNNER_TEMP`), requiring that all 5 supported assistants report status `absent` and failing on any `blocked` status, thereby certifying that the embedded native C++ addon is genuinely loaded and operating in memory without storage pollution.
 
 ### Automatic Private Workspace Permission Repair (`repairExistingRoot`)
-Like a trusted locksmith who, upon inspecting the door to your private records archive, immediately tightens the lock so only your key can open it without asking you to fetch tools: the automated mechanism whereby `forge614-engram setup` and `init` restrict an existing `~/.forge614` directory owned by the current user to `0700` (`rwx------`) if its permissions were previously open (such as `0755`), ensuring the absolute privacy of memories, SQLite databases, and `.env` credentials without forcing the user to understand or run `chmod` manually, while strictly blocking symbolic links, files, and foreign-owned directories fail-closed.
+Like a trusted locksmith who secures only their own archive room, not the whole shared building: the automated mechanism whereby `forge614-engram setup` and `init` restrict the existing product directory `~/.forge614/engram` owned by the current user to `0700` (`rwx------`) if its permissions were previously open. The shared `~/.forge614` container is validated but never chmodded by Engram, while symbolic links, files, foreign-owned directories, and unsafe shared write permissions are blocked fail-closed.
 
 ### Assistant Detection & Inspection SDK (Public Detection Surface for Atlas)
 Like the concierge of an office building who checks the lobby directory to inform visitors which offices are occupied and on which floor, without opening anyone's desk drawers or unlocking rooms: the read-only public API surface exported from the root of `forge614-engram` (`CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths`, `coverageWarnings`) that enables companion orchestration products (such as Forge614 Atlas) to audit which AI assistant engines are installed on the host machine and determine their expected configuration paths, without modifying files, without touching MCP configurations, and without opening local databases.
+
+### Dedicated Product Home (`~/.forge614/engram/` / `engramHome`)
+Like having your own private locked bedroom inside a shared home with your siblings: the exclusive `~/.forge614/engram/` subdirectory where Forge614 Engram stores its database (`engram.db`), WAL journals, private configuration (`.env`), and executables (`bin/`), inside the shared family container `~/.forge614/` alongside Forge614 Shell and Forge614 Atlas, ensuring Engram never modifies or deletes sibling directories.
+
+### Safe Atomic Legacy Migration (`EngramProductHome.migrateLegacyWorkspace`)
+Like professional movers who carefully transport your belongings to your new room with white gloves, verifying every box and immediately returning all boxes to their original place if any step fails: the automatic, idempotent procedure where Engram moves exactly five recognized legacy files (`.env`, `engram.db`, `engram.db-wal`, `engram.db-shm`, `.config-lock`) from the root of `~/.forge614/` into `~/.forge614/engram/`, with full atomic rollback on I/O error and strict rejection of symlinks or collisions.
+
+### Guarded Coordinated Uninstaller (`uninstallEngram` / `forge614-engram uninstall`)
+Like carefully unmounting a built-in kitchen appliance by first disconnecting shared utilities, removing custom fittings, and taking out only the appliance itself without damaging the rest of the kitchen: Engram's guarded removal command that requires an exact uppercase confirmation phrase, coordinates Atlas uninstallation first if present (`~/.forge614/atlas`), surgically removes assistant configs and PATH blocks, and deletes only `~/.forge614/engram/`, leaving the root container `~/.forge614/` and sibling tools intact.
+
+### Surgical PATH Cleanup (`path-publication.ts`)
+Like removing a single labeled sticker from a filing cabinet without scratching the paint or disturbing other labels: the inverse of PATH publication that locates the exact delimited `# >>> forge614-engram PATH >>>` block in shell dotfiles or Windows user registry and removes it cleanly, halting with `PATH_CONFLICT` if manual user edits are detected.

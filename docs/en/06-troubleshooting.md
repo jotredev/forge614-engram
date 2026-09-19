@@ -1,11 +1,11 @@
 # 06 (EN). Troubleshooting and Error Diagnostics
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2,566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Coordinated Uninstaller, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) | SQLite Schemas 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active v1.1.0 (572 total tests across 90 files: 572 passed, 15 skipped on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
 > **Sister translation:** [06. Resolución de Problemas y Catálogo de Errores](../es/06-resolucion-de-errores.md)
 
-This troubleshooting guide provides an exhaustive diagnostic catalog of error codes, root causes, and recommended recovery procedures in Forge614 Engram, including the TUI Control Center, reinforced FTS5 search ranking, immutable confirmations (Schema 7), Format 3 PostgreSQL replication, clock skew guards, idempotent retries, and assistant configuration conflicts.
+This troubleshooting guide provides an exhaustive diagnostic catalog of error codes, root causes, and recommended recovery procedures in Forge614 Engram, including the TUI Control Center, reinforced FTS5 search ranking, immutable confirmations (Schema 7), Format 3 PostgreSQL replication, dedicated product home, safe legacy data migration, guarded coordinated uninstallation, clock skew guards, idempotent retries, and assistant configuration conflicts.
 
 ---
 
@@ -13,7 +13,7 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 
 > [!IMPORTANT]
 > **Never delete your database, SQLite tables, or sync checkpoints to "fix" an error.**
-> Errors in Forge614 Engram are active safety safeguards. When the system detects session ambiguities, divergent plugin contents, clock skew, or schema incompatibilities, it intentionally halts to **protect data integrity and prevent silent information loss**.
+> Errors in Forge614 Engram are active safety safeguards. When the system detects session ambiguities, divergent plugin contents, clock skew, migration conflicts, or schema incompatibilities, it intentionally halts to **protect data integrity and prevent silent information loss**.
 
 ---
 
@@ -21,6 +21,16 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 
 | Error Code | Typical Message | Root Cause | Recommended Solution |
 | :--- | :--- | :--- | :--- |
+| `LEGACY_UNSAFE` | *"Legacy workspace path or file is unsafe for migration..."* | The container directory `~/.forge614` or a legacy file is a symbolic link, owned by another user, or permits writes by other users. | Ensure current user ownership, remove symlinks, and remove unsafe write permissions without changing sibling product ownership. |
+| `LEGACY_CONFLICT` | *"Conflict in target Engram product directory..."* | The directory `~/.forge614/engram/` already contains files colliding with legacy files, or orphaned WAL/SHM journals exist without main database. | Verify that `~/.forge614/engram/` does not contain duplicate files and that `engram.db` accompanies journal files. |
+| `LEGACY_MIGRATION_FAILED` | *"Legacy file migration failed; atomic rollback applied..."* | I/O error occurred while moving legacy files; automatic atomic rollback was applied with zero data loss. | Verify disk space and write permissions in `~/.forge614/`. |
+| `UNINSTALL_CONFIRMATION` | *"Exact uppercase confirmation phrase required..."* | The phrase passed to `--confirm` did not match the required phrase exactly. | Specify `--confirm "REMOVE FORGE614-ENGRAM"` (or add `AND FORGE614-ATLAS` if Atlas exists). |
+| `UNINSTALL_UNSAFE` | *"Target uninstallation directory is unsafe..."* | The directory `~/.forge614/engram` or `~/.forge614/atlas` is a symbolic link or has unsafe permissions. | Ensure target directories are regular directories owned by the current user without symlinks. |
+| `ATLAS_UNINSTALL_REQUIRED` | *"Forge614 Atlas is installed but its uninstaller is missing..."* | Forge614 Atlas is present in `~/.forge614/atlas/` but its executable binary does not exist or lacks execute permissions. | Install or repair the Atlas uninstaller at `~/.forge614/atlas/bin/forge614-atlas`. |
+| `ATLAS_UNINSTALL_FAILED` | *"Forge614 Atlas uninstallation failed..."* | The Atlas uninstaller executable failed; Engram halted uninstallation to preserve state consistency. | Review Atlas error logs before retrying uninstallation. |
+| `ASSISTANT_REMOVE_FAILED` | *"Failed to safely remove assistant configurations..."* | Failed to inspect or modify assistant configuration files (malformed JSON or access denied). | Check assistant configuration files and file access permissions. |
+| `PATH_REMOVE_FAILED` | *"Failed to remove PATH entry..."* | I/O error modifying shell startup file or Windows registry. | Check write permissions for your shell startup file or Windows user environment registry. |
+| `PATH_CONFLICT` | *"Delimited PATH block was edited manually or duplicated..."* | The delimited `# >>> forge614-engram PATH >>>` block was manually edited or duplicated in your dotfile. | Manually clean the `# >>> forge614-engram PATH >>>` block in your shell startup file. |
 | `REINFORCEMENT_REQUIRED` | *"REINFORCEMENT_REQUIRED: habilita el Esquema 7 con reinforcement-enable..."* | The remote PostgreSQL replica synchronizes Format 3 (confirmations & requests) but the local SQLite database lacks Schema 7. | Run `forge614-engram reinforcement-enable` on the local machine before syncing. |
 | `SYNC_UPGRADE_REQUIRED` | *"SYNC_UPGRADE_REQUIRED: la réplica remota requiere promoción explícita..."* | Attempted to sync against a replica in an earlier format (Format 1 or 2) without supplying `--upgrade-format`. | Run `forge614-engram sync --upgrade-format` deliberately to promote the replica to Format 3. |
 | `CLOCK_SKEW` | *"CLOCK_SKEW: el reloj local marca una fecha anterior a la versión confirmada..."* | The local system clock is earlier than the timestamp recorded on the confirmed memory version. | Synchronize system clock with NTP or adjust date/time settings. |
@@ -161,11 +171,11 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
      ```powershell
      pwsh -File scripts/build-windows-reparse-addon.ps1
      ```
-  3. On Unix systems, `forge614-engram setup` and `forge614-engram init` automatically restrict and repair any pre-existing user-owned `~/.forge614` directory to `0700`, eliminating the need for manual `chmod`.
+  3. On Unix systems, `forge614-engram setup` and `forge614-engram init` repair only Engram's own existing `~/.forge614/engram` directory to `0700`; they validate but do not chmod the shared `~/.forge614` container.
      If the directory is owned by another user (such as `root` from an accidental `sudo` command), restore correct user ownership and permissions:
      ```bash
      sudo chown -R $(id -un):$(id -gn) ~/.forge614
-     chmod 0700 ~/.forge614
+     chmod go-w ~/.forge614
      ```
      If `~/.forge614` is a symbolic link, Engram intentionally blocks it fail-closed and will not attempt to repair it; you must remove the symlink and use an ordinary physical directory.
 
@@ -180,3 +190,41 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
   1. Engram **preserves the backup file** `.forge614-backup-<UUID>` intact with `0600` permissions and exclusive creation mode (`flag: 'wx'`). No destructive rollback is performed that could damage external data.
   2. Close any code editor (VS Code, Cursor, Zed) or assistant client that may be autosaving or updating config files (`settings.json`, `mcp_config.json`).
   3. Inspect the file state and relaunch `forge614-engram tui` to generate a clean preview and retry publication.
+
+---
+
+### 9. Safe Legacy Workspace Migration & Conflict Resolution (`LEGACY_CONFLICT`, `LEGACY_UNSAFE`, `LEGACY_MIGRATION_FAILED`)
+- **Symptom:** Invoking `setup` or `init` fails with `LEGACY_CONFLICT`, `LEGACY_UNSAFE`, or `LEGACY_MIGRATION_FAILED`.
+- **Root Causes:**
+  - `LEGACY_UNSAFE`: The container directory `~/.forge614` or any loose legacy file (`.env`, `engram.db`, etc.) is a symbolic link, owned by another user, or fails permission verification.
+  - `LEGACY_CONFLICT`: The target directory `~/.forge614/engram/` already contains files colliding with legacy files in `~/.forge614/`, or orphaned WAL/SHM journals exist without the primary `engram.db` database.
+  - `LEGACY_MIGRATION_FAILED`: An unexpected I/O error occurred during file migration. Engram automatically rolled back all moved files to their original location with zero data loss.
+- **Recovery Procedure:**
+  1. If `LEGACY_UNSAFE` is reported, verify that `~/.forge614` is an ordinary directory owned by your user and repair permissions:
+     ```bash
+     chmod go-w ~/.forge614
+     ```
+  2. If `LEGACY_CONFLICT` is reported, inspect both `~/.forge614/` and `~/.forge614/engram/`. If you already have active data in `engram/`, back it up and remove old duplicate files in the root of `~/.forge614/`.
+  3. If orphaned `engram.db-wal` or `engram.db-shm` files exist without `engram.db`, clean them up or restore them alongside their matching database file.
+  4. Re-run `forge614-engram init` to complete the migration cleanly.
+
+---
+
+### 10. Guarded Uninstallation Coordinated with Atlas (`UNINSTALL_CONFIRMATION`, `ATLAS_UNINSTALL_REQUIRED`, `PATH_CONFLICT`)
+- **Symptom:** Running `forge614-engram uninstall` halts with one of these errors.
+- **Root Causes:**
+  - `UNINSTALL_CONFIRMATION`: The confirmation phrase was not uppercase or omitted the required Atlas clause.
+  - `ATLAS_UNINSTALL_REQUIRED`: Forge614 Atlas is present in `~/.forge614/atlas/` but its uninstaller executable is missing or not executable.
+  - `ATLAS_UNINSTALL_FAILED`: The Atlas uninstaller exited with an error. Engram halted immediately to prevent leaving the environment in an inconsistent state.
+  - `PATH_CONFLICT`: The delimited PATH block in your shell dotfile was manually edited or duplicated.
+- **Recovery Procedure:**
+  1. If only Engram is installed, supply the exact standalone confirmation phrase:
+     ```bash
+     forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM"
+     ```
+  2. If Atlas is installed, supply the mandatory extended phrase:
+     ```bash
+     forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"
+     ```
+  3. If `ATLAS_UNINSTALL_REQUIRED` is reported, ensure the Atlas binary is located at `~/.forge614/atlas/bin/forge614-atlas` with executable permissions (`0755`).
+  4. If `PATH_CONFLICT` is reported, open your shell startup file (`.zshrc`, `.bashrc`, etc.) and manually remove the `# >>> forge614-engram PATH >>>` block before retrying.
