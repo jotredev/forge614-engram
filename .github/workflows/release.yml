@@ -41,27 +41,22 @@ jobs:
           - runner: macos-14
             target: bun-darwin-arm64
             artifact: forge614-engram-darwin-arm64
-            shell: bash
             bun_version: 1.3.8
           - runner: macos-15-intel
             target: bun-darwin-x64
             artifact: forge614-engram-darwin-x64
-            shell: bash
             bun_version: 1.3.8
           - runner: ubuntu-latest
             target: bun-linux-x64
             artifact: forge614-engram-linux-x64
-            shell: bash
             bun_version: 1.3.8
           - runner: ubuntu-24.04-arm
             target: bun-linux-arm64
             artifact: forge614-engram-linux-arm64
-            shell: bash
             bun_version: 1.3.8
           - runner: windows-latest
             target: bun-windows-x64
             artifact: forge614-engram-windows-x64.exe
-            shell: pwsh
             bun_version: 1.3.8
             addon_architecture: x64
           # Bun 1.3.10 is the first release with a native Windows ARM64 runtime.
@@ -69,7 +64,6 @@ jobs:
           - runner: windows-11-arm
             target: bun-windows-arm64
             artifact: forge614-engram-windows-arm64.exe
-            shell: pwsh
             bun_version: 1.3.10
             addon_architecture: arm64
     steps:
@@ -92,10 +86,8 @@ jobs:
         shell: pwsh
         run: ./scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}
       - name: Create the disposable build directory
-        shell: ${{ matrix.shell }}
         run: mkdir dist
       - name: Compile standalone artifact
-        shell: ${{ matrix.shell }}
         run: bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.artifact }}
       - name: Smoke-test the native standalone artifact
         if: runner.os != 'Windows'
@@ -127,7 +119,6 @@ jobs:
             Remove-Item -LiteralPath $profile -Recurse -Force -ErrorAction SilentlyContinue
           }
       - name: Preserve the artifact mode for collection
-        shell: ${{ matrix.shell }}
         run: tar -C dist -czf dist/${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
       - uses: actions/upload-artifact@v4
         with:
