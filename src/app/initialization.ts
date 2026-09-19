@@ -1,5 +1,5 @@
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
-import { postgresOptions } from "../infrastructure/postgres/replica";
+import { PostgresReplica, postgresOptions } from "../infrastructure/postgres/replica";
 import { MemoryError } from "../shared/errors";
 import { MemoryWorkspace } from "./workspace";
 
@@ -21,6 +21,13 @@ export interface MemoryInitializationPreview {
   readonly initializesStorage: boolean;
   readonly configuresPostgres: boolean;
   readonly enablesReinforcement: boolean;
+}
+
+export interface MemoryInitializationResult {
+  readonly status: MemoryInitializationStatus;
+  readonly initializedStorage: boolean;
+  readonly configuredPostgres: boolean;
+  readonly enabledReinforcement: boolean;
 }
 
 function request(value: MemoryInitializationRequest): void {
@@ -59,5 +66,40 @@ export async function previewMemoryInitialization(
     initializesStorage: !status.initialized,
     configuresPostgres: currentPostgresUrl !== value.postgresUrl,
     enablesReinforcement: value.enableReinforcement && !status.reinforcementEnabled,
+  };
+}
+
+async function validatePostgres(url: string | null): Promise<void> {
+  if (url === null) return;
+  const replica = await PostgresReplica.connect(url, true);
+  try { await replica.read(); }
+  finally { await replica.close(); }
+}
+
+export async function applyMemoryInitialization(
+  value: MemoryInitializationRequest,
+  expectedRevision: string | null,
+  config = new WorkspaceConfig(),
+): Promise<MemoryInitializationResult> {
+  request(value);
+  const before = inspectMemoryInitialization(config);
+  const currentPostgresUrl = before.initialized ? (config.read().postgresUrl ?? null) : null;
+  if (config.revision() !== expectedRevision) {
+    throw new MemoryError("CONFIG_CHANGED", "La configuración cambió; genera una vista previa nueva antes de aplicar cambios.");
+  }
+  await validatePostgres(value.postgresUrl);
+  const workspace = new MemoryWorkspace(config);
+  workspace.init();
+  config.configurePostgres(value.postgresUrl, config.revision());
+  if (value.enableReinforcement && !before.reinforcementEnabled) {
+    const store = workspace.open();
+    try { store.enableSearchReinforcement(); }
+    finally { store.close(); }
+  }
+  return {
+    status: inspectMemoryInitialization(config),
+    initializedStorage: !before.initialized,
+    configuredPostgres: currentPostgresUrl !== value.postgresUrl,
+    enabledReinforcement: value.enableReinforcement && !before.reinforcementEnabled,
   };
 }

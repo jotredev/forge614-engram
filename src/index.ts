@@ -10,8 +10,8 @@ export { saveProjectMemoryWithSession, startProjectSession } from "./app/project
 export { WorkspaceConfig } from "./infrastructure/filesystem/workspace-config";
 export type { WorkspaceSettings } from "./modules/workspace";
 export { MemoryWorkspace } from "./app/workspace";
-export { inspectMemoryInitialization, previewMemoryInitialization } from "./app/initialization";
-export type { MemoryInitializationStatus, MemoryInitializationRequest, MemoryInitializationPreview } from "./app/initialization";
+export { inspectMemoryInitialization, previewMemoryInitialization, applyMemoryInitialization } from "./app/initialization";
+export type { MemoryInitializationStatus, MemoryInitializationRequest, MemoryInitializationPreview, MemoryInitializationResult } from "./app/initialization";
 export { CLIENT_IDS,LABELS,isClientId } from "./modules/assistants";
 export type { ClientId,AssistantLocation,AssistantOptions,AssistantDescriptor } from "./modules/assistants";
 export { inspectAssistant,resolveAssistantPaths,coverageWarnings } from "./infrastructure/assistants/catalog";

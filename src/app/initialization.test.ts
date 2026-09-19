@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 import { MemoryWorkspace } from "./workspace";
-import { inspectMemoryInitialization, previewMemoryInitialization } from "./initialization";
+import { applyMemoryInitialization, inspectMemoryInitialization, previewMemoryInitialization } from "./initialization";
 
 const directories: string[] = [];
 
@@ -68,4 +68,51 @@ test("preview validates a PostgreSQL request without exposing its credential or 
   });
   expect(JSON.stringify(preview)).not.toContain("SECRET_MARKER");
   expect(existsSync(config.root)).toBe(false);
+});
+
+test("apply initializes local storage without creating a project", async () => {
+  const { config, workspace } = fixture();
+  const request = { postgresUrl: null, enableReinforcement: false };
+  const preview = await previewMemoryInitialization(request, config);
+
+  const result = await applyMemoryInitialization(request, preview.expectedRevision, config);
+
+  expect(result).toEqual({
+    status: {
+      initialized: true,
+      storage: "sqlite",
+      postgresConfigured: false,
+      reinforcementEnabled: false,
+    },
+    initializedStorage: true,
+    configuredPostgres: false,
+    enabledReinforcement: false,
+  });
+  expect(workspace.listProjects()).toEqual([]);
+});
+
+test("apply rejects a preview after the configuration changes", async () => {
+  const { config, workspace } = fixture();
+  workspace.init();
+  const request = { postgresUrl: null, enableReinforcement: false };
+  const preview = await previewMemoryInitialization(request, config);
+  config.configurePostgres("postgresql://user:password@127.0.0.1/db?sslmode=disable", config.revision());
+
+  await expect(applyMemoryInitialization(request, preview.expectedRevision, config))
+    .rejects.toMatchObject({ code: "CONFIG_CHANGED" });
+  expect(config.read().postgresUrl).toBe("postgresql://user:password@127.0.0.1/db?sslmode=disable");
+});
+
+test("apply never disables existing reinforcement", async () => {
+  const { config } = fixture();
+  const enabled = { postgresUrl: null, enableReinforcement: true };
+  const enabledPreview = await previewMemoryInitialization(enabled, config);
+  await applyMemoryInitialization(enabled, enabledPreview.expectedRevision, config);
+  const disabled = { postgresUrl: null, enableReinforcement: false };
+  const disabledPreview = await previewMemoryInitialization(disabled, config);
+
+  const result = await applyMemoryInitialization(disabled, disabledPreview.expectedRevision, config);
+
+  expect(result.status.reinforcementEnabled).toBe(true);
+  expect(result.enabledReinforcement).toBe(false);
 });
