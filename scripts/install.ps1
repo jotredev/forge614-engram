@@ -4,7 +4,8 @@ param(
   [string] $BinDir,
   [switch] $Force,
   [switch] $Help,
-  [string] $ReleaseBaseUrl
+  [string] $ReleaseBaseUrl,
+  [switch] $SkipInstall
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,6 +47,48 @@ function Write-TestAssetSelectionFailure([string] $AssetName, [int] $AssetCount)
   if (-not $testEndpoint) { return }
   [Console]::Error.WriteLine("Test fixture asset selection failed: expected one $AssetName asset; received $AssetCount.")
 }
+
+function Publish-UserPath {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Directory,
+    [scriptblock] $PathReader = { [Environment]::GetEnvironmentVariable('Path', 'User') },
+    [scriptblock] $PathWriter = { param([string] $Value) [Environment]::SetEnvironmentVariable('Path', $Value, 'User') },
+    [scriptblock] $EnvironmentChangeNotifier = {
+      if (-not ('Forge614Installer.UserEnvironmentNotifier' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Forge614Installer {
+  public static class UserEnvironmentNotifier {
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(
+      IntPtr hWnd, uint msg, IntPtr wParam, string lParam,
+      uint flags, uint timeout, out IntPtr result);
+  }
+}
+'@
+      }
+      $result = [IntPtr]::Zero
+      [Forge614Installer.UserEnvironmentNotifier]::SendMessageTimeout(
+        [IntPtr]0xffff, 0x001a, [IntPtr]::Zero, 'Environment', 2, 5000, [ref] $result) | Out-Null
+    }
+  )
+
+  $currentPath = [string](& $PathReader)
+  $normalizedDirectory = $Directory.TrimEnd([char[]]@('\', '/'))
+  $hasDirectory = @($currentPath -split ';' | Where-Object {
+    $_.TrimEnd([char[]]@('\', '/')) -ieq $normalizedDirectory
+  }).Count -gt 0
+  if ($hasDirectory) { return }
+
+  $newPath = if ($currentPath) { "$currentPath;$Directory" } else { $Directory }
+  & $PathWriter $newPath
+  & $EnvironmentChangeNotifier
+}
+
+if ($SkipInstall) { return }
 
 if ($Help) { Show-Usage; exit 0 }
 if ($Version -and $Version -notmatch '^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$') {
@@ -139,7 +182,22 @@ try {
   [System.IO.File]::Move($stagingPath, $destination, [bool]$Force)
   $stagingPath = $null
   Write-Output "Installed: $destination"
-  Write-Output "Add $resolvedBinDir to your user PATH to use forge614-engram.exe from new terminals."
+  try {
+    if ($testEndpoint) {
+      $pathReader = { '' }
+      $pathWriter = if ($env:FORGE614_INSTALLER_TEST_PATH_WRITE_FAILURE -eq '1') {
+        { param([string] $Value) throw 'Test fixture user PATH write failure.' }
+      } else {
+        { param([string] $Value) }
+      }
+      Publish-UserPath -Directory $resolvedBinDir -PathReader $pathReader -PathWriter $pathWriter -EnvironmentChangeNotifier {}
+    } else {
+      Publish-UserPath -Directory $resolvedBinDir
+    }
+    Write-Output "Added $resolvedBinDir to your user PATH. Open a new terminal to use forge614-engram.exe."
+  } catch {
+    Write-Warning "The binary was installed, but Forge614 Engram could not add $resolvedBinDir to your user PATH. Add it manually to use forge614-engram.exe from new terminals."
+  }
   Write-Output 'forge614-engram setup'
 } catch {
   if ($_.Exception.Message) { Stop-Install $_.Exception.Message }

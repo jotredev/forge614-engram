@@ -29,6 +29,30 @@ function Invoke-Installer([string] $Architecture, [string[]] $Arguments) {
   }
 }
 
+# Load the installer helpers without starting an installation. These fixtures use
+# an in-memory reader/writer so they never modify the Windows runner user's PATH.
+. $installer -SkipInstall
+
+$pathStore = [pscustomobject]@{ Value = 'C:\Tools;C:\Existing' }
+$pathReader = { $pathStore.Value }
+$pathWriter = { param([string] $Value) $pathStore.Value = $Value }
+Publish-UserPath -Directory 'c:\tools\Forge614\bin' -PathReader $pathReader -PathWriter $pathWriter -EnvironmentChangeNotifier {}
+Assert-That ($pathStore.Value -eq 'C:\Tools;C:\Existing;c:\tools\Forge614\bin') 'User PATH publication did not preserve existing entries and append the bin directory.'
+Publish-UserPath -Directory 'C:\TOOLS\forge614\BIN\' -PathReader $pathReader -PathWriter $pathWriter -EnvironmentChangeNotifier {}
+Assert-That ($pathStore.Value -eq 'C:\Tools;C:\Existing;c:\tools\Forge614\bin') 'User PATH publication duplicated an existing bin directory.'
+
+$retainedBinary = Join-Path $temporaryRoot 'path-publication-failure.exe'
+New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
+[System.IO.File]::WriteAllBytes($retainedBinary, $fixtureBytes)
+$failingPathWriter = { param([string] $Value) throw 'fixture user PATH write failure' }
+try {
+  Publish-UserPath -Directory 'C:\Tools\Forge614\bin' -PathReader $pathReader -PathWriter $failingPathWriter -EnvironmentChangeNotifier {}
+  throw 'User PATH publication failure unexpectedly succeeded.'
+} catch {
+  Assert-That ($_.Exception.Message -eq 'fixture user PATH write failure') "User PATH publication threw the wrong error: $($_.Exception.Message)"
+}
+Assert-That ([System.IO.File]::Exists($retainedBinary)) 'A failed user PATH write removed a previously installed binary.'
+
 try {
   New-Item -ItemType Directory -Path $fixtureHome -Force | Out-Null
   [System.IO.File]::WriteAllBytes($fixtureFile, $fixtureBytes)
@@ -138,6 +162,19 @@ try {
     $withoutForce = Invoke-Installer 'AMD64' @('-ReleaseBaseUrl', "$releaseBaseUrl/good", '-Version', 'v1.2.3', '-BinDir', $existingDestination)
     Assert-That ($withoutForce.ExitCode -ne 0) 'Existing destination was replaced without -Force.'
     Assert-That ([System.IO.File]::ReadAllText($existingBinary) -eq 'existing binary') 'Existing destination changed without -Force.'
+
+    $pathFailureDestination = Join-Path $temporaryRoot 'path-failure-bin'
+    $previousPathWriteFailure = $env:FORGE614_INSTALLER_TEST_PATH_WRITE_FAILURE
+    $env:FORGE614_INSTALLER_TEST_PATH_WRITE_FAILURE = '1'
+    try {
+      $pathFailure = Invoke-Installer 'AMD64' @('-ReleaseBaseUrl', "$releaseBaseUrl/good", '-Version', 'v1.2.3', '-BinDir', $pathFailureDestination)
+    } finally {
+      if ($null -eq $previousPathWriteFailure) { Remove-Item Env:FORGE614_INSTALLER_TEST_PATH_WRITE_FAILURE }
+      else { $env:FORGE614_INSTALLER_TEST_PATH_WRITE_FAILURE = $previousPathWriteFailure }
+    }
+    Assert-That ($pathFailure.ExitCode -eq 0) "Installer failed after a user PATH write error: $($pathFailure.Output)"
+    Assert-That ([System.IO.File]::Exists((Join-Path $pathFailureDestination 'forge614-engram.exe'))) 'A user PATH write error removed the installed binary.'
+    Assert-That ($pathFailure.Output.Contains('could not add')) "User PATH write error omitted manual guidance: $($pathFailure.Output)"
 
     Assert-That (-not [System.IO.Directory]::Exists((Join-Path $fixtureHome '.forge614'))) 'Installer created .forge614.'
   } finally {
