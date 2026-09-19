@@ -15,6 +15,10 @@ function temporaryDirectory() {
   return directory;
 }
 
+function markerCount(contents: string) {
+  return contents.split("# >>> forge614-engram PATH >>>").length - 1;
+}
+
 function targetArtifact() {
   const target = `${process.platform}/${process.arch}`;
   const artifacts: Record<string, string> = {
@@ -52,13 +56,17 @@ async function withFixtureEnvironment<T>(
   releaseBaseUrl: string,
   operation: () => Promise<T>,
   includeTestSentinel = true,
+  shell?: string,
 ) {
   const saved = {
     home: process.env.HOME,
+    shell: process.env.SHELL,
     releaseBaseUrl: process.env[testReleaseBaseUrl],
     testMode: process.env[testMode],
   };
   process.env.HOME = home;
+  if (shell === undefined) delete process.env.SHELL;
+  else process.env.SHELL = shell;
   process.env[testReleaseBaseUrl] = releaseBaseUrl;
   if (includeTestSentinel) process.env[testMode] = "1";
   else delete process.env[testMode];
@@ -67,6 +75,7 @@ async function withFixtureEnvironment<T>(
   } finally {
     for (const [name, value] of Object.entries({
       HOME: saved.home,
+      SHELL: saved.shell,
       [testReleaseBaseUrl]: saved.releaseBaseUrl,
       [testMode]: saved.testMode,
     })) {
@@ -111,6 +120,72 @@ function fixtureReleaseServer(artifact: string, fixturePath: string) {
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { force: true, recursive: true });
+});
+
+test.each([
+  ["zsh", "/bin/zsh", ".zshrc"],
+  ["bash", "/bin/bash", process.platform === "darwin" ? ".bash_profile" : ".bashrc"],
+  ["fish", "/usr/bin/fish", ".config/fish/conf.d/forge614-engram.fish"],
+])("publishes a custom bin directory once for %s", async (_name, shell, configurationFile) => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "custom-bin");
+  const fakeHome = join(root, "home");
+  const configurationPath = join(fakeHome, configurationFile);
+  mkdirSync(fakeHome, { recursive: true });
+  mkdirSync(resolve(configurationPath, ".."), { recursive: true });
+  writeFileSync(fixture, fixtureBytes);
+  writeFileSync(configurationPath, "# unrelated configuration\nexport KEEP_THIS=1\n");
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+
+  try {
+    const first = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, shell);
+    const second = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination, "--force"]), true, shell);
+    const configuration = readFileSync(configurationPath, "utf8");
+
+    expect(first.exitCode, first.stderr).toBe(0);
+    expect(second.exitCode, second.stderr).toBe(0);
+    expect(first.stdout).toContain(configurationPath);
+    expect(first.stdout).toContain("new terminal");
+    expect(configuration).toContain("# unrelated configuration");
+    expect(configuration).toContain("export KEEP_THIS=1");
+    expect(configuration).toContain(destination);
+    expect(configuration).toContain(
+      shell.endsWith("fish") ? `set -gx PATH ${destination} $PATH` : `export PATH=${destination}:"$PATH"`,
+    );
+    expect(markerCount(configuration)).toBe(1);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("leaves shell files untouched and prints manual PATH guidance for an unknown shell", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "custom-bin");
+  const fakeHome = join(root, "home");
+  const shellFiles = [".zshrc", ".bashrc", ".bash_profile", ".config/fish/conf.d/forge614-engram.fish"];
+  mkdirSync(fakeHome, { recursive: true });
+  writeFileSync(fixture, fixtureBytes);
+  for (const shellFile of shellFiles) {
+    const path = join(fakeHome, shellFile);
+    mkdirSync(resolve(path, ".."), { recursive: true });
+    writeFileSync(path, `unrelated ${shellFile}\n`);
+  }
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, "/bin/unknown");
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`export PATH=${destination}:\"$PATH\"`);
+    expect(result.stdout).toContain("manually");
+    for (const shellFile of shellFiles) {
+      expect(readFileSync(join(fakeHome, shellFile), "utf8")).toBe(`unrelated ${shellFile}\n`);
+    }
+  } finally {
+    server.stop(true);
+  }
 });
 
 test("downloads a verified release binary without writing user state", async () => {

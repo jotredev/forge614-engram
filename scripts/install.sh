@@ -11,6 +11,88 @@ usage() {
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 
+path_marker_start='# >>> forge614-engram PATH >>>'
+path_marker_end='# <<< forge614-engram PATH <<<'
+
+manual_path_guidance() {
+  local bin_dir="$1"
+  printf '%s\n' 'Add this directory to your terminal PATH manually:'
+  printf 'export PATH=%q:"$PATH"\n' "$bin_dir"
+}
+
+replace_path_marker_block() {
+  local configuration_file="$1"
+  local path_command="$2"
+  local configuration_dir temporary_file
+  configuration_dir="$(dirname -- "$configuration_file")"
+  mkdir -p -- "$configuration_dir" || return 1
+  temporary_file="$(mktemp "${configuration_file}.XXXXXX")" || return 1
+
+  if [ -f "$configuration_file" ]; then
+    awk -v start="$path_marker_start" -v end="$path_marker_end" '
+      function print_pending_block() {
+        for (line_index = 1; line_index <= pending_count; line_index += 1) print pending_line[line_index]
+      }
+      inside_block {
+        pending_line[++pending_count] = $0
+        if ($0 == end) {
+          inside_block = 0
+          pending_count = 0
+        }
+        next
+      }
+      $0 == start {
+        inside_block = 1
+        pending_count = 1
+        pending_line[1] = $0
+        next
+      }
+      { print }
+      END {
+        if (inside_block) print_pending_block()
+      }
+    ' "$configuration_file" > "$temporary_file" || {
+      rm -f -- "$temporary_file"
+      return 1
+    }
+  else
+    : > "$temporary_file" || return 1
+  fi
+
+  printf '%s\n%s\n%s\n' "$path_marker_start" "$path_command" "$path_marker_end" >> "$temporary_file" || {
+    rm -f -- "$temporary_file"
+    return 1
+  }
+  mv -f -- "$temporary_file" "$configuration_file"
+}
+
+publish_path_for_future_shell() {
+  local bin_dir="$1"
+  local configuration_file path_command
+  case "${SHELL:-}" in
+    */zsh|zsh)
+      configuration_file="$HOME/.zshrc"
+      path_command="$(printf 'export PATH=%q:\"$PATH\"' "$bin_dir")"
+      ;;
+    */bash|bash)
+      case "$(uname -s)" in
+        Darwin) configuration_file="$HOME/.bash_profile" ;;
+        Linux) configuration_file="$HOME/.bashrc" ;;
+        *) return 2 ;;
+      esac
+      path_command="$(printf 'export PATH=%q:\"$PATH\"' "$bin_dir")"
+      ;;
+    */fish|fish)
+      configuration_file="$HOME/.config/fish/conf.d/forge614-engram.fish"
+      path_command="$(printf 'set -gx PATH %q $PATH' "$bin_dir")"
+      ;;
+    *) return 2 ;;
+  esac
+
+  replace_path_marker_block "$configuration_file" "$path_command" || return 1
+  printf 'Added %s to PATH in %s. Open a new terminal to use forge614-engram.\n' "$bin_dir" "$configuration_file"
+}
+
 is_loopback_test_url() {
   local url="$1"
   local port
@@ -159,4 +241,8 @@ else
 fi
 staging=''
 printf 'Installed: %s\n' "$destination"
+if ! publish_path_for_future_shell "$bin_dir"; then
+  printf '%s\n' 'Could not update PATH configuration automatically.'
+  manual_path_guidance "$bin_dir"
+fi
 printf '%s\n' 'forge614-engram setup'
