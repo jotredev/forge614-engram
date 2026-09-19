@@ -1,7 +1,7 @@
 # 07 (EN). Plain-Language Glossary
 
 > **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
 > **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2,566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
@@ -153,3 +153,9 @@ Like finishing the outfitting of a new workspace and immediately welcoming team 
 
 ### Strengthened Addon Release Smoke Test
 Like firing up an engine on a clean test bench with zero leftover residue to verify every valve moves correctly: an automated verification in release CI where compiled Windows executables run `assistant-list` inside an empty temporary profile (`RUNNER_TEMP`), requiring that all 5 supported assistants report status `absent` and failing on any `blocked` status, thereby certifying that the embedded native C++ addon is genuinely loaded and operating in memory without storage pollution.
+
+### Automatic Private Workspace Permission Repair (`repairExistingRoot`)
+Like a trusted locksmith who, upon inspecting the door to your private records archive, immediately tightens the lock so only your key can open it without asking you to fetch tools: the automated mechanism whereby `forge614-engram setup` and `init` restrict an existing `~/.forge614` directory owned by the current user to `0700` (`rwx------`) if its permissions were previously open (such as `0755`), ensuring the absolute privacy of memories, SQLite databases, and `.env` credentials without forcing the user to understand or run `chmod` manually, while strictly blocking symbolic links, files, and foreign-owned directories fail-closed.
+
+### Assistant Detection & Inspection SDK (Public Detection Surface for Atlas)
+Like the concierge of an office building who checks the lobby directory to inform visitors which offices are occupied and on which floor, without opening anyone's desk drawers or unlocking rooms: the read-only public API surface exported from the root of `forge614-engram` (`CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths`, `coverageWarnings`) that enables companion orchestration products (such as Forge614 Atlas) to audit which AI assistant engines are installed on the host machine and determine their expected configuration paths, without modifying files, without touching MCP configurations, and without opening local databases.

@@ -1,7 +1,7 @@
 # 01 (EN). Installation, Setup, and Getting Started
 
 > **Stage:** TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
+> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
 > **Enrollments:** Explicit and additive (`integration-enable` for Schema 5; `sessions-enable` for Schema 6; `reinforcement-enable` for Schema 7; `sync --upgrade-format` for replica Format 2 or Format 3). Database opening, the TUI control center, and ordinary commands never auto-migrate databases.
 > **Status:** Current & Verified (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [01. Instalación, Configuración y Primeros Pasos](../es/01-instalacion-y-primeros-pasos.md)
@@ -137,7 +137,7 @@ Verify the installed version and command help without writing to disk or creatin
 ```bash
 # Verify installed version
 forge614-engram --version
-# Expected output: forge614-engram 0.5.0
+# Expected output: forge614-engram 1.0.0
 
 # Print official help reference
 forge614-engram help
@@ -242,6 +242,12 @@ Sí, configurar PostgreSQL
 Elige [si/NO]:
 ```
 
+### Prior Automatic Private Workspace Permission Repair (`0700`)
+Before reading configuration or prompting with interactive questions, `setup` checks whether the `~/.forge614/` directory already exists. If it exists, is an ordinary directory, is owned by the current user, and has permissions more open than `0700` (such as `0755`), the command automatically tightens its permissions to `0700` (`rwx------`).
+- **Why is permission `0700` indispensable?** The Engram workspace directory stores personal memories, the local SQLite database (`engram.db`), WAL journals, and potentially PostgreSQL connection credentials in `.env`. Mode `0700` ensures that only the account owner can access or read these records, preventing access by any other local user on the system.
+- **No manual `chmod` needed:** End users do not need to understand UNIX octal permissions or manually run commands such as `chmod 0700 ~/.forge614`.
+- **Strict Fail-Closed Boundaries:** This automatic repair is intentionally restricted to ordinary directories owned by the current user. It never creates a missing directory (`ENOENT`), never repairs or follows symbolic links, and immediately rejects non-directories, paths owned by other users, or directories whose final permissions cannot be made private.
+
 ### Synchronization Options
 - **Option `No` (Default):**
   Pressing Enter or typing `no` runs 100% locally and offline. If PostgreSQL was configured previously, selecting `No` disables replication without deleting prior backups.
@@ -293,7 +299,7 @@ The onboarding flow isolates cancellation cleanly between storage and assistant 
 - **Cancelling During Memory Configuration:** Pressing `Ctrl+C`, `Escape`, or answering `no` before confirming storage:
   - Exits immediately with code **130** (*Cancelled*).
   - **Does not launch the Assistant TUI.**
-  - **Writes zero bytes to disk.** If `~/.forge614/` was absent, it remains uncreated.
+  - **Creates no `.env`, `engram.db`, projects, or memories:** If `~/.forge614/` was absent, it remains uncreated. If it already existed as an ordinary user-owned directory with open permissions, only its directory permissions were tightened to `0700` to safeguard privacy; zero additional files are created.
 - **Cancelling or Exiting the Assistant TUI:** If you confirmed and initialized storage, but later choose to exit or cancel the assistant selector:
   - The initialized memory store in `~/.forge614/` is **retained intact**.
   - Newly initialized databases and `.env` settings are preserved without rollback.
@@ -305,8 +311,8 @@ To avoid operational confusion:
 
 | Command | Interface Mode | Configures Storage (`~/.forge614`)? | Detects / Connects Assistants? |
 | :--- | :--- | :--- | :--- |
-| **`forge614-engram setup`** | Interactive (TTY) | Yes (guided step-by-step with confirmation) | **Yes:** Seamlessly launches assistant onboarding TUI following storage setup |
-| **`forge614-engram init`** | Non-interactive (Headless / JSON) | Yes (creates/verifies storage silently) | **No:** Never detects assistants or launches interactive interfaces |
+| **`forge614-engram setup`** | Interactive (TTY) | Yes (repairs existing directory to `0700` before prompting; guided step-by-step with confirmation) | **Yes:** Seamlessly launches assistant onboarding TUI following storage setup |
+| **`forge614-engram init`** | Non-interactive (Headless / JSON) | Yes (repairs existing directory to `0700` and creates/verifies storage silently) | **No:** Never detects assistants or launches interactive interfaces |
 | **`forge614-engram assistant-list`** | Read-only (JSON) | **No:** Never creates `.forge614` or writes files | **Yes (Audit only):** Detects assistants and coverage without touching files |
 
 ---
@@ -440,7 +446,7 @@ Expected JSON output:
    Enabling reinforcement does not modify client settings. To update assistant instructions, use `Assistants` in `forge614-engram tui`.
 4. **Peer Device Coordination:**
    When synchronizing across machines via PostgreSQL:
-   - All machines must upgrade to compatible version 0.5.0.
+   - All machines must upgrade to compatible version 1.0.0.
    - Run `forge614-engram reinforcement-enable` on each peer machine prior to synchronizing confirmed notes. Unreinforced clients receiving Format 3 snapshots abort with `REINFORCEMENT_REQUIRED`.
 5. **PostgreSQL Replica Promotion (Format 1 or 2 to Format 3):**
    Local enablement does not promote remote replicas. Promote the PostgreSQL snapshot format consciously via:
@@ -666,7 +672,7 @@ JSON output:
 ```
 
 This command:
-1. Creates `~/.forge614/` with strict `0700` permissions if absent.
+1. Automatically repairs `~/.forge614/` to `0700` if it already existed with open permissions, or creates it with strict `0700` permissions if absent.
 2. Writes `~/.forge614/.env` in Format 2 (`0600`) if absent.
 3. Initializes `~/.forge614/engram.db` in WAL mode (`0600`).
 4. Is **strictly idempotent**: never deletes or alters pre-existing memories.

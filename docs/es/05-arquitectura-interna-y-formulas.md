@@ -1,7 +1,7 @@
 # 05. Arquitectura Interna, Monolito Modular por Funcionalidad, SQLite FTS5 y Fórmulas Matemáticas
 
 > **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.0.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
 > **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [05 (EN). Internal Architecture, Modular Monolith, FTS5, and Ranking Formulas](../en/05-internal-architecture-and-formulas.md)
 
@@ -567,7 +567,28 @@ Para materializar el archivo temporal y los respaldos en disco, Engram utiliza d
 * **Incidente Técnico en CI de Windows:**
   Durante las pruebas automatizadas en GitHub Actions, la llamada `openSync` en Bun sobre Windows devolvía `ENOENT` cuando se le suministraban las constantes numéricas bit a bit (`O_WRONLY | O_CREAT | O_EXCL`). Sin embargo, en ese mismo entorno, la creación de respaldos con modo textual `{ flag: 'wx' }` operaba con total éxito. La resolución consistió en centralizar la apertura segura bajo la función auxiliar `safeOpenFlag(unixFlags, windowsFlag)`, aplicando `"r"` y `"wx"` en Windows y banderas POSIX con `O_NOFOLLOW` en sistemas Unix. *(Nota: no se asume que Windows carezca de apertura segura ni que todas las banderas numéricas fallen; la incompatibilidad fue específica del puente entre Bun y el sistema operativo en esa llamada).*
 
-### 9.5. Cadena de Herramientas de Compilación y Resolución de Ejecutables
+### 9.5. Privacidad del Espacio Central y Reparación Automática de Permisos (`repairExistingRoot`)
+
+El directorio de usuario `~/.forge614/` alberga información de máxima confidencialidad: la base de datos SQLite `engram.db`, diarios temporales WAL con transacciones en texto plano, archivos de bloqueo de concurrencia (`.config-lock`) y el archivo de variables `.env`, el cual puede contener credenciales sensibles de conexión a réplicas remotas de PostgreSQL.
+
+#### Justificación del Modelo de Privacidad Estricto (`0700` y `0600`)
+En entornos multiusuario (como servidores compartidos, estaciones de trabajo de laboratorio o computadoras compartidas en equipos de desarrollo), un directorio con permisos estándar `0755` (`rwxr-xr-x`) permite que cualquier otra cuenta local del sistema operativo liste, inspeccione o copie los recuerdos y credenciales del usuario. Para garantizar la privacidad:
+- El directorio contenedor debe poseer permisos octales estrictos `0700` (`rwx------`, solo lectura, escritura y ejecución para el propietario).
+- El archivo de configuración `.env` debe poseer permisos `0600` (`rw-------`, solo lectura y escritura para el propietario).
+
+#### Reparación Automática sin Fricción Técnica
+Anteriormente, si la carpeta `~/.forge614/` ya existía con permisos estándar (por ejemplo `0755`), Engram rechazaba la ejecución arrojando `CONFIG_INVALID` y obligaba al usuario a comprender y ejecutar manualmente `chmod 0700 ~/.forge614`.
+
+Para eliminar esta barrera sin comprometer la seguridad, `WorkspaceConfig` incorpora el método `repairExistingRoot()`:
+1. **Invocación previa en `setup` e `init`:** Tanto el asistente interactivo `setup` (antes de desplegar preguntas o leer configuración) como el comando no interactivo `init` y el método `MemoryWorkspace.init()` invocan `config.repairExistingRoot()`.
+2. **Inspección sin creación:** `repairExistingRoot()` invoca internamente `directory(create: false, repair: true)`. Si el directorio no existe (`ENOENT`), retorna `false` de inmediato sin crear ninguna carpeta en disco.
+3. **Validación estricta de propiedad:** Obtiene los metadatos con `lstatSync` (sin seguir enlaces simbólicos) y comprueba que sea un directorio ordinario, no un symlink y que pertenezca al usuario del proceso actual (`stat.uid === process.getuid()`).
+4. **Restricción automática:** Si los bits de grupo u otros están abiertos (`(stat.mode & 0o077) !== 0`), ejecuta `chmodSync(this.root, 0o700)`.
+5. **Re-verificación estricta:** Vuelve a leer los metadatos con `lstatSync` para certificar que el directorio resultante sea ordinario, no sea un symlink y sea estrictamente privado (`privateOwned`).
+6. **Arquitectura Fail-Closed:** Si la ruta es un symlink, un archivo regular, pertenece a otro usuario o el sistema de archivos no permite restringir los permisos, aborta inmediatamente arrojando `failure("CONFIG_INVALID")`.
+7. **Semántica de cancelación:** Si el usuario cancela en `setup` tras la reparación de permisos, `.env`, `engram.db`, proyectos y recuerdos permanecen inexistentes; únicamente se habrán asegurado los permisos de privacidad del directorio preexistente.
+
+### 9.6. Cadena de Herramientas de Compilación y Resolución de Ejecutables
 Para compilar el módulo nativo en Windows se utiliza el script oficial `scripts/build-windows-reparse-addon.ps1`:
 - **Node.js (22.14.0 en CI):** Utilizado exclusivamente en tiempo de compilación para ejecutar el gestor de compilación nativa `node-gyp`. No es necesario para el usuario final en tiempo de ejecución.
 - **`node-gyp` (versión 12.1.0 fijada en `devDependencies`):** Versión fijada requerida para asegurar compatibilidad completa entre Node.js 22 y Visual Studio 2026.
@@ -575,7 +596,7 @@ Para compilar el módulo nativo en Windows se utiliza el script oficial `scripts
 - **Visual Studio 2026 Build Tools (v18):** Conjunto oficial de compiladores C++ de Microsoft provisto en los ejecutores `windows-latest`.
 - **Resolución Unívoca de `node.exe` (`Resolve-NodeExecutable`):** En máquinas virtuales de integración continua con múltiples versiones de Node.js instaladas, la función filtra la salida del comando y selecciona estrictamente una sola ruta ejecutable válida, previniendo errores de concatenación de cadenas en PowerShell.
 
-### 9.6. Empaquetado en Release, Incrustación de Addon y Verificación Reforzada de Humo (release.yml)
+### 9.7. Empaquetado en Release, Incrustación de Addon y Verificación Reforzada de Humo (release.yml)
 Para distribuir ejecutables autónomos de un solo archivo sin exigir herramientas de desarrollo al usuario final, el flujo de trabajo de release (`.github/workflows/release.yml`) implementa una arquitectura rigurosa:
 * **Doble Modo de Disparo (Manual y Oficial):**
   - Disparo manual (`workflow_dispatch`): Permite fabricar los 6 instaladores, ejecutar comprobaciones en perfiles aislados y validar sumas criptográficas `SHA256SUMS` sin crear una GitHub Release ni tocar tags.
@@ -595,9 +616,9 @@ Para distribuir ejecutables autónomos de un solo archivo sin exigir herramienta
   1. Flujo `Verify` (**Run ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`): Pasó con éxito en Ubuntu, macOS y Windows x64 nativo (543/545 pruebas, 0 fallos).
   2. Flujo `Release standalone artifacts` (**Run ID `35427429725`**, y referencia `35428406085`): Completó con éxito la compilación de los 6 binarios (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64 con addon incrustado), ensamblado y validación de `SHA256SUMS` (seis verificaciones `OK`), omitiéndose correctamente la publicación de release.
 * **Suite Local de Pruebas:**
-  La suite completa finalizó con **536 pass, 13 skip, 0 fail**, 2,606 aserciones en 88 archivos; `bun run typecheck`, `git diff --check` y `bash -n` finalizaron con código 0.
+  La suite completa finalizó con **545 pass, 15 skip, 0 fail**, 2,671 aserciones en 88 archivos; `bun run typecheck`, `git diff --check` y `bash -n` finalizaron con código 0.
 
-### 9.7. Tareas Pendientes para la Versión Estable (v1.0.0)
+### 9.8. Tareas Pendientes para la Versión Estable (v1.0.0)
 Habiéndose superado la incrustación del módulo nativo en los ejecutables de release, la cobertura de Windows ARM64, el smoke test reforzado y la verificación de `SHA256SUMS` en CI, los requisitos pendientes para v1.0.0 son:
 1. **Validación en máquina Windows física limpia:** Probar la instalación y ejecución del binario en un entorno Windows sin herramientas de desarrollo (sin Node.js, Python ni Visual Studio instalados previamente).
 2. **Certificación de independencia de tiempo de ejecución (MSVC CRT):** Certificar que el binario autónomo cargue sin requerir paquetes externos redistribuibles de Visual C++ en esa instalación base.

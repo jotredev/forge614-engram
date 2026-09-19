@@ -1,14 +1,14 @@
 # 04 (EN). TypeScript SDK Guide (MemoryStore)
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant Detection & Inspection for Atlas, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active (561 tests passed, 0 failures, SDK contract types and runtime values verified on macOS ARM64 with Bun 1.3.8)
 > **Sister translation:** [04. Guía de Integración con el SDK de TypeScript](../es/04-sdk-typescript.md)
 
-This guide documents the public TypeScript API for Forge614 Engram, covering the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes, Schema 7 support for immutable confirmations and reinforced FTS5 search ranking without embeddings, and progressive retrieval and Control Center contracts.
+This guide documents the public TypeScript API for Forge614 Engram, covering the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes, Schema 7 support for immutable confirmations and reinforced FTS5 search ranking without embeddings, progressive retrieval and Control Center contracts, and the public AI assistant detection and path inspection API used by sibling products such as Forge614 Atlas.
 
 > [!NOTE]
-> **Aimed at developers:** This SDK is designed for engineers integrating structured memory into TypeScript agents or extensions. Terminal end users only require the `forge614-engram` CLI binary. There is no npm package published; imports resolve locally from `./src/index`.
+> **Aimed at developers and sibling products:** This SDK is designed for engineers and companion tools (such as Forge614 Atlas) integrating structured memory or inspecting installed AI assistant engines on the host machine. Terminal end users only require the `forge614-engram` CLI binary. Consuming applications import directly from `forge614-engram`.
 
 ---
 
@@ -62,21 +62,29 @@ import {
   // Project context helper functions
   saveProjectMemoryWithSession,
   startProjectSession,
-} from "./src/index";
+
+  // AI assistant detection and inspection (for sibling products like Atlas)
+  CLIENT_IDS,
+  LABELS,
+  isClientId,
+  inspectAssistant,
+  resolveAssistantPaths,
+  coverageWarnings,
+  type ClientId,
+  type AssistantLocation,
+  type AssistantOptions,
+  type AssistantDescriptor,
+  type AssistantPaths,
+} from "forge614-engram";
 ```
 
 ### Core SDK Architecture Principles
 
 - **The SQLite API remains 100% synchronous:** All read, write, search, confirmation, session, timeline, and context operations in `MemoryStore` and `MemoryWorkspace` execute immediately on SQLite without `async`/`await`.
 - **`MemoryStore` Facade Pattern:** Located in `src/app/memory-store.ts`, `MemoryStore` provides an immutable, backwards-compatible public interface while delegating persistence to specialized modules under `src/infrastructure/sqlite/` (`memory.ts`, `confirmations.ts`, `sessions.ts`, `writes.ts`, `search.ts`, `projects.ts`, `snapshots.ts`, `control-center.ts`).
-- **Complete Elimination of Legacy Root Files:** Historical files in the root of `src/` (`src/domain.ts`, `src/store.ts`, `src/identity.ts`, `src/sessions.ts`, etc.) have been completely removed. External consumers must import strictly from `src/index.ts`. Internal modules are forbidden by TypeScript AST lint rules (`tests/architecture/import-rules.ts`) from importing from `src/index.ts` to prevent cycles.
-- **Network, transport, and interface modules are strictly internal:**
-  - MCP server (`src/interfaces/mcp/`)
-  - Assistant hook runner (`src/interfaces/terminal/` & `src/modules/assistants/`)
-  - Terminal Control Center interface (`src/interfaces/tui/`)
-  - Async self-test runner (`src/infrastructure/assistants/self-test.ts`)
-  - Replica sync engine (`src/infrastructure/postgres/` & `src/app/synchronization.ts`)
-  These components are not re-exported in `src/index.ts`.
+- **Complete Elimination of Legacy Root Files:** Historical files in the root of `src/` (`src/domain.ts`, `src/store.ts`, `src/identity.ts`, `src/sessions.ts`, etc.) have been completely removed. External consumers must import strictly from the root package `forge614-engram` (`src/index.ts`). Internal modules are forbidden by TypeScript AST lint rules (`tests/architecture/import-rules.ts`) from importing from `src/index.ts` to prevent cycles.
+- **Direct Root Package Imports Without Deep Paths:** Consumers of the SDK (like Atlas) must always import from `forge614-engram`. Never import or recommend deep internal paths such as `forge614-engram/src/...` or `forge614-engram/src/modules/...`.
+- **Public Read-Only Assistant Detection & Inspection:** While interactive configuration tools (`src/interfaces/terminal/`) and the MCP server (`src/interfaces/mcp/`) remain internal, **passive detection and path resolution** (`CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths`, `coverageWarnings`) is an official first-class capability exported by the SDK, enabling sibling products to audit the host machine without executing CLI commands or modifying settings.
 - **No `AsyncMemoryWorkspace`:** No public asynchronous wrapper exists. Applications interact locally with the synchronous store; external assistants interact via MCP or CLI commands.
 
 ---
@@ -86,7 +94,7 @@ import {
 1. **`MemoryWorkspace` (High-Level Workspace Manager):**
    Manages user central storage (`~/.forge614/`), initializes the environment, orchestrates project lifecycle (`createProject`, `listProjects`, `renameProject`), and opens secure database connections (`open()`).
 2. **`WorkspaceConfig` (Configuration Manager):**
-   Manages atomic read/write of `~/.forge614/.env`. Validates permissions (`0700` directory, `0600` file), format versions (Format 2 local, Format 3 sync), and prevents concurrency using `.config-lock`.
+   Manages atomic read/write of `~/.forge614/.env`. Validates permissions (`0700` directory, `0600` file), format versions (Format 2 local, Format 3 sync), and prevents concurrency using `.config-lock`. Includes `repairExistingRoot()` to automatically tighten existing user-owned workspace directories to `0700`, and `prepare()` to create or secure storage with mode `0700`.
 3. **`MemoryStore` (SQLite Database Engine):**
    Directly executes operations on SQLite tables (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, `controlCenter`, etc.).
 
@@ -99,7 +107,7 @@ const workspace = new MemoryWorkspace();
 ```
 
 ### `workspace.init(): void`
-Ensures `.env` and `engram.db` exist with secure permissions (`0700`/`0600`). Idempotent and non-destructive.
+Automatically repairs permissions of an existing user-owned directory to `0700` (`config.repairExistingRoot()`), and ensures `.env` and `engram.db` exist with secure permissions (`0700`/`0600`). Idempotent and non-destructive.
 
 ### `workspace.createProject(name: string): Project`
 Registers a new project, assigning a unique UUIDv4 `projectId`.
@@ -225,7 +233,7 @@ Assembles a prioritized context dossier partitioned into `pinned`, `recent`, and
 ### Example 1: Schema 7 Activation, Immutable Confirmations, and Reinforced Search
 
 ```typescript
-import { MemoryWorkspace, type SearchResult } from "./src/index";
+import { MemoryWorkspace, type SearchResult } from "forge614-engram";
 
 const workspace = new MemoryWorkspace();
 workspace.init();
@@ -295,7 +303,7 @@ try {
 ### Example 2: Progressive Memory Sessions and Ranked Context
 
 ```typescript
-import { MemoryWorkspace, type SummaryFields } from "./src/index";
+import { MemoryWorkspace, type SummaryFields } from "forge614-engram";
 
 const workspace = new MemoryWorkspace();
 const store = workspace.open();
@@ -336,3 +344,178 @@ try {
   store.close();
 }
 ```
+
+---
+
+## 6. AI Assistant Detection and Inspection API (Atlas Integration)
+
+### Purpose and Integration Context
+
+**Forge614 Atlas** (a companion product for autonomous agent orchestration and execution) imports **Forge614 Engram** as a TypeScript library (`import { ... } from "forge614-engram"`), and **not** as a command-line terminal CLI.
+
+Atlas uses this public SDK surface to inspect which development assistants or agent engines (`claude -p`, and in the future Codex or others) are actually installed on the user's host machine, allowing Atlas to choose the appropriate execution engine when launching autonomous subagents.
+
+### Mandatory Security Guarantees (Strictly Passive Operation)
+
+This API surface operates under strict isolation and security boundaries:
+
+- **Read-only inspection and path resolution:** It does not execute arbitrary shell commands, launch assistant background processes, or touch user files.
+- **Does not connect, configure, install, or modify assistants:** It does not download binaries, alter third-party configuration files (`.claude.json`, `config.toml`, `mcp.json`, `opencode.json`), or modify permissions.
+- **Does not configure MCP automatically:** Adding MCP memory tools requires Engram's explicit setup flows (`forge614-engram setup` or `assistant-config`); this SDK purely reports whether an assistant is detected and where its configuration paths reside.
+- **Does not touch databases or initialize storage:** It does not create or repair `~/.forge614/`, does not read/write `.env`, and never opens SQLite (`engram.db`) or PostgreSQL connections.
+- **Strict separation of concerns:** Atlas decides what to do with the inspection result; Engram exclusively provides objective, safe, and consistent inspection data about the host machine.
+- **No deep internal imports:** Consumers must import strictly from `forge614-engram`. Do not import from internal paths like `forge614-engram/src/...` or `forge614-engram/src/modules/...`.
+
+---
+
+### Exported Values and Functions Catalog
+
+The following detection tools are exported directly from the root of `forge614-engram`:
+
+```typescript
+import {
+  CLIENT_IDS,
+  LABELS,
+  isClientId,
+  inspectAssistant,
+  resolveAssistantPaths,
+  coverageWarnings,
+} from "forge614-engram";
+```
+
+#### `CLIENT_IDS`
+An immutable constant array (`readonly string[]`) declaring the official identifiers of currently known and supported assistants:
+```typescript
+export const CLIENT_IDS = [
+  "claude-code",
+  "codex",
+  "cursor",
+  "opencode",
+  "antigravity",
+] as const;
+```
+
+#### `LABELS: Record<ClientId, string>`
+A record mapping each technical identifier to its official display name for user interfaces and logs:
+- `"claude-code"` → `"Claude Code"`
+- `"codex"` → `"Codex"`
+- `"cursor"` → `"Cursor"`
+- `"opencode"` → `"OpenCode"`
+- `"antigravity"` → `"Antigravity"`
+
+#### `isClientId(value: string): value is ClientId`
+A TypeScript type guard function. Takes an arbitrary string and validates whether it matches a known `ClientId` before attempting inspection or path resolution.
+
+#### `resolveAssistantPaths(clientId: ClientId, options?: AssistantOptions): AssistantPaths`
+Deterministically computes the expected disk paths for the requested assistant based on platform environment variables and the user's home directory (`$HOME`).
+- **Returns:** An `AssistantPaths` object:
+  - `directory`: The base configuration directory (e.g. `~/.claude`, `~/.codex`, `~/.cursor`).
+  - `config`: Absolute path to the main configuration file (e.g. `~/.claude.json`, `~/.cursor/mcp.json`).
+  - `hooks`: Path to the event hooks file, if supported by the client (e.g. `settings.json` or `hooks.json`). Omitted (`undefined`) for Antigravity.
+  - `plugin`: Path to the bundled Engram plugin (`plugins/forge614-engram.js`).
+  - `activeConfigs`: List of all active configuration file candidates evaluated (essential for OpenCode where global XDG and custom config directories may coexist).
+  - `activePlugins`: List of evaluated plugin paths.
+- **Invariant:** It does not create directories or files; it only projects canonical filesystem paths.
+
+#### `inspectAssistant(clientId: ClientId, options?: AssistantOptions): AssistantDescriptor`
+Safely inspects the host machine without spawning subprocesses or executing external binaries. Searches for executable files across directories listed in `PATH` and standard platform-specific fallback locations (macOS, Linux, and Windows), checks for existing configuration files, and returns a structured `AssistantDescriptor`:
+- `id`: The queried client identifier (`ClientId`).
+- `label`: Human-readable assistant label.
+- `detected`:
+  - `installed`: Boolean confirming whether an executable binary was found with execution permissions (`accessSync(..., X_OK)`).
+  - `executable`: Absolute path to the found binary, or `null` if not detected.
+  - `configFound`: Boolean indicating whether at least one configuration file was located on disk.
+  - `evidence`: List of safe, objective detection evidence gathered on disk.
+- `configuration`:
+  - `status`: Current configuration state (`"absent"`, `"needs-configuration"`, `"configured"`, `"conflict"`, `"malformed"`, `"blocked"`).
+  - `paths`: Tested configuration file paths on disk.
+  - `message`: Optional descriptive message in case of configuration conflict or parsing anomaly.
+- `automation`:
+  - `coverage`: Hook coverage level supported by the assistant (`"session-and-prompt"`, `"session-only"`, `"experimental-system-and-compaction"`, `"mcp-only"`).
+  - `warnings`: Warning strings highlighting real automation boundaries.
+
+#### `coverageWarnings(clientId: ClientId, options?: AssistantOptions): string[]`
+Returns clear warning strings regarding the real automation boundaries of each assistant (for example, Cursor only injecting guidance on session start with no compaction recovery hook, Codex requiring manual approval of new hooks under `/hooks`, or Antigravity lacking durable hooks until an official event is verified).
+
+> [!IMPORTANT]
+> **Architectural Distinction: Infrastructure vs Pure `coverageWarnings`**
+> Two internal functions share the name `coverageWarnings`:
+> 1. A pure function in `src/modules/assistants/catalog.ts` requiring explicit environment options to evaluate overrides such as `OPENCODE_CONFIG_CONTENT`.
+> 2. An infrastructure function in `src/infrastructure/assistants/catalog.ts`:
+>    ```typescript
+>    export function coverageWarnings(id: ClientId, options: AssistantOptions = {}): string[] {
+>      return pureCoverageWarnings(id, { ...options, env: options.env ?? process.env });
+>    }
+>    ```
+> **The public SDK exports strictly the infrastructure version.** This guarantees that external consumers, like Forge614 Atlas, automatically observe the user's live host environment (`process.env`) without needing to manually pass system environment records. Never import the internal pure version from deep paths.
+
+---
+
+### Exported TypeScript Types
+
+```typescript
+import type {
+  ClientId,
+  AssistantLocation,
+  AssistantOptions,
+  AssistantDescriptor,
+  AssistantPaths,
+} from "forge614-engram";
+```
+
+- **`ClientId`:** Literal union type `'claude-code' | 'codex' | 'cursor' | 'opencode' | 'antigravity'`.
+- **`AssistantLocation`:** Path override shape (`configDir`, `configFile`, `executable`).
+- **`AssistantOptions`:** Inspection options for testing or customized environments (`home`, `env`, `path`, `platform`, `locations`, `engramExecutable`).
+- **`AssistantDescriptor`:** Complete structured contract returned by `inspectAssistant()`.
+- **`AssistantPaths`:** Resolved paths contract returned by `resolveAssistantPaths()`.
+
+---
+
+### Production Code Example for Sibling Projects (Atlas)
+
+The following example demonstrates how a sibling product (such as Atlas) inspects installed assistant engines on the host machine prior to spawning subagents:
+
+```typescript
+import {
+  CLIENT_IDS,
+  inspectAssistant,
+  isClientId,
+  resolveAssistantPaths,
+} from "forge614-engram";
+
+// 1. Iterate through all supported assistants to audit installed engines
+for (const clientId of CLIENT_IDS) {
+  const assistant = inspectAssistant(clientId);
+
+  if (assistant.detected.installed) {
+    console.log(`${assistant.label} is available at ${assistant.detected.executable}`);
+    console.log(`Configuration status: ${assistant.configuration.status}`);
+    console.log(`Automation level: ${assistant.automation.coverage}`);
+  }
+}
+
+// 2. Validate dynamic client identifiers before use
+const requestedClient = "claude-code";
+
+if (isClientId(requestedClient)) {
+  // 3. Resolve canonical configuration paths safely
+  const paths = resolveAssistantPaths(requestedClient);
+  console.log(`Base directory: ${paths.directory}`);
+  console.log(`Config path: ${paths.config}`);
+  if (paths.hooks) {
+    console.log(`Hooks path: ${paths.hooks}`);
+  }
+} else {
+  console.error(`Client '${requestedClient}' is not a recognized assistant.`);
+}
+```
+
+---
+
+### SDK Contract Verification and Quality
+
+The public SDK contract is continuously verified by a dedicated contract test suite in `src/index.test.ts`:
+1. **Type and Runtime Verification:** Verifies that `CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths`, and `coverageWarnings` are exported runtime constants/functions, and verifies that TypeScript types compile without errors.
+2. **Test Suite:** Validated with `bun test src/index.test.ts` (4 passed, 0 failed) and full `bun test`.
+3. **Strict Type Checking:** Verified with `bun run typecheck` (`tsc --noEmit`).
+4. **Formatting and Whitespace:** Verified with `git diff --check`.

@@ -137,7 +137,7 @@ Comprueba la versión instalada y la ayuda general sin tocar el disco ni crear a
 ```bash
 # Comprobar la versión instalada
 forge614-engram --version
-# Salida esperada: forge614-engram 0.5.0
+# Salida esperada: forge614-engram 1.0.0
 
 # Consultar la ayuda oficial
 forge614-engram help
@@ -242,6 +242,12 @@ Sí, configurar PostgreSQL
 Elige [si/NO]:
 ```
 
+### Reparación Automática Previa de Permisos Privados (`0700`)
+Antes de leer la configuración o formular preguntas interactivas, `setup` inspecciona si la carpeta `~/.forge614/` ya existe. Si existe, es un directorio ordinario, pertenece al usuario actual y tiene permisos más abiertos que `0700` (por ejemplo `0755`), el comando restringe automáticamente sus permisos a `0700` (`rwx------`).
+- **¿Por qué son indispensables los permisos `0700`?** La carpeta central contiene recuerdos personales, la base de datos SQLite `engram.db`, diarios WAL y potencialmente credenciales de conexión a PostgreSQL en `.env`. Los permisos `0700` garantizan que únicamente el usuario dueño de la cuenta pueda acceder a estos datos, bloqueando a cualquier otro usuario local de la máquina.
+- **Sin necesidad de `chmod`:** Los usuarios finales no necesitan comprender los permisos octales de UNIX ni ejecutar manualmente comandos como `chmod 0700 ~/.forge614`.
+- **Límites estrictos de seguridad (*Fail-Closed*):** Esta reparación automática está intencionadamente limitada a directorios ordinarios propiedad del usuario actual. No crea carpetas si no existían (`ENOENT`), nunca repara ni sigue enlaces simbólicos (*symlinks*), y rechaza de inmediato rutas que no sean directorios, que pertenezcan a otros usuarios o cuyos permisos finales no puedan asegurarse.
+
 ### Opciones de Sincronización
 - **Opción `No` (Predeterminada):**
   Presionar Enter o escribir `no` opera de manera 100% local e independiente. Si PostgreSQL ya estaba configurado, elegir `No` lo desactiva sin borrar ninguna copia previa.
@@ -293,7 +299,7 @@ El flujo de incorporación `setup` maneja la cancelación de forma independiente
 - **Cancelación durante la configuración de memoria:** Si presionas `Ctrl+C`, `Escape` o respondes `no` antes de confirmar la memoria:
   - El comando finaliza de inmediato con código de salida **130** (*Cancelled*).
   - **No se abre la TUI de asistentes.**
-  - **No se escribe ningún archivo en disco.** Si `~/.forge614/` no existía, permanece inexistente.
+  - **No se crea `.env`, `engram.db`, proyectos ni recuerdos:** Si `~/.forge614/` no existía, permanece inexistente. Si ya existía como directorio ordinario del usuario con permisos abiertos, únicamente se habrá restringido su permiso a `0700` para proteger la privacidad del usuario; ningún archivo adicional es creado.
 - **Cancelación o salida en la TUI de asistentes:** Si completaste y confirmaste la configuración de memoria pero decides salir o cancelar el selector de asistentes:
   - El espacio de memoria inicializado **se conserva intacto** en `~/.forge614/`.
   - No se revierte ni se destruye la base de datos recién configurada.
@@ -305,8 +311,8 @@ Para evitar confusiones operativas:
 
 | Comando | Tipo de Interfaz | ¿Configura Memoria (`~/.forge614`)? | ¿Detecta o Conecta Asistentes? |
 | :--- | :--- | :--- | :--- |
-| **`forge614-engram setup`** | Interactiva (TTY) | Sí (guiado paso a paso con confirmación) | **Sí:** Abre automáticamente la TUI de asistentes tras configurar memoria |
-| **`forge614-engram init`** | No interactiva (Headless / JSON) | Sí (crea/verifica almacenamiento en modo silencioso) | **No:** No detecta asistentes ni abre interfaces interactivas |
+| **`forge614-engram setup`** | Interactiva (TTY) | Sí (repara permisos de carpeta existente a `0700` antes de preguntar; guiado paso a paso con confirmación) | **Sí:** Abre automáticamente la TUI de asistentes tras configurar memoria |
+| **`forge614-engram init`** | No interactiva (Headless / JSON) | Sí (repara permisos existentes a `0700` y crea/verifica almacenamiento en modo silencioso) | **No:** No detecta asistentes ni abre interfaces interactivas |
 | **`forge614-engram assistant-list`** | De solo lectura (JSON) | **No:** Jamás crea `.forge614` ni escribe archivos | **Sí (Solo lectura):** Audita ejecutables y estado sin alterar configuraciones |
 
 ---
@@ -448,7 +454,7 @@ Salida esperada (en JSON puro):
    Habilitar el refuerzo no modifica los archivos de configuración de tus asistentes ni sus ganchos. Para actualizar las instrucciones de los asistentes previamente configurados, utiliza la opción `Assistants` del Centro de Control `tui` con su mecanismo seguro de previsualización y respaldo.
 4. **Coordinación entre Equipos Pares (*Peer Devices*):**
    Si sincronizas tu memoria con otras computadoras mediante PostgreSQL:
-   - Todas las computadoras deben actualizarse a la versión 0.5.0 compatible.
+   - Todas las computadoras deben actualizarse a la versión 1.0.0 compatible.
    - En cada equipo par debe ejecutarse `forge614-engram reinforcement-enable` antes de sincronizar datos con confirmaciones. Si un cliente sin refuerzo recibe un snapshot con confirmaciones, aborta con `REINFORCEMENT_REQUIRED`.
 5. **Promoción de Réplica PostgreSQL (Formato 1 o 2 a Formato 3):**
    La habilitación local no promueve automáticamente la réplica remota. Para promover la réplica en PostgreSQL y sincronizar eventos de confirmación, se debe ejecutar conscientemente:
@@ -677,7 +683,7 @@ Salida en JSON:
 ```
 
 Este comando:
-1. Crea la carpeta `~/.forge614/` con permisos estrictos `0700` si no existía.
+1. Repara automáticamente a `0700` la carpeta `~/.forge614/` si ya existía con permisos más abiertos, o la crea con permisos estrictos `0700` si no existía.
 2. Escribe `~/.forge614/.env` en Formato 2 (`0600`) si no existía.
 3. Inicializa `~/.forge614/engram.db` en modo WAL (`0600`) con el esquema de recuerdos.
 4. Es completamente **idempotente y seguro**: si la base de datos ya existía con datos previos, no borra ni altera ningún recuerdo existente.

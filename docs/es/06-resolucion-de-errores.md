@@ -1,7 +1,7 @@
 # 06. Resolución de Problemas y Catálogo de Errores
 
 > **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.0.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
 > **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [06 (EN). Troubleshooting and Error Diagnostics](../en/06-troubleshooting.md)
 
@@ -161,10 +161,13 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
      ```powershell
      pwsh -File scripts/build-windows-reparse-addon.ps1
      ```
-  3. En sistemas Unix, restringe los permisos de los directorios contenedores:
+  3. En sistemas Unix, `forge614-engram setup` y `forge614-engram init` restringen y reparan automáticamente a `0700` cualquier carpeta preexistente `~/.forge614` propiedad del usuario actual, sin que requieras ejecutar `chmod` manualmente.
+     Si la carpeta pertenece a otro usuario (como `root` por un comando previo con `sudo`), debes corregir la propiedad y permisos de la cuenta:
      ```bash
+     sudo chown -R $(id -un):$(id -gn) ~/.forge614
      chmod 0700 ~/.forge614
      ```
+     Si `~/.forge614` es un enlace simbólico (*symlink*), Engram lo bloquea deliberadamente por seguridad (*fail-closed*) y no intentará repararlo; debes eliminar el symlink y crear un directorio ordinario real.
 
 ---
 

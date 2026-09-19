@@ -1,6 +1,6 @@
 {
   "name": "forge614-engram",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Memoria personal local con historial y búsqueda explicable",

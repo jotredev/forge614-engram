@@ -1,7 +1,7 @@
 # 05 (EN). Internal Architecture, Modular Monolith, FTS5, and Ranking Formulas
 
 > **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
 > **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [05. Arquitectura Interna, Monolito Modular por Funcionalidad, SQLite FTS5 y Fórmulas Matemáticas](../es/05-arquitectura-interna-y-formulas.md)
 
@@ -565,7 +565,28 @@ To materialize temporary files and backups on disk, Engram uses secure descripto
 * **CI Technical Incident on Windows Runners:**
   During GitHub Actions test execution, calling `openSync` in Bun on Windows returned `ENOENT` when supplied with bitwise numeric flags (`O_WRONLY | O_CREAT | O_EXCL`). However, backup creation using textual mode `{ flag: 'wx' }` succeeded reliably. Centralizing file creation under `safeOpenFlag(unixFlags, windowsFlag)` resolved the issue.
 
-### 9.5. Native Compilation Toolchain and Executable Resolution
+### 9.5. Central Storage Privacy and Automatic Permission Repair (`repairExistingRoot`)
+
+The user directory `~/.forge614/` stores highly sensitive technical data: the central SQLite database `engram.db`, temporary WAL journals containing recent uncheckpointed memory mutations in plaintext, concurrency lockfiles (`.config-lock`), and the `.env` settings file which may contain remote PostgreSQL credentials.
+
+#### Justification for Strict Privacy Permissions (`0700` and `0600`)
+In multi-user operating systems (such as shared development servers, cloud workstations, or lab environments), standard directory permissions like `0755` (`rwxr-xr-x`) allow any other local user account to list, inspect, or copy stored memories and configuration files. To guarantee complete privacy:
+- The parent workspace directory must strictly enforce octal permissions `0700` (`rwx------`, read/write/execute for the owner only).
+- The `.env` configuration file must enforce permissions `0600` (`rw-------`, read/write for the owner only).
+
+#### Automatic Repair Without User Friction
+Previously, if `~/.forge614/` pre-existed with standard umask permissions (such as `0755`), Engram refused execution with `CONFIG_INVALID`, requiring the user to understand UNIX permissions and manually execute `chmod 0700 ~/.forge614`.
+
+To eliminate this friction while preserving strict security guarantees, `WorkspaceConfig` provides `repairExistingRoot()`:
+1. **Pre-prompt Invocation in `setup` and `init`:** Both interactive `setup` (before showing prompts or reading existing config) and headless `init`, as well as `MemoryWorkspace.init()`, invoke `config.repairExistingRoot()`.
+2. **Inspection Without Creation:** `repairExistingRoot()` invokes internal `directory(create: false, repair: true)`. If the directory does not exist (`ENOENT`), it returns `false` immediately without touching the filesystem.
+3. **Strict Ownership Verification:** Reads directory stats using `lstatSync` (never following symbolic links) and verifies that the path is an ordinary directory, is not a symbolic link, and is owned by the current process user (`stat.uid === process.getuid()`).
+4. **Automatic Tightening:** If group or other permission bits are open (`(stat.mode & 0o077) !== 0`), it executes `chmodSync(this.root, 0o700)`.
+5. **Post-Repair Re-Verification:** Re-inspects the directory with `lstatSync` to certify that the resulting directory is ordinary, non-symlinked, and strictly private (`privateOwned`).
+6. **Fail-Closed Architecture:** If the path is a symbolic link, a regular file, is owned by another user, or permissions cannot be restricted, it fails immediately with `failure("CONFIG_INVALID")`.
+7. **Clean Cancellation Semantics:** If the user cancels `setup` after permission repair, `.env`, `engram.db`, projects, and memories remain completely uncreated; only the pre-existing directory permissions were tightened.
+
+### 9.6. Native Compilation Toolchain and Executable Resolution
 Compiling the native addon on Windows utilizes `scripts/build-windows-reparse-addon.ps1`:
 - **Node.js (22.14.0 in CI):** Required strictly at compile time to run `node-gyp`. Not needed by end users at runtime.
 - **`node-gyp` (version 12.1.0 pinned in `devDependencies`):** Pinned version required to ensure full compatibility between Node.js 22 and Visual Studio 2026.
@@ -573,7 +594,7 @@ Compiling the native addon on Windows utilizes `scripts/build-windows-reparse-ad
 - **Visual Studio 2026 Build Tools (v18):** Official Microsoft C++ compiler toolset on `windows-latest` runners.
 - **Single-Candidate `node.exe` Resolution (`Resolve-NodeExecutable`):** In CI virtual machines with multiple Node.js installations in PATH, this function filters output to select strictly one valid executable path, preventing PowerShell string concatenation bugs.
 
-### 9.6. Standalone Release Packaging, Addon Embedding, and Strengthened Smoke Test (release.yml)
+### 9.7. Standalone Release Packaging, Addon Embedding, and Strengthened Smoke Test (release.yml)
 To distribute single-file standalone executables without requiring developer tools on the end user's machine, the release workflow (`.github/workflows/release.yml`) implements a rigorous packaging architecture:
 * **Dual Execution Modes (Manual vs. Official Release):**
   - Manual execution (`workflow_dispatch`): Allows compiling all 6 platform installers, running isolated profile packaged checks, and verifying `SHA256SUMS` without publishing a GitHub Release or touching tags.
@@ -593,9 +614,9 @@ To distribute single-file standalone executables without requiring developer too
   1. `Verify` Workflow (**Run ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`): Successfully passed on Ubuntu, macOS, and Windows x64 native (543/545 passed, 0 failures).
   2. `Release standalone artifacts` Workflow (**Run ID `35427429725`**, and reference run `35428406085`): Successfully built and validated all 6 standalone binaries (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64 with embedded addon), verified `SHA256SUMS` (six `OK` checks), and safely skipped public release publication.
 * **Local Test Suite Evidence:**
-  The full test suite finished with **536 pass, 13 skip, 0 fail**, 2,606 assertions in 88 files; `bun run typecheck`, `git diff --check`, and `bash -n` all completed with exit code 0.
+  The full test suite finished with **545 pass, 15 skip, 0 fail**, 2,671 assertions in 88 files; `bun run typecheck`, `git diff --check`, and `bash -n` all completed with exit code 0.
 
-### 9.7. Pending Tasks for Stable Release (v1.0.0)
+### 9.8. Pending Tasks for Stable Release (v1.0.0)
 With native addon embedding, empty-profile smoke test verification, and `SHA256SUMS` validation completed in CI, the remaining requirements for v1.0.0 are:
 1. **Clean Environment Validation:** Test binary installation and execution on a clean physical or virtual Windows machine without developer tools (no Node.js, Python, or Visual Studio installed previously).
 2. **Runtime Dependency Verification (MSVC CRT):** Certify that the standalone executable does not require external C++ redistributable packages (*MSVC CRT*) on that base Windows installation.

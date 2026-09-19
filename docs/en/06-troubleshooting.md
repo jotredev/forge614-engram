@@ -1,7 +1,7 @@
 # 06 (EN). Troubleshooting and Error Diagnostics
 
 > **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
 > **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2,566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [06. Resolución de Problemas y Catálogo de Errores](../es/06-resolucion-de-errores.md)
 
@@ -161,10 +161,13 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
      ```powershell
      pwsh -File scripts/build-windows-reparse-addon.ps1
      ```
-  3. On Unix systems, restrict permissions of containing folders:
+  3. On Unix systems, `forge614-engram setup` and `forge614-engram init` automatically restrict and repair any pre-existing user-owned `~/.forge614` directory to `0700`, eliminating the need for manual `chmod`.
+     If the directory is owned by another user (such as `root` from an accidental `sudo` command), restore correct user ownership and permissions:
      ```bash
+     sudo chown -R $(id -un):$(id -gn) ~/.forge614
      chmod 0700 ~/.forge614
      ```
+     If `~/.forge614` is a symbolic link, Engram intentionally blocks it fail-closed and will not attempt to repair it; you must remove the symlink and use an ordinary physical directory.
 
 ---
 

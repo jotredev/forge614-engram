@@ -1,7 +1,7 @@
 # 07. Glosario de Conceptos en Lenguaje Cotidiano
 
 > **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 0.5.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.0.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
 > **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
 > **Traducción hermana:** [07 (EN). Plain-Language Glossary](../en/07-glossary.md)
 
@@ -153,3 +153,9 @@ Como terminar de acondicionar una oficina e invitar inmediatamente a los colabor
 
 ### Verificación Reforzada de Humo en Perfil Vacío (Strengthened Addon Release Smoke Test)
 Como encender un motor de prueba en un banco sin combustible residual para comprobar que todas las válvulas se mueven correctamente: una comprobación automatizada en CI donde los ejecutables compilados de Windows ejecutan `assistant-list` bajo un perfil temporal limpio (`RUNNER_TEMP`), exigiendo que los 5 asistentes reporten exactamente estado `absent` y fallando ante cualquier resultado `blocked`, lo que certifica que el complemento nativo C++ incrustado está genuinamente cargado y operando en memoria sin polución residual en disco.
+
+### Reparación Automática de Permisos de Espacio Privado (Automatic Private Workspace Permission Repair / `repairExistingRoot`)
+Como un cerrajero de confianza que, al revisar la puerta de tu archivo privado, ajusta de inmediato la cerradura para que solo tu llave pueda abrirla sin pedirte que busques herramientas: el mecanismo automatizado mediante el cual `forge614-engram setup` e `init` restringen a `0700` (`rwx------`) una carpeta `~/.forge614` preexistente que pertenezca al usuario actual si sus permisos eran más abiertos (como `0755`), garantizando la privacidad de los recuerdos, bases SQLite y credenciales en `.env` sin obligar al usuario a comprender o ejecutar `chmod` manualmente, y bloqueando de inmediato enlaces simbólicos, archivos o directorios de otros usuarios de forma estricta (*fail-closed*).
+
+### Detección e Inspección de Asistentes para el SDK (Assistant Detection & Inspection SDK)
+Como el conserje de un edificio corporativo que consulta el directorio de la recepción para indicarte qué oficinas están ocupadas y en qué piso se encuentran, sin abrir escritorios ajenos ni entrar a las salas: la superficie pública de solo lectura expuesta en la raíz de `forge614-engram` (`CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths`, `coverageWarnings`) que permite a productos hermanos de orquestación (como Forge614 Atlas) auditar qué asistentes de inteligencia artificial están instalados en el equipo del usuario y cuáles son sus rutas esperadas de configuración, sin modificar archivos, sin alterar configuraciones de MCP ni abrir bases de datos locales.

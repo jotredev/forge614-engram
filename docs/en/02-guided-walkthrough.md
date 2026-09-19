@@ -1,7 +1,7 @@
 # 02 (EN). Guided System Walkthrough
 
 > **Stage:** TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
-> **Release Versions:** Program 0.5.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
+> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
 > **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
 > **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
@@ -50,7 +50,7 @@ forge614-engram setup
 ```
 
 **Interactive Terminal Flow:**
-1. Shows central file paths: `~/.forge614/.env` and `~/.forge614/engram.db`.
+1. Displays central file paths (`~/.forge614/.env` and `~/.forge614/engram.db`) and **automatically tightens permissions to `0700`** on any pre-existing user-owned directory before asking questions, eliminating the need for manual `chmod`.
 2. Asks whether to configure PostgreSQL synchronization:
    - Option 1: `No` (default, 100% local and offline).
    - Option 2: `Sí, configurar PostgreSQL` (prompts for masked connection string).
@@ -58,9 +58,9 @@ forge614-engram setup
    - Default: `NO`.
    - Replying `sí` / `yes` stages Schema 7 immutable confirmations and reinforced ranking without embeddings.
 4. Displays plan summary and asks for pre-flight confirmation (`¿Confirmar? [si/NO]`).
-5. Sets `~/.forge614/` to `0700`, `.env` to `0600`, and creates `engram.db`.
+5. Upon confirmation, prepares `~/.forge614/` to `0700` (creating or securing it), writes `.env` to `0600`, and initializes `engram.db`.
 6. **Automatic Transition to Assistant Onboarding:** Following storage completion, `setup` cleanly closes the terminal reader and automatically launches the Assistant Selection TUI (`assistantTui`). It detects the 5 supported assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity), allowing selective enrollment, path previews, automatic private backups, and explicit confirmation (zero silent file modifications).
-7. **Safe Cancellation Semantics:** Cancelling during memory setup (`Ctrl+C` or `no`) exits with code **130** without launching the assistant TUI and without touching disk. Cancelling inside the assistant TUI after memory setup leaves the initialized memory store intact.
+7. **Safe Cancellation Semantics:** Cancelling during memory setup (`Ctrl+C` or `no`) exits with code **130** without launching the assistant TUI and without creating `.env` or `engram.db` (only securing `0700` permissions on an existing directory). Cancelling inside the assistant TUI after memory setup leaves the initialized memory store intact.
 
 ---
 
