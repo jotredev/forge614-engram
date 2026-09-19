@@ -10,6 +10,7 @@ export class MemoryWorkspace {
   constructor(private readonly config = new WorkspaceConfig()) {}
 
   init(): void {
+    this.config.repairExistingRoot();
     if (this.config.exists()) {
       const store = this.open(true);
       store.close();

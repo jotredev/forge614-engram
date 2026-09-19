@@ -27,6 +27,7 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     io.write("Forge614 Engram — configuración guiada\nEscribe cancelar o q, o pulsa Ctrl+C, para salir antes de confirmar.");
     io.write(`Una configuración global: ${display(config.root + "/.env")}\nUna base SQLite para todos los proyectos: ${display(config.databasePath)}`);
     io.write("SQLite y FTS5 siempre guardan y buscan en este equipo, incluso sin conexión. PostgreSQL permite sincronizar una copia; no reemplaza SQLite.");
+    config.repairExistingRoot();
     const configured = config.exists();
     const revision=config.revision();
     let reinforcementEnabled=false;

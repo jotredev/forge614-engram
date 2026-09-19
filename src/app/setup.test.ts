@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
@@ -31,6 +31,18 @@ test("setup cancellation leaves a fresh workspace absent", async () => {
     expect(await runSetup(io, config)).toEqual({ cancelled: true });
     expect(existsSync(config.root)).toBe(false);
   }
+});
+
+test("setup automatically restricts an existing user-owned workspace directory before prompting", async () => {
+  const { config } = fixture();
+  mkdirSync(config.root, { mode: 0o755 });
+  chmodSync(config.root, 0o755);
+
+  expect(await runSetup(conversation(["q"]).io, config)).toEqual({ cancelled: true });
+
+  expect(statSync(config.root).mode & 0o777).toBe(0o700);
+  expect(existsSync(join(config.root, ".env"))).toBe(false);
+  expect(existsSync(config.databasePath)).toBe(false);
 });
 
 test("setup defaults to no PostgreSQL and initializes global storage without a project", async () => {

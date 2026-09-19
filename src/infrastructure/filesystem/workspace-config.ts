@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { chmodSync, closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { createHash } from "node:crypto";
 import { postgresOptions } from "../postgres/replica";
 import { isAbsolute, join, resolve } from "node:path";
@@ -11,9 +11,8 @@ function failure(code = "CONFIG_INVALID"): never {
   throw new MemoryError(code, "Configuración global inválida o inaccesible. Comprueba su formato, propietario y permisos (carpeta 700, archivo 600), sin compartir su contenido.");
 }
 function errno(error: unknown, code: string): boolean { return (error as NodeJS.ErrnoException)?.code === code; }
-function privateOwned(stat: Stats): boolean {
-  return (stat.mode & 0o077) === 0 && (typeof process.getuid !== "function" || stat.uid === process.getuid());
-}
+function ownedByCurrentUser(stat: Stats): boolean { return typeof process.getuid !== "function" || stat.uid === process.getuid(); }
+function privateOwned(stat: Stats): boolean { return (stat.mode & 0o077) === 0 && ownedByCurrentUser(stat); }
 
 /** Single private workspace config. No environment loading or shell evaluation. */
 export class WorkspaceConfig {
@@ -26,16 +25,21 @@ export class WorkspaceConfig {
   }
   get databasePath(): string { return join(this.root, "engram.db"); }
 
-  prepare(): void { this.directory(true); }
+  prepare(): void { this.directory(true, true); }
+  /** Tighten only an existing ordinary user-owned directory; never creates one. */
+  repairExistingRoot(): void { this.directory(false, true); }
 
-  private directory(create: boolean): boolean {
+  private directory(create: boolean, repair: boolean): boolean {
     if (create) {
       try { mkdirSync(this.root, { recursive: true, mode: 0o700 }); }
       catch { failure(); }
     }
     try {
       const stat = lstatSync(this.root);
-      if (!stat.isDirectory() || stat.isSymbolicLink() || !privateOwned(stat)) failure();
+      if (!stat.isDirectory() || stat.isSymbolicLink() || !ownedByCurrentUser(stat)) failure();
+      if (repair && (stat.mode & 0o077) !== 0) chmodSync(this.root, 0o700);
+      const repaired = lstatSync(this.root);
+      if (!repaired.isDirectory() || repaired.isSymbolicLink() || !privateOwned(repaired)) failure();
     } catch (error) {
       if (!create && errno(error, "ENOENT")) return false;
       failure();
@@ -51,13 +55,13 @@ export class WorkspaceConfig {
   }
 
   exists(): boolean {
-    if (!this.directory(false)) return false;
+    if (!this.directory(false, false)) return false;
     try { lstatSync(join(this.root, ".env")); return true; }
     catch (error) { if (errno(error, "ENOENT")) return false; return failure(); }
   }
 
   read(): WorkspaceSettings {
-    if (!this.directory(false)) failure("CONFIG_NOT_FOUND");
+    if (!this.directory(false, false)) failure("CONFIG_NOT_FOUND");
     let fd: number | undefined;
     try {
       fd = openSync(join(this.root, ".env"), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
