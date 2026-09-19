@@ -13,6 +13,7 @@ export function validPath(path:string):string {
   return resolve(path);
 }
 function stat(path:string){try{return lstatSync(path);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;}}
+function noFollowOpenFlags(flags:number):number{return process.platform==='win32'?flags:flags|constants.O_NOFOLLOW;}
 type WindowsReparsePointChecker = (path:string) => unknown;
 function assertNoWindowsReparsePoints(paths:readonly string[],checker:WindowsReparsePointChecker):void{
   for(const path of paths){
@@ -43,7 +44,7 @@ export function readSafeFile(path:string):string|null{
   assertSafePath(path);const entry=stat(path);if(!entry)return null;
   if(!entry.isFile()||(typeof process.getuid==='function'&&entry.uid!==process.getuid())||entry.nlink!==1)fail('UNSAFE_FILE','Configuration must be a regular file owned by the current user.');
   if(entry.size>MAX_CONFIG_BYTES)fail('FILE_TOO_LARGE','Configuration exceeds the 1 MiB limit.');
-  const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+  const fd=openSync(path,noFollowOpenFlags(constants.O_RDONLY));
   try{
     const opened=fstatSync(fd);if(opened.ino!==entry.ino||opened.dev!==entry.dev)fail('CHANGED','Configuration changed during inspection.');
     // Bound allocation and reads even if another writer grows the file after lstat.
@@ -66,7 +67,7 @@ export function guardedWrite(write:PrivateWrite,onBackup:(path:string)=>void,onP
   }
   const temporary=write.path+'.forge614-tmp-'+randomUUID();let created=false;
   try{
-    const fd=openSync(temporary,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);created=true;
+    const fd=openSync(temporary,noFollowOpenFlags(constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL),0o600);created=true;
     try{writeFileSync(fd,write.after);fsyncSync(fd);}finally{closeSync(fd);}
     if(readSafeFile(write.path)!==write.before)fail('CHANGED','Configuration changed before replacement. The original backup was retained.');
     assertSafePath(write.path);io.rename(temporary,write.path);created=false;onPublished(write.path);
