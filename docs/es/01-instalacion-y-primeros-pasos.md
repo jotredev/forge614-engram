@@ -61,16 +61,16 @@ irm https://github.com/jotredev/forge614-engram/releases/latest/download/install
 > [!NOTE]
 > **Disponibilidad de Release:** Los instaladores oficiales descargan la última GitHub Release pública (o una versión específica si se indica `--version <tag>` en Unix o `-Version <tag>` en Windows) y verifican el hash SHA-256 del binario contra el manifiesto `SHA256SUMS` antes de colocarlo en el sistema.
 
-### Probar la prerelease `1.1.0-beta.1`
+### Probar la prerelease `1.1.0-beta.2`
 
 `latest` continúa significando la versión estable. Para probar esta prerelease de forma explícita, usa:
 
 ```bash
-curl -fsSL https://github.com/jotredev/forge614-engram/releases/download/v1.1.0-beta.1/install.sh | bash
+curl -fsSL https://github.com/jotredev/forge614-engram/releases/download/v1.1.0-beta.2/install.sh | bash
 ```
 
 ```powershell
-irm https://github.com/jotredev/forge614-engram/releases/download/v1.1.0-beta.1/install.ps1 | iex
+irm https://github.com/jotredev/forge614-engram/releases/download/v1.1.0-beta.2/install.ps1 | iex
 ```
 
 ### ¿Qué realiza exactamente el instalador oficial?
@@ -160,7 +160,7 @@ Comprueba la versión instalada y la ayuda general sin tocar el disco ni crear a
 ```bash
 # Comprobar la versión instalada
 forge614-engram --version
-# Salida beta esperada: forge614-engram 1.1.0-beta.1
+# Salida beta esperada: forge614-engram 1.1.0-beta.2
 
 # Consultar la ayuda oficial
 forge614-engram help

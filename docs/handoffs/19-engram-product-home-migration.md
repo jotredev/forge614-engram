@@ -1,8 +1,8 @@
-# Handoff técnico 19: Hogar propio de producto, migración segura y desinstalador coordinado (v1.1.0-beta.1)
+# Handoff técnico 19: Hogar propio de producto, migración segura y desinstalador coordinado (v1.1.0-beta.2)
 
-Fecha de verificación: 2026-09-19 (UTC).  
-Rama: `feat/engram-product-home-migration`.  
-Versión candidata: 1.1.0-beta.1.  
+Fecha de verificación: 2026-09-19 (UTC).
+Rama: `main` (incorporando `feat/engram-product-home-migration` y `fix/release-verification-flakes`).
+Versión candidata: 1.1.0-beta.2.
 Commits clave de la entrega:
 - `c5f4c12`: `feat: define the Engram product home`
 - `c3f4843`: `feat: migrate legacy Engram storage safely`
@@ -13,6 +13,17 @@ Commits clave de la entrega:
 - `d447c69`: `feat: complete guarded Engram uninstall`
 - `422ed65`: `chore: prepare version 1.1.0`
 - `0cb7d00`: `fix: remove escaped Engram PATH entries`
+- `7a8150c`: `docs: prepare 1.1.0 beta product-home release`
+- `b51984f`: `fix: stabilize release verification`
+- `6da21db`: `test: wait for TUI cancellation completion`
+- `7028db6`: `chore: prepare version 1.1.0-beta.2`
+
+> [!NOTE]
+> **Estabilización de Prerelease (de `v1.1.0-beta.1` a `v1.1.0-beta.2`):**
+> La candidata previa `v1.1.0-beta.1` no llegó a publicarse porque la verificación automatizada de release en GitHub Actions falló por dos pruebas. La versión `1.1.0-beta.2` incorpora exclusivamente estabilizaciones en las pruebas de CI sin ningún cambio en el comportamiento del producto para los usuarios:
+> 1. La prueba de integración con PostgreSQL (`tests/e2e/postgres-sync.test.ts`) fue actualizada para usar la ruta canónica `~/.forge614/engram`.
+> 2. La prueba de cancelación de la TUI de asistentes (`src/interfaces/tui/__tests__/assistant-tui.integration.test.ts`) ahora espera la confirmación visual de cancelación (`CANCELLED`) en pantalla antes de verificar el cierre del proceso hijo, evitando fallos por condiciones de carrera en entornos compartidos de CI.
+> 3. Se añadió una prueba unitaria directa de terminación de proceso en `src/infrastructure/assistants/self-test.test.ts`.
 
 ---
 
@@ -145,7 +156,7 @@ Ran 587 tests across 91 files. [38.13s]
 
 ## 5. Documentación Actualizada
 
-Los 19 documentos de la suite bilingüe de documentación oficial fueron actualizados para reflejar la candidata 1.1.0-beta.1 y su futuro estable 1.1.0:
+Los 19 documentos de la suite bilingüe de documentación oficial fueron actualizados para reflejar la candidata 1.1.0-beta.2 y su futuro estable 1.1.0:
 - `docs/README.md`
 - `docs/es/README.md` & `docs/en/README.md`
 - `docs/es/01-instalacion-y-primeros-pasos.md` & `docs/en/01-installation-and-getting-started.md`
