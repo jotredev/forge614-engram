@@ -36,3 +36,10 @@ test("Windows release artifacts build and load their matching embedded native ad
   expect(workflow).toContain('release_flags+=(--prerelease)');
   expect(workflow).not.toContain("shell: ${{ matrix.shell }}");
 });
+
+test("every published release includes the Unix and Windows bootstrap installers", () => {
+  const publish = workflow.slice(workflow.indexOf("  publish:"));
+  expect(publish).toContain("uses: actions/checkout@v4");
+  expect(publish).toContain("scripts/install.sh#install.sh");
+  expect(publish).toContain("scripts/install.ps1#install.ps1");
+});

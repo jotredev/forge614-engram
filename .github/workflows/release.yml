@@ -200,6 +200,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: release-assets
@@ -222,6 +223,8 @@ jobs:
             dist/forge614-engram-windows-x64.exe \
             dist/forge614-engram-windows-arm64.exe \
             dist/SHA256SUMS \
+            scripts/install.sh#install.sh \
+            scripts/install.ps1#install.ps1 \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             "${release_flags[@]}"
