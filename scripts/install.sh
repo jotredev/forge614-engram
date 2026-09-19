@@ -5,7 +5,7 @@ usage() {
   printf '%s\n' \
     'Install a verified Forge614 Engram release binary.' \
     'Usage: bash scripts/install.sh [--version TAG] [--bin-dir PATH] [--force]' \
-    'Default destination: $HOME/.local/bin/forge614-engram' \
+    'Default destination: $HOME/.forge614/engram/bin/forge614-engram' \
     '--force explicitly replaces an existing installation.'
 }
 
@@ -106,7 +106,7 @@ is_loopback_test_url() {
 }
 
 repo='jotredev/forge614-engram'
-bin_dir="${HOME:?HOME must be set}/.local/bin"
+bin_dir="${HOME:?HOME must be set}/.forge614/engram/bin"
 version=''
 force=0
 seen_bin_dir=0

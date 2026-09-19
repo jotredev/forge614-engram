@@ -14,7 +14,7 @@ function Show-Usage {
   @(
     'Install a verified Forge614 Engram release binary.',
     'Usage: powershell -File scripts/install.ps1 [-Version TAG] [-BinDir PATH] [-Force]',
-    'Default destination: $env:LOCALAPPDATA\Forge614\bin\forge614-engram.exe',
+    'Default destination: $env:USERPROFILE\.forge614\engram\bin\forge614-engram.exe',
     '-Force explicitly replaces an existing installation.'
   ) | ForEach-Object { Write-Output $_ }
 }
@@ -118,8 +118,8 @@ switch ($architecture.ToUpperInvariant()) {
 }
 
 if (-not $BinDir) {
-  if (-not $env:LOCALAPPDATA) { Stop-Install 'LOCALAPPDATA must be set when -BinDir is not provided.' }
-  $BinDir = Join-Path $env:LOCALAPPDATA 'Forge614\bin'
+  if (-not $env:USERPROFILE) { Stop-Install 'USERPROFILE must be set when -BinDir is not provided.' }
+  $BinDir = Join-Path $env:USERPROFILE '.forge614\engram\bin'
 }
 $resolvedBinDir = [System.IO.Path]::GetFullPath($BinDir)
 $destination = Join-Path $resolvedBinDir 'forge614-engram.exe'

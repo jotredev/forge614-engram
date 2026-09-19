@@ -361,6 +361,23 @@ test("downloads a verified release binary without writing user state", async () 
   }
 });
 
+test("default install uses the product bin and preserves Forge614 Shell", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const fakeHome = join(root, "home");
+  const shellFile = join(fakeHome, ".forge614", "shell", "keep");
+  mkdirSync(resolve(shellFile, ".."), { recursive: true });
+  writeFileSync(shellFile, "unchanged");
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller([]), true, "/bin/unknown");
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(existsSync(join(fakeHome, ".forge614", "engram", "bin", "forge614-engram"))).toBe(true);
+    expect(readFileSync(shellFile, "utf8")).toBe("unchanged");
+  } finally { server.stop(true); }
+});
+
 test("refuses replacement without force", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");

@@ -8,12 +8,12 @@ usage() {
     'Usage: bash scripts/install-from-source.sh [--bin-dir PATH] [--force]' \
     'Requires Bun >=1.3.8, Git, and a prepared Bun checkout.' \
     'Prepare dependencies with: bun install --frozen-lockfile --ignore-scripts' \
-    'Default destination: $HOME/.local/bin/forge614-engram' \
+    'Default destination: $HOME/.forge614/engram/bin/forge614-engram' \
     '--force explicitly replaces an existing installation.'
 }
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
-bin_dir="${HOME:?HOME must be set}/.local/bin"
+bin_dir="${HOME:?HOME must be set}/.forge614/engram/bin"
 force=0
 seen_dir=0
 while [ "$#" -gt 0 ]; do
