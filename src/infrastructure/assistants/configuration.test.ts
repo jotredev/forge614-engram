@@ -98,6 +98,17 @@ test.each(['claude-code','codex','cursor','opencode','antigravity'] as ClientId[
   if(id==='opencode') expect(existsSync(join(home,'.config','opencode','plugins','forge614-engram.js'))).toBe(false);
 });
 
+test('OpenCode removal deletes exact plugins from every active personal directory', () => {
+  const {home,executable,options}=fixture();const global=join(home,'.config/opencode');
+  mkdirSync(join(global,'plugins'),{recursive:true});
+  const custom=join(home,'custom-opencode');mkdirSync(join(custom,'plugins'),{recursive:true});
+  const plugin=join(global,'plugins/forge614-engram.js'),customPlugin=join(custom,'plugins/forge614-engram.js');
+  writeFileSync(plugin,createOpenCodePlugin());writeFileSync(customPlugin,createOpenCodePlugin());
+  options.env={OPENCODE_CONFIG_DIR:custom};
+  const removed=applyAssistantRemoval(planAssistantRemoval('opencode',executable,options));
+  expect(removed.ok).toBe(true);expect(existsSync(plugin)).toBe(false);expect(existsSync(customPlugin)).toBe(false);
+});
+
 test('refuses to remove a hand-edited managed MCP entry', () => {
   const {home,executable,options}=fixture();mkdirSync(join(home,'.cursor'));
   writeFileSync(join(home,'.cursor','mcp.json'),'{"mcpServers":{"forge614-engram":{"command":"other","args":["mcp"]}}}\n');

@@ -225,8 +225,17 @@ export function planAssistantRemoval(client:ClientId,executable:string,options:A
           removalWrite(paths.config,before,before.slice(0,index)+before.slice(index+section.length).replace(/^\n/,''),'config',writes);
         }
       }
+    } else if(client==='opencode') {
+      for(const path of new Set(paths.activeConfigs)){
+        const before=inspect(path);if(before===null)continue;
+        const value=json(before),existing=value.mcp?.[NAME];
+        if(existing===undefined)continue;
+        if(!isDeepStrictEqual(existing,entry))fail('CONFLICT','An existing Forge614 Engram MCP entry differs. It was not removed.');
+        const next={...(value.mcp??{})};delete next[NAME];
+        removalWrite(path,before,removalJson(before,[['mcp',next]]),'config',writes);
+      }
     } else {
-      const key=client==='opencode'?'mcp':'mcpServers',before=inspect(paths.config);
+      const key='mcpServers',before=inspect(paths.config);
       if(before!==null){
         const value=json(before),existing=value[key]?.[NAME];
         if(existing!==undefined){
@@ -237,10 +246,12 @@ export function planAssistantRemoval(client:ClientId,executable:string,options:A
       }
     }
     if(client==='opencode'){
-      const before=inspect(paths.plugin);
-      if(before!==null){
-        if(before!==createOpenCodePlugin())fail('CONFLICT','The dedicated Engram plugin has been edited. It was not removed.');
-        removalWrite(paths.plugin,before,null,'plugin',writes);
+      for(const path of new Set(paths.activePlugins)){
+        const before=inspect(path);
+        if(before!==null){
+          if(before!==createOpenCodePlugin())fail('CONFLICT','The dedicated Engram plugin has been edited. It was not removed.');
+          removalWrite(path,before,null,'plugin',writes);
+        }
       }
     } else if(client!=='antigravity'&&paths.hooks){
       const before=inspect(paths.hooks);

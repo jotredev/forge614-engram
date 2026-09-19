@@ -31,3 +31,35 @@ test("removes only the Engram product directory after exact confirmation", async
   const result=await uninstallEngram({confirmation:'REMOVE FORGE614-ENGRAM'},{home,executable:process.execPath,clients:[]});
   expect(result.removed).toBe(true);expect(existsSync(root)).toBe(false);expect(existsSync(join(shell,'keep'))).toBe(true);
 }));
+
+test("PATH cleanup failure leaves the Engram product directory intact", async () => withHome(async home => {
+  const root=join(home,'.forge614','engram');mkdirSync(root,{recursive:true});writeFileSync(join(root,'keep'),'memory');
+  await expect(uninstallEngram(
+    {confirmation:'REMOVE FORGE614-ENGRAM'},
+    {home,executable:process.execPath,clients:[],removePathPublication:async()=>{throw new Error('cannot clean PATH');}},
+  )).rejects.toMatchObject({code:'PATH_REMOVE_FAILED'});
+  expect(existsSync(join(root,'keep'))).toBe(true);
+}));
+
+test("an edited assistant connection leaves the Engram product directory intact", async () => withHome(async home => {
+  const root=join(home,'.forge614','engram'),cursor=join(home,'.cursor');mkdirSync(root,{recursive:true});mkdirSync(cursor,{recursive:true});
+  writeFileSync(join(root,'keep'),'memory');
+  writeFileSync(join(cursor,'mcp.json'),'{"mcpServers":{"forge614-engram":{"command":"edited","args":["mcp"]}}}\n');
+  await expect(uninstallEngram(
+    {confirmation:'REMOVE FORGE614-ENGRAM'},
+    {home,executable:process.execPath,clients:['cursor']},
+  )).rejects.toMatchObject({code:'ASSISTANT_REMOVE_FAILED'});
+  expect(existsSync(join(root,'keep'))).toBe(true);
+}));
+
+test("removes PATH publication before deleting the Engram product directory", async () => withHome(async home => {
+  const root=join(home,'.forge614','engram');mkdirSync(root,{recursive:true});writeFileSync(join(root,'memory'),'memory');
+  let rootExistedDuringPathRemoval=false;
+  await uninstallEngram(
+    {confirmation:'REMOVE FORGE614-ENGRAM'},
+    {home,executable:process.execPath,clients:[],removePathPublication:async()=>{
+      rootExistedDuringPathRemoval=existsSync(root);return [];
+    }},
+  );
+  expect(rootExistedDuringPathRemoval).toBe(true);expect(existsSync(root)).toBe(false);
+}));

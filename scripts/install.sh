@@ -20,6 +20,23 @@ manual_path_guidance() {
   printf 'export PATH=%q:"$PATH"\n' "$bin_dir"
 }
 
+prepare_bin_directory() {
+  local forge_home product_home
+  if [ "$bin_dir" != "$HOME/.forge614/engram/bin" ]; then
+    mkdir -p -- "$bin_dir"
+    [ -d "$bin_dir" ] && [ ! -L "$bin_dir" ] || return 1
+    return 0
+  fi
+  forge_home="$HOME/.forge614"
+  product_home="$forge_home/engram"
+  [ ! -L "$forge_home" ] && { [ ! -e "$forge_home" ] || [ -d "$forge_home" ]; } || return 1
+  if [ ! -e "$forge_home" ]; then mkdir -- "$forge_home" || return 1; chmod 700 "$forge_home" || return 1; fi
+  [ ! -L "$product_home" ] && { [ ! -e "$product_home" ] || [ -d "$product_home" ]; } || return 1
+  mkdir -p -- "$bin_dir" || return 1
+  [ ! -L "$product_home" ] && [ ! -L "$bin_dir" ] || return 1
+  chmod 700 "$product_home" "$bin_dir" || return 1
+}
+
 replace_path_marker_block() {
   local configuration_file="$1"
   local path_command="$2"
@@ -228,8 +245,7 @@ else
 fi
 [ "$expected_digest" = "$actual_digest" ] || fail "Checksum verification failed for ${artifact}."
 
-mkdir -p -- "$bin_dir"
-[ -d "$bin_dir" ] || fail 'The selected --bin-dir is not a directory.'
+prepare_bin_directory || fail 'Could not safely create the selected Engram installation directory.'
 [ ! -d "$destination" ] || fail 'The destination is a directory; choose a different --bin-dir.'
 if { [ -e "$destination" ] || [ -L "$destination" ]; } && [ "$force" -ne 1 ]; then
   fail 'The command already exists. Use --force to replace it explicitly.'

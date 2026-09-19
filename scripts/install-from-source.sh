@@ -13,6 +13,22 @@ usage() {
 }
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
+prepare_bin_directory() {
+  local forge_home product_home
+  if [ "$bin_dir" != "$HOME/.forge614/engram/bin" ]; then
+    mkdir -p -- "$bin_dir"
+    [ -d "$bin_dir" ] && [ ! -L "$bin_dir" ] || return 1
+    return 0
+  fi
+  forge_home="$HOME/.forge614"
+  product_home="$forge_home/engram"
+  [ ! -L "$forge_home" ] && { [ ! -e "$forge_home" ] || [ -d "$forge_home" ]; } || return 1
+  if [ ! -e "$forge_home" ]; then mkdir -- "$forge_home" || return 1; chmod 700 "$forge_home" || return 1; fi
+  [ ! -L "$product_home" ] && { [ ! -e "$product_home" ] || [ -d "$product_home" ]; } || return 1
+  mkdir -p -- "$bin_dir" || return 1
+  [ ! -L "$product_home" ] && [ ! -L "$bin_dir" ] || return 1
+  chmod 700 "$product_home" "$bin_dir" || return 1
+}
 bin_dir="${HOME:?HOME must be set}/.forge614/engram/bin"
 force=0
 seen_dir=0
@@ -72,7 +88,7 @@ if ! (cd -- "$repo_dir" && bun build ./src/cli.ts --compile --outfile "$build_di
   fail 'Compilation failed. Check the code and prepare dependencies with: bun install --frozen-lockfile --ignore-scripts'
 fi
 "$build_dir/forge614-engram" --version
-mkdir -p -- "$bin_dir"
+prepare_bin_directory || fail 'Could not safely create the selected Engram installation directory.'
 staging="$(mktemp "$bin_dir/.forge614-engram.XXXXXX")"
 cp -- "$build_dir/forge614-engram" "$staging"
 chmod 755 "$staging"

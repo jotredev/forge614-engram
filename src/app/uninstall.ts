@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { CLIENT_IDS, type AssistantOptions, type ClientId } from "../modules/assistants";
 import { MemoryError } from "../shared/errors";
 import { applyAssistantRemoval, planAssistantRemoval } from "./assistants";
+import { removePathPublication } from "../infrastructure/filesystem/path-publication";
+import { preflightAssistantConfiguration } from "../infrastructure/assistants/configuration";
+import { assertSafePath } from "../infrastructure/filesystem/private-files";
 
 export interface UninstallInput { confirmation: string; }
 export interface UninstallDependencies {
@@ -12,6 +15,7 @@ export interface UninstallDependencies {
   assistantOptions?: AssistantOptions;
   clients?: readonly ClientId[];
   runAtlasUninstall?: (command:string,args:string[]) => Promise<number>;
+  removePathPublication?: (home:string) => Promise<string[]>;
 }
 export interface UninstallResult { removed: boolean; atlasRemoved: boolean; assistantPaths: string[]; }
 
@@ -19,6 +23,7 @@ function stat(path:string):Stats|null { try{return lstatSync(path);}catch(error)
 function safeDirectory(path:string):Stats|null {
   const entry=stat(path);if(!entry)return null;
   if(!entry.isDirectory()||entry.isSymbolicLink())throw new MemoryError('UNINSTALL_UNSAFE','La carpeta que se eliminaría no es una carpeta segura de Forge614 Engram.');
+  try{assertSafePath(path);}catch{throw new MemoryError('UNINSTALL_UNSAFE','La carpeta que se eliminaría no es una carpeta segura de Forge614 Engram.');}
   return entry;
 }
 async function defaultAtlasRunner(command:string,args:string[]):Promise<number>{
@@ -40,12 +45,18 @@ export async function uninstallEngram(input:UninstallInput, dependencies:Uninsta
   }
   const product=safeDirectory(root);
   const options={...(dependencies.assistantOptions??{}),home};
+  let plans;
+  try { plans=(dependencies.clients??CLIENT_IDS).map(client=>planAssistantRemoval(client,dependencies.executable,options)); for(const plan of plans) preflightAssistantConfiguration(plan); }
+  catch { throw new MemoryError('ASSISTANT_REMOVE_FAILED','No se pudieron comprobar de forma segura todas las conexiones de asistentes; Engram no se eliminó.'); }
   const applied:string[]=[];
-  for(const client of dependencies.clients??CLIENT_IDS){
-    const result=applyAssistantRemoval(planAssistantRemoval(client,dependencies.executable,options));
+  for(const plan of plans){
+    const result=applyAssistantRemoval(plan);
     if(!result.ok)throw new MemoryError('ASSISTANT_REMOVE_FAILED','No se pudieron retirar de forma segura todas las conexiones de asistentes; Engram no se eliminó.');
     applied.push(...result.appliedPaths);
   }
+  let pathPublications:string[];
+  try { pathPublications=await (dependencies.removePathPublication??(async candidateHome=>removePathPublication({home:candidateHome})))(home); }
+  catch { throw new MemoryError('PATH_REMOVE_FAILED','No se pudo retirar de forma segura el acceso de Forge614 Engram en PATH; los datos de Engram se conservaron.'); }
   if(product)rmSync(root,{recursive:true,force:false,maxRetries:0});
-  return {removed:product!==null,atlasRemoved:hasAtlas,assistantPaths:applied};
+  return {removed:product!==null,atlasRemoved:hasAtlas,assistantPaths:[...applied,...pathPublications]};
 }
