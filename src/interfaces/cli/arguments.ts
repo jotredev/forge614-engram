@@ -2,7 +2,7 @@ import { MemoryError } from "../../shared/errors";
 
 const MEMORY_OPTIONS = ["project-id", "scope"];
 const OPTIONS: Record<string, readonly string[]> = {
-  setup: [], tui: [], init: [], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "integration-enable": [], "sessions-enable": [], "reinforcement-enable": [], mcp: [], "assistant-list": [], "memory-hook": ["client"],
+  tui: [], init: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "integration-enable": [], "sessions-enable": [], "reinforcement-enable": [], mcp: [], "assistant-list": [], "memory-hook": ["client"],
   "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id"],
   save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned","session-id","session-project-id"],
   search: [...MEMORY_OPTIONS,"query","limit","preview"],
@@ -13,7 +13,7 @@ const OPTIONS: Record<string, readonly string[]> = {
   timeline:["project-id","session-id","id","version","before","after"],
   context:["project-id","scope","compact","max-bytes"],
 };
-const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format"]);
+const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format","json"]);
 export function invalid(message: string): never { throw new MemoryError("INVALID_INPUT",message); }
 export function integer(value: string, field: string, max = Number.MAX_SAFE_INTEGER): number {
   if (!/^\d+$/.test(value)) invalid(`${field} debe ser un entero positivo.`);

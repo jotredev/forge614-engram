@@ -21,7 +21,7 @@ import { MemoryWorkspace } from "./workspace";
 
 export async function syncWorkspace(config=new WorkspaceConfig(),options:{upgradeFormat?:boolean}={}) {
   const settings=config.read();
-  if(!settings.postgresUrl) throw new MemoryError("SYNC_DISABLED","Sincronización PostgreSQL desactivada. Ejecuta setup para configurarla.");
+  if(!settings.postgresUrl) throw new MemoryError("SYNC_DISABLED","Sincronización PostgreSQL desactivada. Ejecuta init para configurarla.");
   const store=new MemoryWorkspace(config).open();
   try {
     const replica=await PostgresReplica.connect(settings.postgresUrl);

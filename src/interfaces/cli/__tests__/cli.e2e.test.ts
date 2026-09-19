@@ -24,21 +24,35 @@ function create(dir: string, name = "demo"): string {
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
 
-test("setup requires a terminal and leaves automation commands noninteractive", () => {
+test("retired setup tells the user to use init and leaves storage absent", () => {
   const dir = workspace();
   const result = run(dir, "setup");
   expect(result.code).toBe(1);
-  expect(JSON.parse(result.stderr).code).toBe("INTERACTIVE_REQUIRED");
+  expect(JSON.parse(result.stderr)).toMatchObject({
+    code: "COMMAND_RETIRED",
+    error: expect.stringContaining("forge614-engram init"),
+  });
   expect(result.stdout).toBe("");
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
-  expect(run(dir, "init").code).toBe(0);
+});
+
+test("init requires a terminal while init --json stays noninteractive", () => {
+  const dir = workspace();
+  const interactive = run(dir, "init");
+  expect(interactive.code).toBe(1);
+  expect(JSON.parse(interactive.stderr)).toMatchObject({
+    code: "INTERACTIVE_REQUIRED",
+    error: expect.stringContaining("init necesita una terminal interactiva"),
+  });
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+  expect(run(dir, "init", "--json").code).toBe(0);
   expect(JSON.parse(run(dir, "project-list").stdout)).toEqual([]);
   expect(run(dir, "search", "--scope", "shared", "--query", "anything").code).toBe(0);
 });
 
-test("setup rejects unknown flags without entering prompts or creating files", () => {
+test("init rejects unknown flags without entering prompts or creating files", () => {
   const dir = workspace();
-  const result = run(dir, "setup", "--db", "PRIVATE_VALUE");
+  const result = run(dir, "init", "--db", "PRIVATE_VALUE");
   expect(JSON.parse(result.stderr).code).toBe("INVALID_INPUT");
   expect(result.stderr).not.toContain("PRIVATE_VALUE");
   expect(result.stdout).toBe("");
@@ -50,7 +64,7 @@ test("sync without PostgreSQL configuration never creates storage",()=>{
   expect(result.code).toBe(1);
   expect(JSON.parse(result.stderr).code).toBe("CONFIG_NOT_FOUND");
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
-  expect(run(dir,"init").code).toBe(0);
+  expect(run(dir,"init","--json").code).toBe(0);
   expect(JSON.parse(run(dir,"sync").stderr).code).toBe("SYNC_DISABLED");
   expect(JSON.parse(run(dir,"sync-watch","--interval","0").stderr).code).toBe("INVALID_INPUT");
 });
@@ -125,7 +139,7 @@ test("explicit reinforcement enrollment is repeatable and exact CLI saves stay o
 test("init is repeatable and rename retains identity without per-project registration", () => {
   const dir = workspace(); const id = create(dir); const root = join(dir,"user",".forge614","engram");
   const before = readFileSync(join(root,"engram.db")); const config = readFileSync(join(root,".env"));
-  expect(run(dir,"init").code).toBe(0);
+  expect(run(dir,"init","--json").code).toBe(0);
   expect(readFileSync(join(root,"engram.db"))).toEqual(before);
   expect(readFileSync(join(root,".env"))).toEqual(config);
   expect(run(dir,"project-rename","--project-id",id,"--name","Renamed").code).toBe(0);
@@ -148,7 +162,7 @@ test("missing configuration and configured missing database never cause silent r
   const id = create(dir);
   expect(JSON.parse(run(dir,"get","--project-id",id,"--id","missing").stderr).code).toBe("NOT_FOUND");
   const path = join(dir,"user",".forge614","engram","engram.db"); rmSync(path);
-  for (const args of [["init"],["project-create","--name","No"],["search","--scope","shared","--query","SQLite"]]) {
+  for (const args of [["init","--json"],["project-create","--name","No"],["search","--scope","shared","--query","SQLite"]]) {
     expect(run(dir,...args).code).toBe(1); expect(existsSync(path)).toBe(false);
   }
 });
@@ -184,7 +198,7 @@ test("concurrent init of existing workspace leaves existing memories and configu
   const dir = workspace(); const id = create(dir);
   expect(run(dir,"save","--project-id",id,"--title","Keep","--content","SQLite").code).toBe(0);
   const path = join(dir,"user",".forge614","engram",".env"); const before = readFileSync(path);
-  const results = await parallel(dir,["init"]);
+  const results = await parallel(dir,["init","--json"]);
   for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
   expect(readFileSync(path)).toEqual(before);
   expect(JSON.parse(run(dir,"search","--project-id",id,"--query","SQLite").stdout)).toHaveLength(1);

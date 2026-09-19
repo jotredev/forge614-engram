@@ -7,6 +7,9 @@ import { dispatch } from "./commands";
 export async function main(args:string[]):Promise<void> {
   try {
     const command = args[0] ?? "help";
+    if (command === "setup") {
+      throw new MemoryError("COMMAND_RETIRED", "El comando setup fue retirado. Usa forge614-engram init.");
+    }
     if (command === "--version") {
       if (args.length > 1) invalid("--version no acepta opciones.");
       console.log(`forge614-engram ${version}`); return;

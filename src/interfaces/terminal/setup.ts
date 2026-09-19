@@ -4,7 +4,7 @@ import { MemoryError } from "../../shared/errors";
 import { runSetup } from "../../app";
 import { assistantTui } from "../tui/controller";
 
-/** Human-facing terminal adapter; init and the other CLI commands stay scriptable. */
+/** Human-facing initialization adapter; init --json and the other CLI commands stay scriptable. */
 export async function completeSetup<T extends { cancelled: boolean }>(
   run: () => Promise<T>,
   openAssistants: () => Promise<{ cancelled: boolean }>,
@@ -16,7 +16,7 @@ export async function completeSetup<T extends { cancelled: boolean }>(
 
 async function runTerminalSetup(): Promise<{ cancelled: true } | { cancelled: false; storage: "sqlite" }> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new MemoryError("INTERACTIVE_REQUIRED", "setup necesita una terminal interactiva. Para scripts utiliza init y project-create --name <nombre>.");
+    throw new MemoryError("INTERACTIVE_REQUIRED", "init necesita una terminal interactiva. Para scripts utiliza init --json y project-create --name <nombre>.");
   }
   // Suppress echo for the entire conversation: pasted future secret lines can
   // arrive before their prompt. Masking only the current question is too late.
@@ -46,7 +46,7 @@ async function runTerminalSetup(): Promise<{ cancelled: true } | { cancelled: fa
   }
 }
 
-export async function setupTerminal(): Promise<void> {
+export async function initTerminal(): Promise<void> {
   const result = await completeSetup(runTerminalSetup, assistantTui);
   if (result.cancelled) process.exitCode = 130;
 }

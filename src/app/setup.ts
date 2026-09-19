@@ -80,12 +80,12 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
       if (["si", "sí", "s", "yes", "y"].includes(confirmation)) break;
       io.write("Responde si para confirmar o no para cancelar.");
     }
-    if(config.revision()!==revision) throw new MemoryError("CONFIG_CHANGED","La configuración cambió; ejecuta setup de nuevo.");
+    if(config.revision()!==revision) throw new MemoryError("CONFIG_CHANGED","La configuración cambió; ejecuta init de nuevo.");
     if(postgresUrl) {
       const replica=await PostgresReplica.connect(postgresUrl,true);
       try {await replica.read();} finally {await replica.close();}
     }
-    if(config.revision()!==revision) throw new MemoryError("CONFIG_CHANGED","La configuración cambió; ejecuta setup de nuevo.");
+    if(config.revision()!==revision) throw new MemoryError("CONFIG_CHANGED","La configuración cambió; ejecuta init de nuevo.");
     workspace.init(); // Revalidate after confirmation; never replace a missing configured database.
     if(postgresUrl||enableReinforcement) {
       const store=workspace.open();
