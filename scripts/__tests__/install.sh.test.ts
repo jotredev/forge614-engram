@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -190,6 +190,120 @@ test.each([
     server.stop(true);
   }
 });
+
+test.each([
+  ["incomplete", "# >>> forge614-engram PATH >>>\nexport KEEP_THIS=1\n"],
+  ["nested", "# >>> forge614-engram PATH >>>\nexport KEEP_THIS=1\n# >>> forge614-engram PATH >>>\n# <<< forge614-engram PATH <<<\n# <<< forge614-engram PATH <<<\n"],
+  ["unmatched closing", "export KEEP_THIS=1\n# <<< forge614-engram PATH <<<\n"],
+  ["complete then incomplete", "# >>> forge614-engram PATH >>>\nexport OLD_PATH=1\n# <<< forge614-engram PATH <<<\n# >>> forge614-engram PATH >>>\nexport KEEP_THIS=1\n"],
+])("preserves %s marker files byte-for-byte across repeated installations", async (_name, original) => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "custom-bin");
+  const configuration = join(root, ".zshrc");
+  writeFileSync(fixture, fixtureBytes);
+  writeFileSync(configuration, original);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const results = [];
+    for (const args of [["--bin-dir", destination], ["--bin-dir", destination, "--force"]]) {
+      results.push(await withFixtureEnvironment(root, `${server.url}good`, () => runInstaller(args), true, "/bin/zsh"));
+    }
+    expect(readFileSync(configuration, "utf8")).toBe(original);
+    for (const result of results) {
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(result.stdout).toContain("manually");
+    }
+    expect(readFileSync(join(destination, "forge614-engram"), "utf8")).toBe(fixtureBytes);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("preserves symlink-managed rc files and offers manual PATH guidance", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const target = join(root, "dotfiles-zshrc");
+  const configuration = join(root, ".zshrc");
+  const original = "export KEEP_THIS=1\n";
+  writeFileSync(fixture, fixtureBytes);
+  writeFileSync(target, original);
+  symlinkSync("dotfiles-zshrc", configuration);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(root, `${server.url}good`, () => runInstaller(["--bin-dir", join(root, "bin")]), true, "/bin/zsh");
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(lstatSync(configuration).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(configuration)).toBe("dotfiles-zshrc");
+    expect(readFileSync(target, "utf8")).toBe(original);
+    expect(result.stdout).toContain("manually");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test.skipIf(process.platform !== "darwin").each([".profile", ".bash_login"])("preserves macOS Bash login behavior with existing %s", async (profile) => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const original = "export FORGE614_EXISTING_PROFILE_LOADED=1\n";
+  writeFileSync(fixture, fixtureBytes);
+  writeFileSync(join(root, profile), original);
+  const login = () => Bun.spawnSync(["/bin/bash", "-lc", 'printf "%s" "${FORGE614_EXISTING_PROFILE_LOADED:-unset}"'], {
+    env: { HOME: root, PATH: "/usr/bin:/bin" },
+  });
+  expect(login().stdout.toString()).toBe("1");
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(root, `${server.url}good`, () => runInstaller(["--bin-dir", join(root, "bin")]), true, "/bin/bash");
+    expect(result.exitCode, result.stderr).toBe(0);
+    const after = login();
+    expect(after.exitCode, after.stderr.toString()).toBe(0);
+    expect(after.stdout.toString()).toBe("1");
+    expect(existsSync(join(root, ".bash_profile"))).toBe(false);
+    expect(readFileSync(join(root, profile), "utf8")).toBe(original);
+    expect(result.stdout).toContain("manually");
+  } finally {
+    server.stop(true);
+  }
+});
+
+for (const [shell, configurationFile] of [
+  ["bash", process.platform === "darwin" ? ".bash_profile" : ".bashrc"],
+  ["zsh", ".zshrc"],
+  ["fish", ".config/fish/conf.d/forge614-engram.fish"],
+] as const) {
+  test.skipIf(!Bun.which(shell))(`avoids inherited or repeated runtime PATH entries in ${shell}`, async () => {
+    const executable = Bun.which(shell);
+    if (!executable) throw new Error(`Missing shell: ${shell}`);
+    const root = temporaryDirectory();
+    const fixture = join(root, "fixture-binary");
+    const destination = join(root, "custom bin [literal]");
+    writeFileSync(fixture, fixtureBytes);
+    const server = fixtureReleaseServer(targetArtifact(), fixture);
+    try {
+      const result = await withFixtureEnvironment(root, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, executable);
+      expect(result.exitCode, result.stderr).toBe(0);
+      const pathCases = [
+        ["/usr/bin:/bin", `${destination}:/usr/bin:/bin`],
+        [`/usr/bin:${destination}:/bin`, `/usr/bin:${destination}:/bin`],
+        [`${destination}:/usr/bin:/bin`, `${destination}:/usr/bin:/bin`],
+        [`/usr/bin:/bin:${destination}`, `/usr/bin:/bin:${destination}`],
+        [`${destination}-other:/usr/bin:/bin`, `${destination}:${destination}-other:/usr/bin:/bin`],
+      ] as const;
+      for (const [inherited, expected] of pathCases) {
+        const code = shell === "fish"
+          ? 'source "$argv[1]"; source "$argv[1]"; string join : -- $PATH'
+          : 'source "$1"; source "$1"; printf "%s\\n" "$PATH"';
+        const args = shell === "fish" ? [join(root, configurationFile)] : [shell, join(root, configurationFile)];
+        const sourced = Bun.spawnSync([executable, "-c", code, ...args], { env: { HOME: root, PATH: inherited } });
+        expect(sourced.exitCode, sourced.stderr.toString()).toBe(0);
+        expect(sourced.stdout.toString()).toBe(`${expected}\n`);
+      }
+    } finally {
+      server.stop(true);
+    }
+  });
+}
 
 test("leaves shell files untouched and prints manual PATH guidance for an unknown shell", async () => {
   const root = temporaryDirectory();

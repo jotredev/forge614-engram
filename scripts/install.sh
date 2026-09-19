@@ -24,32 +24,28 @@ replace_path_marker_block() {
   local configuration_file="$1"
   local path_command="$2"
   local configuration_dir temporary_file
+  # Dotfile managers own symlinks; replacing one would detach its target.
+  [ ! -L "$configuration_file" ] || return 1
+  [ ! -e "$configuration_file" ] || [ -f "$configuration_file" ] || return 1
   configuration_dir="$(dirname -- "$configuration_file")"
   mkdir -p -- "$configuration_dir" || return 1
   temporary_file="$(mktemp "${configuration_file}.XXXXXX")" || return 1
 
   if [ -f "$configuration_file" ]; then
     awk -v start="$path_marker_start" -v end="$path_marker_end" '
-      function print_pending_block() {
-        for (line_index = 1; line_index <= pending_count; line_index += 1) print pending_line[line_index]
-      }
-      inside_block {
-        pending_line[++pending_count] = $0
-        if ($0 == end) {
-          inside_block = 0
-          pending_count = 0
-        }
-        next
-      }
       $0 == start {
+        if (inside_block) { invalid = 1; exit 1 }
         inside_block = 1
-        pending_count = 1
-        pending_line[1] = $0
         next
       }
-      { print }
+      $0 == end {
+        if (!inside_block) { invalid = 1; exit 1 }
+        inside_block = 0
+        next
+      }
+      !inside_block { print }
       END {
-        if (inside_block) print_pending_block()
+        if (invalid || inside_block) exit 1
       }
     ' "$configuration_file" > "$temporary_file" || {
       rm -f -- "$temporary_file"
@@ -72,19 +68,27 @@ publish_path_for_future_shell() {
   case "${SHELL:-}" in
     */zsh|zsh)
       configuration_file="$HOME/.zshrc"
-      path_command="$(printf 'export PATH=%q:"$PATH"' "$bin_dir")"
+      path_command="$(printf 'case ":$PATH:" in\n  *:%q:*) ;;\n  *) export PATH=%q:"$PATH" ;;\nesac' "$bin_dir" "$bin_dir")"
       ;;
     */bash|bash)
       case "$(uname -s)" in
-        Darwin) configuration_file="$HOME/.bash_profile" ;;
+        Darwin)
+          configuration_file="$HOME/.bash_profile"
+          # Creating a higher-precedence file would suppress the active login profile.
+          if [ ! -e "$configuration_file" ] && [ ! -L "$configuration_file" ]; then
+            if [ -e "$HOME/.bash_login" ] || [ -L "$HOME/.bash_login" ] || [ -e "$HOME/.profile" ] || [ -L "$HOME/.profile" ]; then
+              return 1
+            fi
+          fi
+          ;;
         Linux) configuration_file="$HOME/.bashrc" ;;
         *) return 2 ;;
       esac
-      path_command="$(printf 'export PATH=%q:"$PATH"' "$bin_dir")"
+      path_command="$(printf 'case ":$PATH:" in\n  *:%q:*) ;;\n  *) export PATH=%q:"$PATH" ;;\nesac' "$bin_dir" "$bin_dir")"
       ;;
     */fish|fish)
       configuration_file="$HOME/.config/fish/conf.d/forge614-engram.fish"
-      path_command="$(printf 'set -gx PATH %q $PATH' "$bin_dir")"
+      path_command="$(printf 'if not contains -- %q $PATH\n  set -gx PATH %q $PATH\nend' "$bin_dir" "$bin_dir")"
       ;;
     *) return 2 ;;
   esac
