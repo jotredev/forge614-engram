@@ -4,11 +4,21 @@ import { MemoryError as SharedMemoryError } from "./shared/errors";
 import { projectIdentity } from "./modules/projects";
 import { sessionIdentity } from "./modules/sessions";
 import { validateSearchLimit } from "./modules/search";
+import type { AssistantDescriptor, AssistantLocation, AssistantOptions, AssistantPaths, ClientId } from "./index";
 
 const RUNTIME_EXPORTS = [
   "MemoryError", "MemoryStore", "MemoryWorkspace", "WorkspaceConfig",
   "defaultDatabasePath", "memoryTypes", "saveProjectMemoryWithSession", "startProjectSession",
+  "CLIENT_IDS", "LABELS", "isClientId", "inspectAssistant", "resolveAssistantPaths", "coverageWarnings",
 ];
+
+type AssistantDetectionSdkTypes = {
+  id: ClientId;
+  location: AssistantLocation;
+  options: AssistantOptions;
+  descriptor: AssistantDescriptor;
+  paths: AssistantPaths;
+};
 
 const PUBLIC_STORE_METHODS = [
   "applySync", "archive", "bindProjectDirectory", "close", "context", "controlCenter", "createProject",
@@ -26,6 +36,16 @@ describe("public SDK contract", () => {
     expect(Object.getOwnPropertyNames(sdk.MemoryStore.prototype)
       .filter(name => name !== "constructor").sort())
       .toEqual(PUBLIC_STORE_METHODS.sort());
+  });
+
+  test("exports the assistant-detection API needed by sibling Forge614 products", () => {
+    const typeContract: AssistantDetectionSdkTypes | undefined = undefined;
+    expect(typeContract).toBeUndefined();
+    expect(sdk.CLIENT_IDS).toContain("claude-code");
+    expect(sdk.isClientId("codex")).toBe(true);
+    expect(typeof sdk.inspectAssistant).toBe("function");
+    expect(typeof sdk.resolveAssistantPaths).toBe("function");
+    expect(typeof sdk.coverageWarnings).toBe("function");
   });
 
   test("uses one MemoryError identity across module validation", () => {

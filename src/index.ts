@@ -10,3 +10,7 @@ export { saveProjectMemoryWithSession, startProjectSession } from "./app/project
 export { WorkspaceConfig } from "./infrastructure/filesystem/workspace-config";
 export type { WorkspaceSettings } from "./modules/workspace";
 export { MemoryWorkspace } from "./app/workspace";
+export { CLIENT_IDS,LABELS,isClientId } from "./modules/assistants";
+export type { ClientId,AssistantLocation,AssistantOptions,AssistantDescriptor } from "./modules/assistants";
+export { inspectAssistant,resolveAssistantPaths,coverageWarnings } from "./infrastructure/assistants/catalog";
+export type { AssistantPaths } from "./infrastructure/assistants/catalog";
