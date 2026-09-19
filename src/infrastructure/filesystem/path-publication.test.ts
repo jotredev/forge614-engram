@@ -43,6 +43,18 @@ test("removes the dedicated Fish publication without touching an absent shell fi
   expect(readFileSync(fish, "utf8")).toBe("");
 }));
 
+test("removes the installer PATH block when the product path contains spaces", async () => {
+  const home = mkdtempSync(join(tmpdir(), "engram path publication-"));
+  try {
+    const path = join(home, ".zshrc");
+    const directory = join(home, ".forge614", "engram", "bin");
+    const escaped = directory.replace(/ /g, "\\ ");
+    writeFileSync(path, `keep=1\n${start}\ncase ":$PATH:" in\n  *:${escaped}:*) ;;\n  *) export PATH=${escaped}:"$PATH" ;;\nesac\n${end}\n`);
+    await expect(removePathPublication({ home })).resolves.toEqual([path]);
+    expect(readFileSync(path, "utf8")).toBe("keep=1\n");
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
 test("uses the injected Windows PATH removal only for the owned product bin", async () => withHome(async home => {
   let requested = "";
   const removed = await removePathPublication({

@@ -11,7 +11,7 @@ export interface PathPublicationOptions {
 }
 
 function shellQuote(value: string): string {
-  return value.replace(/([^A-Za-z0-9_@%+=:,./-])/g, "\\\\$1");
+  return value.replace(/[^A-Za-z0-9_@%+=:,./-]/g, character => `\\${character}`);
 }
 
 function expectedUnixBody(directory: string, fish: boolean): string {
