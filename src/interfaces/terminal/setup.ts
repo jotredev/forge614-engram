@@ -2,9 +2,19 @@ import { createInterface } from "node:readline";
 import { Writable } from "node:stream";
 import { MemoryError } from "../../shared/errors";
 import { runSetup } from "../../app";
+import { assistantTui } from "../tui/controller";
 
 /** Human-facing terminal adapter; init and the other CLI commands stay scriptable. */
-export async function setupTerminal(): Promise<void> {
+export async function completeSetup<T extends { cancelled: boolean }>(
+  run: () => Promise<T>,
+  openAssistants: () => Promise<{ cancelled: boolean }>,
+): Promise<T> {
+  const result = await run();
+  if (!result.cancelled) await openAssistants();
+  return result;
+}
+
+async function runTerminalSetup(): Promise<{ cancelled: true } | { cancelled: false; storage: "sqlite" }> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new MemoryError("INTERACTIVE_REQUIRED", "setup necesita una terminal interactiva. Para scripts utiliza init y project-create --name <nombre>.");
   }
@@ -18,7 +28,7 @@ export async function setupTerminal(): Promise<void> {
   terminal.on("SIGINT", interrupt);
   process.on("SIGINT", interrupt);
   try {
-    const result = await runSetup({
+    return await runSetup({
       write: message => { process.stdout.write(message + "\n"); },
       ask: async (question,options) => {
         if (cancelled) return null;
@@ -28,11 +38,15 @@ export async function setupTerminal(): Promise<void> {
         return cancelled || line.done ? null : line.value;
       },
     });
-    if (result.cancelled) process.exitCode = 130;
   } finally {
     process.off("SIGINT", interrupt);
     terminal.off("SIGINT", interrupt);
     terminal.close();
     silent.end();
   }
+}
+
+export async function setupTerminal(): Promise<void> {
+  const result = await completeSetup(runTerminalSetup, assistantTui);
+  if (result.cancelled) process.exitCode = 130;
 }

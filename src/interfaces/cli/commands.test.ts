@@ -84,6 +84,19 @@ test("CLI rejects valued boolean flags, malformed summaries, unknown summary key
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
 });
 
+test("init remains JSON-only and does not enroll assistant configuration", () => {
+  const dir = workspace();
+  const result = run(dir, "init");
+  expect(result.code).toBe(0);
+  expect(result.stdout).toBe('{\n  "initialized": true,\n  "storage": "sqlite"\n}\n');
+  expect(result.stderr).toBe("");
+  expect(existsSync(join(dir, "user", ".claude.json"))).toBe(false);
+  expect(existsSync(join(dir, "user", ".codex", "config.toml"))).toBe(false);
+  const store = new MemoryWorkspace(new WorkspaceConfig(join(dir, "user", ".forge614"))).open(true);
+  try { expect(store.controlCenter().capabilities.assistantIntegration).toBe(false); }
+  finally { store.close(); }
+});
+
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", () => {
   const dir=workspace();
   expect(run(dir,"init").code).toBe(0);
