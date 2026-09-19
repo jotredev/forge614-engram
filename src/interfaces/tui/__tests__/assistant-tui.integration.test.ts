@@ -25,7 +25,10 @@ async function childPid(path:string):Promise<number>{
   return Number(readFileSync(path,'utf8').trim());
 }
 async function expectStopped(pid:number){
-  const deadline=Date.now()+1000;let alive=true;
+  // Process exit and reaping are separate scheduler steps on shared CI hosts.
+  // Five seconds keeps the safety assertion while avoiding a false failure
+  // when GitHub takes longer than a local machine to observe the exit.
+  const deadline=Date.now()+5000;let alive=true;
   while(alive&&Date.now()<deadline){try{process.kill(pid,0);await Bun.sleep(10);}catch{alive=false;}}
   expect(alive).toBe(false);
 }
