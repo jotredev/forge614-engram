@@ -34,6 +34,21 @@ function privateDirectory(path: string, create: boolean): void {
   }
 }
 
+/** The Forge614 parent can contain sibling products, so Engram validates but never chmods it. */
+function sharedParentDirectory(path: string, create: boolean): void {
+  if (create) {
+    try { mkdirSync(path, { recursive: true, mode: 0o700 }); }
+    catch { fail("LEGACY_UNSAFE", "No se pudo crear el contenedor compartido de Forge614."); }
+  }
+  const stat = existing(path);
+  if (!stat || !stat.isDirectory() || stat.isSymbolicLink() || !currentUser(stat)) {
+    fail("LEGACY_UNSAFE", "La carpeta compartida de Forge614 no es segura.");
+  }
+  if (process.platform !== "win32" && (stat.mode & 0o022) !== 0) {
+    fail("LEGACY_UNSAFE", "La carpeta compartida de Forge614 permite escrituras de otros usuarios.");
+  }
+}
+
 function regularOwnedFile(path: string): boolean {
   const stat = existing(path);
   if (!stat) return false;
@@ -57,12 +72,12 @@ export class EngramProductHome {
   }
 
   prepare(): void {
-    privateDirectory(this.parent, true);
+    sharedParentDirectory(this.parent, true);
     privateDirectory(this.root, true);
   }
 
   migrateLegacyWorkspace(): "none" | "migrated" {
-    privateDirectory(this.parent, true);
+    sharedParentDirectory(this.parent, true);
     const sources = LEGACY_NAMES.filter(name => regularOwnedFile(join(this.parent, name)));
     if (sources.length === 0) {
       privateDirectory(this.root, true);

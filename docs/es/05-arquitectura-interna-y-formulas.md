@@ -1,11 +1,11 @@
 # 05. Arquitectura Interna, Monolito Modular por Funcionalidad, SQLite FTS5 y Fórmulas Matemáticas
 
-> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 1.0.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Desinstalador Coordinado, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.1.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo v1.1.0 (572 pruebas superadas y 15 omitidas en 90 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
 > **Traducción hermana:** [05 (EN). Internal Architecture, Modular Monolith, FTS5, and Ranking Formulas](../en/05-internal-architecture-and-formulas.md)
 
-Este documento expone con rigor de tesis técnica la arquitectura interna de Forge614 Engram: los fundamentos de la reorganización en **monolito modular por funcionalidad**, los problemas resueltos, el árbol de directorios real y responsabilidades, las reglas de dependencias y auditoría automática mediante AST, el diseño del **Centro de Control TUI**, las transacciones compuestas, la guía de colocación de cambios, la organización de pruebas colocadas (*colocated tests*), los esquemas relacionales SQLite 3 a 7, el protocolo de replicación PostgreSQL Formatos 1 a 3, y las fórmulas matemáticas exactas de BM25 ponderado, recencia de 30 días, saturación asintótica por confirmaciones inmutables y deduplicación por ventana móvil sin embeddings.
+Este documento expone con rigor de tesis técnica la arquitectura interna de Forge614 Engram: los fundamentos de la reorganización en **monolito modular por funcionalidad**, los problemas resueltos, el árbol de directorios real y responsabilidades, las reglas de dependencias y auditoría automática mediante AST, el diseño del **Centro de Control TUI**, las transacciones compuestas, la guía de colocación de cambios, la organización de pruebas colocadas (*colocated tests*), los esquemas relacionales SQLite 3 a 7, el protocolo de replicación PostgreSQL Formatos 1 a 3, el aislamiento en su hogar propio de producto (`~/.forge614/engram/`), la migración segura de datos heredados, la desinstalación quirúrgica coordinada y las fórmulas matemáticas exactas de BM25 ponderado, recencia de 30 días, saturación asintótica por confirmaciones inmutables y deduplicación por ventana móvil sin embeddings.
 
 ---
 
@@ -18,7 +18,7 @@ El patrón arquitectónico adoptado en Forge614 Engram es el **Monolito Modular 
 - **Modular por Funcionalidad (*Feature-Oriented Modular*):** Significa que el código interno está dividido en fronteras lógicas cohesivas según el concepto de dominio al que sirven (memoria, confirmaciones, proyectos, sesiones, búsqueda, centro de control, sincronización, espacio central, asistentes), en lugar de agruparse únicamente por el rol técnico de los archivos. Cada módulo es dueño exclusivo de sus reglas y define una puerta de entrada explícita (`index.ts`).
 
 > [!NOTE]
-> **Elección Contextual, no Dogma Universal:** La adopción del monolito modular por funcionalidad es una decisión técnica deliberada y contextual para un CLI local y SDK síncrono que opera sobre un único archivo de configuración (`~/.forge614/.env`) y una única base SQLite (`~/.forge614/engram.db`). No se vende aquí como un estándar obligatorio ni universal para todo proyecto informático.
+> **Elección Contextual, no Dogma Universal:** La adopción del monolito modular por funcionalidad es una decisión técnica deliberada y contextual para un CLI local y SDK síncrono que opera sobre un único archivo de configuración (`~/.forge614/engram/.env`) y una única base SQLite (`~/.forge614/engram/engram.db`) dentro del hogar propio de producto. No se vende aquí como un estándar obligatorio ni universal para todo proyecto informático.
 
 ### 1.2. Problemas Concretos Anteriores y Razones de la Reorganización
 Antes de la modularización, el código fuente de Engram crecía acumulando problemas de cohesión:
@@ -81,6 +81,7 @@ src/
 │   ├── control-center.ts              # Coordinación de lectura segura y mutaciones TUI
 │   ├── synchronization.ts             # Coordinación de réplica y snapshots (sin I/O terminal)
 │   ├── setup.ts                       # Secuencia de inicialización asistida (SetupIO)
+│   ├── uninstall.ts                   # Coordinación de desinstalación quirúrgica y Atlas
 │   └── assistants.ts                  # Coordinación de detección y configuración de asistentes
 │
 ├── modules/                           # [Reglas de Negocio Puras y Tipos] (Sin I/O)
@@ -118,6 +119,10 @@ src/
 │   │   └── workspace-database.ts      # Ciclo de vida de la base de datos
 │   ├── postgres/                      # Adaptador de red y réplica remota CAS (replica.ts)
 │   ├── filesystem/                    # Acceso a disco (.env, permisos 0700/0600, locks)
+│   │   ├── paths.ts                   # Rutas canónicas del hogar propio (~/.forge614/engram)
+│   │   ├── product-home.ts            # Aislamiento de producto y migración segura atómica
+│   │   ├── path-publication.ts        # Publicación y retirada quirúrgica en archivos PATH
+│   │   ├── workspace-config.ts        # Configuración .env, cerrojo y reparación de permisos
 │   │   ├── windows-reparse-guard.ts   # Cargador TypeScript del addon nativo Node-API
 │   │   ├── private-files.ts           # Validador de rutas seguras y assertSafePath
 │   │   ├── guarded-write.ts           # Protocolo atómico de publicación y respaldo
@@ -569,15 +574,15 @@ Para materializar el archivo temporal y los respaldos en disco, Engram utiliza d
 
 ### 9.5. Privacidad del Espacio Central y Reparación Automática de Permisos (`repairExistingRoot`)
 
-El directorio de usuario `~/.forge614/` alberga información de máxima confidencialidad: la base de datos SQLite `engram.db`, diarios temporales WAL con transacciones en texto plano, archivos de bloqueo de concurrencia (`.config-lock`) y el archivo de variables `.env`, el cual puede contener credenciales sensibles de conexión a réplicas remotas de PostgreSQL.
+El espacio de usuario de Engram en `~/.forge614/engram/` alberga información de máxima confidencialidad: la base de datos SQLite `engram.db`, diarios temporales WAL con transacciones en texto plano, archivos de bloqueo de concurrencia (`.config-lock`) y el archivo de variables `.env`, el cual puede contener credenciales sensibles de conexión a réplicas remotas de PostgreSQL.
 
 #### Justificación del Modelo de Privacidad Estricto (`0700` y `0600`)
 En entornos multiusuario (como servidores compartidos, estaciones de trabajo de laboratorio o computadoras compartidas en equipos de desarrollo), un directorio con permisos estándar `0755` (`rwxr-xr-x`) permite que cualquier otra cuenta local del sistema operativo liste, inspeccione o copie los recuerdos y credenciales del usuario. Para garantizar la privacidad:
-- El directorio contenedor debe poseer permisos octales estrictos `0700` (`rwx------`, solo lectura, escritura y ejecución para el propietario).
-- El archivo de configuración `.env` debe poseer permisos `0600` (`rw-------`, solo lectura y escritura para el propietario).
+- El directorio propio de producto `~/.forge614/engram/` debe poseer permisos octales estrictos `0700` (`rwx------`, solo lectura, escritura y ejecución para el propietario). El contenedor compartido `~/.forge614/` se valida por seguridad, pero Engram no le aplica `chmod` porque puede contener productos hermanos.
+- El archivo de configuración `.env` y la base de datos `engram.db` deben poseer permisos `0600` (`rw-------`, solo lectura y escritura para el propietario).
 
 #### Reparación Automática sin Fricción Técnica
-Anteriormente, si la carpeta `~/.forge614/` ya existía con permisos estándar (por ejemplo `0755`), Engram rechazaba la ejecución arrojando `CONFIG_INVALID` y obligaba al usuario a comprender y ejecutar manualmente `chmod 0700 ~/.forge614`.
+Anteriormente, si la carpeta ya existía con permisos estándar (por ejemplo `0755`), Engram rechazaba la ejecución arrojando `CONFIG_INVALID` y obligaba al usuario a comprender y ejecutar manualmente `chmod 0700`.
 
 Para eliminar esta barrera sin comprometer la seguridad, `WorkspaceConfig` incorpora el método `repairExistingRoot()`:
 1. **Invocación previa en `setup` e `init`:** Tanto el asistente interactivo `setup` (antes de desplegar preguntas o leer configuración) como el comando no interactivo `init` y el método `MemoryWorkspace.init()` invocan `config.repairExistingRoot()`.
@@ -613,16 +618,53 @@ Para distribuir ejecutables autónomos de un solo archivo sin exigir herramienta
 * **Prueba de Protección de Contrato de Release:**
   El archivo `scripts/__tests__/release-windows-native-addon.test.ts` valida que el workflow mantenga intacto el contrato de empaquetado, la precedencia de compilación, el perfil aislado y la comprobación ante descriptores bloqueados.
 * **Evidencia Verificada en CI:**
-  1. Flujo `Verify` (**Run ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`): Pasó con éxito en Ubuntu, macOS y Windows x64 nativo (543/545 pruebas, 0 fallos).
-  2. Flujo `Release standalone artifacts` (**Run ID `35427429725`**, y referencia `35428406085`): Completó con éxito la compilación de los 6 binarios (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64 con addon incrustado), ensamblado y validación de `SHA256SUMS` (seis verificaciones `OK`), omitiéndose correctamente la publicación de release.
+  1. Flujo `Verify`: Pasó con éxito en Ubuntu, macOS y Windows x64 nativo.
+  2. Flujo `Release standalone artifacts`: Completó con éxito la compilación de los 6 binarios (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64 con addon incrustado), ensamblado y validación de `SHA256SUMS` (seis verificaciones `OK`).
 * **Suite Local de Pruebas:**
-  La suite completa finalizó con **545 pass, 15 skip, 0 fail**, 2,671 aserciones en 88 archivos; `bun run typecheck`, `git diff --check` y `bash -n` finalizaron con código 0.
+  La suite completa finalizó con **572 superadas, 15 omitidas, 0 fallos** en 90 archivos; `bun run typecheck`, `git diff --check` y `bash -n` finalizaron con código 0.
 
-### 9.8. Tareas Pendientes para la Versión Estable (v1.0.0)
-Habiéndose superado la incrustación del módulo nativo en los ejecutables de release, la cobertura de Windows ARM64, el smoke test reforzado y la verificación de `SHA256SUMS` en CI, los requisitos pendientes para v1.0.0 son:
-1. **Validación en máquina Windows física limpia:** Probar la instalación y ejecución del binario en un entorno Windows sin herramientas de desarrollo (sin Node.js, Python ni Visual Studio instalados previamente).
-2. **Certificación de independencia de tiempo de ejecución (MSVC CRT):** Certificar que el binario autónomo cargue sin requerir paquetes externos redistribuibles de Visual C++ en esa instalación base.
-3. **Publicación deliberada de la versión oficial:** Crear y enviar la etiqueta oficial `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) para activar la publicación final en GitHub Releases tras la aprobación humana.
+### 9.8. Estado de Validación y Línea Base de la Versión 1.1.0
+Con la implementación del hogar propio de producto, la migración atómica de datos y el desinstalador protegido, Forge614 Engram alcanza la versión `1.1.0`. Todos los contratos arquitectónicos han sido verificados:
+1. **Aislamiento en carpeta familiar:** Engram coexiste pacíficamente en `~/.forge614/engram/` sin tocar `shell/` ni `atlas/`.
+2. **Migración atómica probada:** Pruebas unitarias y de integración cubren escenarios de migración limpia, diario WAL huérfano, permisos corruptos y colisiones de archivos.
+3. **Desinstalación quirúrgica con coordinación Atlas:** Verificada con pruebas unitarias exhaustivas en Unix y Windows.
+4. **Verificación multiplataforma en CI:** macOS ARM64/x64, Linux x64/ARM64 y Windows x64/ARM64 validados en GitHub Actions.
+
+### 9.9. Arquitectura de Hogar Propio de Producto y Migración Segura (`EngramProductHome`)
+Para evitar colisiones entre herramientas de la suite Forge614 y dotar a Engram de un ciclo de vida independiente, el módulo `src/infrastructure/filesystem/product-home.ts` implementa la clase `EngramProductHome`:
+- **Contenedor Familiar vs. Subcarpeta de Producto:**
+  - El directorio `~/.forge614/` pertenece a toda la familia de productos Forge614.
+  - Cada producto posee su subdirectorio exclusivo: `shell/`, `atlas/`, y `engram/`.
+  - Engram lee, escribe y elimina exclusivamente dentro de `~/.forge614/engram/`. Jamás inspecciona, modifica ni borra carpetas hermanas.
+- **Protocolo de Migración Automática y Segura (`migrateLegacyWorkspace`):**
+  Al invocar `prepare()` en `WorkspaceConfig`:
+  1. **Detección estricta de nombres legados:** Busca únicamente cinco nombres exactos en la raíz de `~/.forge614/`: `.env`, `engram.db`, `engram.db-wal`, `engram.db-shm` y `.config-lock`. Cualquier otro archivo o carpeta es ignorado.
+  2. **Validaciones de Seguridad (*Fail-Closed*):**
+     - Si la raíz contenedora o cualquiera de los archivos legados es un enlace simbólico, pertenece a otro usuario o no permite verificar permisos, aborta con `LEGACY_UNSAFE`.
+     - Si la carpeta de destino `~/.forge614/engram/` ya contiene archivos que colisionarían con los legados, o si existen diarios WAL/SHM huérfanos sin su base principal, aborta con `LEGACY_CONFLICT`.
+  3. **Movimiento Atómico con Reversión (*Rollback*):**
+     - Los archivos se mueven secuencialmente a la subcarpeta destino.
+     - Si ocurre cualquier error de E/S a mitad del proceso, Engram captura la excepción y revierte atómicamente todos los archivos ya movidos a su ubicación original en `~/.forge614/`, arrojando `LEGACY_MIGRATION_FAILED` sin pérdida de datos.
+  4. **Idempotencia:** Si la subcarpeta `~/.forge614/engram/` ya existe y no hay archivos legados sueltos, la migración no ejecuta ninguna operación.
+
+### 9.10. Arquitectura de Desinstalación Quirúrgica y Coordinación con Atlas (`uninstallEngram`)
+Ubicada en `src/app/uninstall.ts`, la función `uninstallEngram` ejecuta el protocolo completo de retirada del producto:
+- **Frase de Confirmación de Dos Niveles:**
+  - Si solo Engram está instalado: `--confirm "REMOVE FORGE614-ENGRAM"`.
+  - Si Atlas está presente en `~/.forge614/atlas/`: `--confirm "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"`.
+  - Si la frase no coincide con exactitud, aborta con `UNINSTALL_CONFIRMATION` sin realizar cambios.
+- **Coordinación Previa de Atlas:**
+  - Si Atlas está instalado, Engram ejecuta en primer lugar el binario de Atlas: `~/.forge614/atlas/bin/forge614-atlas uninstall --from forge614-engram --confirmed`.
+  - Si el ejecutable no se encuentra o el comando falla, Engram se detiene inmediatamente con `ATLAS_UNINSTALL_REQUIRED` o `ATLAS_UNINSTALL_FAILED` sin tocar un solo archivo.
+- **Retirada Quirúrgica de Asistentes:**
+  - Inspecciona las configuraciones de Claude Code, Codex, Cursor, OpenCode y Antigravity.
+  - Elimina de forma limpia las secciones MCP y los ganchos gestionados. Si encuentra un archivo de configuración malformado o inaccesible, aborta con `ASSISTANT_REMOVE_FAILED`.
+- **Limpieza Quirúrgica de PATH (`path-publication.ts`):**
+  - En Unix: Localiza el bloque delimitado `# >>> forge614-engram PATH >>>` en dotfiles (`.zshrc`, `.bashrc`, etc.) y lo retira quirúrgicamente. Si el bloque fue alterado a mano por el usuario, aborta con `PATH_CONFLICT` protegiendo sus archivos de inicio.
+  - En Windows: Retira de forma atómica la entrada de Engram del registro User PATH.
+- **Eliminación Exclusiva de Producto:**
+  - Elimina únicamente la subcarpeta `~/.forge614/engram/`.
+  - La carpeta familiar `~/.forge614/` y productos hermanos permanecen intactos.
 
 ---
 

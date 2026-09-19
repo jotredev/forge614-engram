@@ -1,8 +1,8 @@
 # 08. Límites de la Etapa y Hoja de Ruta Futura
 
-> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 1.0.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Verificado (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
+> **Etapa:** Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura y Atómica de Espacio Legado, Desinstalador Quirúrgico Coordinado (`uninstall`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.1.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Verificado (587 pruebas totales en 90 archivos: 572 superadas y 15 omitidas sin binarios aislados PG ni Windows nativo; 0 fallos en macOS ARM64 con Bun 1.3.8)
 > **Traducción hermana:** [08 (EN). Stage Boundaries and Evolutionary Roadmap](../en/08-boundaries-and-roadmap.md)
 
 Este documento declara con total transparencia qué capacidades se encuentran implementadas y verificadas en la entrega actual, los límites técnicos y operativos vigentes, la distinción entre pruebas sintéticas y sesiones reales de clientes, y las fases de desarrollo pendientes en la hoja de ruta oficial.
@@ -15,7 +15,7 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 
 ### Fase 1: Asistente Interactivo de Configuración Inicial (`setup`) — COMPLETADA
 - [x] Guía paso a paso para personas en terminal interactiva (`stdin` y `stdout` TTY).
-- [x] Rutas centrales del usuario: `~/.forge614/.env` y `~/.forge614/engram.db`.
+- [x] Rutas centrales del usuario alojadas en el hogar de producto: `~/.forge614/engram/.env` y `~/.forge614/engram/engram.db`.
 - [x] Captura confidencial de URL de PostgreSQL con entrada oculta (`{ secret: true }`).
 - [x] Pregunta interactiva para habilitar refuerzo de búsqueda (Esquema 7).
 - [x] Confirmación explícita previa y salida con código estándar `130` en caso de cancelación voluntaria.
@@ -74,7 +74,19 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 - [x] **Ocultación total de secretos y privacidad:** No expone `POSTGRES_URL`, contenidos íntegros de `.env`, textos de notas de memoria, títulos de notas ni archivos de configuración de asistentes.
 - [x] **Saneamiento exhaustivo de terminal:** Neutralización de secuencias ANSI, caracteres de control, anulaciones bidireccionales (bidi overrides), caracteres de ancho cero y URLs.
 - [x] **Subflujo secuencial de asistentes:** Pausa limpia del Centro de Control, restauración completa de la terminal, ejecución del menú de asistentes (`assistantTui`) y recarga atómica de instantánea al regresar, sin raw modes anidados.
-- [x] **504 pruebas automatizadas en 82 archivos:** 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2,566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en 39.76s.
+- [x] **572 pruebas automatizadas superadas en 90 archivos:** 0 fallos, 15 omitidas sin binarios aislados PG ni Windows nativo en macOS ARM64 con Bun 1.3.8.
+
+### Fase 4.4: Hogar Propio de Producto, Migración Segura y Desinstalador Coordinado (`uninstall`) — COMPLETADA
+- [x] **Hogar Propio de Producto (`~/.forge614/engram/`):** Aislamiento estricto de Engram dentro de su propio subdirectorio exclusivo. Convivencia pacífica garantizada con `~/.forge614/shell/` y `~/.forge614/atlas/` sin tocar sus contenidos. Binarios alojados en `~/.forge614/engram/bin/forge614-engram` (`.exe` en Windows).
+- [x] **Migración Atómica de Archivos Legados (`EngramProductHome.migrateLegacyWorkspace`):** Detección y reubicación automática atómica de los 5 archivos exactos de Engram (`.env`, `engram.db`, `engram.db-wal`, `engram.db-shm`, `.config-lock`). Reversión inmediata ante cualquier error de E/S.
+- [x] **Rechazo y Falla Cerrada ante Riesgos Legados:** Códigos de error dedicados: `LEGACY_UNSAFE` (si la raíz legada o sus archivos son enlaces simbólicos o pertenecen a otro usuario), `LEGACY_CONFLICT` (si existen archivos simultáneamente en destino o si existen archivos WAL/SHM huérfanos sin base principal) y `LEGACY_MIGRATION_FAILED` (con reversión atómica ante fallo en el traslado).
+- [x] **Reparación Automática de Permisos (`repairExistingRoot`):** Restricción preventiva y automática a `0700` (`rwx------`) sólo sobre el directorio propio `~/.forge614/engram`. El contenedor compartido `~/.forge614` se valida pero Engram nunca le aplica `chmod`.
+- [x] **Desinstalador Quirúrgico Coordinado (`forge614-engram uninstall`):** Retirada segura y completa de Engram. Exige confirmación obligatoria con frase exacta mediante `--confirm <frase>`.
+- [x] **Confirmación de Doble Nivel según Presencia de Atlas:** Frase estándar `"REMOVE FORGE614-ENGRAM"` si Engram está solo; frase combinada `"REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"` si se detecta `~/.forge614/atlas/`, exigiendo eliminación previa y coordinada del hermano mayor.
+- [x] **Desinstalación Previa y Coordinada de Atlas:** Invocación en subproceso de `~/.forge614/atlas/bin/forge614-atlas uninstall --from forge614-engram --confirmed`. Si el binario falta o falla, detiene la operación con `ATLAS_UNINSTALL_REQUIRED` o `ATLAS_UNINSTALL_FAILED`.
+- [x] **Retirada Quirúrgica de Asistentes y Ganchos:** Limpieza precisa de bloques gestionados en Claude Code, Codex, Cursor, OpenCode y Antigravity, restaurando archivos respaldados o eliminando bloques sin corromper configuraciones ajenas. Falla con `ASSISTANT_REMOVE_FAILED` si un archivo JSON está corrupto.
+- [x] **Limpieza Quirúrgica de PATH:** Eliminación limpia de los bloques delimitados `# >>> forge614-engram PATH >>>` en dotfiles Unix y saneamiento de entradas en Windows User PATH. Falla con `PATH_CONFLICT` si el bloque fue alterado manualmente.
+- [x] **Eliminación Confinada de Datos:** Destrucción estricta de `~/.forge614/engram/`. El directorio raíz `~/.forge614/` se preserva intacto si contiene otros productos (`shell/`, `atlas/`) u otros archivos de usuario.
 
 ---
 
@@ -114,26 +126,30 @@ Para mantener expectativas estrictamente realistas, se declaran los siguientes l
     El Centro de Control se inicia bajo demanda con `forge614-engram tui` y concluye inmediatamente al cerrarse con `Escape`, `q` o `Ctrl+C`. No consume ciclos de CPU ni memoria RAM cuando no está en uso.
 16. **Sin sondeos de red activos en navegación pasiva:**
     La visualización del estado de PostgreSQL en la pestaña `Almacenamiento` inspecciona las variables locales de `.env` y el último estado registrado en SQLite. No abre conexiones remotas ni emite sondeos de red no solicitados mientras el usuario navega por las pantallas de lectura.
-17. **Sin fragmentación de bases de datos por proyecto:**
-    Engram mantiene una única base de datos centralizada `~/.forge614/engram.db`. Los proyectos se indexan por su identificador inmutable `projectId`, evitando la dispersión de archivos `.db` en cada carpeta del usuario.
+17. **Hogar propio y base de datos centralizada:**
+    Engram mantiene su base de datos dentro de su hogar propio `~/.forge614/engram/engram.db` (en lugar de la raíz compartida `~/.forge614/`). Los proyectos se indexan por su identificador inmutable `projectId`, evitando la dispersión de archivos `.db` en cada carpeta del usuario.
 18. **Sin edición de notas individuales en el Centro de Control:**
     El Centro de Control administra proyectos, rutas, almacenamiento, migraciones y asistentes. La edición de textos y notas de recuerdos se canaliza a través de los comandos CLI dedicados (`save`, `get`, `delete`), las herramientas MCP o el futuro explorador detallado de recuerdos.
 19. **Antigravity configurado como MCP Only:**
     Antigravity se integra exclusivamente como *MCP only* (`~/.gemini/config/mcp_config.json`). No instala hooks automáticos (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
 20. **Validación nativa en CI, verificación reforzada de humo e incrustación de addon en Windows:**
-    La validación funcional en Windows x64 (`Verify`, **Run ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`), así como la compilación e incrustación del módulo nativo C++ Node-API (`windows_reparse_guard.node`) dentro de los binarios autónomos de release tanto para Windows x64 como para Windows ARM64, la prueba de ejecución empaquetada fuera del repositorio con **comprobación reforzada de humo** (exigiendo que los 5 asistentes reporten estado `absent` en un perfil temporal limpio, fallando ante cualquier resultado `blocked`), y la verificación criptográfica de los 6 artefactos de release contra `SHA256SUMS` fueron ejecutadas y verificadas con éxito en GitHub Actions (**Release Run ID `35427429725`** y corrida de referencia `35428406085`). No obstante, la versión v1.0.0 mantiene como pendientes de distribución: (1) validar la ejecución en una máquina Windows física limpia sin dependencias de desarrollo (sin Node, Python ni C++ instalados previamente), (2) certificar la ausencia de dependencias externas de tiempo de ejecución C++ (*MSVC CRT*), y (3) realizar la publicación oficial mediante el envío explícito de la etiqueta de versión `v1.0.0`.
+    La validación funcional en Windows x64 (`Verify`, **Run ID `35427426902`**, commit `f047693b9e27368d104cfc945c0e419af4a1d4b9`), así como la compilación e incrustación del módulo nativo C++ Node-API (`windows_reparse_guard.node`) dentro de los binarios autónomos de release tanto para Windows x64 como para Windows ARM64, la prueba de ejecución empaquetada fuera del repositorio con **comprobación reforzada de humo** (exigiendo que los 5 asistentes reporten estado `absent` en un perfil temporal limpio, fallando ante cualquier resultado `blocked`), y la verificación criptográfica de los 6 artefactos de release contra `SHA256SUMS` fueron ejecutadas y verificadas con éxito en GitHub Actions (**Release Run ID `35427429725`** y corrida de referencia `35428406085`). No obstante, la versión v1.1.0 mantiene como pendientes de distribución: (1) validar la ejecución en una máquina Windows física limpia sin dependencias de desarrollo (sin Node, Python ni C++ instalados previamente), (2) certificar la ausencia de dependencias externas de tiempo de ejecución C++ (*MSVC CRT*), y (3) realizar la publicación oficial mediante el envío explícito de la etiqueta de versión `v1.1.0`.
 21. **Cese de administración de Gemini CLI e indemnidad de configuraciones previas:**
     Forge614 Engram deja de administrar Gemini CLI. No lee, modifica ni elimina `~/.gemini/settings.json`, el cual permanece intacto si existía previamente.
 22. **Instaladores oficiales de bootstrap y condición de release pública:**
-    Los comandos de instalación automatizada oficial (`curl ... scripts/install.sh | bash` e `irm ... scripts/install.ps1 | iex`) están diseñados para descargar y verificar binarios precompilados desde una GitHub Release oficial publicada. Esta entrega de características (`feat/installer-path-setup-onboarding`) no ha publicado una release ni creado un tag `v*`; hasta que se realice la publicación oficial tras merge a `main`, los comandos de instalación remota dependerán de la existencia de una release oficial pública.
+    Los comandos de instalación automatizada oficial (`curl ... scripts/install.sh | bash` e `irm ... scripts/install.ps1 | iex`) están diseñados para descargar y verificar binarios precompilados en `~/.forge614/engram/bin/` desde una GitHub Release oficial publicada. Esta entrega de características (`feat/engram-product-home-migration`) no ha publicado una release ni creado un tag `v*`; hasta que se realice la publicación oficial tras merge a `main`, los comandos de instalación remota dependerán de la existencia de una release oficial pública.
 23. **Publicación de PATH y activación en nuevas terminales:**
-    La publicación automatizada del directorio de ejecutables en el PATH de shells Unix (Zsh, Bash, Fish) y en la variable PATH de usuario en Windows actualiza el entorno del sistema para sesiones futuras. Para utilizar el comando `forge614-engram` directamente tras la instalación, es indispensable abrir una nueva ventana de terminal (o ejecutar manualmente la orden de exportación impresa por el instalador).
+    La publicación automatizada del directorio de ejecutables (`~/.forge614/engram/bin/`) en el PATH de shells Unix (Zsh, Bash, Fish) y en la variable PATH de usuario en Windows actualiza el entorno del sistema para sesiones futuras. Para utilizar el comando `forge614-engram` directamente tras la instalación, es indispensable abrir una nueva ventana de terminal (o ejecutar manualmente la orden de exportación impresa por el instalador).
+24. **Desinstalación no reversible y resguardo de datos:**
+    El comando `forge614-engram uninstall` destruye definitivamente el hogar `~/.forge614/engram/` (incluyendo la base local SQLite y variables `.env`). Si se requiere conservar la memoria histórica, el usuario debe realizar un respaldo manual previo de `engram.db` o haber ejecutado `sync` contra PostgreSQL.
+25. **Coexistencia con Atlas y orden de desinstalación:**
+    Si Forge614 Atlas está instalado (`~/.forge614/atlas/`), Engram no puede desinstalarse de forma aislada sin desinstalar primero Atlas, debido a la dependencia operativa entre ambos productos de la suite. El desinstalador exige la frase extendida `"REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"` y coordina la ejecución de Atlas antes de proceder.
 
 ---
 
 ## 3. Hoja de Ruta: Fases Pendientes Oficiales
 
-Habiéndose completado las Fases 1 a 4.3, el desarrollo futuro se concentra en las siguientes fases:
+Habiéndose completado las Fases 1 a 4.4, el desarrollo futuro se concentra en las siguientes fases:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -161,7 +177,11 @@ Habiéndose completado las Fases 1 a 4.3, el desarrollo futuro se concentra en l
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
-│ [x] Fase 4.3: Centro de Control TUI Integral           │ (Completada v0.5.0)
+│ [x] Fase 4.3: Centro de Control TUI Integral           │ (Completada v1.0.0)
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
+│ [x] Fase 4.4: Hogar Propio, Migración y Desinstalador  │ (Completada v1.1.0)
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐

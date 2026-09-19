@@ -1,17 +1,17 @@
 # 02. Recorrido Guiado del Sistema
 
-> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Desinstalador Coordinado, Memoria Local y Sincronización PostgreSQL Opcional
 > **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas) / 7 (confirmaciones inmutables y orden reforzado) | Réplica PostgreSQL Formatos 1, 2 y 3 (promoción explícita con `sync --upgrade-format`; tabla física remota `state.format = 1`)
-> **Estado:** Vigente y Activo (504 pruebas totales en 82 archivos: 495 superadas y 9 omitidas sin binarios aislados PG; 504 superadas, 0 fallos, 2566 aserciones con `FORGE614_TEST_POSTGRES_BIN` configurado en macOS con Bun 1.3.8 en 39.76s)
+> **Estado:** Vigente y Activo v1.1.0 (572 pruebas superadas y 15 omitidas en 90 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
 > **Traducción hermana:** [02 (EN). Guided System Walkthrough](../en/02-guided-walkthrough.md)
 
-Este recorrido práctico te guía paso a paso por el ciclo de vida integral de Forge614 Engram: desde configurar el espacio global interactivamente con `setup`, supervisar y administrar el sistema mediante el **Centro de Control interactivo en terminal (`tui`)**, conectar tus asistentes de desarrollo mediante su subflujo seguro con autoprueba de 5 segundos, interactuar a través de las 10 herramientas del protocolo MCP nativo con resolución automática de proyectos por Git, gestionar sesiones de trabajo progresivas con líneas temporales (`timeline`), registrar recuerdos repetidos mediante confirmaciones inmutables sin fabricar versiones redundantes (Esquema 7), ensamblar contextos de prompt clasificados (`context`), realizar búsquedas FTS5 reforzadas con factores matemáticos transparentes sin embeddings, gestionar actualizaciones seguras de plugins en OpenCode y sincronizar réplicas con PostgreSQL con promoción explícita a Formato 3.
+Este recorrido práctico te guía paso a paso por el ciclo de vida integral de Forge614 Engram: desde configurar el espacio global en su hogar propio (`~/.forge614/engram/`) interactivamente con `setup` y migrar automáticamente versiones anteriores, supervisar y administrar el sistema mediante el **Centro de Control interactivo en terminal (`tui`)**, conectar tus asistentes de desarrollo mediante su subflujo seguro con autoprueba de 5 segundos, interactuar a través de las 10 herramientas del protocolo MCP nativo con resolución automática de proyectos por Git, gestionar sesiones de trabajo progresivas con líneas temporales (`timeline`), registrar recuerdos repetidos mediante confirmaciones inmutables sin fabricar versiones redundantes (Esquema 7), ensamblar contextos de prompt clasificados (`context`), realizar búsquedas FTS5 reforzadas con factores matemáticos transparentes sin embeddings, gestionar actualizaciones seguras de plugins en OpenCode, sincronizar réplicas con PostgreSQL con promoción explícita a Formato 3 y desinstalar el sistema de forma coordinada y quirúrgica si decides retirarlo.
 
 ---
 
 ## 1. El Concepto de Proyecto y su Identidad (`projectId`)
 
-En Forge614 Engram, **todos los proyectos comparten una única base de datos (`~/.forge614/engram.db`) y un único archivo de configuración (`~/.forge614/.env`)**.
+En Forge614 Engram, **todos los proyectos comparten una única base de datos (`~/.forge614/engram/engram.db`) y un único archivo de configuración (`~/.forge614/engram/.env`)** dentro del hogar propio de Engram. El directorio raíz `~/.forge614/` funciona como un contenedor compartido entre los productos de la familia (como Forge614 Shell en `shell/`, Forge614 Atlas en `atlas/` y Forge614 Engram en `engram/`), y Engram jamás modifica ni borra carpetas ajenas.
 
 Dentro de esa base, los proyectos se registran formalmente con dos elementos:
 1. **`projectId` (Identificador único e inmutable):** Es un código UUIDv4 en minúsculas generado automáticamente (por ejemplo `7c9e6679-7425-40de-944b-e07fc1f90ae7`). Es la clave que vincula todos los recuerdos a ese proyecto.
@@ -50,7 +50,7 @@ forge614-engram setup
 ```
 
 **Flujo interactivo en la terminal:**
-1. Muestra la ubicación de los archivos centrales (`~/.forge614/.env` y `~/.forge614/engram.db`) y **repara automáticamente a `0700`** cualquier carpeta preexistente propiedad del usuario antes de formular preguntas, sin que el usuario necesite ejecutar `chmod` manualmente.
+1. Muestra la ubicación de los archivos centrales (`~/.forge614/engram/.env` y `~/.forge614/engram/engram.db`), verifica la carpeta propia de Engram con permisos `0700` y **repara automáticamente a `0700`** cualquier carpeta preexistente propiedad del usuario antes de formular preguntas. Si detecta archivos antiguos sueltos en `~/.forge614/` (`.env`, `engram.db`, diarios WAL/SHM y cerrojo), los migra de forma automática y atómica al nuevo subdirectorio `engram/`.
 2. Pregunta si deseas habilitar sincronización con PostgreSQL:
    - Opción 1: `No` (predeterminada, modo exclusivamente local).
    - Opción 2: `Sí, configurar PostgreSQL` (solicita URL con entrada oculta y advertencia de réplica total).
@@ -58,7 +58,7 @@ forge614-engram setup
    - Opción predeterminada: `NO`.
    - Si respondes `sí`, registrará la activación de confirmaciones inmutables y orden reforzado sin embeddings.
 4. Presenta el resumen de cambios y pide confirmación explícita (`¿Confirmar? [si/NO]`).
-5. Al confirmar, prepara la carpeta `0700` (creándola o asegurándola), escribe el archivo `.env` en `0600` e inicializa `engram.db`.
+5. Al confirmar, prepara la carpeta `0700` de Engram (creándola o asegurándola), escribe el archivo `.env` en `0600` e inicializa `engram.db` (también protegido en `0600`).
 6. **Transición automática a la incorporación de asistentes:** Al concluir la memoria, `setup` cierra de forma limpia el lector de terminal y abre de inmediato la TUI de selección de asistentes (`assistantTui`). Detecta los 5 asistentes compatibles (Claude Code, Codex, Cursor, OpenCode y Antigravity), permitiendo seleccionarlos, previsualizar cambios exactos, crear respaldos automáticos y aplicar la conexión sin modificaciones silenciosas.
 7. **Cancelación segura:** Cancelar durante la configuración de memoria (`Ctrl+C` o `no`) sale con código **130** sin abrir la TUI y sin crear `.env` ni `engram.db` (únicamente se asegura el permiso `0700` si la carpeta ya existía). Si completas la memoria y cancelas en la TUI de asistentes, la memoria inicializada se preserva intacta.
 
@@ -91,7 +91,7 @@ Summary | Projects | Shared | Storage | Actions | Assistants | Exit
   - Fechas de creación y última actualización.
   - Lista de rutas locales vinculadas (`bindings`), verificadas en la máquina física actual.
 - **Shared (Memoria Compartida):** Presenta el conteo de notas universales activas y archivadas junto con la última fecha de actualización, recordando con claridad que es una colección única para toda la máquina, no una base separada por proyecto.
-- **Storage (Almacenamiento):** Expone la ruta del archivo SQLite local (`~/.forge614/engram.db`), el número exacto de esquema (3 a 7), las capacidades activas y si PostgreSQL está configurado (`configured` o `not-configured`).
+- **Storage (Almacenamiento):** Expone la ruta del archivo SQLite local (`~/.forge614/engram/engram.db`), el número exacto de esquema (3 a 7), las capacidades activas y si PostgreSQL está configurado (`configured` o `not-configured`).
   - **Seguridad total:** Oculta de forma absoluta la URL de PostgreSQL, contraseñas, secretos, títulos y contenido de recuerdos.
 
 #### 3. Ejecución de Acciones con Confirmación de Dos Pasos (`Actions`):
@@ -476,3 +476,23 @@ forge614-engram sync --upgrade-format
 - La promoción es validada atómicamente mediante bloqueo optimista CAS (*Compare-And-Swap*) sobre el hash del snapshot remoto.
 - **Requisito en todos los equipos:** Antes de promover a Formato 3, **todos los equipos pares deben haberse actualizado** y haber ejecutado `reinforcement-enable`. Si un cliente que no tiene habilitado el refuerzo intenta sincronizar un paquete en Formato 3, se detiene arrojando `REINFORCEMENT_REQUIRED` para proteger los datos locales de confirmaciones no reconocidas.
 - **`sync-watch` rechaza promociones:** `sync-watch --upgrade-format` no está permitido; la promoción requiere ejecutarse mediante el comando puntual `sync`.
+
+---
+
+### Paso 11: Desinstalación Limpia y Coordinada (`uninstall`)
+
+Si en algún momento decides retirar Forge614 Engram del equipo, el sistema incluye un comando protegido que desinstala quirúrgicamente sin dejar rastros huérfanos ni afectar carpetas ajenas:
+
+```bash
+# Caso A: Solo Engram instalado
+forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM"
+
+# Caso B: Si Forge614 Atlas está instalado (~/.forge614/atlas/)
+forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"
+```
+
+**Salvaguardas y pasos ejecutados por el desinstalador:**
+1. **Coordinación estricta con Atlas:** Si la carpeta `~/.forge614/atlas` existe, Engram exige la frase extendida y coordina primero la desinstalación de Atlas invocando su propio binario (`~/.forge614/atlas/bin/forge614-atlas uninstall --from forge614-engram --confirmed`). Si el ejecutable de Atlas no está disponible o falla, Engram se detiene inmediatamente con `ATLAS_UNINSTALL_REQUIRED` o `ATLAS_UNINSTALL_FAILED` sin tocar un solo archivo.
+2. **Retirada quirúrgica en asistentes:** Examina las configuraciones de Claude Code, Codex, Cursor, OpenCode y Antigravity y retira limpiamente los servidores MCP y los hooks gestionados. Si un archivo fue alterado de forma insegura, aborta con `ASSISTANT_REMOVE_FAILED`.
+3. **Limpieza quirúrgica de PATH:** Localiza el bloque delimitado `# >>> forge614-engram PATH >>>` en tus archivos de inicio (`.zshrc`, `.bashrc`, etc.) o el registro de Windows y lo retira sin alterar el resto de tu configuración. Si el bloque fue modificado a mano, aborta con `PATH_CONFLICT` protegiendo tus dotfiles.
+4. **Eliminación exclusiva del hogar de Engram:** Borra únicamente el subdirectorio `~/.forge614/engram/`. El contenedor familiar `~/.forge614/` y carpetas hermanas como `shell/` permanecen intactos.

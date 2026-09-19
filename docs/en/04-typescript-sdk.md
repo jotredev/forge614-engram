@@ -1,8 +1,8 @@
 # 04 (EN). TypeScript SDK Guide (MemoryStore)
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant Detection & Inspection for Atlas, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active (561 tests passed, 0 failures, SDK contract types and runtime values verified on macOS ARM64 with Bun 1.3.8)
+> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant Detection & Inspection for Atlas, Dedicated Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active v1.1.0 (572 tests passed, 15 skipped across 90 files, SDK contract types and runtime values verified on macOS ARM64 with Bun 1.3.8)
 > **Sister translation:** [04. Guía de Integración con el SDK de TypeScript](../es/04-sdk-typescript.md)
 
 This guide documents the public TypeScript API for Forge614 Engram, covering the `MemoryWorkspace`, `WorkspaceConfig`, and `MemoryStore` classes, Schema 7 support for immutable confirmations and reinforced FTS5 search ranking without embeddings, progressive retrieval and Control Center contracts, and the public AI assistant detection and path inspection API used by sibling products such as Forge614 Atlas.
@@ -92,11 +92,13 @@ import {
 ## 2. SDK Class Architecture
 
 1. **`MemoryWorkspace` (High-Level Workspace Manager):**
-   Manages user central storage (`~/.forge614/`), initializes the environment, orchestrates project lifecycle (`createProject`, `listProjects`, `renameProject`), and opens secure database connections (`open()`).
+   Manages user central storage in its dedicated product home (`~/.forge614/engram/`), initializes the environment ensuring permissions (`0700`) and performing automatic safe migration of prior loose files, orchestrates project lifecycle (`createProject`, `listProjects`, `renameProject`), and opens secure database connections (`open()`).
 2. **`WorkspaceConfig` (Configuration Manager):**
-   Manages atomic read/write of `~/.forge614/.env`. Validates permissions (`0700` directory, `0600` file), format versions (Format 2 local, Format 3 sync), and prevents concurrency using `.config-lock`. Includes `repairExistingRoot()` to automatically tighten existing user-owned workspace directories to `0700`, and `prepare()` to create or secure storage with mode `0700`.
+   Manages atomic read/write of `~/.forge614/engram/.env`. Validates permissions (`0700` directory, `0600` file), format versions (Format 2 local, Format 3 sync), and prevents concurrency using `.config-lock`. Its `prepare()` method performs atomic migration of prior loose files in `~/.forge614/` into `~/.forge614/engram/` before securing the directory to `0700`. Its `databasePath` property defaults to `~/.forge614/engram/engram.db`. Includes `repairExistingRoot()` to automatically tighten existing user-owned workspace directories to `0700`.
 3. **`MemoryStore` (SQLite Database Engine):**
    Directly executes operations on SQLite tables (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, `controlCenter`, etc.).
+4. **`defaultDatabasePath(): string` (Default Database Path Helper):**
+   Exported utility function that returns the canonical path to the local SQLite database: `join(engramHome(), "engram.db")` (by default `~/.forge614/engram/engram.db`).
 
 ---
 
@@ -107,7 +109,7 @@ const workspace = new MemoryWorkspace();
 ```
 
 ### `workspace.init(): void`
-Automatically repairs permissions of an existing user-owned directory to `0700` (`config.repairExistingRoot()`), and ensures `.env` and `engram.db` exist with secure permissions (`0700`/`0600`). Idempotent and non-destructive.
+Automatically repairs permissions of an existing user-owned directory to `0700` (`config.repairExistingRoot()`), performs safe legacy migration of loose files if present (`config.prepare()`), and ensures `.env` and `engram.db` exist with secure permissions (`0700`/`0600`) inside `~/.forge614/engram/`. Idempotent and non-destructive.
 
 ### `workspace.createProject(name: string): Project`
 Registers a new project, assigning a unique UUIDv4 `projectId`.
@@ -362,7 +364,7 @@ This API surface operates under strict isolation and security boundaries:
 - **Read-only inspection and path resolution:** It does not execute arbitrary shell commands, launch assistant background processes, or touch user files.
 - **Does not connect, configure, install, or modify assistants:** It does not download binaries, alter third-party configuration files (`.claude.json`, `config.toml`, `mcp.json`, `opencode.json`), or modify permissions.
 - **Does not configure MCP automatically:** Adding MCP memory tools requires Engram's explicit setup flows (`forge614-engram setup` or `assistant-config`); this SDK purely reports whether an assistant is detected and where its configuration paths reside.
-- **Does not touch databases or initialize storage:** It does not create or repair `~/.forge614/`, does not read/write `.env`, and never opens SQLite (`engram.db`) or PostgreSQL connections.
+- **Does not touch databases or initialize storage:** It does not create or repair `~/.forge614/engram/`, does not read/write `.env`, and never opens SQLite (`engram.db`) or PostgreSQL connections.
 - **Strict separation of concerns:** Atlas decides what to do with the inspection result; Engram exclusively provides objective, safe, and consistent inspection data about the host machine.
 - **No deep internal imports:** Consumers must import strictly from `forge614-engram`. Do not import from internal paths like `forge614-engram/src/...` or `forge614-engram/src/modules/...`.
 

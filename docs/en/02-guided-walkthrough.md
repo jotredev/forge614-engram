@@ -1,17 +1,17 @@
 # 02 (EN). Guided System Walkthrough
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Format 3
-> **Release Versions:** Program 1.0.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
-> **Status:** Current & Active (504 total tests across 82 files: 495 passed and 9 skipped without isolated PostgreSQL test binaries; 504 passed, 0 failures, 2566 assertions with `FORGE614_TEST_POSTGRES_BIN` configured on macOS with Bun 1.3.8 in 39.76s)
+> **Stage:** TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Coordinated Uninstaller, Assistant TUI Menu & PostgreSQL Replica Format 3
+> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
+> **Status:** Current & Active v1.1.0 (572 total tests across 90 files: 572 passed, 15 skipped on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
 > **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
-This practical walkthrough guides you through the full operational lifecycle of Forge614 Engram: initializing global configuration via `setup`, supervising and managing the workspace through the interactive **Terminal Control Center (`tui`)**, connecting AI coding assistants via its safe subflow with an asynchronous 5-second self-test, interacting across 10 native MCP tools with Git-based canonical project resolution, tracking progressive sessions with event timelines (`timeline`), recording repeated observations as immutable confirmations without creating redundant versions (Schema 7), assembling ranked context dossiers (`context`), executing explainable FTS5 searches without embeddings, managing safe OpenCode plugin conflict resolution, and synchronizing snapshots with PostgreSQL using Format 3 promotion.
+This practical walkthrough guides you through the full operational lifecycle of Forge614 Engram: initializing global configuration in its product home (`~/.forge614/engram/`) via `setup` and safely migrating prior versions, supervising and managing the workspace through the interactive **Terminal Control Center (`tui`)**, connecting AI coding assistants via its safe subflow with an asynchronous 5-second self-test, interacting across 10 native MCP tools with Git-based canonical project resolution, tracking progressive sessions with event timelines (`timeline`), recording repeated observations as immutable confirmations without creating redundant versions (Schema 7), assembling ranked context dossiers (`context`), executing explainable FTS5 searches without embeddings, managing safe OpenCode plugin conflict resolution, synchronizing snapshots with PostgreSQL using Format 3 promotion, and performing guarded, coordinated uninstallation if you ever decide to remove the tool.
 
 ---
 
 ## 1. Project Concept and Identity (`projectId`)
 
-In Forge614 Engram, **all projects share a single local SQLite database (`~/.forge614/engram.db`) and a single configuration file (`~/.forge614/.env`)**.
+In Forge614 Engram, **all projects share a single local SQLite database (`~/.forge614/engram/engram.db`) and a single configuration file (`~/.forge614/engram/.env`)** located inside Engram's dedicated product home. The root directory `~/.forge614/` serves as a shared container for family products (such as Forge614 Shell in `shell/`, Forge614 Atlas in `atlas/`, and Forge614 Engram in `engram/`), and Engram never modifies or deletes sibling directories.
 
 Within that database, projects are registered with two attributes:
 1. **`projectId` (Immutable UUID Identifier):** An automatically generated lowercase UUIDv4 (e.g., `7c9e6679-7425-40de-944b-e07fc1f90ae7`). It forms the primary relational foreign key anchoring all project memories.
@@ -50,7 +50,7 @@ forge614-engram setup
 ```
 
 **Interactive Terminal Flow:**
-1. Displays central file paths (`~/.forge614/.env` and `~/.forge614/engram.db`) and **automatically tightens permissions to `0700`** on any pre-existing user-owned directory before asking questions, eliminating the need for manual `chmod`.
+1. Displays central file paths (`~/.forge614/engram/.env` and `~/.forge614/engram/engram.db`), ensures `~/.forge614/engram/` has `0700` permissions, and **automatically tightens permissions to `0700`** on any pre-existing user-owned workspace directory before asking questions. If it detects legacy loose files in `~/.forge614/` (`.env`, `engram.db`, journals, or lock), it migrates them automatically and atomically to `engram/`.
 2. Asks whether to configure PostgreSQL synchronization:
    - Option 1: `No` (default, 100% local and offline).
    - Option 2: `Sí, configurar PostgreSQL` (prompts for masked connection string).
@@ -58,7 +58,7 @@ forge614-engram setup
    - Default: `NO`.
    - Replying `sí` / `yes` stages Schema 7 immutable confirmations and reinforced ranking without embeddings.
 4. Displays plan summary and asks for pre-flight confirmation (`¿Confirmar? [si/NO]`).
-5. Upon confirmation, prepares `~/.forge614/` to `0700` (creating or securing it), writes `.env` to `0600`, and initializes `engram.db`.
+5. Upon confirmation, prepares `~/.forge614/engram/` to `0700` (creating or securing it), writes `.env` to `0600`, and initializes `engram.db` (also secured to `0600`).
 6. **Automatic Transition to Assistant Onboarding:** Following storage completion, `setup` cleanly closes the terminal reader and automatically launches the Assistant Selection TUI (`assistantTui`). It detects the 5 supported assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity), allowing selective enrollment, path previews, automatic private backups, and explicit confirmation (zero silent file modifications).
 7. **Safe Cancellation Semantics:** Cancelling during memory setup (`Ctrl+C` or `no`) exits with code **130** without launching the assistant TUI and without creating `.env` or `engram.db` (only securing `0700` permissions on an existing directory). Cancelling inside the assistant TUI after memory setup leaves the initialized memory store intact.
 
@@ -91,7 +91,7 @@ Summary | Projects | Shared | Storage | Actions | Assistants | Exit
   - Creation and update timestamps.
   - Bound local directory paths (`bindings`) registered on this physical machine.
 - **Shared:** Displays active and archived shared memory counters and last update timestamp, reminding users that this is a single global collection rather than per-project storage.
-- **Storage:** Shows the exact local SQLite file path (`~/.forge614/engram.db`), schema version (3 to 7), capability statuses, and PostgreSQL status (`configured` or `not-configured`).
+- **Storage:** Shows the exact local SQLite file path (`~/.forge614/engram/engram.db`), schema version (3 to 7), capability statuses, and PostgreSQL status (`configured` or `not-configured`).
   - **Zero Secret Exposure:** Strictly conceals PostgreSQL URLs, passwords, API secrets, memory titles, and memory content.
 
 #### 3. Two-Step Confirmed Actions (`Actions`):
@@ -386,3 +386,23 @@ forge614-engram sync --upgrade-format
 - Atomic CAS lock ensures single-winner promotion.
 - Unreinforced peer clients halt safely with `REINFORCEMENT_REQUIRED` until upgraded.
 - `sync-watch` strictly rejects `--upgrade-format`.
+
+---
+
+### Step 11: Guarded and Coordinated Uninstallation (`uninstall`)
+
+If you ever decide to remove Forge614 Engram from your system, the CLI provides a guarded command that surgically uninstalls without leaving orphaned files or touching sibling directories:
+
+```bash
+# Case A: Engram standalone
+forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM"
+
+# Case B: If Forge614 Atlas is installed (~/.forge614/atlas/)
+forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"
+```
+
+**Safety protocols and steps executed during uninstallation:**
+1. **Strict Atlas Coordination:** If `~/.forge614/atlas` exists, Engram requires the dual-confirmation phrase and coordinates Atlas uninstallation first by invoking its dedicated binary (`~/.forge614/atlas/bin/forge614-atlas uninstall --from forge614-engram --confirmed`). If the Atlas binary is missing or fails, Engram immediately halts with `ATLAS_UNINSTALL_REQUIRED` or `ATLAS_UNINSTALL_FAILED` without modifying any file.
+2. **Surgical Assistant Removal:** Inspects Claude Code, Codex, Cursor, OpenCode, and Antigravity configuration files and cleanly strips managed MCP server definitions and hooks. If a configuration file was corrupted, aborts with `ASSISTANT_REMOVE_FAILED`.
+3. **Surgical PATH Cleanup:** Locates the delimited `# >>> forge614-engram PATH >>>` block in your shell startup files (`.zshrc`, `.bashrc`, etc.) or Windows User registry and removes it cleanly. If the block was altered manually, aborts with `PATH_CONFLICT` to protect your dotfiles.
+4. **Exclusive Engram Product Home Removal:** Removes only the `~/.forge614/engram/` subdirectory. The family root container `~/.forge614/` and sibling directories like `shell/` remain untouched.

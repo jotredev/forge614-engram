@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withDirectory } from "../__test-support__/fixtures";
 import { EngramProductHome } from "./product-home";
@@ -44,7 +44,7 @@ test("rejects a destination conflict without moving any legacy file", () => with
   expect(readFileSync(join(product, "engram.db"), "utf8")).toBe("different");
 }));
 
-test("repairs a user-owned parent without modifying a sibling", () => withDirectory(directory => {
+test("keeps the shared Forge614 parent permissions unchanged while securing only Engram", () => withDirectory(directory => {
   const { parent, product, home } = fixture(directory);
   mkdirSync(join(parent, "shell"), { recursive: true, mode: 0o755 });
   writeFileSync(join(parent, "shell", "keep"), "unchanged");
@@ -54,6 +54,8 @@ test("repairs a user-owned parent without modifying a sibling", () => withDirect
 
   expect(home.root).toBe(product);
   expect(existsSync(product)).toBe(true);
+  expect(statSync(parent).mode & 0o777).toBe(0o755);
+  expect(statSync(product).mode & 0o777).toBe(0o700);
   expect(readFileSync(join(parent, "shell", "keep"), "utf8")).toBe("unchanged");
 }));
 
