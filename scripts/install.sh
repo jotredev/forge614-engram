@@ -72,7 +72,7 @@ publish_path_for_future_shell() {
   case "${SHELL:-}" in
     */zsh|zsh)
       configuration_file="$HOME/.zshrc"
-      path_command="$(printf 'export PATH=%q:\"$PATH\"' "$bin_dir")"
+      path_command="$(printf 'export PATH=%q:"$PATH"' "$bin_dir")"
       ;;
     */bash|bash)
       case "$(uname -s)" in
@@ -80,7 +80,7 @@ publish_path_for_future_shell() {
         Linux) configuration_file="$HOME/.bashrc" ;;
         *) return 2 ;;
       esac
-      path_command="$(printf 'export PATH=%q:\"$PATH\"' "$bin_dir")"
+      path_command="$(printf 'export PATH=%q:"$PATH"' "$bin_dir")"
       ;;
     */fish|fish)
       configuration_file="$HOME/.config/fish/conf.d/forge614-engram.fish"

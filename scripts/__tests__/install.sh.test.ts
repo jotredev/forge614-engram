@@ -159,6 +159,38 @@ test.each([
   }
 });
 
+test.each([
+  ["zsh", "/bin/zsh", ".zshrc"],
+  ["bash", "/bin/bash", process.platform === "darwin" ? ".bash_profile" : ".bashrc"],
+])("keeps inherited PATH entries usable when sourcing the %s block", async (_name, shell, configurationFile) => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "custom bin");
+  const fakeHome = join(root, "home");
+  const configurationPath = join(fakeHome, configurationFile);
+  mkdirSync(resolve(configurationPath, ".."), { recursive: true });
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+
+  try {
+    const installation = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, shell);
+    const sourced = Bun.spawnSync([
+      "/usr/bin/env",
+      "bash",
+      "-c",
+      'PATH=/usr/bin:/bin\nsource "$1"\nenv printf "%s\\n" "$PATH"',
+      "bash",
+      configurationPath,
+    ]);
+
+    expect(installation.exitCode, installation.stderr).toBe(0);
+    expect(sourced.exitCode, sourced.stderr.toString()).toBe(0);
+    expect(sourced.stdout.toString()).toBe(`${destination}:/usr/bin:/bin\n`);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("leaves shell files untouched and prints manual PATH guidance for an unknown shell", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -175,11 +207,14 @@ test("leaves shell files untouched and prints manual PATH guidance for an unknow
   const server = fixtureReleaseServer(targetArtifact(), fixture);
 
   try {
-    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, "/bin/unknown");
+    const first = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, "/bin/unknown");
+    const second = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination, "--force"]), true, "/bin/unknown");
 
-    expect(result.exitCode, result.stderr).toBe(0);
-    expect(result.stdout).toContain(`export PATH=${destination}:\"$PATH\"`);
-    expect(result.stdout).toContain("manually");
+    expect(first.exitCode, first.stderr).toBe(0);
+    expect(second.exitCode, second.stderr).toBe(0);
+    expect(first.stdout).toContain(`export PATH=${destination}:\"$PATH\"`);
+    expect(first.stdout).toContain("manually");
+    expect(second.stdout).toContain("manually");
     for (const shellFile of shellFiles) {
       expect(readFileSync(join(fakeHome, shellFile), "utf8")).toBe(`unrelated ${shellFile}\n`);
     }
