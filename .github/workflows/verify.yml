@@ -60,5 +60,5 @@ jobs:
         shell: pwsh
         run: ./scripts/build-windows-reparse-addon.ps1 -Architecture x64
       - name: Verify guarded publication and reparse rejection on native Windows
-        run: bun test src/infrastructure/filesystem/windows-reparse-guard.test.ts src/infrastructure/filesystem/private-files.test.ts src/infrastructure/assistants/windows-publication.test.ts
+        run: bun test src/infrastructure/filesystem/windows-reparse-guard.test.ts src/infrastructure/filesystem/private-files.test.ts src/infrastructure/assistants/windows-publication.test.ts scripts/__tests__/release-windows-native-addon.test.ts
       - run: pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1

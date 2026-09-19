@@ -113,6 +113,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'The packaged executable could not inspect assistant configuration paths.' }
             foreach ($id in @('claude-code', 'codex', 'cursor', 'opencode', 'antigravity')) {
               if ($id -notin @($assistants.id)) { throw "The packaged executable did not report $id." }
+              $assistant = @($assistants | Where-Object { $_.id -eq $id })
+              if ($assistant.Count -ne 1 -or $assistant[0].configuration.status -ne 'absent') {
+                throw "The packaged executable could not safely inspect $id in the empty profile."
+              }
             }
             if (Test-Path -LiteralPath (Join-Path $profile '.forge614')) { throw 'assistant-list created user storage.' }
           } finally {

@@ -1,6 +1,25 @@
 import { expect, test } from "bun:test";
 
 const workflow = await Bun.file(new URL("../../.github/workflows/release.yml", import.meta.url)).text();
+const powershell = process.env.FORGE614_TEST_PWSH ?? Bun.which("pwsh");
+
+// Exercise the workflow's actual validation against assistant-list results:
+// a missing native addon returns blocked descriptors while keeping exit code 0.
+const smokeTest = powershell ? test : test.skip;
+smokeTest("Windows release smoke rejects blocked inspection even when every assistant ID is present", () => {
+  const validation = workflow.match(/(          foreach \(\$id in @\('claude-code'[\s\S]+?)(?=          if \(Test-Path)/)?.[1];
+  if (!validation) throw new Error("Could not locate the Windows assistant-list validation.");
+  const ids = ["claude-code", "codex", "cursor", "opencode", "antigravity"];
+  for (const blockedId of [null, ...ids]) {
+    const descriptors = ids.map(id => ({ id, configuration: { status: id === blockedId ? "blocked" : "absent" } }));
+    const result = Bun.spawnSync([
+      powershell!, "-NoProfile", "-NonInteractive", "-Command",
+      `$ErrorActionPreference = 'Stop'; $assistants = ConvertFrom-Json '${JSON.stringify(descriptors)}';\n${validation}`,
+    ]);
+    if (blockedId === null) expect(result.exitCode, result.stderr.toString()).toBe(0);
+    else expect(result.exitCode, `Accepted blocked ${blockedId} inspection`).not.toBe(0);
+  }
+}, 15_000);
 
 test("Windows release artifacts build and load their matching embedded native addon", () => {
   expect(workflow).toContain("workflow_dispatch:");
