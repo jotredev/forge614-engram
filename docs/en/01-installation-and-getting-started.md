@@ -564,9 +564,9 @@ When Engram writes or modifies configuration files (e.g., publishing MCP tools f
   In virtual machines with multiple Node.js installations in PATH, the script implements `Resolve-NodeExecutable` to filter and select **a single valid executable path**, preventing faulty command concatenations.
 
 #### CI Validation Evidence and Automated Tests:
-* **Successful CI Execution:**
+* **Successful CI Execution on Verify Workflow:**
   The `Verify` workflow in GitHub Actions (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`) completed with successful status (**Pass / Green**) across all platforms (`ubuntu-latest`, `macos-latest`, and `windows-latest`).
-* **Tests Executed in the Native Windows x64 Job:**
+* **Tests Executed in the Native Windows x64 Job (`verify.yml`):**
   1. Native addon compilation and non-empty file check (`windows_reparse_guard.node`).
   2. Immediate acceptance of normal paths in temporary directories without spawning shell processes.
   3. Strict rejection with `UNSAFE_PATH` of file symlinks (`symlinkSync(..., 'file')`).
@@ -575,16 +575,18 @@ When Engram writes or modifies configuration files (e.g., publishing MCP tools f
   6. Fail-closed rejection on exceptions or non-boolean checker results.
   7. Antigravity configuration publication to `%USERPROFILE%\.gemini\config\mcp_config.json` in an isolated temporary environment, verifying persisted data.
   8. PowerShell installer test suite (`install.ps1.test.ps1`), validating 5 scenarios against an ephemeral loopback HTTP server (`127.0.0.1`).
-* **Validation Scope:**
-  The Windows CI job executes a targeted subset of test files (`windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts`, and `install.ps1.test.ps1`), not the entire project suite. Validation ran exclusively on **x64** architecture on Windows; the ARM64 architecture was not executed in this job.
+* **Full Release Packaging Workflow Validation (`release.yml`):**
+  The standalone release packaging workflow (**manual run ID `35423226279`**, commit `7ee9de8`) validated successfully (**Pass / Green**) the compilation and assembly of all 6 release artifacts:
+  1. **Native Addon Bundling for Windows x64 and ARM64:** The workflow compiles the C++ addon via `scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}` before invoking `bun build --compile`. Bun embeds the compiled `.node` binary inside standalone executables `forge614-engram-windows-x64.exe` and `forge614-engram-windows-arm64.exe`.
+  2. **Isolated Packaged-Executable Verification:** Each Windows executable is tested under an isolated temporary user profile (`RUNNER_TEMP`, random GUID) by executing `forge614-engram assistant-list`, verifying in-memory native addon loading, detection of all 5 supported assistants (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`), and asserting that no `~/.forge614/` storage folder is created.
+  3. **Release Artifact Assembly and Cryptographic Checksums:** Generated and verified `SHA256SUMS` across all 6 standalone release binaries (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64).
+  4. **Publication Guard:** Manual execution via `workflow_dispatch` safely skipped GitHub Release publication; actual public release creation is strictly gated on official `v*` tag pushes.
 
 #### Pending Tasks for a Stable Release (v1.0.0):
-A green CI workflow confirms that implemented tests pass in that environment, but does not prove on its own that the final distribution is ready for general release:
-1. **Embed Native Addon into Distributed Standalone Executable:** Configure the release workflow (`release.yml`) to compile the native addon and bundle it inside the standalone Windows binary (`bun build --compile`), verifying that the final `.exe` loads the addon without requiring external files.
-2. **Build and Test on Windows ARM64:** Verify compilation and test execution on native Windows ARM64 runners (`windows-11-arm`).
-3. **Standalone Binary Validation Outside the Repository:** Test binary installation and execution on a clean Windows machine without development tools or cloned source code.
-4. **Runtime Dependency Verification:** Certify that the standalone binary does not depend on external C++ runtime redistributables (*MSVC CRT*) missing on standard Windows installations.
-5. **Full Release Workflow Verification:** Validate the generation and cryptographic signing of all six release artifacts before publishing version 1.0.0.
+With native addon embedding, Windows ARM64 coverage, and `SHA256SUMS` verification completed in CI, the remaining requirements for v1.0.0 are:
+1. **Standalone Binary Validation Outside Repository on Clean Machine:** Test binary installation and execution on a clean physical or virtual Windows machine without development tools (no Node.js, Python, Visual Studio, or Git installed).
+2. **Runtime Dependency Verification (MSVC CRT):** Certify that the standalone binary loads without requiring external Microsoft Visual C++ Redistributable packages on standard Windows systems.
+3. **Deliberate Official Version Release:** Create and push the official release tag `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) to trigger GitHub Release publication following human verification.
 
 ---
 

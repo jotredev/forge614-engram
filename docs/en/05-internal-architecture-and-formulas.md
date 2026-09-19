@@ -573,14 +573,34 @@ Compiling the native module on Windows relies on `scripts/build-windows-reparse-
 - **Visual Studio 2026 Build Tools (v18):** Official Microsoft C++ compiler toolset on `windows-latest` runners.
 - **Single-Candidate `node.exe` Resolution (`Resolve-NodeExecutable`):** In CI virtual machines with multiple Node.js installations in PATH, this function filters output to select strictly one valid executable path, preventing PowerShell string concatenation bugs.
 
-### 9.6. Verified CI Evidence and Pending Tasks for Stable Release (v1.0.0)
-* **Verified CI Evidence:** In the GitHub Actions `Verify` workflow (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`), the native `windows-latest` job successfully built the C++ addon and passed `windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts`, and all 5 scenarios of the `install.ps1.test.ps1` installer suite.
-* **Pending Tasks for v1.0.0:**
-  1. **Embed Native Addon into Standalone Executable:** Integrate `build-windows-reparse-addon.ps1` into `release.yml` so the standalone binary bundles the compiled addon and loads it without requiring external `.node` files.
-  2. **Compile and Test on Windows ARM64:** Verify compilation and test execution on native Windows ARM64 runners (`windows-11-arm`).
-  3. **Clean Environment Validation:** Test the standalone binary on a clean Windows system lacking developer tools or cloned repositories.
-  4. **Runtime Dependency Verification:** Certify that the standalone executable does not require external C++ redistributable packages (*MSVC CRT*) missing on standard Windows installations.
-  5. **Full Release Pipeline Verification:** Validate generation and cryptographic signing of all 6 release artifacts prior to publishing v1.0.0.
+### 9.6. Standalone Release Packaging, Addon Embedding, and Packaged Verification (release.yml)
+To distribute single-file standalone executables without requiring developer tools on the end user's machine, the release workflow (`.github/workflows/release.yml`) implements a rigorous packaging architecture:
+* **Dual Execution Modes (Manual vs. Official Release):**
+  - Manual execution (`workflow_dispatch`): Allows compiling all 6 platform installers, running isolated profile packaged checks, and verifying `SHA256SUMS` without publishing a GitHub Release or touching tags.
+  - Official release (`push: tags: ['v*']`): Gated strictly on tag pushes, ensuring public releases occur only upon deliberate human decision.
+* **Strict Windows Build Pipeline Ordering:**
+  1. Dependency installation (`bun install --frozen-lockfile --ignore-scripts`).
+  2. Native Node-API C++ addon compilation (`scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}`) for the target architecture (`x64` or `arm64`).
+  3. Standalone executable compilation with Bun (`bun build ./src/cli.ts --compile ...`). Bun automatically embeds the `.node` binary into the standalone executable via literal `require()` detection.
+* **Packaged Executable Verification Outside Repository:**
+  On Windows runners, the newly compiled `.exe` is executed under an isolated temporary user profile (`RUNNER_TEMP`, random GUID) invoking `assistant-list`:
+  - Certifies the standalone `.exe` boots independently.
+  - Verifies that the embedded native C++ addon loads into memory and evaluates assistant paths.
+  - Detects all 5 supported assistants (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`).
+  - Certifies zero storage footprint (does not create `~/.forge614/`).
+* **Release Contract Regression Prevention Test:**
+  The test file `scripts/__tests__/release-windows-native-addon.test.ts` statically verifies workflow syntax and contract: manual dispatch presence, x64/ARM64 addon matrices, isolated temporary profile checks, tag-gated publication, and absence of invalid dynamic matrix directives like `shell: ${{ matrix.shell }}`.
+* **Dynamic Shell Matrix Directive Resolution:**
+  Removed invalid `shell: ${{ matrix.shell }}` step directives (unsupported in GitHub Actions workflow syntax), allowing GitHub Actions to use platform defaults (Bash on Linux/macOS, PowerShell on Windows).
+* **Verified CI Evidence:**
+  1. `Verify` Workflow (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`): Successfully built the C++ addon and passed `windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts`, and all 5 scenarios of the `install.ps1.test.ps1` installer suite.
+  2. `Release standalone artifacts` Workflow (**Run ID `35423226279`**, commit `7ee9de8`): Successfully built and validated all 6 standalone binaries (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64), verified `SHA256SUMS`, and safely skipped public release publication.
+
+### 9.7. Pending Tasks for Stable Release (v1.0.0)
+With native addon embedding, Windows ARM64 coverage, and `SHA256SUMS` validation completed in CI, the remaining requirements for v1.0.0 are:
+1. **Clean Environment Validation:** Test binary installation and execution on a clean physical or virtual Windows machine without developer tools (no Node.js, Python, Visual Studio, or Git installed).
+2. **Runtime Dependency Verification (MSVC CRT):** Certify that the standalone executable does not require external C++ redistributable packages (*MSVC CRT*) on standard Windows installations.
+3. **Deliberate Official Version Release:** Create and push the official release tag `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) to trigger GitHub Release publication following human verification.
 
 ---
 

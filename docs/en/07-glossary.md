@@ -125,7 +125,7 @@ Like two notaries stamping a sequentially numbered ledger: each checks the curre
 Supported coding assistant replacing Gemini CLI. Connects via standard Model Context Protocol (MCP) using `~/.gemini/config/mcp_config.json`, allowing the model to consult context (`memory_context`), search memories (`memory_search`), and save decisions (`memory_save`). Configured as *MCP only* with no automatic hooks (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
 
 ### Windows Path Guard / Reparse Points Validation
-A Windows-specific security validation mechanism that verifies configuration paths do not point to symbolic links, directory junctions, or reparse points before writing data, preventing malicious path redirection attacks. (Status: CI validation on x64 successfully passed in GitHub Actions Run ID 35414475529; standalone binary embedding and ARM64 pending for v1.0.0).
+A Windows-specific security validation mechanism that verifies configuration paths do not point to symbolic links, directory junctions, or reparse points before writing data, preventing malicious path redirection attacks. (Status: CI functional validation on x64 successfully passed in GitHub Actions Run ID 35414475529, and standalone release embedding on x64 and ARM64 passed in Run ID 35423226279; external clean machine testing pending for v1.0.0).
 
 ### Native Reparse-Point Guard (Node-API C++ Addon / `windows_reparse_guard.node`)
 Like a bilingual customs officer stationed at the border inspecting official passports directly without slow intermediaries: an ultralightweight native C++ module loaded by Bun directly into memory that queries the Windows kernel function `GetFileAttributesW` in microseconds to certify whether a directory or file is a redirection point.
@@ -138,3 +138,9 @@ Like a surgeon carefully sterilizing all instruments, photographing the surgical
 
 ### Exclusive On-Disk Creation Mode (Exclusive File Mode / `"wx"`)
 Like attempting to claim a numbered locker with a lock that immediately jams if a padlock is already present: a file opening flag on Windows that combines write intent (`"w"`) with strict exclusivity (`"x"`), ensuring that if the temporary or backup file already exists on disk, the operating system call immediately fails with `EEXIST` rather than overwriting existing data.
+
+### Standalone Node-API Bundling (Native Addon Embedding)
+Like packing a specialized precision tool directly into a technician's sealed case: Bun's standalone compiler capability (`bun build --compile`) that bundles compiled `.node` native binary addons into a single distributable executable when referenced by a literal `require()`, allowing end users to run a self-contained `.exe` without adjacent files, Node.js, or compiler toolchains.
+
+### Manual Non-Publishing Release (workflow_dispatch)
+Like conducting a full dress rehearsal behind closed doors before opening night: a manual trigger mode in GitHub Actions that compiles all six platform installers, executes isolated packaged smoke checks, computes and validates `SHA256SUMS`, and packages artifacts without publishing a GitHub Release or creating git tags, reserving official releases strictly for deliberate `v*` tag pushes.

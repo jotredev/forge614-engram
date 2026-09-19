@@ -576,9 +576,9 @@ El guardado de archivos de configuración (`private-files.ts`) sigue un protocol
   En máquinas virtuales con múltiples instalaciones de Node.js en el PATH, el script implementa `Resolve-NodeExecutable` para filtrar y seleccionar **una única ruta ejecutable válida**, evitando concatenaciones erróneas de comandos.
 
 #### Evidencia de Validación en CI y Pruebas Automatizadas:
-* **Ejecución exitosa en CI:**
+* **Ejecución exitosa del flujo Verify en CI:**
   El flujo de trabajo `Verify` en GitHub Actions (**ejecución ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`) finalizó con resultado exitoso (**Verde / Pass**) en todas sus plataformas (`ubuntu-latest`, `macos-latest` y `windows-latest`).
-* **Pruebas ejecutadas en el job nativo de Windows x64:**
+* **Pruebas ejecutadas en el job nativo de Windows x64 (`verify.yml`):**
   1. Compilación del addon nativo y comprobación de archivo no vacío (`windows_reparse_guard.node`).
   2. Aceptación inmediata de rutas normales en directorios temporales sin invocar subprocesos de shell.
   3. Rechazo estricto con `UNSAFE_PATH` de enlaces simbólicos de archivo (`symlinkSync(..., 'file')`).
@@ -587,16 +587,18 @@ El guardado de archivos de configuración (`private-files.ts`) sigue un protocol
   6. Rechazo cerrado ante excepciones o resultados no booleanos del comprobador.
   7. Publicación de configuración de Antigravity en `%USERPROFILE%\.gemini\config\mcp_config.json` en un entorno temporal aislado, verificando la persistencia de los datos planificados.
   8. Suite de pruebas del instalador PowerShell (`install.ps1.test.ps1`), que valida 5 escenarios mediante un servidor HTTP local efímero en loopback (`127.0.0.1`).
-* **Alcance de la validación:**
-  El trabajo de Windows en CI ejecuta un conjunto seleccionado de archivos de prueba (`windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts` e `install.ps1.test.ps1`), no la suite completa del proyecto. La validación se realizó exclusivamente en arquitectura **x64** sobre Windows; la arquitectura ARM64 no fue ejecutada en este job.
+* **Validación completa del flujo de empaquetado de Release (`release.yml`):**
+  El flujo de empaquetado y distribución (**ejecución manual ID `35423226279`**, commit `7ee9de8`) validó con éxito (**Verde / Pass**) la construcción y ensamblado de los 6 artefactos de release:
+  1. **Incrustación del módulo nativo en Windows x64 y ARM64:** El flujo compila el addon C++ con `scripts/build-windows-reparse-addon.ps1 -Architecture ${{ matrix.addon_architecture }}` antes de invocar `bun build --compile`. Bun incrusta el archivo `.node` compilado dentro de los binarios autónomos `forge614-engram-windows-x64.exe` y `forge614-engram-windows-arm64.exe`.
+  2. **Prueba de ejecución empaquetada fuera del repositorio:** Cada ejecutable de Windows se prueba bajo un perfil temporal aislado (`RUNNER_TEMP`, GUID aleatorio) ejecutando `forge614-engram assistant-list`, comprobando la carga del addon nativo en memoria, la detección de los 5 asistentes (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`) y certificando que no se genera la carpeta `~/.forge614/`.
+  3. **Ensamblado y sumas criptográficas:** Se generó y validó el archivo `SHA256SUMS` con los 6 binarios de release (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64).
+  4. **Salvaguarda de publicación:** La ejecución manual mediante `workflow_dispatch` omitió (*skipped*) deliberadamente la publicación de la GitHub Release; la publicación real queda estrictamente reservada para etiquetas oficiales `v*`.
 
 #### Tareas Pendientes para una Versión Estable (v1.0.0):
-Un flujo de integración continua verde confirma que las pruebas implementadas funcionan en ese entorno, pero no demuestra por sí solo que la distribución final esté lista para su entrega general:
-1. **Incrustar el componente nativo en el ejecutable distribuido:** Falta configurar el flujo de empaquetado (`release.yml`) para que compile el addon nativo y lo incruste dentro del binario standalone de Windows (`bun build --compile`), verificando que el `.exe` final cargue el addon sin requerir archivos externos.
-2. **Construcción y prueba en Windows ARM64:** Probar la compilación y ejecución en ejecutores Windows ARM64 nativos (`windows-11-arm`).
-3. **Validación del ejecutable fuera del repositorio:** Probar la instalación y ejecución del binario en una máquina Windows limpia, sin dependencias de desarrollo ni código fuente clonado.
-4. **Verificación de dependencias de tiempo de ejecución:** Certificar que el binario autónomo no dependa de librerías redistribuibles de C++ (*MSVC CRT*) ausentes en sistemas Windows comunes.
-5. **Comprobación completa del proceso de release:** Validar la generación y firma criptográfica de los seis artefactos de release antes de publicar la versión 1.0.0.
+Con la incrustación del módulo nativo en los ejecutables de release, la cobertura de Windows ARM64 y la verificación de `SHA256SUMS` completadas en CI, los requisitos pendientes para v1.0.0 son:
+1. **Validación del ejecutable fuera del repositorio en máquina limpia:** Probar la instalación y ejecución del binario `.exe` en una máquina Windows física o virtual limpia, sin dependencias de desarrollo (sin Node.js, Python, Visual Studio ni Git instalados).
+2. **Verificación de dependencias de tiempo de ejecución (MSVC CRT):** Certificar que el binario autónomo cargue sin requerir paquetes externos redistribuibles de Visual C++ en sistemas Windows estándar.
+3. **Publicación deliberada de la versión oficial:** Crear y enviar la etiqueta oficial `v1.0.0` (`git tag v1.0.0 && git push origin v1.0.0`) para activar la publicación final en GitHub Releases tras la aprobación humana.
 
 ---
 
