@@ -46,7 +46,7 @@ New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 [System.IO.File]::WriteAllBytes($retainedBinary, $fixtureBytes)
 $failingPathWriter = { param([string] $Value) throw 'fixture user PATH write failure' }
 try {
-  Publish-UserPath -Directory 'C:\Tools\Forge614\bin' -PathReader $pathReader -PathWriter $failingPathWriter -EnvironmentChangeNotifier {}
+  Publish-UserPath -Directory 'C:\Tools\Forge614\failure-bin' -PathReader $pathReader -PathWriter $failingPathWriter -EnvironmentChangeNotifier {}
   throw 'User PATH publication failure unexpectedly succeeded.'
 } catch {
   Assert-That ($_.Exception.Message -eq 'fixture user PATH write failure') "User PATH publication threw the wrong error: $($_.Exception.Message)"
