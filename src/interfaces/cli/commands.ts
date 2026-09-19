@@ -1,4 +1,4 @@
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, detectAssistants } from "../../app";
+import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, detectAssistants, uninstallEngram } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
@@ -30,6 +30,10 @@ export async function runTuiCommand(runners:TuiRunners = {}):Promise<void> {
 
 export async function dispatch({command,values,need}:ParsedCommand, tuiRunners:TuiRunners = {}):Promise<void> {
   if (command === "setup") { await setupTerminal(); return; }
+  if (command === "uninstall") {
+    const result=await uninstallEngram({confirmation:need("confirm")},{executable:process.execPath});
+    console.log(JSON.stringify(result,null,2));return;
+  }
   if (command === "tui") { await runTuiCommand(tuiRunners); return; }
   if (command === "sync") {console.log(JSON.stringify(await syncWorkspace(undefined,{upgradeFormat:values.has("upgrade-format")}),null,2));return;}
   if(command==="sync-watch"&&values.has("upgrade-format"))invalid("sync-watch no acepta --upgrade-format.");

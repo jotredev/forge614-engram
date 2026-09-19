@@ -10,3 +10,5 @@ export type { SetupIO, SetupResult } from "./setup";
 export { detectAssistants, resolveAssistantPaths, coverageWarnings, AssistantConfigurationError, planAssistantConfiguration, preflightAssistantConfiguration, applyAssistantConfiguration, testInstalledServer, resolveInstalledEngram } from "./assistants";
 export type { ConfigurationPlan, ConfigurationResult, ServerTestResult } from "./assistants";
 export { executeControlCenterMutation, readControlCenter } from "./control-center";
+export { uninstallEngram } from "./uninstall";
+export type { UninstallDependencies, UninstallInput, UninstallResult } from "./uninstall";
