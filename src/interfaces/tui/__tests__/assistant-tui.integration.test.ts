@@ -29,6 +29,11 @@ async function expectStopped(pid:number){
   while(alive&&Date.now()<deadline){try{process.kill(pid,0);await Bun.sleep(10);}catch{alive=false;}}
   expect(alive).toBe(false);
 }
+async function expectRendered(text:()=>string,expected:string):Promise<void>{
+  const deadline=Date.now()+5000;
+  while(!text().includes(expected)&&Date.now()<deadline)await Bun.sleep(10);
+  expect(text()).toContain(expected);
+}
 
 
 test('selection and previews do not enroll; only confirmed selected clients change and old memories survive',()=>{
@@ -126,6 +131,7 @@ test.each(['escape','cancel','eof','error'])('terminal stays responsive and clos
   output.emit('resize');
   if(ending==='eof')input.end();else if(ending==='error')input.emit('error',new Error('fixture input failure'));else input.write(ending==='escape'?'\x1b':'\x03');
   if(ending==='escape'){
+    await expectRendered(()=>text,'CANCELLED');
     await expectStopped(pid);input.write('\x03');
   }
   await pending;await expectStopped(pid);
