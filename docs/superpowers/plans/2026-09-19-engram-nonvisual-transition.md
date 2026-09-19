@@ -18,6 +18,8 @@
 - Status, preview, logs and errors never expose PostgreSQL URLs or credentials.
 - Every configuration write uses `WorkspaceConfig.revision()` and `WorkspaceConfig.configurePostgres()`.
 - No TUI, assistant detection or assistant configuration removal may start before Task 5 gates are fulfilled.
+- Forge614 Shell is optional during daily work: external clients such as Orca use Engram directly through MCP after one-time configuration.
+- `forge614-engram init` remains noninteractive for scripts and integrations. The future visual `forge614 init` belongs to Forge614 AI, not Engram.
 - Documentation is updated by the separate documentation workflow after accepted code changes.
 
 ## Review Focus
@@ -369,7 +371,7 @@ Do not start removal until all of these independently exist and pass:
 | `forge614-ai` | Published ownership and lifecycle contract for future `forge614 init` |
 | Cross-product verification | Clean-machine test: Shell initializes Engram and configures a selected assistant without Engram TUI |
 
-After the gates pass, write a separate removal plan. It must remove `src/interfaces/tui/**`, `tui`, `assistant-list`, `memory-hook` and Engram-owned assistant configuration only after the Engines/Shell replacements are live. It must preserve MCP, data CLI commands, public SDK, installer integrity, Atlas SDK support and safe uninstallation.
+After the gates pass, write a separate removal plan. It must remove `src/interfaces/tui/**`, `tui`, `assistant-list`, `memory-hook`, `setup` and Engram-owned assistant configuration only after the Engines/Shell replacements are live. It must preserve the noninteractive `forge614-engram init` command, MCP, data CLI commands, public SDK, installer integrity, Atlas SDK support and safe uninstallation. The visual replacement is the future Forge614 AI command `forge614 init`; it may launch Shell for that one-time flow, but Shell is never required during daily work in Orca or another MCP-connected client.
 
 ## Final Verification for Every Merged Task
 

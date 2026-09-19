@@ -34,6 +34,7 @@ Forge614 Shell is the only human-facing visual experience in the ecosystem.
 - Other products must not maintain their own TUI.
 - Shell presents questions, choices, previews, confirmations, progress, warnings and results.
 - Shell can work without Engram or Atlas.
+- Shell is optional during daily work. A person may use Orca, Claude Code, Codex, Antigravity or another connected client directly; Engram serves memory through its MCP server without Shell being open.
 - A product may expose a non-interactive CLI or SDK for automation, but it must not duplicate Shell's setup interface.
 
 ## 4. The future global initialization flow
@@ -61,6 +62,15 @@ approved components apply only the confirmed changes
 ```
 
 Until `forge614-ai` exists, no other product may claim to own `forge614 init`. Transitional product-specific commands may remain for compatibility, but they are temporary and must be designed to hand control to Shell where a visual flow is necessary.
+
+The two `init` commands have separate roles:
+
+```text
+forge614-engram init   Noninteractive local-memory initialization for scripts and integrations.
+forge614 init          Future Forge614 AI command for optional visual ecosystem initialization.
+```
+
+`forge614-engram init` must remain safe for automation and must not open Shell. The temporary `forge614-engram setup` command is retired only when the Forge614 AI / Shell visual replacement is available.
 
 ## 5. Forge614 Engines
 
@@ -162,6 +172,8 @@ Installation rules:
 5. No product deletes `~/.forge614/` as a whole.
 6. Each product repairs permissions only inside its own directory.
 7. Installing a binary never silently configures AI integrations or creates memories.
+
+After one-time configuration, connected AI clients may use Engram directly through MCP. Shell does not need to remain running and is not a runtime requirement for Orca or another supported coding client.
 
 ## 9. Uninstallation rules
 
