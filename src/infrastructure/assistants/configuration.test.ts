@@ -55,29 +55,29 @@ test('public preflight observes unchanged Codex config so newly disabled hooks c
   expect(applyAssistantConfiguration(plan)).toMatchObject({ok:false,error:{code:'CHANGED'}});
 });
 
-test('preview never creates directories or exposes config secrets; apply preserves comments and exact backup', () => {
+test('Antigravity plans only its documented global MCP file and never touches legacy settings', () => {
   const {home,executable,options} = fixture();
   mkdirSync(join(home,'.gemini'));
   const path = join(home,'.gemini/settings.json');
   const original = '{\n // retain this comment\n "apiKey": "SECRET_SENTINEL", "theme":"dark"\n}\n';
   writeFileSync(path,original);
   const before = readdirSync(home);
-  const plan = planAssistantConfiguration('gemini-cli',executable,options);
+  const plan = planAssistantConfiguration('antigravity',executable,options);
   expect(readdirSync(home)).toEqual(before);
   expect(readFileSync(path,'utf8')).toBe(original);
   expect(JSON.stringify(plan)).not.toContain('SECRET_SENTINEL');
   expect(Object.isFrozen(plan)).toBe(true);
-  expect(plan.writes[0]!.expectedHash).toMatch(/^[a-f0-9]{64}$/);
+  expect(plan.writes.map(write=>write.path)).toEqual([join(home,'.gemini','config','mcp_config.json')]);
+  expect(plan.warnings).toContain('Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified.');
   const result = applyAssistantConfiguration(plan);
   expect(result.ok).toBe(true);
-  expect(readFileSync(result.backupPaths[0]!,'utf8')).toBe(original);
-  expect(statSync(result.backupPaths[0]!).mode & 0o777).toBe(0o600);
-  expect(readFileSync(path,'utf8')).toContain('// retain this comment');
-  expect(readFileSync(path,'utf8')).toContain('SECRET_SENTINEL');
-  expect(planAssistantConfiguration('gemini-cli',executable,options).writes).toHaveLength(0);
+  expect(result.backupPaths).toEqual([]);
+  expect(readFileSync(path,'utf8')).toBe(original);
+  expect(readFileSync(join(home,'.gemini','config','mcp_config.json'),'utf8')).toContain(executable);
+  expect(planAssistantConfiguration('antigravity',executable,options).writes).toHaveLength(0);
 });
 
-test.each(['claude-code','codex','cursor','opencode','gemini-cli'] as ClientId[])('%s configures an empty home privately and repeats as no-op', id => {
+test.each(['claude-code','codex','cursor','opencode','antigravity'] as ClientId[])('%s configures an empty home privately and repeats as no-op', id => {
   const {home,executable,options} = fixture();
   const before = readdirSync(home);
   const plan = planAssistantConfiguration(id,executable,options);
@@ -85,8 +85,13 @@ test.each(['claude-code','codex','cursor','opencode','gemini-cli'] as ClientId[]
   expect(plan.writes.length).toBeGreaterThan(0);
   const result = applyAssistantConfiguration(plan);
   expect(result.ok).toBe(true);
-  for(const path of result.appliedPaths) expect(statSync(path).mode & 0o777).toBe(0o600);
+  if(process.platform!=="win32") for(const path of result.appliedPaths) expect(statSync(path).mode & 0o777).toBe(0o600);
   expect(planAssistantConfiguration(id,executable,options).writes).toHaveLength(0);
+});
+
+test.each(['claude-code','codex','cursor','opencode','antigravity'] as ClientId[])('%s publishes configuration with Windows path inputs', id => {
+  const {executable,options}=fixture(); options.platform='win32'; options.env={LOCALAPPDATA:join(options.home!,'AppData','Local')};
+  expect(applyAssistantConfiguration(planAssistantConfiguration(id,executable,options)).ok).toBe(true);
 });
 
 test.each(['{"mcpServers":{"forge614-engram":{"command":"other"}}}', '{"x":1,"x":2}', '{"secret":"DO_NOT_LEAK",BROKEN}'])('rejects conflicting, duplicate and malformed configs without exposing contents', content => {
@@ -104,7 +109,7 @@ test('rejects changed bytes, symlink traversal and oversized files', () => {
   const result = applyAssistantConfiguration(plan);
   expect(result.ok).toBe(false); expect(result.appliedPaths).toHaveLength(0);
   const outside = join(home,'outside'); mkdirSync(outside); symlinkSync(outside,join(home,'.gemini'));
-  expect(() => planAssistantConfiguration('gemini-cli',executable,options)).toThrow();
+  expect(() => planAssistantConfiguration('antigravity',executable,options)).toThrow();
   writeFileSync(join(home,'.cursor/mcp.json'),' '.repeat(1024*1024+1));
   expect(() => planAssistantConfiguration('cursor',executable,options)).toThrow();
 });
@@ -121,12 +126,12 @@ test('TOML preserves unrelated semantics and comments and refuses inline hooks a
   expect(() => planAssistantConfiguration('codex',executable,options)).toThrow();
 });
 
-test('policy restrictions remain intact and block installation', () => {
-  const {home,executable,options} = fixture(); mkdirSync(join(home,'.gemini'));
+test('policy restrictions remain intact and block Antigravity configuration', () => {
+  const {home,executable,options} = fixture(); mkdirSync(join(home,'.gemini','config'),{recursive:true});
   for(const content of ['{"disableAllHooks":true}', '{"mcp":{"excluded":["forge614-engram"]}}', '{"mcp":{"allowed":["other"]}}']) {
-    writeFileSync(join(home,'.gemini/settings.json'),content);
-    expect(() => planAssistantConfiguration('gemini-cli',executable,options)).toThrow();
-    expect(readFileSync(join(home,'.gemini/settings.json'),'utf8')).toBe(content);
+    writeFileSync(join(home,'.gemini','config','mcp_config.json'),content);
+    expect(() => planAssistantConfiguration('antigravity',executable,options)).toThrow();
+    expect(readFileSync(join(home,'.gemini','config','mcp_config.json'),'utf8')).toBe(content);
   }
 });
 
@@ -141,12 +146,12 @@ test('custom directories and documented home overrides are honored; ambiguous Op
   expect(planAssistantConfiguration('opencode',executable,options).writes[0]!.path).toEndWith('opencode.jsonc');
 });
 
-test('nested MCP and hook comments survive insertion beside unrelated entries',()=>{
-  const {home,executable,options}=fixture();mkdirSync(join(home,'.gemini'));
-  const path=join(home,'.gemini/settings.json');
-  writeFileSync(path,'{ "mcpServers": { /* other server annotation */ "other": {"command":"keep"}}, "hooks": { "SessionStart": [/* keep native hook comment */ {"hooks":[{"type":"command","command":"echo keep"}]}] } }');
-  expect(applyAssistantConfiguration(planAssistantConfiguration('gemini-cli',executable,options)).ok).toBe(true);
-  const actual=readFileSync(path,'utf8');expect(actual).toContain('/* other server annotation */');expect(actual).toContain('/* keep native hook comment */');
+test('Antigravity MCP comments and unrelated entries survive insertion',()=>{
+  const {home,executable,options}=fixture();mkdirSync(join(home,'.gemini','config'),{recursive:true});
+  const path=join(home,'.gemini','config','mcp_config.json');
+  writeFileSync(path,'{ "mcpServers": { /* other server annotation */ "other": {"command":"keep"}}, "metadata": { /* preserve */ "theme":"dark"} }');
+  expect(applyAssistantConfiguration(planAssistantConfiguration('antigravity',executable,options)).ok).toBe(true);
+  const actual=readFileSync(path,'utf8');expect(actual).toContain('/* other server annotation */');expect(actual).toContain('/* preserve */');
 });
 
 test('partial failure reports applied files and retains their exact backups',()=>{
@@ -161,12 +166,11 @@ test('partial failure reports applied files and retains their exact backups',()=
 });
 
 test.each([
- ['gemini-cli','settings.json','{"hooksConfig":{"enabled":false}}'],
  ['codex','config.toml','[features]\nhooks = false\n'],
  ['codex','config.toml','[features]\ncodex_hooks = false\n'],
  ['codex','config.toml','allow_managed_hooks_only = true\n'],
 ] as const)('%s preserves native hook disable policy', (id,file,content)=>{
-  const {home,executable,options}=fixture();const directory=join(home,id==='codex'?'.codex':'.gemini');mkdirSync(directory);writeFileSync(join(directory,file),content);
+  const {home,executable,options}=fixture();const directory=join(home,'.codex');mkdirSync(directory);writeFileSync(join(directory,file),content);
   expect(()=>planAssistantConfiguration(id,executable,options)).toThrow();expect(readFileSync(join(directory,file),'utf8')).toBe(content);
 });
 
@@ -176,15 +180,16 @@ test('an existing owned hook on an unsupported event is a conflict',()=>{
   expect(()=>planAssistantConfiguration('claude-code',executable,options)).toThrow();
 });
 
-test.each(['claude-code','codex','cursor','opencode','gemini-cli'] as ClientId[])('%s writes the documented native MCP and hook structure',id=>{
+test.each(['claude-code','codex','cursor','opencode','antigravity'] as ClientId[])('%s writes the documented native MCP and hook structure',id=>{
   const {home,executable,options}=fixture();const result=applyAssistantConfiguration(planAssistantConfiguration(id,executable,options));expect(result.ok).toBe(true);
   const value=id==='codex'?parseToml(readFileSync(join(home,'.codex/config.toml'),'utf8')):parseJson(readFileSync(result.appliedPaths[0]!,'utf8'));
   if(id==='opencode')expect(value.mcp['forge614-engram']).toEqual({type:'local',command:[executable,'mcp']});
   else expect(value[id==='codex'?'mcp_servers':'mcpServers']['forge614-engram']).toEqual({command:executable,args:['mcp']});
   if(id==='opencode')return;
-  const native=id==='gemini-cli'?value:parseJson(readFileSync(result.appliedPaths[1]!,'utf8'));
+  if(id==='antigravity'){expect(result.appliedPaths).toEqual([join(home,'.gemini','config','mcp_config.json')]);return;}
+  const native=parseJson(readFileSync(result.appliedPaths[1]!,'utf8'));
   if(id==='cursor'){expect(native.version).toBe(1);expect(Object.keys(native.hooks)).toEqual(['sessionStart']);expect(native.hooks.sessionStart[0].timeout).toBe(3);}
-  else {expect(Object.keys(native.hooks)).toEqual(id==='gemini-cli'?['SessionStart','BeforeAgent']:['SessionStart','UserPromptSubmit']);expect(native.hooks.SessionStart[0].hooks[0].type).toBe('command');}
+  else {expect(Object.keys(native.hooks)).toEqual(['SessionStart','UserPromptSubmit']);expect(native.hooks.SessionStart[0].hooks[0].type).toBe('command');}
 });
 
 test('OpenCode runtime override is visible without exposing its contents',()=>{
@@ -200,10 +205,9 @@ test('OpenCode custom file retains global plugin location and reports multiple a
   options.locations={opencode:{configFile:custom}};expect(planAssistantConfiguration('opencode',executable,options).writes[0]!.path).toBe(custom);
 });
 
-test('Gemini documented home override replaces the home before appending .gemini',()=>{
-  const {home,executable,options}=fixture();options.env={GEMINI_CLI_HOME:join(home,'gemini-home')};
-  expect(planAssistantConfiguration('gemini-cli',executable,options).writes[0]!.path).toBe(join(home,'gemini-home/.gemini/settings.json'));
-  options.env={GEMINI_CLI_HOME:'relative'};expect(()=>planAssistantConfiguration('gemini-cli',executable,options)).toThrow();
+test('Antigravity always uses its documented MCP path',()=>{
+  const {home,executable,options}=fixture();
+  expect(planAssistantConfiguration('antigravity',executable,options).writes[0]!.path).toBe(join(home,'.gemini','config','mcp_config.json'));
 });
 
 test('OpenCode custom directory cannot silently override an active default global entry',()=>{

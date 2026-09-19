@@ -33,7 +33,8 @@ Forge614 Engram is a personal local memory system for artificial intelligence mo
    ```
 
 3. **Operating System:**
-   macOS or Linux with a Bash-compatible shell (`bash`).
+   - **macOS or Linux:** With a Bash-compatible shell (`bash`).
+   - **Windows:** Requires PowerShell 7+ (`pwsh`) for the official installer (`install.ps1`). To compile the native security addon from source on Windows, you require **Node.js (>= 22.14.0)**, **`node-gyp` (version 12.1.0 pinned in `devDependencies`)**, **Python (3.12+)**, and **Visual Studio 2026 Build Tools** (Microsoft C++ compiler). *(Note: once the standalone binary is installed, the end user does not need compilers or Node.js dependencies in their PATH).*
 
 4. **PostgreSQL Server (Optional):**
    Required only if enabling remote replication. Requires PostgreSQL 14 or higher with permissions to create and write to the `forge614_sync` schema.
@@ -77,7 +78,7 @@ bash scripts/install.sh
    ```bash
    bash scripts/install.sh --bin-dir /path/to/bin
    ```
-8. **Post-install Assistant Detection:** Following binary publication, it runs a read-only audit (`assistant-list`) detecting installed AI coding assistants (Claude Code, Codex, Cursor, OpenCode, Gemini CLI).
+8. **Post-install Assistant Detection:** Following binary publication, it runs a read-only audit (`assistant-list`) detecting installed AI coding assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity).
 9. **Interactive TUI Control Center Prompt:** If running in an interactive terminal (TTY stdin and stdout), the installer prompts:
    ```text
    ¿Abrir ahora el menú de asistentes? [s/N]
@@ -131,7 +132,7 @@ reinforcement-enable
                 Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
-memory-hook     --client <claude-code|codex|cursor|opencode|gemini-cli>
+memory-hook     --client <claude-code|codex|cursor|opencode|antigravity>
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
@@ -422,9 +423,168 @@ Representative JSON output:
         "Managed policies and runtime trust can restrict MCP or hooks; this preview does not change them."
       ]
     }
+  },
+  {
+    "id": "antigravity",
+    "label": "Antigravity",
+    "detected": {
+      "installed": true,
+      "executable": "/Users/usuario/.local/bin/agy",
+      "configFound": true,
+      "evidence": ["executable-found", "config-found"]
+    },
+    "configuration": {
+      "status": "configured",
+      "paths": [
+        "/Users/usuario/.gemini/config/mcp_config.json"
+      ]
+    },
+    "automation": {
+      "coverage": "mcp-only",
+      "warnings": [
+        "Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified.",
+        "Configuration does not prove a client connection or model compliance. Durable saves depend on the assistant; abrupt termination cannot guarantee a final save."
+      ]
+    }
   }
 ]
 ```
+
+### 10.1. Antigravity Integration
+
+Forge614 Engram officially supports **Antigravity** as a developer coding assistant:
+
+* **Compatibility via MCP (*Model Context Protocol*):** Antigravity interacts with Engram through the standard MCP protocol over standard input/output (`stdio`). This allows Antigravity to query ranked context (`memory_context`), perform lexical searches (`memory_search`), and persist new decisions (`memory_save`).
+* **Model Autonomy:** Configuring MCP exposes the tools to Antigravity, but **does not guarantee that the model will always save a memory**. The AI assistant autonomously decides when to invoke memory tools based on your conversational instructions.
+* **Current Coverage (*MCP Only*):** Antigravity is currently configured as **MCP only**. **No automatic hook is installed** for Antigravity. Event hooks will only be made available if an official, compatible, and validated durable-memory reminder event is verified in the future.
+  > [!WARNING]
+  > *Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified.*
+
+#### Configuration File Location:
+Across macOS, Linux, and Windows, Engram manages exclusively Antigravity's global MCP configuration file:
+```text
+~/.gemini/config/mcp_config.json
+```
+
+The managed entry within this file adheres to the following conceptual structure:
+```json
+{
+  "mcpServers": {
+    "forge614-engram": {
+      "command": "/absolute/path/to/forge614-engram",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+* **Absolute Command Path:** The `command` property always contains the exact absolute binary path to `forge614-engram` on your disk.
+* **Sole Argument:** `"args": ["mcp"]` is the single argument supplied to the executable.
+* **Preservation of Unrelated Keys:** Engram safely preserves all unrelated keys, comments, and third-party MCP servers present in the JSON file.
+* **Conflict Protection:** If an existing `forge614-engram` entry points to a different path or arguments, Engram **does not overwrite it blindly**; it halts execution and requests manual inspection (`CONFLICT`).
+* **Private Backups:** Before writing changes, Engram creates a private (`0600`) backup identified by UUID.
+* **Post-Write Verification:** Engram reads back and verifies the published byte content before reporting success.
+
+#### Antigravity Detection Order:
+When auditing your environment, Engram looks for the Antigravity executable in this strict sequence:
+1. Searches for `agy` in your `PATH` environment variable directories.
+2. On macOS and Linux, also inspects:
+   ```text
+   ~/.local/bin/agy
+   ```
+3. On Windows, also inspects:
+   ```text
+   %LOCALAPPDATA%/agy/bin/agy.exe
+   ```
+
+*(Note: Finding Antigravity never modifies any files automatically. The user must explicitly select it and confirm configuration during `setup` or via the `tui` menu).*
+
+#### Compatibility and Protection of Legacy Gemini Configurations:
+* Forge614 Engram **no longer manages Gemini CLI**.
+* It does not migrate existing Gemini configurations.
+* Engram **does not read, modify, or delete**:
+  ```text
+  ~/.gemini/settings.json
+  ```
+  If that file already exists on your machine, it remains completely untouched.
+* The fact that Antigravity shares a `.gemini` folder does not authorize Engram to touch legacy Gemini configurations.
+
+#### Windows Path Security (Native Node-API Component and Reparse Points):
+* **Limitation of POSIX Permissions:** On macOS and Linux, Engram validates file safety through octal POSIX permission bits (`0700` for folders, `0600` for files) and POSIX `O_NOFOLLOW` open flags. On Windows, POSIX permission bits do not accurately represent NTFS Access Control Lists (ACLs), and Bun on Windows lacks direct POSIX symbolic link flag mappings in file opening.
+* **Native C/C++ Reparse-Point Guard Addon:**
+  To guarantee maximum security on Windows, Engram incorporates a native Node-API C++ addon (`native/windows-reparse-guard/addon.cc`), exposed via the TypeScript loader `src/infrastructure/filesystem/windows-reparse-guard.ts` as `hasWindowsReparsePoint(path: string): boolean`.
+* **Direct Win32 API Call (`GetFileAttributesW`):**
+  Instead of spawning slow external shell commands (like PowerShell or `fsutil`), the compiled binary directly queries the official Win32 API `GetFileAttributesW` from `Kernel32.dll`. It evaluates the native bitwise mask:
+  ```c
+  (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+  ```
+* **Comprehensive Protection against Redirection:**
+  The native guard strictly detects and blocks:
+  - Symbolic links to files (`symlinkSync(..., 'file')`).
+  - Directory symbolic links.
+  - NTFS directory junctions (*junctions*, created via `symlinkSync(..., 'junction')` or `mklink /J`).
+  - Volume mount points (*volume mount points*, created via `mountvol.exe`).
+* **Fail-Closed Security Architecture:**
+  The validation in `src/infrastructure/filesystem/private-files.ts` (`assertNoWindowsReparsePoints`) traverses the entire hierarchy: it evaluates the target path and climbs through every existing parent folder (`while (current !== root)`). If the native addon is missing, throws an operating system exception, or returns a non-boolean value, the operation **fails closed immediately**, throwing `UNSAFE_PATH`.
+* **Acknowledgment of Concurrency Limits (TOCTOU):**
+  Checking a path before use reliably prevents pre-existing malicious redirection points, but does not provide absolute protection against concurrent modifications (*Time-of-Check to Time-of-Use*, TOCTOU) performed by another privileged process between inspection and file opening.
+
+#### Detailed Publication and Protected Write Flow (`guardedWrite`):
+When Engram writes or modifies configuration files (e.g., publishing MCP tools for Antigravity or other assistants), it executes an atomic, protected 10-step protocol:
+1. **Pre-write Path Validation:** Validates the target path with `assertSafePath` (POSIX octal permission checks on Unix; recursive reparse point inspection on Windows).
+2. **Comparison with Preview:** Verifies that current disk content matches byte-for-byte what was presented in the interactive preview (`write.before`). If another process modified the file while the user reviewed the screen, it halts with `CHANGED`.
+3. **Safe Parent Directory Creation:** Ensures the parent directory exists using `mkdirSync` with restricted permissions (`0700`) and immediately re-validates the directory path safety with `assertSafePath`.
+4. **Unique Identifier Backup:** If a previous file existed, creates an exact backup copy appending the suffix `.forge614-backup-<UUID>` with `0600` permissions and exclusive creation mode (`flag: 'wx'`).
+5. **Exclusive Temporary File Creation:** Generates a unique temporary file with suffix `.forge614-tmp-<UUID>` via `openSync` using the secure descriptor from `safeOpenFlag`.
+6. **Write and Forced Disk Sync:** Writes new content (`writeFileSync`) and invokes `fsyncSync` on the descriptor to guarantee data is physically committed to disk before proceeding.
+7. **Pre-Replacement Re-verification:** Re-reads the original file to certify it did not change while preparing the temporary file. If changed, halts with `CHANGED` and retains the original backup.
+8. **Atomic Replacement:** After re-validating the target path, executes the atomic replacement via `io.rename(temporary, write.path)`.
+9. **Post-Publication Verification:** Re-reads the published file with `readSafeFile`. If content does not match planned bytes (`write.after`) byte-for-byte, throws `PUBLISHED_UNVERIFIED`. Backups remain preserved intact and no destructive rollback is executed that could corrupt external data.
+10. **Safe Cleanup:** If an error occurs before publishing, the `finally` block removes any orphaned temporary file with `unlinkSync`.
+
+#### Platform Differences in File Opening:
+* **Textual Modes on Windows ("r" and "wx"):**
+  - For safe file reading, Windows uses mode `"r"` (read).
+  - For temporary file and backup creation, Windows uses mode `"wx"`. The `"w"` flag opens for writing and `"x"` (*exclusive*) requires exclusive file creation: if the file already exists, the call immediately fails throwing `EEXIST`.
+* **Numeric Bitwise Flags on macOS and Linux:**
+  - On Unix systems, opening uses POSIX bitwise constants combined with the no-follow symlink flag: `constants.O_RDONLY | constants.O_NOFOLLOW` for reading, and `constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW` with octal permissions `0600` for exclusive creation.
+* **Technical Incident Observed in CI:**
+  During automated tests in GitHub Actions on Windows runners, temporary file creation using numeric bitwise flags (`O_WRONLY | O_CREAT | O_EXCL`) failed with system error `ENOENT` within the Bun runtime on Windows. In the same file, backup creation succeeded because it used textual mode `{ flag: 'wx' }`. Unifying file opening on Windows under the `safeOpenFlag` function to use textual modes (`"r"` and `"wx"`) resolved this, allowing both reading and temporary creation to pass cleanly. *(Note: this does not imply that all numeric flags fail on Windows or that Windows lacks secure opening; the incompatibility was specific to Bun's handling of numeric open flags in that call).*
+
+#### Native Component Build and Tools:
+* **Build Script (`scripts/build-windows-reparse-addon.ps1`):**
+  Orchestrates compilation of the native addon for `x64` or `arm64` architectures.
+* **Pinned Tools and Versions:**
+  - **Bun (`>=1.3.8`):** Main TypeScript runtime engine.
+  - **Node.js (`22.14.0` in CI):** Required strictly at build time to execute `node-gyp`.
+  - **`node-gyp` (`12.1.0` pinned in `devDependencies`):** Generates the MSBuild project and compiles `addon.cc`. Pinned to version `12.1.0` to guarantee simultaneous compatibility with Node.js 22 and Visual Studio 2026.
+  - **Python (`3.12+`):** Used internally by GYP (`gyp_main.py`).
+  - **Visual Studio 2026 Build Tools (internal version `18`):** Official Microsoft C/C++ compiler on `windows-latest` runners.
+* **Safe `node.exe` Resolution:**
+  In virtual machines with multiple Node.js installations in PATH, the script implements `Resolve-NodeExecutable` to filter and select **a single valid executable path**, preventing faulty command concatenations.
+
+#### CI Validation Evidence and Automated Tests:
+* **Successful CI Execution:**
+  The `Verify` workflow in GitHub Actions (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`) completed with successful status (**Pass / Green**) across all platforms (`ubuntu-latest`, `macos-latest`, and `windows-latest`).
+* **Tests Executed in the Native Windows x64 Job:**
+  1. Native addon compilation and non-empty file check (`windows_reparse_guard.node`).
+  2. Immediate acceptance of normal paths in temporary directories without spawning shell processes.
+  3. Strict rejection with `UNSAFE_PATH` of file symlinks (`symlinkSync(..., 'file')`).
+  4. Strict rejection of directory junctions (*junctions* created via `symlinkSync(..., 'junction')`).
+  5. Strict rejection of volume mount points (*volume mount points* created via `mountvol.exe`).
+  6. Fail-closed rejection on exceptions or non-boolean checker results.
+  7. Antigravity configuration publication to `%USERPROFILE%\.gemini\config\mcp_config.json` in an isolated temporary environment, verifying persisted data.
+  8. PowerShell installer test suite (`install.ps1.test.ps1`), validating 5 scenarios against an ephemeral loopback HTTP server (`127.0.0.1`).
+* **Validation Scope:**
+  The Windows CI job executes a targeted subset of test files (`windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts`, and `install.ps1.test.ps1`), not the entire project suite. Validation ran exclusively on **x64** architecture on Windows; the ARM64 architecture was not executed in this job.
+
+#### Pending Tasks for a Stable Release (v1.0.0):
+A green CI workflow confirms that implemented tests pass in that environment, but does not prove on its own that the final distribution is ready for general release:
+1. **Embed Native Addon into Distributed Standalone Executable:** Configure the release workflow (`release.yml`) to compile the native addon and bundle it inside the standalone Windows binary (`bun build --compile`), verifying that the final `.exe` loads the addon without requiring external files.
+2. **Build and Test on Windows ARM64:** Verify compilation and test execution on native Windows ARM64 runners (`windows-11-arm`).
+3. **Standalone Binary Validation Outside the Repository:** Test binary installation and execution on a clean Windows machine without development tools or cloned source code.
+4. **Runtime Dependency Verification:** Certify that the standalone binary does not depend on external C++ runtime redistributables (*MSVC CRT*) missing on standard Windows installations.
+5. **Full Release Workflow Verification:** Validate the generation and cryptographic signing of all six release artifacts before publishing version 1.0.0.
 
 ---
 

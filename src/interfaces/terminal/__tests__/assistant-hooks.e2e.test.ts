@@ -16,6 +16,6 @@ test('standalone compiled hooks and assistant listing run with no Bun on PATH an
   const hook=Bun.spawnSync([binary,'memory-hook','--client','codex'],{cwd:home,env,stdin:Buffer.from('{"hook_event_name":"SessionStart","source":"compact"}')});
   expect(hook.exitCode).toBe(0);expect(hook.stderr.toString()).toBe('');expect(JSON.parse(hook.stdout.toString()).hookSpecificOutput.additionalContext).toContain('memory_current_project');
   const list=Bun.spawnSync([binary,'assistant-list'],{cwd:home,env});expect(list.exitCode).toBe(0);expect(list.stderr.toString()).toBe('');
-  expect(JSON.parse(list.stdout.toString()).map((entry:any)=>entry.id)).toEqual(['claude-code','codex','cursor','opencode','gemini-cli']);
+  expect(JSON.parse(list.stdout.toString()).map((entry:any)=>entry.id)).toEqual(['claude-code','codex','cursor','opencode','antigravity']);
   expect(readdirSync(home)).toEqual(before);
 });

@@ -15,12 +15,16 @@ async function invoke(client:string,payload:string, close=true){
   return JSON.parse(output);
 }
 test.each([
-  ['claude-code','SessionStart'],['claude-code','UserPromptSubmit'],['codex','SessionStart'],['codex','UserPromptSubmit'],['gemini-cli','SessionStart'],['gemini-cli','BeforeAgent'],
+  ['claude-code','SessionStart'],['claude-code','UserPromptSubmit'],['codex','SessionStart'],['codex','UserPromptSubmit'],
 ])('%s %s emits native additional context without echoing input',async(client,event)=>{
   const output=await invoke(client,JSON.stringify({hook_event_name:event,source:'compact',prompt:'SECRET_SENTINEL',transcript_path:'/do-not-read'}));
   expect(output.hookSpecificOutput.additionalContext).toContain('memory_current_project');
   expect(JSON.stringify(output)).not.toContain('SECRET_SENTINEL');
-  if(client!=='gemini-cli')expect(output.hookSpecificOutput.hookEventName).toBe(event);
+  expect(output.hookSpecificOutput.hookEventName).toBe(event);
+});
+
+test('Antigravity has no managed hook callback', async()=>{
+  expect(await invoke('antigravity','{"hook_event_name":"SessionStart"}')).toEqual({});
 });
 
 test('Cursor uses sessionStart additional_context and no beforeSubmitPrompt support',async()=>{

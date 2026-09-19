@@ -98,6 +98,23 @@ describe("module import policy", () => {
     }).some(message => message.includes("cycle"))).toBe(true);
   });
 
+  test("allows only the build-generated Windows native addon import", () => {
+    const addon = "../../../native/windows-reparse-guard/build/Release/windows_reparse_guard.node";
+    const expected = "unresolved local import ../../../native/windows-reparse-guard/build/Release/windows_reparse_guard.node";
+    expect(auditImports({
+      "src/infrastructure/filesystem/windows-reparse-guard.ts": `require("${addon}");`,
+    })).toEqual([]);
+    expect(auditImports({
+      "src/infrastructure/filesystem/windows-reparse-guard.ts": 'require("../../../native/windows-reparse-guard/build/Release/missing.node");',
+    })).toEqual(["src/infrastructure/filesystem/windows-reparse-guard.ts: unresolved local import ../../../native/windows-reparse-guard/build/Release/missing.node"]);
+    expect(auditImports({
+      "src/modules/memory/index.ts": `require("${addon}");`,
+    })).toEqual([`src/modules/memory/index.ts: ${expected}`]);
+    expect(auditImports({
+      "src/infrastructure/filesystem/other.ts": `require("${addon}");`,
+    })).toEqual([`src/infrastructure/filesystem/other.ts: ${expected}`]);
+  });
+
   test("allows pure built-ins but not arbitrary external packages", () => {
     expect(auditImports({"src/modules/memory/index.ts": 'import {createHash} from "node:crypto"; import {isDeepStrictEqual} from "node:util";'})).toEqual([]);
     expect(auditImports({"src/modules/memory/index.ts": 'import {z} from "zod";'})).not.toEqual([]);

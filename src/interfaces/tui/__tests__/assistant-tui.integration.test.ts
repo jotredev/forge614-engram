@@ -144,11 +144,10 @@ test('client details can scroll to trust warnings in a small viewport',()=>{
 
 
 test('partial application reports retained files and backups without undoing a successful client',()=>{
-  const {home,options}=fixture();mkdirSync(join(home,'shared-config'));writeFileSync(join(home,'shared-config/settings.json'),'{}\n');
-  const session=new AssistantSession({...options,discovery:{...options.discovery,locations:{'claude-code':{configDir:join(home,'shared-config')},'gemini-cli':{configDir:join(home,'shared-config')}}}});
-  session.key('enter');session.key('space');for(let i=0;i<4;i++)session.key('down');session.key('space');session.key('enter');session.key('enter');session.key('enter');
+  const {home,options}=fixture(),shared=join(home,'shared-config'),config=join(home,'shared-config/mcp.json');mkdirSync(shared);writeFileSync(config,'{}\n');
+  const session=new AssistantSession({...options,discovery:{...options.discovery,locations:{'claude-code':{configDir:shared,configFile:config},cursor:{configDir:shared,configFile:config}}}});
+  session.key('enter');session.key('space');session.key('down');session.key('down');session.key('space');session.key('enter');session.key('enter');session.key('enter');
   const results=session.state.messages.join('\n');
-  expect(results).toContain('Claude Code: configuración aplicada');expect(results).toContain('Gemini CLI: fallo parcial');expect(results).toContain('CHANGED');expect(results).toContain('Copia conservada:');
-  expect(readFileSync(join(home,'shared-config/settings.json'),'utf8')).toContain('SessionStart');
-  expect(existsSync(join(home,'shared-config/.claude.json'))).toBe(true);
+  expect(results).toContain('Claude Code: configuración aplicada');expect(results).toContain('Cursor: fallo parcial o sin cambios');expect(results).toContain('CHANGED');expect(results).toContain('Copia conservada:');
+  expect(readFileSync(config,'utf8')).toContain('mcpServers');expect(readFileSync(join(shared,'settings.json'),'utf8')).toContain('SessionStart');
 });

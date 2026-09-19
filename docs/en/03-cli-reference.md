@@ -187,10 +187,12 @@ forge614-engram mcp
 Native hook adapter invoked by AI coding assistants on session start or prompt submission.
 
 ```bash
-forge614-engram memory-hook --client <claude-code|codex|cursor|opencode|gemini-cli>
+forge614-engram memory-hook --client <claude-code|codex|cursor|opencode|antigravity>
 ```
 - **Mandatory Options:** `--client <name>`
+- **Output:** Emits native JSON structure for supported hook clients. For `antigravity` and `opencode`, returns `{}` as they do not use managed event hooks in this format.
 - **Side Effects:** Injects contextual guidance. **Never saves memories directly**.
+- **Antigravity Notice:** Configured as *MCP only*. No automatic hook is installed (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
 
 ---
 

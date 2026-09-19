@@ -30,7 +30,7 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 - [x] Servidor MCP nativo por stdio con canales limpios (stdout exclusivo para JSON-RPC).
 - [x] Menú TUI interactivo en terminal (`forge614-engram tui`) con navegación por teclado, vista previa y confirmación segura.
 - [x] Autoprueba asíncrona del servidor MCP verificando binario y herramientas en 5 segundos.
-- [x] Adaptadores seguros para 5 clientes (Claude Code, Codex, Cursor, OpenCode y Gemini CLI) con respaldos `0600`/UUID y verificación posterior de bytes publicados.
+- [x] Adaptadores seguros para 5 clientes (Claude Code, Codex, Cursor, OpenCode y Antigravity) con respaldos `0600`/UUID y verificación posterior de bytes publicados.
 - [x] Esquema 5 en SQLite con tabla `project_bindings` para resolver canónicamente identidades por Git.
 
 ### Fase 4: Sesiones Progresivas de Memoria y Contexto Clasificado — COMPLETADA
@@ -118,6 +118,12 @@ Para mantener expectativas estrictamente realistas, se declaran los siguientes l
     Engram mantiene una única base de datos centralizada `~/.forge614/engram.db`. Los proyectos se indexan por su identificador inmutable `projectId`, evitando la dispersión de archivos `.db` en cada carpeta del usuario.
 18. **Sin edición de notas individuales en el Centro de Control:**
     El Centro de Control administra proyectos, rutas, almacenamiento, migraciones y asistentes. La edición de textos y notas de recuerdos se canaliza a través de los comandos CLI dedicados (`save`, `get`, `delete`), las herramientas MCP o el futuro explorador detallado de recuerdos.
+19. **Antigravity configurado como MCP Only:**
+    Antigravity se integra exclusivamente como *MCP only* (`~/.gemini/config/mcp_config.json`). No instala hooks automáticos (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
+20. **Validación nativa en CI de Windows x64 completada y tareas pendientes para versión 1.0.0:**
+    La validación de publicación de configuración en Windows, el guardián nativo C++ Node-API (`windows_reparse_guard.node`), el rechazo estricto de reparse points (symlinks, junctions, mount points) mediante `GetFileAttributesW` y el protocolo `guardedWrite` fueron ejecutados y verificados con éxito en GitHub Actions sobre ejecutores `windows-latest` (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`). No obstante, la versión v1.0.0 mantiene como pendientes de distribución: (1) incrustar el módulo nativo compilado dentro del ejecutable standalone distribuido en `release.yml`, (2) compilar y probar en ejecutores nativos Windows ARM64, (3) validar la ejecución en una máquina Windows limpia sin dependencias de desarrollo, (4) certificar la ausencia de dependencias externas de tiempo de ejecución C++ (*MSVC CRT*), y (5) validar la generación y firma de los 6 artefactos de release.
+21. **Cese de administración de Gemini CLI e indemnidad de configuraciones previas:**
+    Forge614 Engram deja de administrar Gemini CLI. No lee, modifica ni elimina `~/.gemini/settings.json`, el cual permanece intacto si existía previamente.
 
 ---
 

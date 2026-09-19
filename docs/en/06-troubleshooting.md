@@ -45,8 +45,10 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
 | `SHARED_INTENT_REQUIRED` | *"scope shared requiere explicar la intención global explícita del usuario."* | Assistant called `memory_save` with `scope: "shared"` without providing `globalIntent`. | Supply `globalIntent` explaining why the decision applies universally. |
 | `INSTALLATION_REQUIRED` | *"Requisito: ejecuta forge614-engram tui con el binario instalado..."* | Ran self-test in `tui` directly from source with Bun without installing the standalone binary. | Run `bash scripts/install.sh` to install the binary to `$HOME/.local/bin/forge614-engram`. |
 | `TIMED_OUT` | Server self-test reported as timed out. | MCP self-test exceeded the strict 5-second deadline to spawn, handshake, and list tools. | Verify CPU load and ensure executable has `0755` permissions. |
-| `MCP_FAILED` | Server self-test reported as failed. | MCP server failed handshake or did not expose all 10 expected tools. | Ensure database has Schema 6 or 7 enabled via `sessions-enable` or `reinforcement-enable`. |
-| `PUBLISHED_UNVERIFIED` | *"Publicado sin verificar: [path]"* | Configuration applied to file, but immediate post-publication byte validation failed due to concurrent modification. | Engram retains `.bak` backup. Close client editor and re-run `forge614-engram tui`. |
+| `PUBLISHED_UNVERIFIED` | *"The file was published but its planned bytes could not be safely verified..."* | Configuration was applied to disk, but post-publication verification detected that written bytes do not match planned bytes (`write.after`), typically due to concurrent writes. | Engram preserves the `.forge614-backup-<UUID>` backup copy intact without executing destructive rollback. Close editors and re-run configuration from `tui`. |
+| `UNSAFE_PATH` | *"Configuration paths must not traverse Windows reparse points."* or *"Could not verify Windows reparse-point safety."* or *"Configuration paths must not traverse symbolic links."* | Target path or an existing ancestor directory contains symbolic links, directory junctions, reparse points (on Windows), other-user write permissions (on Unix), or the native Windows addon failed (*fail-closed*). | Eliminate symbolic links or junctions in the path. On Windows, if building from source, compile the native addon with `scripts/build-windows-reparse-addon.ps1`. |
+| `CHANGED` | *"Configuration changed after preview..."* or *"Configuration changed before replacement..."* | The target configuration file changed on disk while reviewing the preview or while preparing the temporary replacement file. | Halts to prevent overwriting third-party changes. Close background editors and generate a fresh preview in `tui`. |
+| `UNSAFE_FILE` | *"Configuration must be a regular file owned by the current user."* | The target file is not a regular file, has hard links (`nlink !== 1`), or is owned by another system user. | Ensure the configuration file is owned by the current user and has no shared hard links. |
 | `AMBIGUOUS` | *"Both OpenCode JSON and JSONC configs exist..."* | OpenCode has simultaneous `.json` and `.jsonc` files, or multiple active configuration directories. | Select configuration file explicitly in TUI or remove duplicate config files. |
 | `INVALID_INPUT` | *"El campo [field] debe ser texto no vacío..."* | Empty options, null characters (`\0`), out-of-range limits, or incompatible flags (e.g. `--upgrade-format` on `sync-watch`). | Check valid options with `forge614-engram help`. |
 | `PROJECT_NOT_FOUND` | *"Proyecto no encontrado en esta base."* | The `projectId` does not exist in `projects`. | Run `forge614-engram project-list` to verify project UUIDs. |
@@ -139,3 +141,39 @@ This troubleshooting guide provides an exhaustive diagnostic catalog of error co
   2. **For scripts and CI/CD pipelines:** Do not invoke `tui`. Use specialized headless CLI commands that emit plain text or JSON (e.g., `forge614-engram project-list`, `forge614-engram assistant-list`, `forge614-engram status`, `forge614-engram health`) or inspect state using the TypeScript SDK helper (`readControlCenter()`).
   3. **Zero-write cancellation safety:** The Control Center starts 100% read-only. Browsing tabs (`Summary`, `Projects`, `Shared`, `Storage`), resizing windows, or pressing `Escape`, `q`, or `Ctrl+C` exits immediately, restoring terminal settings without writing a single byte to disk.
   4. **In-flight action input draining:** When executing a two-step confirmed action (explicitly typing `confirm` and pressing `Enter`), the Control Center locks input and drains all incoming keypresses while migrations or PostgreSQL sync run. This prevents buffered keystrokes from unintentionally executing follow-up actions upon completion.
+
+---
+
+### 7. Diagnosing Unsafe Paths, Symbolic Links, and Windows Reparse Points (`UNSAFE_PATH`)
+- **Symptom:** When configuring an assistant or writing configuration, the operation halts throwing `UNSAFE_PATH` with one of the following error messages:
+  - *"Configuration paths must not traverse Windows reparse points."*
+  - *"Could not verify Windows reparse-point safety."*
+  - *"Configuration paths must not traverse symbolic links."*
+  - *"A configuration parent is not a directory."*
+  - *"A configuration parent is writable by other users."*
+- **Root Cause:**
+  1. On **Windows**: The target path or an existing ancestor directory is a symbolic link, NTFS directory junction (created via `mklink /J`), or volume mount point (created via `mountvol.exe`). The native `windows_reparse_guard.node` addon detected `FILE_ATTRIBUTE_REPARSE_POINT`.
+  2. On **Windows (*Fail-Closed*)**: The native C++ addon cannot be found, threw an unhandled operating system exception, or returned an anomalous non-boolean result.
+  3. On **macOS/Linux**: The target path or its ancestors traverse symlinks not recognized as system aliases (excluding root-owned `/var` and `/tmp`), or an ancestor directory has world-writable permissions (`chmod o+w`).
+- **Recovery Procedure:**
+  1. If running on Windows with linked drives or junctions pointing across volumes, provide the target physical drive path directly rather than the symbolic junction.
+  2. If building from source on Windows, verify that the native addon is compiled:
+     ```powershell
+     pwsh -File scripts/build-windows-reparse-addon.ps1
+     ```
+  3. On Unix systems, restrict permissions of containing folders:
+     ```bash
+     chmod 0700 ~/.forge614
+     ```
+
+---
+
+### 8. Concurrent Modifications and Unverified Publication (`CHANGED` and `PUBLISHED_UNVERIFIED`)
+- **Symptom:** The assistant configurator halts throwing `CHANGED` or `PUBLISHED_UNVERIFIED`.
+- **Root Cause:**
+  - `CHANGED`: On-disk configuration changed while viewing the interactive plan preview (`write.before`) or during temporary file preparation in `guardedWrite`.
+  - `PUBLISHED_UNVERIFIED`: The temporary file was renamed atomically over the destination path, but immediate post-publication byte verification detected a mismatch between read bytes and planned bytes (`write.after`).
+- **Recovery Procedure:**
+  1. Engram **preserves the backup file** `.forge614-backup-<UUID>` intact with `0600` permissions and exclusive creation mode (`flag: 'wx'`). No destructive rollback is performed that could damage external data.
+  2. Close any code editor (VS Code, Cursor, Zed) or assistant client that may be autosaving or updating config files (`settings.json`, `mcp_config.json`).
+  3. Inspect the file state and relaunch `forge614-engram tui` to generate a clean preview and retry publication.

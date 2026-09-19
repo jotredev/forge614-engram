@@ -4,6 +4,10 @@ import { isTestSource } from "./test-layout";
 
 type Component = { kind: "module"; name: string } | { kind: "app" | "interface" | "infrastructure" | "shared"; name: string } | null;
 const PURE_BUILTINS = new Set(["node:crypto", "node:util"]);
+const BUILD_GENERATED_WINDOWS_ADDON = {
+  file: "src/infrastructure/filesystem/windows-reparse-guard.ts",
+  specifier: "../../../native/windows-reparse-guard/build/Release/windows_reparse_guard.node",
+};
 const MODULE_EDGES: Record<string, readonly string[]> = {
   memory: ["projects"], projects: [], sessions: ["memory", "projects"],
   search: ["memory", "sessions", "projects"], synchronization: ["memory", "sessions", "projects"],
@@ -77,7 +81,8 @@ export function auditImports(files: Record<string, string>): string[] {
         if (from?.kind === "module" && !PURE_BUILTINS.has(specifier)) errors.push(`${file}: forbidden external import ${specifier}`);
         continue;
       }
-      if (!target) { errors.push(`${file}: unresolved local import ${specifier}`); continue; }
+      if (!target && (file !== BUILD_GENERATED_WINDOWS_ADDON.file || specifier !== BUILD_GENERATED_WINDOWS_ADDON.specifier)) { errors.push(`${file}: unresolved local import ${specifier}`); continue; }
+      if (!target) continue;
       if (target === "src/index.ts" && file.startsWith("src/") && file !== "src/index.ts")
         errors.push(`${file}: internal code cannot import the SDK entry`);
       const to = component(target); if (!from || !to) continue;

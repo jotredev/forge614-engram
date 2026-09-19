@@ -64,56 +64,65 @@ Antes de la modularización, el código fuente de Engram crecía acumulando prob
 El árbol de código fuente de producción en `src/` se organiza en cuatro capas conceptuales concéntricas, más una entrada ejecutable mínima y una biblioteca pública compartida:
 
 ```text
+native/                                # [Extensiones Nativas del Sistema Operativo]
+└── windows-reparse-guard/             # Componente C++ nativo Node-API para Windows
+    ├── addon.cc                       # Consulta directa a Win32 GetFileAttributesW
+    └── binding.gyp                    # Configuración de compilación MSBuild
+
 src/
-├── cli.ts                         # [Arranque Mínimo] 2 líneas exactas de delegación
-├── index.ts                       # [API Pública SDK] Barril único y estable
+├── cli.ts                             # [Arranque Mínimo] 2 líneas exactas de delegación
+├── index.ts                           # [API Pública SDK] Barril único y estable
 │
-├── app/                           # [Coordinación de Flujos de Caso de Uso]
-│   ├── index.ts                   # Exportaciones de coordinación
-│   ├── memory-store.ts            # Fachada compatible con MemoryStore histórico
-│   ├── workspace.ts               # Ciclo de vida y apertura del espacio central
-│   ├── project-context.ts         # Resolución de identidad Git y vinculaciones
-│   ├── control-center.ts          # Coordinación de lectura segura y mutaciones TUI
-│   ├── synchronization.ts         # Coordinación de réplica y snapshots (sin I/O terminal)
-│   ├── setup.ts                   # Secuencia de inicialización asistida (SetupIO)
-│   └── assistants.ts              # Coordinación de detección y configuración de asistentes
+├── app/                               # [Coordinación de Flujos de Caso de Uso]
+│   ├── index.ts                       # Exportaciones de coordinación
+│   ├── memory-store.ts                # Fachada compatible con MemoryStore histórico
+│   ├── workspace.ts                   # Ciclo de vida y apertura del espacio central
+│   ├── project-context.ts             # Resolución de identidad Git y vinculaciones
+│   ├── control-center.ts              # Coordinación de lectura segura y mutaciones TUI
+│   ├── synchronization.ts             # Coordinación de réplica y snapshots (sin I/O terminal)
+│   ├── setup.ts                       # Secuencia de inicialización asistida (SetupIO)
+│   └── assistants.ts                  # Coordinación de detección y configuración de asistentes
 │
-├── modules/                       # [Reglas de Negocio Puras y Tipos] (Sin I/O)
-│   ├── memory/                    # Tipos, validación, confirmaciones y ranking FTS5
+├── modules/                           # [Reglas de Negocio Puras y Tipos] (Sin I/O)
+│   ├── memory/                        # Tipos, validación, confirmaciones y ranking FTS5
 │   │   ├── index.ts
 │   │   ├── types.ts
 │   │   ├── validation.ts
-│   │   ├── confirmations.ts       # Interfaces y lógica pura de confirmaciones
-│   │   └── ranking.ts             # Fórmulas de multiplicador y explicación
-│   ├── control-center/            # Tipos de snapshot, capacidades y mutaciones TUI
+│   │   ├── confirmations.ts           # Interfaces y lógica pura de confirmaciones
+│   │   └── ranking.ts                 # Fórmulas de multiplicador y explicación
+│   ├── control-center/                # Tipos de snapshot, capacidades y mutaciones TUI
 │   │   ├── index.ts
 │   │   └── types.ts
-│   ├── projects/                  # Identidad inmutable de proyectos (UUID)
-│   ├── sessions/                  # Ciclo de sesiones, timbrado e inferencia
-│   ├── search/                    # Términos, límites Unicode/bytes y proyecciones
-│   ├── synchronization/           # Validación de snapshots y reconciliación 3-way
+│   ├── projects/                      # Identidad inmutable de proyectos (UUID)
+│   ├── sessions/                      # Ciclo de sesiones, timbrado e inferencia
+│   ├── search/                        # Términos, límites Unicode/bytes y proyecciones
+│   ├── synchronization/               # Validación de snapshots y reconciliación 3-way
 │   │   ├── index.ts
 │   │   ├── snapshot.ts
-│   │   └── confirmations.ts       # Serialización y merge de confirmaciones
-│   ├── workspace/                 # Contratos de configuración global del entorno
-│   └── assistants/                # Catálogo, protocolo de memoria y ganchos
+│   │   └── confirmations.ts           # Serialización y merge de confirmaciones
+│   ├── workspace/                     # Contratos de configuración global del entorno
+│   └── assistants/                    # Catálogo, protocolo de memoria y ganchos
 │
-├── infrastructure/                # [Adaptadores de Entrada/Salida Concretos]
-│   ├── sqlite/                    # Conexión, esquemas y operaciones especializadas
-│   │   ├── connection.ts          # Apertura con WAL y pragmas estrictos
-│   │   ├── schema.ts              # DDL de Esquemas 3, 4, 5, 6 y 7
-│   │   ├── projects.ts            # Consultas de proyectos y vínculos
-│   │   ├── control-center.ts      # Consultas agregadas sin contenido para TUI
-│   │   ├── memory.ts              # Consultas de recuerdos y versiones
-│   │   ├── confirmations.ts       # Persistencia y consultas de confirmaciones/requests
-│   │   ├── writes.ts              # Transacciones compuestas atómicas exteriores
-│   │   ├── sessions.ts            # Consultas de sesiones y entradas
-│   │   ├── search.ts              # Consultas SQLite FTS5 y proyecciones
-│   │   ├── snapshots.ts           # Lectura/escritura de instantáneas locales (Formato 3)
-│   │   └── workspace-database.ts  # Ciclo de vida de la base de datos
-│   ├── postgres/                  # Adaptador de red y réplica remota CAS (replica.ts)
-│   ├── filesystem/                # Acceso a disco (.env, permisos 0700/0600, locks)
-│   └── assistants/                # Adaptadores de clientes, JSONC, TOML y autoprueba
+├── infrastructure/                    # [Adaptadores de Entrada/Salida Concretos]
+│   ├── sqlite/                        # Conexión, esquemas y operaciones especializadas
+│   │   ├── connection.ts              # Apertura con WAL y pragmas estrictos
+│   │   ├── schema.ts                  # DDL de Esquemas 3, 4, 5, 6 y 7
+│   │   ├── projects.ts                # Consultas de proyectos y vínculos
+│   │   ├── control-center.ts          # Consultas agregadas sin contenido para TUI
+│   │   ├── memory.ts                  # Consultas de recuerdos y versiones
+│   │   ├── confirmations.ts           # Persistencia y consultas de confirmaciones/requests
+│   │   ├── writes.ts                  # Transacciones compuestas atómicas exteriores
+│   │   ├── sessions.ts                # Consultas de sesiones y entradas
+│   │   ├── search.ts                  # Consultas SQLite FTS5 y proyecciones
+│   │   ├── snapshots.ts               # Lectura/escritura de instantáneas locales (Formato 3)
+│   │   └── workspace-database.ts      # Ciclo de vida de la base de datos
+│   ├── postgres/                      # Adaptador de red y réplica remota CAS (replica.ts)
+│   ├── filesystem/                    # Acceso a disco (.env, permisos 0700/0600, locks)
+│   │   ├── windows-reparse-guard.ts   # Cargador TypeScript del addon nativo Node-API
+│   │   ├── private-files.ts           # Validador de rutas seguras y assertSafePath
+│   │   ├── guarded-write.ts           # Protocolo atómico de publicación y respaldo
+│   │   └── file-locks.ts              # Bloqueos de concurrencia en disco
+│   └── assistants/                    # Adaptadores de clientes, JSONC, TOML y autoprueba
 │
 ├── interfaces/                    # [Puntos de Entrada y Presentación]
 │   ├── cli/                       # Intérprete de comandos y formateadores JSON
@@ -381,9 +390,203 @@ Cada uno de los **58 archivos de producción que contienen lógica de negocio** 
     configurado, se ejecutan y superan 504 pass, 0 fail, 2566 aserciones en 39.76s.
 ```
 
+### 8.3. Instalador de Windows: Parseo Confiable de Metadatos de Release y Pruebas Nativas (`scripts/install.ps1` / `scripts/__tests__/install.ps1.test.ps1`)
+
+Como una pista de pruebas hermética con un túnel de viento a escala para ensayar el comportamiento de un vehículo en condiciones extremas sin salir a la autopista real: la suite de validación de Windows ejecuta pruebas aisladas de extremo a extremo para garantizar que el instalador de PowerShell (`scripts/install.ps1`) opere con idéntica fiabilidad atómica y seguridad que su contraparte de Unix (`scripts/install.sh`).
+
+#### 1. Propósito y Descarga de Metadatos de Release
+El instalador de Windows (`scripts/install.ps1`) descarga los metadatos de una GitHub Release para localizar dos *assets* esenciales:
+1. `SHA256SUMS` (el archivo oficial de firmas criptográficas).
+2. El binario exacto para la arquitectura del equipo (`forge614-engram-windows-x64.exe` para AMD64 o `forge614-engram-windows-arm64.exe` para ARM64).
+
+#### 2. Causa Raíz del Fallo: Desenrollado de Bytes en Tuberías de PowerShell
+En Windows PowerShell (particularmente en Desktop PowerShell 5.1 y ciertas configuraciones de PowerShell Core), el cmdlet `Invoke-WebRequest` puede entregar la respuesta HTTP en su propiedad `.Content` como un arreglo de bytes (`System.Byte[]`) en lugar de texto plano (`System.String`).
+
+El código anterior enviaba esos bytes directamente por una tubería a `ConvertFrom-Json`:
+```powershell
+# Código anterior vulnerable
+$releaseResponse = Invoke-WebRequest -Uri $releaseJsonUrl -UseBasicParsing
+$release = $releaseResponse.Content | ConvertFrom-Json
+```
+Al operar con una tubería (`|`), PowerShell procesaba cada byte individualmente (desenrollando el arreglo elemento a elemento), por lo que el JSON dejaba de convertirse en un objeto de release válido. Como consecuencia, la propiedad `assets` quedaba vacía o nula y el instalador mostraba erróneamente:
+```text
+The release is missing SHA256SUMS.
+```
+a pesar de que el archivo estuviera efectivamente disponible en la release.
+
+#### 3. Corrección Implementada: Decodificación UTF-8 e Invocación Escalar
+La corrección convierte primero el arreglo completo de bytes a una sola cadena UTF-8 y después invoca `ConvertFrom-Json` usando el parámetro `-InputObject`:
+```powershell
+# Corrección robusta
+$releaseResponse = Invoke-WebRequest -Uri $releaseJsonUrl -UseBasicParsing
+$releaseRawContent = $releaseResponse.Content
+$releaseJson = if ($releaseRawContent -is [byte[]]) {
+  [System.Text.Encoding]::UTF8.GetString($releaseRawContent)
+} else {
+  [string]$releaseRawContent
+}
+$release = ConvertFrom-Json -InputObject $releaseJson
+```
+Si PowerShell ya entrega texto, el instalador conserva esa ruta sin conversión adicional.
+
+#### 4. Preservación Estricta de Medidas de Seguridad
+Esta corrección no reduce ninguna medida de seguridad:
+- El instalador sigue requiriendo HTTPS en producción (`Test-ReleaseUri` rechaza cualquier esquema que no sea `https://`, salvo servidores loopback con puerto explícito durante pruebas locales).
+- Sigue verificando `SHA256SUMS` antes de publicar el binario.
+- Sigue rechazando sobrescrituras sin la opción `-Force`.
+- No ejecuta `forge614-engram setup`.
+- No modifica la variable de entorno `PATH`.
+- No crea el directorio `~/.forge614` ni la base `engram.db`.
+- No modifica configuraciones de asistentes (`.claude`, `.codex`, etc.).
+
+#### 5. Arquitectura de Simulación de Release por Servidor HTTP Efímero en Loopback
+Para no depender de conectividad externa con la API de GitHub ni agotar cuotas de red durante la integración continua, la prueba inicia un trabajo en segundo plano (`Start-Job`) que levanta un servidor HTTP local efímero mediante `[System.Net.HttpListener]` escuchando exclusivamente en la dirección de bucle local (`127.0.0.1`) en un puerto aleatorio no privilegiado (rango `49152`–`65535`):
+- **Simulación completa de API y assets:** El servidor responde a las peticiones del instalador entregando metadatos de release en formato JSON (`/releases/tags/v1.2.3`), el archivo oficial de firmas criptográficas `SHA256SUMS` (`/download/SHA256SUMS`) y binarios ejecutables de prueba (*fixture binaries*).
+- **Aislamiento absoluto:** Todo el entorno se ejecuta bajo una carpeta temporal desechable (`[System.IO.Path]::GetTempPath()\forge614-installer-<GUID>`), configurando una variable `HOME` temporal para garantizar que jamás se toque la configuración real del usuario ni se cree prematuramente la carpeta `~/.forge614`.
+- **Objetivo de la prueba:** Asegurar que el instalador funciona cuando PowerShell recibe los metadatos como bytes, no solo como texto.
+
+#### 6. Matriz Exhaustiva de Casos Validados
+El script de prueba ejecuta y verifica cinco escenarios operacionales críticos:
+1. **Instalación en arquitectura AMD64:** Simula `$env:PROCESSOR_ARCHITECTURE = 'AMD64'`, descargando `forge614-engram-windows-x64.exe`, verificando que el binario instalado coincida byte a byte con el hash SHA-256 esperado.
+2. **Instalación en arquitectura ARM64:** Simula `$env:PROCESSOR_ARCHITECTURE = 'ARM64'`, verificando la descarga e instalación correcta de `forge614-engram-windows-arm64.exe`.
+3. **Rechazo estricto por discrepancia de suma de comprobación (*Checksum Mismatch*):** Simula una descarga corrupta a través de la ruta `/mismatch/` (donde `SHA256SUMS` contiene un hash inválido); valida que el instalador finalice inmediatamente con error (`ExitCode != 0`) y que **no se cree ningún archivo ejecutable en el directorio destino**.
+4. **Protección contra sobrescritura no autorizada:** Intenta instalar sobre un destino preexistente sin la opción `-Force`; valida que el instalador falle y que el archivo preexistente permanezca 100% inalterado.
+5. **Inexistencia de almacenamiento prematuro:** Verifica expresamente que el instalador no cree el directorio de datos `~/.forge614` en la máquina local.
+
+#### 7. Instrumentación Diagnóstica Exclusiva de Pruebas ante Fallos Reales
+A raíz del incidente en Windows donde el instalador reportó erróneamente la ausencia de `SHA256SUMS`, se implementó un canal de telemetría de diagnóstico exclusivo para el entorno de pruebas, el cual escribe en `$diagnosticFile` (`fixture-server.log`):
+1. **Registro de rutas HTTP solicitadas:** Cada petición recibida por el servidor local queda registrada cronológicamente (`request-path=$path`).
+2. **Nombres de assets emitidos en los metadatos:** Lista explícita de los archivos incluidos en el arreglo de release (`release-asset-names=$assetNames`).
+3. **Carga útil JSON íntegra:** La cadena JSON exacta generada y servida al cliente (`release-json=$payload`).
+
+Antes de validar la instalación de AMD64, la prueba realiza aserciones previas sobre este registro:
+- Comprueba que se haya solicitado la ruta canónica esperada (`/good/repos/jotredev/forge614-engram/releases/tags/v1.2.3`).
+- Comprueba que la lista de assets incluya con exactitud: `SHA256SUMS`, `forge614-engram-windows-x64.exe` y `forge614-engram-windows-arm64.exe`.
+- Permite diferenciar claramente entre fallas de enrutamiento HTTP, serialización JSON o parseo en PowerShell.
+
+```powershell
+# Aserciones diagnósticas previas a la verificación del instalador
+$amd64Diagnostics = Get-FixtureDiagnostics
+Assert-That ($amd64Diagnostics.Contains('/good/repos/jotredev/forge614-engram/releases/tags/v1.2.3')) `
+  "AMD64 fixture route mismatch: $amd64Diagnostics"
+Assert-That ($amd64Diagnostics.Contains('release-asset-names=SHA256SUMS,forge614-engram-windows-x64.exe,forge614-engram-windows-arm64.exe')) `
+  "AMD64 fixture asset names mismatch: $amd64Diagnostics"
+Assert-That ($amd64.ExitCode -eq 0) `
+  "AMD64 installer failed: $($amd64.Output) Fixture diagnostics: $amd64Diagnostics"
+```
+
+#### 8. Validación en CI y Criterio de Estabilidad Multiplataforma
+La suite se invoca dentro de los flujos de trabajo de integración continua mediante:
+```powershell
+pwsh -NoProfile -File scripts/__tests__/install.ps1.test.ps1
+```
+
+> [!NOTE]
+> **Estado de Validación en CI:** La suite de pruebas del instalador en PowerShell fue ejecutada y verificada exitosamente en GitHub Actions sobre ejecutores `windows-latest` (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`), superando los 5 escenarios planificados contra el servidor efímero en loopback (`127.0.0.1`).
+
 ---
 
-## 9. Atribución y Linaje de Diseño
+## 9. Arquitectura del Guardián Nativo de Reparse Points en Windows y Protocolo de Publicación Protegida (`guardedWrite`)
+
+### 9.1. Justificación del Componente C++ Nativo (Node-API vs FFI vs Subprocesos)
+En sistemas Unix (macOS y Linux), la seguridad contra enlaces simbólicos maliciosos se resuelve de forma nativa mediante permisos octales POSIX (`0700` y `0600`) y banderas de apertura directas del kernel (`O_NOFOLLOW`). En Windows, los permisos POSIX no existen de forma nativa (se mapean sobre listas de control de acceso NTFS, ACLs) y Bun en Windows carece de banderas equivalentes a `O_NOFOLLOW` en la apertura ordinaria de archivos.
+
+Para resolver este desafío de seguridad en Windows sin comprometer el rendimiento, se evaluaron tres alternativas:
+1. **Invocación de subprocesos (`powershell.exe` o `fsutil.exe`):** Descartada. Invocar un subproceso de PowerShell o utilidades de consola por cada ruta a validar consume entre 150 ms y 400 ms por llamada, degrada la experiencia de usuario y requiere privilegios elevados en ciertas variantes de `fsutil`.
+2. **Bun FFI (*Foreign Function Interface*):** Descartada. Aunque permite invocar bibliotecas dinámicas en tiempo de ejecución, la documentación oficial de Bun califica su subsistema FFI como experimental y desaconseja su uso en binarios compilados independientes destinados a producción.
+3. **Módulo Nativo C++ Node-API (`native/windows-reparse-guard/addon.cc`):** **Elegida.** Bun soporta Node-API (.node) como la interfaz binaria nativa estable para extensiones C/C++. Se compila como una biblioteca compartida ultraligera que se carga en memoria en el mismo proceso de Engram y consulta directamente la Win32 API oficial de Microsoft:
+   ```c
+   DWORD attributes = GetFileAttributesW(path);
+   bool isReparsePoint = (attributes != INVALID_FILE_ATTRIBUTES) &&
+                         ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0);
+   ```
+
+### 9.2. Cobertura de Redirecciones y Modelo a Prueba de Fallos (*Fail-Closed*)
+El atributo `FILE_ATTRIBUTE_REPARSE_POINT` (código hexadecimal `0x400`) identifica cualquier objeto del sistema de archivos NTFS cuyo comportamiento haya sido alterado por un controlador de filtro del sistema. Esto permite detectar y bloquear de forma exhaustiva:
+- **Enlaces simbólicos de archivo** (*file symlinks*, `symlinkSync(..., 'file')`).
+- **Enlaces simbólicos de directorio** (*directory symlinks*).
+- **Uniones de directorio NTFS** (*directory junctions*, `symlinkSync(..., 'junction')` o `mklink /J`).
+- **Puntos de montaje de volumen** (*volume mount points*, generados con `mountvol.exe`).
+
+#### Inspección Recursiva Ascendente:
+El validador `assertNoWindowsReparsePoints` en `src/infrastructure/filesystem/private-files.ts` no se limita a examinar el archivo final, sino que recorre iterativamente la jerarquía completa de directorios existentes hacia arriba hasta alcanzar la raíz del volumen (`while (current !== root)`):
+- Si el destino o cualquiera de sus ancestros existentes posee el atributo de reparse point, la operación se aborta de inmediato con `UNSAFE_PATH`.
+- **Arquitectura *Fail-Closed*:** Si el binario nativo no puede ser cargado, arroja una excepción no controlada de Win32, o la función devuelve un valor no booleano, la validación falla cerrando el acceso y arrojando `UNSAFE_PATH`.
+- **Límites de Concurrencia y TOCTOU (*Time-of-Check to Time-of-Use*):** La inspección estricta previa a la escritura certifica que no existan desvíos en el momento del chequeo. Sin embargo, no proporciona una garantía matemática absoluta frente a condiciones de carrera concurrentes donde otro proceso con privilegios modifique la estructura del directorio exactamente entre la verificación y la apertura del archivo.
+
+### 9.3. Diagrama de Secuencia del Protocolo de Publicación Protegida (`guardedWrite`)
+
+El protocolo de escritura protegida garantiza que la configuración de asistentes (como Antigravity, Cursor o Claude Code) nunca quede en estado corrupto ni sea interceptada:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CLI as Configurador / CLI
+    participant GW as guardedWrite
+    participant Val as assertSafePath
+    participant Guard as windows-reparse-guard (Win32)
+    participant FS as Sistema de Archivos
+
+    CLI->>GW: Solicitar publicación (write.path, write.before, write.after)
+    GW->>Val: Validar ruta destino (assertSafePath)
+    Val->>Guard: GetFileAttributesW (destino y padres)
+    Guard-->>Val: Sin reparse points (OK)
+    GW->>FS: Leer contenido actual en disco
+    alt Contenido cambió respecto a vista previa (write.before)
+        GW-->>CLI: Abortar con error CHANGED
+    end
+    GW->>FS: mkdirSync(directorio padre, 0700)
+    GW->>Val: Re-validar directorio padre
+    opt Si existía archivo previo
+        GW->>FS: Crear respaldo .forge614-backup-<UUID> (0600, flag: 'wx')
+    end
+    GW->>FS: openSync(.forge614-tmp-<UUID>, safeOpenFlag("wx"))
+    GW->>FS: writeFileSync(temporal, write.after)
+    GW->>FS: fsyncSync(descriptor temporal)
+    GW->>FS: Re-verificar que archivo original no cambió
+    alt Contenido original cambió durante la preparación
+        GW-->>CLI: Abortar con error CHANGED (conservando respaldo)
+    end
+    GW->>Val: Re-validar ruta antes del reemplazo atómico
+    GW->>FS: rename(temporal, write.path)
+    GW->>FS: readSafeFile(write.path)
+    alt Bytes leídos no coinciden exactamente con write.after
+        GW-->>CLI: Arrojar PUBLISHED_UNVERIFIED (conservando respaldo)
+    end
+    GW-->>CLI: Publicación confirmada exitosa
+```
+
+### 9.4. Diferencias de Plataforma en Apertura de Archivos e Incidente en CI
+Para materializar el archivo temporal y los respaldos en disco, Engram utiliza descriptores seguros gestionados por `safeOpenFlag`:
+* **Modos textuales en Windows (`"r"` y `"wx"`):**
+  - `"r"`: Apertura en modo solo lectura.
+  - `"wx"`: Escritura con creación exclusiva (*write exclusive*). La bandera `"x"` exige que el archivo no exista previamente en disco; si ya existe, el sistema operativo rechaza la llamada inmediatamente arrojando `EEXIST`.
+* **Banderas numéricas en Unix (macOS y Linux):**
+  - Lectura: `constants.O_RDONLY | constants.O_NOFOLLOW`.
+  - Creación exclusiva: `constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW` con permisos octales `0600`.
+* **Incidente Técnico en CI de Windows:**
+  Durante las pruebas automatizadas en GitHub Actions, la llamada `openSync` en Bun sobre Windows devolvía `ENOENT` cuando se le suministraban las constantes numéricas bit a bit (`O_WRONLY | O_CREAT | O_EXCL`). Sin embargo, en ese mismo entorno, la creación de respaldos con modo textual `{ flag: 'wx' }` operaba con total éxito. La resolución consistió en centralizar la apertura segura bajo la función auxiliar `safeOpenFlag(unixFlags, windowsFlag)`, aplicando `"r"` y `"wx"` en Windows y banderas POSIX con `O_NOFOLLOW` en sistemas Unix. *(Nota: no se asume que Windows carezca de apertura segura ni que todas las banderas numéricas fallen; la incompatibilidad fue específica del puente entre Bun y el sistema operativo en esa llamada).*
+
+### 9.5. Cadena de Herramientas de Compilación y Resolución de Ejecutables
+Para compilar el módulo nativo en Windows se utiliza el script oficial `scripts/build-windows-reparse-addon.ps1`:
+- **Node.js (22.14.0 en CI):** Utilizado exclusivamente en tiempo de compilación para ejecutar el gestor de compilación nativa `node-gyp`. No es necesario para el usuario final en tiempo de ejecución.
+- **`node-gyp` (versión 12.1.0 fijada en `devDependencies`):** Versión fijada requerida para asegurar compatibilidad completa entre Node.js 22 y Visual Studio 2026.
+- **Python (3.12+):** Intérprete requerido internamente por GYP para la generación de soluciones MSBuild.
+- **Visual Studio 2026 Build Tools (v18):** Conjunto oficial de compiladores C++ de Microsoft provisto en los ejecutores `windows-latest`.
+- **Resolución Unívoca de `node.exe` (`Resolve-NodeExecutable`):** En máquinas virtuales de integración continua con múltiples versiones de Node.js instaladas, la función filtra la salida del comando y selecciona estrictamente una sola ruta ejecutable válida, previniendo errores de concatenación de cadenas en PowerShell.
+
+### 9.6. Evidencia en CI y Tareas Pendientes para la Versión Estable (v1.0.0)
+* **Evidencia Verificada en CI:** En el flujo de trabajo `Verify` de GitHub Actions (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`), el trabajo nativo `windows-latest` compiló el addon C++ y superó con éxito las pruebas `windows-reparse-guard.test.ts`, `private-files.test.ts`, `windows-publication.test.ts` y los 5 escenarios del instalador `install.ps1.test.ps1`.
+* **Tareas Pendientes para v1.0.0:**
+  1. **Incrustación del addon nativo en el ejecutable standalone:** Integrar `build-windows-reparse-addon.ps1` en el flujo de empaquetado (`release.yml`) para que el binario de distribución contenga el módulo compilado y cargue sin requerir archivos `.node` adyacentes.
+  2. **Compilación y verificación en Windows ARM64:** Validar la compilación y ejecución de pruebas en ejecutores Windows ARM64 nativos (`windows-11-arm`).
+  3. **Validación en entorno Windows limpio:** Probar el binario generado en un sistema Windows sin herramientas de desarrollo ni repositorios clonados.
+  4. **Verificación de dependencias de tiempo de ejecución:** Confirmar que el ejecutable no dependa de redistribuibles de C++ (*MSVC CRT*) ausentes en instalaciones estándar de Windows.
+  5. **Verificación del flujo completo de release:** Comprobar la generación y firma de los 6 artefactos de release antes de publicar la versión 1.0.0 definitiva.
+
+---
+
+## 10. Atribución y Linaje de Diseño
 
 - **Inspiración en Gentleman Programming:** El modelo de recuperación progresiva mediante vistas previas acotadas, lectura de versiones históricas bajo demanda, reconstrucción de líneas temporales de sesión y refuerzo de relevancia se inspira en los conceptos desarrollados por Gentleman (vinculado al commit `2cdda9041c1bff86f6b769171fd407fa677027cb`).
 - **Innovaciones Propias de Forge614:**
@@ -395,3 +598,4 @@ Cada uno de los **58 archivos de producción que contienen lógica de negocio** 
   - Caché de peticiones idempotentes por hash criptográfico SHA-256 con detección de conflicto `REQUEST_CONFLICT`.
   - Promoción explícita CAS atómica a Formato 3 en réplica PostgreSQL con invariabilidad del esquema físico (`state.format = 1`).
   - Monolito modular con 58 componentes lógicos respaldados por pruebas hermanas colocadas y verificación estricta de imports por AST.
+  - Guardián nativo C++ de reparse points y protocolo atómico `guardedWrite` para publicación segura de herramientas y configuraciones en Windows y Unix.

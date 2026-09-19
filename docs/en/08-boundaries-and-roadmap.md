@@ -30,7 +30,7 @@ The following development phases are **100% implemented and verified**:
 - [x] Native stdio MCP server with clean I/O channels (stdout reserved for JSON-RPC).
 - [x] Full-screen terminal UI menu (`forge614-engram tui`) with keyboard navigation and safe preview.
 - [x] Asynchronous MCP server self-test verifying binary and tools within a 5-second deadline.
-- [x] Safe adapters for 5 clients (Claude Code, Codex, Cursor, OpenCode, Gemini CLI) with `0600`/UUID backups and post-write verification.
+- [x] Safe adapters for 5 clients (Claude Code, Codex, Cursor, OpenCode, Antigravity) with `0600`/UUID backups and post-write verification.
 - [x] Schema 5 in SQLite with `project_bindings` resolving canonical repository identity via Git.
 
 ### Phase 4: Progressive Memory Sessions and Ranked Context — COMPLETED
@@ -118,6 +118,12 @@ To maintain realistic expectations, the following boundaries are formally declar
     Engram maintains a single centralized database at `~/.forge614/engram.db`. Projects are partitioned logically by immutable `projectId`, avoiding scattering `.db` files across workspace folders.
 18. **No Granular Note Content Editing in Control Center:**
     The Control Center manages projects, directory bindings, storage, migrations, and assistants. Authoring and editing granular memory notes is performed via CLI (`save`, `get`, `delete`), MCP tools, or future specialized explorers.
+19. **Antigravity Configured as MCP Only:**
+    Antigravity is integrated exclusively as *MCP only* (`~/.gemini/config/mcp_config.json`). No automatic hooks are installed (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
+20. **Windows Native CI Validation Completed on x64 and Pending Tasks for Stable Release (v1.0.0):**
+    Windows configuration publication, the native C++ Node-API addon (`windows_reparse_guard.node`), strict rejection of reparse points (symlinks, junctions, volume mount points) via `GetFileAttributesW`, and the `guardedWrite` protocol were executed and verified in GitHub Actions on `windows-latest` runners (**Run ID `35414475529`**, commit `5f9867ddcb7521e6e4fd1c05d53ab565506b8534`). However, release v1.0.0 retains the following pending distribution items: (1) embed the compiled native addon inside the distributed standalone binary in `release.yml`, (2) compile and test on native Windows ARM64 runners, (3) test execution on a clean Windows machine lacking development tools, (4) certify absence of missing C++ runtime dependencies (*MSVC CRT*), and (5) validate generation and cryptographic signing of all 6 release artifacts.
+21. **Discontinuation of Gemini CLI and Protection of Legacy Configurations:**
+    Forge614 Engram no longer manages Gemini CLI. It does not read, modify, or delete `~/.gemini/settings.json`, leaving any preexisting file completely untouched.
 
 ---
 

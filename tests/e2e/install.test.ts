@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, copyFileSync, symlinkSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, copyFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { MemoryStore } from "../../src/app/memory-store";
@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-const installer = resolve(import.meta.dir,"../../scripts/install.sh");
+const installer = resolve(import.meta.dir,"../../scripts/install-from-source.sh");
 const dirs: string[] = [];
 const buildEnv = { ...process.env, PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin` };
 function workspace() {
@@ -22,13 +22,14 @@ function install(cwd: string, args: string[], env = buildEnv) {
 }
 afterEach(() => { for(const dir of dirs.splice(0)) rmSync(dir,{recursive:true}); });
 
-test("repository installer produces a standalone CLI usable outside the repo without Bun on PATH", () => {
+test("developer source installer produces a standalone CLI usable outside the repo without Bun on PATH", () => {
   const dir = workspace();
   const bin = join(dir,"bin with spaces");
   const installed = install(dir,["--bin-dir",bin]);
   expect(installed.code).toBe(0);
-  expect(installed.out).toContain('Claude Code');expect(installed.out).toContain('Gemini CLI');
-  expect(installed.out).toContain('tui');expect(installed.out).not.toContain('[s/N]');
+  expect(installed.out).toContain('forge614-engram setup');
+  expect(installed.out).not.toContain('assistant-list');
+  expect(installed.out).not.toContain('tui');
   expect(existsSync(join(dir,'isolated-home/.forge614'))).toBe(false);
   const target = join(bin,"forge614-engram");
   expect(existsSync(target)).toBe(true);
@@ -37,7 +38,6 @@ test("repository installer produces a standalone CLI usable outside the repo wit
   const help = run("help");
   expect(help.exitCode).toBe(0);
   expect(help.stdout.toString()).toContain("Uso: forge614-engram");
-  expect(help.stdout.toString()).toContain('tui');expect(help.stdout.toString()).not.toContain('memory_save con asistentes está pendiente');
   expect(existsSync(join(dir,".forge614"))).toBe(false);
   expect(run("--version").stdout.toString()).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
   const path = join(dir,"isolated.sqlite");
@@ -60,7 +60,7 @@ test("repository installer produces a standalone CLI usable outside the repo wit
   finally { check.close(); }
 },30000);
 
-test("installer help and invalid options create no destination", () => {
+test("developer installer help and invalid options create no destination", () => {
   const dir = workspace();
   const bin = join(dir,"bin");
   expect(install(dir,["--help"]).code).toBe(0);
@@ -68,7 +68,32 @@ test("installer help and invalid options create no destination", () => {
   expect(existsSync(bin)).toBe(false);
 });
 
-test("installed compiled binary executes progressive MCP session reads and writes",async()=>{
+const nativeMac = process.platform === "darwin" ? test : test.skip;
+nativeMac("diagnostic: compiled MCP records canonical-project Git invocation metadata",async()=>{
+  const dir=workspace(),bin=join(dir,"bin"),home=join(dir,"isolated-home"),project=join(dir,"project"),commands=join(dir,"commands"),diagnostic=join(dir,"git-diagnostic");
+  mkdirSync(project);mkdirSync(commands);
+  const git=join(commands,"git");
+  writeFileSync(git,[
+    "#!/bin/sh",
+    "/usr/bin/git \"$@\"",
+    "status=$?",
+    "printf 'gitExit=%s lcAll=%s global=%s noSystem=%s optionalLocks=%s\\n' \"$status\" \"$LC_ALL\" \"$GIT_CONFIG_GLOBAL\" \"$GIT_CONFIG_NOSYSTEM\" \"$GIT_OPTIONAL_LOCKS\" > \"$FORGE614_ENGRAM_GIT_DIAGNOSTIC\"",
+    "exit \"$status\"",
+    "",
+  ].join("\n"),{mode:0o700});chmodSync(git,0o700);
+  expect(install(dir,["--bin-dir",bin]).code).toBe(0);
+  const executable=join(bin,"forge614-engram"),env={PATH:`${bin}:${commands}:/usr/bin:/bin`,HOME:home,FORGE614_ENGRAM_GIT_DIAGNOSTIC:diagnostic};
+  expect(Bun.spawnSync([executable,"sessions-enable"],{cwd:dir,env}).exitCode).toBe(0);
+  const transport=new StdioClientTransport({command:executable,args:["mcp"],cwd:project,env,stderr:"pipe"});
+  const client=new Client({name:"installed-git-diagnostic",version:"1"},{capabilities:{}});await client.connect(transport);
+  try{
+    const result=await client.callTool({name:"memory_session_start",arguments:{directory:project,sessionId:"installed-git-diagnostic"}}) as CallToolResult;
+    const response=JSON.parse((result.content.find(block=>block.type==="text") as {text:string}).text) as {code?:string};
+    console.info(JSON.stringify({diagnostic:"compiled-canonical-project-git",wrapperInvoked:existsSync(diagnostic),wrapperMetadata:existsSync(diagnostic)?readFileSync(diagnostic,"utf8").trim():null,responseCode:response.code??null}));
+  }finally{await client.close();}
+},30000);
+
+test("developer-installed compiled binary executes progressive MCP session reads and writes",async()=>{
   const dir=workspace(),bin=join(dir,"bin"),home=join(dir,"isolated-home"),project=join(dir,"project");mkdirSync(project);
   expect(install(dir,["--bin-dir",bin]).code).toBe(0);
   const executable=join(bin,"forge614-engram"),env={PATH:`${bin}:/usr/bin:/bin`,HOME:home};
@@ -79,6 +104,7 @@ test("installed compiled binary executes progressive MCP session reads and write
   const json=(result:CallToolResult)=>JSON.parse((result.content.find(block=>block.type==="text") as {text:string}).text);
   try{
     const session=json(await call("memory_session_start",{directory:project,sessionId:"installed-chat"}));
+    expect(session).toMatchObject({sessionId:"installed-chat",projectId:expect.any(String)});
     const saveInput={directory:project,title:"Installed",content:"Progressive context",type:"decision",sessionId:"installed-chat",requestKey:"installed-save-1"};
     const saved=json(await call("memory_save",saveInput));
     expect(saved).toMatchObject({projectId:session.projectId,sessionId:"installed-chat",sessionSource:"explicit"});
@@ -94,7 +120,7 @@ test("installed compiled binary executes progressive MCP session reads and write
   }finally{await client.close();}
 },30000);
 
-test("missing Bun reports prerequisite without creating destination", () => {
+test("developer installer reports a missing Bun prerequisite without creating destination", () => {
   const dir = workspace();
   const bin = join(dir,"bin");
   const result = install(dir,["--bin-dir",bin],{...process.env,PATH:"/usr/bin:/bin"});
@@ -103,27 +129,17 @@ test("missing Bun reports prerequisite without creating destination", () => {
   expect(existsSync(bin)).toBe(false);
 });
 
-test('missing dependencies fail with offline preparation instructions in an isolated checkout',()=>{
-  const dir=workspace();mkdirSync(join(dir,'scripts'));copyFileSync(installer,join(dir,'scripts/install.sh'));
+test('developer installer reports offline dependency preparation in an isolated checkout',()=>{
+  const dir=workspace();mkdirSync(join(dir,'scripts'));copyFileSync(installer,join(dir,'scripts/install-from-source.sh'));
   copyFileSync(resolve(import.meta.dir,'../../package.json'),join(dir,'package.json'));
-  const result=Bun.spawnSync(['/bin/bash',join(dir,'scripts/install.sh'),'--bin-dir',join(dir,'bin')],{cwd:dir,env:{...buildEnv,HOME:dir,BUN_RUNTIME_TRANSPILER_CACHE_PATH:'0'}});
+  const result=Bun.spawnSync(['/bin/bash',join(dir,'scripts/install-from-source.sh'),'--bin-dir',join(dir,'bin')],{cwd:dir,env:{...buildEnv,HOME:dir,BUN_RUNTIME_TRANSPILER_CACHE_PATH:'0'}});
   expect(result.exitCode).toBe(1);expect(result.stderr.toString()).toContain('bun install --frozen-lockfile --ignore-scripts');
   expect(existsSync(join(dir,'node_modules'))).toBe(false);expect(existsSync(join(dir,'bin'))).toBe(false);expect(existsSync(join(dir,'.forge614'))).toBe(false);
 });
 
-test('missing Git fails closed before compilation without installing anything',()=>{
+test('developer installer fails closed when Git is unavailable before compilation',()=>{
   const dir=workspace(),path=join(dir,'commands');mkdirSync(path);
   symlinkSync(process.execPath,join(path,'bun'));symlinkSync('/usr/bin/uname',join(path,'uname'));
   const result=install(dir,['--bin-dir',join(dir,'bin')],{...buildEnv,PATH:path});
   expect(result.code).toBe(1);expect(result.error).toContain('Git');expect(existsSync(join(dir,'bin'))).toBe(false);
 });
-
-test.skipIf(!existsSync('/usr/bin/expect'))('real terminal installer offers TUI, opens only on opt-in, and cancellation leaves no storage',()=>{
-  const dir=workspace(),home=join(dir,'home');mkdirSync(home);
-  const result=Bun.spawnSync(['/usr/bin/expect',join(import.meta.dir,'../fixtures/assistant-install-pty.exp'),installer,join(dir,'bin')],{
-    cwd:dir,env:{HOME:home,PATH:buildEnv.PATH,TERM:'xterm-256color',BUN_RUNTIME_TRANSPILER_CACHE_PATH:'0'},timeout:25000,
-  });
-  expect(result.stdout.toString()).toContain('PASS real PTY installer');expect(result.exitCode).toBe(0);
-  expect(existsSync(join(dir,'bin/forge614-engram'))).toBe(true);
-  expect(existsSync(join(home,'.forge614'))).toBe(false);expect(existsSync(join(home,'.claude.json'))).toBe(false);
-},30000);

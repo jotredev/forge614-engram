@@ -111,7 +111,7 @@ En la pestaña `Actions` se ofrecen operaciones seguras:
 Al seleccionar `Assistants`:
 - El Centro de Control suspende su pantalla y restaura la terminal de forma limpia.
 - Se abre de forma secuencial el configurador de asistentes existente (`assistantTui`).
-- Puedes marcar clientes con la barra espaciadora (Claude Code, Codex, Cursor, OpenCode, Gemini CLI), ejecutar la autoprueba asíncrona de 5 segundos con la tecla `t`, revisar la vista previa de cambios y aplicar configuraciones con respaldos automáticos `0600` identificados por UUID.
+- Puedes marcar clientes con la barra espaciadora (Claude Code, Codex, Cursor, OpenCode, Antigravity), ejecutar la autoprueba asíncrona de 5 segundos con la tecla `t`, revisar la vista previa de cambios y aplicar configuraciones con respaldos automáticos `0600` identificados por UUID.
 - Al salir de la pantalla de asistentes, la terminal se restaura y el Centro de Control recarga automáticamente un resumen fresco y actualizado con las nuevas asociaciones.
 
 ---
@@ -161,7 +161,7 @@ forge614-engram project-bind \
 
 ### Paso 5: Ganchos Nativos de Asistentes (`memory-hook`)
 
-Para clientes compatibles (Claude Code, Codex, Cursor, OpenCode, Gemini CLI), Engram inyecta orientación en eventos como inicio de sesión (`SessionStart`) o envío de prompt (`UserPromptSubmit`):
+Para clientes compatibles (Claude Code, Codex y Cursor mediante ganchos nativos, y OpenCode mediante su plugin dedicado), Engram inyecta orientación en eventos como inicio de sesión (`SessionStart`) o envío de prompt (`UserPromptSubmit`). En el caso de **Antigravity**, actualmente se configura como **MCP only**; no se instala ningún hook automático (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*):
 
 ```bash
 forge614-engram memory-hook --client codex

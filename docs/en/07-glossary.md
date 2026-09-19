@@ -34,7 +34,7 @@ Like an executive summary disclosing company financial metrics without publishin
 Like making a pencil tally mark on the cover of a workshop manual every time you consult it, without tearing out pages or reprinting the whole book: a timestamped, immutable historical event recording that an existing active memory was observed again by an assistant, without creating artificial versions 2 or 3 or duplicating content. It denotes a repeated observation; it does not certify absolute truth or human verification.
 
 ### FTS5 Reinforced Search Without Embeddings
-Like an experienced librarian who organizes books on the front counter, giving priority to those frequently referenced and recently reviewed, without needing to X-ray them or run complex neural networks: a mathematical ranking mechanism that weights BM25 lexical matches by multiplying them by pinned boosts (`pinned`), 30-day recency boosts (`recencyBoost`), and cumulative stability boosts (`stabilityBoost`).
+Like an experienced librarian who organizes books on the front counter, giving priority to those frequently referenced and recently reviewed, without needing to X-ray them or run complex neural networks: a mathematical ranking mechanism that weights BM25 lexical matches by multiplying them by pinned boosts (`pinned`), 30-day recency boosts (`recencyBoost`), and cumulative stability boosts (`stabilityBoost`). *(For an exhaustive, plain-language breakdown and comparison against traditional vector search, see our dedicated guide: [What are Embeddings and why does Forge614 Engram work WITHOUT them?](concepts/what-are-embeddings.md)).*
 
 ### 15-Minute Sliding Deduplication Window
 Like remembering what someone told you ten minutes ago in the same conversation without mixing it up with what they mentioned last month: a strict temporal rule for general memories without a topic (`topicKey: null`), where notes observed within the last 15 minutes (`now - 900,000 ms` to `now`) are treated as candidate duplicates. If more than 15 minutes elapse, Engram creates an independent new memory to keep distant facts separate.
@@ -120,3 +120,21 @@ Like signing a formal deed where either all stamps, signatures, and payments reg
 
 ### Optimistic Compare-and-Swap Locking (CAS)
 Like two notaries stamping a sequentially numbered ledger: each checks the current hash before stamping; the first to stamp advances the sequence, while the second notices the hash changed and halts safely without damaging the record.
+
+### Antigravity (Supported Developer Coding Assistant / `antigravity`)
+Supported coding assistant replacing Gemini CLI. Connects via standard Model Context Protocol (MCP) using `~/.gemini/config/mcp_config.json`, allowing the model to consult context (`memory_context`), search memories (`memory_search`), and save decisions (`memory_save`). Configured as *MCP only* with no automatic hooks (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
+
+### Windows Path Guard / Reparse Points Validation
+A Windows-specific security validation mechanism that verifies configuration paths do not point to symbolic links, directory junctions, or reparse points before writing data, preventing malicious path redirection attacks. (Status: CI validation on x64 successfully passed in GitHub Actions Run ID 35414475529; standalone binary embedding and ARM64 pending for v1.0.0).
+
+### Native Reparse-Point Guard (Node-API C++ Addon / `windows_reparse_guard.node`)
+Like a bilingual customs officer stationed at the border inspecting official passports directly without slow intermediaries: an ultralightweight native C++ module loaded by Bun directly into memory that queries the Windows kernel function `GetFileAttributesW` in microseconds to certify whether a directory or file is a redirection point.
+
+### NTFS Reparse Points (Reparse Points, Directory Junctions, and Volume Mount Points)
+Like a detour sign on a highway misleading drivers into thinking they are staying on the main avenue while redirecting them into a private alley: special NTFS filesystem objects in Windows (symbolic links, directory junctions, and volume mount points) that redirect I/O to an alternate physical location, which Engram strictly rejects (`UNSAFE_PATH`) to prevent unauthorized writes.
+
+### Atomic Guarded Write Protocol (Guarded Write / `guardedWrite`)
+Like a surgeon carefully sterilizing all instruments, photographing the surgical site beforehand, performing the procedure within an isolated sterile field, verifying that vital signs match the plan byte-for-byte, and only then finalizing the incision: a 10-step atomic protocol that validates path safety, compares against interactive plan previews (`write.before`), writes a UUID-stamped exclusive backup (`flag: 'wx'`), commits and flushes a temporary file (`fsyncSync`), performs an atomic rename, and verifies read bytes against planned bytes (`readSafeFile`), halting with `PUBLISHED_UNVERIFIED` if any external deviation is detected.
+
+### Exclusive On-Disk Creation Mode (Exclusive File Mode / `"wx"`)
+Like attempting to claim a numbered locker with a lock that immediately jams if a padlock is already present: a file opening flag on Windows that combines write intent (`"w"`) with strict exclusivity (`"x"`), ensuring that if the temporary or backup file already exists on disk, the operating system call immediately fails with `EEXIST` rather than overwriting existing data.
