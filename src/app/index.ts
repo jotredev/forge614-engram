@@ -7,6 +7,8 @@ export type { ProjectContext } from "./project-context";
 export { synchronize, syncWorkspace } from "./synchronization";
 export { runSetup } from "./setup";
 export type { SetupIO, SetupResult } from "./setup";
+export { inspectMemoryInitialization, previewMemoryInitialization } from "./initialization";
+export type { MemoryInitializationStatus, MemoryInitializationRequest, MemoryInitializationPreview } from "./initialization";
 export { detectAssistants, resolveAssistantPaths, coverageWarnings, AssistantConfigurationError, planAssistantConfiguration, preflightAssistantConfiguration, applyAssistantConfiguration, testInstalledServer, resolveInstalledEngram } from "./assistants";
 export type { ConfigurationPlan, ConfigurationResult, ServerTestResult } from "./assistants";
 export { executeControlCenterMutation, readControlCenter } from "./control-center";

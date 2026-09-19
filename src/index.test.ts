@@ -9,6 +9,7 @@ import type { AssistantDescriptor, AssistantLocation, AssistantOptions, Assistan
 const RUNTIME_EXPORTS = [
   "MemoryError", "MemoryStore", "MemoryWorkspace", "WorkspaceConfig",
   "defaultDatabasePath", "memoryTypes", "saveProjectMemoryWithSession", "startProjectSession",
+  "inspectMemoryInitialization", "previewMemoryInitialization",
   "CLIENT_IDS", "LABELS", "isClientId", "inspectAssistant", "resolveAssistantPaths", "coverageWarnings",
 ];
 
@@ -46,6 +47,11 @@ describe("public SDK contract", () => {
     expect(typeof sdk.inspectAssistant).toBe("function");
     expect(typeof sdk.resolveAssistantPaths).toBe("function");
     expect(typeof sdk.coverageWarnings).toBe("function");
+  });
+
+  test("exports the nonvisual initialization API needed by Forge614 Shell", () => {
+    expect(typeof sdk.inspectMemoryInitialization).toBe("function");
+    expect(typeof sdk.previewMemoryInitialization).toBe("function");
   });
 
   test("uses one MemoryError identity across module validation", () => {
