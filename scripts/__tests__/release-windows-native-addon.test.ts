@@ -32,5 +32,7 @@ test("Windows release artifacts build and load their matching embedded native ad
   expect(workflow).toContain("assistant-list");
   expect(workflow).toContain("RUNNER_TEMP");
   expect(workflow).toContain("github.event_name == 'push' && github.ref_type == 'tag'");
+  expect(workflow).toContain('if [[ "$GITHUB_REF_NAME" == *-* ]]');
+  expect(workflow).toContain('release_flags+=(--prerelease)');
   expect(workflow).not.toContain("shell: ${{ matrix.shell }}");
 });

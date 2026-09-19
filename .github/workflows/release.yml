@@ -210,6 +210,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "$GITHUB_REF_NAME" \
             dist/forge614-engram-darwin-arm64 \
             dist/forge614-engram-darwin-x64 \
@@ -219,4 +223,5 @@ jobs:
             dist/forge614-engram-windows-arm64.exe \
             dist/SHA256SUMS \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --generate-notes \
+            "${release_flags[@]}"
