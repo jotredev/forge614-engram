@@ -56,7 +56,7 @@ jobs:
           python-version: '3.12'
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: git diff --check
-      - name: Build Windows x64 reparse addon with Visual Studio 2022
+      - name: Build Windows x64 reparse addon with Visual Studio 2026
         shell: pwsh
         run: ./scripts/build-windows-reparse-addon.ps1 -Architecture x64
       - name: Verify guarded publication and reparse rejection on native Windows

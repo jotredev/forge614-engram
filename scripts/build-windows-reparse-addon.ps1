@@ -22,7 +22,7 @@ function Resolve-NodeExecutable {
 }
 
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
-  throw 'The Windows reparse addon must be built on Windows with Visual Studio 2022 C++ build tools.'
+  throw 'The Windows reparse addon must be built on Windows with Visual Studio 2026 C++ build tools.'
 }
 
 # Node.js, Python, node-gyp, and MSVC are build-time tools only. The application
@@ -36,8 +36,8 @@ if (-not (Test-Path -LiteralPath $nodeGyp -PathType Leaf)) {
 }
 
 # Rebuild removes stale output, downloads the pinned Node-API headers/import
-# library, and uses MSBuild from the runner's preinstalled Visual Studio 2022.
-& $node $nodeGyp rebuild "--directory=$addonDirectory" "--arch=$Architecture" --target=22.14.0 --msvs_version=2022 --release
+# library, and uses MSBuild from the runner's preinstalled Visual Studio 2026.
+& $node $nodeGyp rebuild "--directory=$addonDirectory" "--arch=$Architecture" --target=22.14.0 --msvs_version=2026 --release
 if ($LASTEXITCODE -ne 0) {
   throw "Windows reparse addon build failed with exit code $LASTEXITCODE."
 }

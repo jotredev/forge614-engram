@@ -1,6 +1,21 @@
 $ErrorActionPreference = 'Stop'
 
 $builder = Join-Path $PSScriptRoot '..\build-windows-reparse-addon.ps1'
+$repositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$packageJson = Join-Path $repositoryRoot 'package.json'
+$builderSource = Get-Content -LiteralPath $builder -Raw
+$package = Get-Content -LiteralPath $packageJson -Raw | ConvertFrom-Json
+
+if ($package.devDependencies.'node-gyp' -ne '12.1.0') {
+  throw "The Windows native build must pin node-gyp 12.1.0 for Node 22.14 and Visual Studio 2026 support; found '$($package.devDependencies.'node-gyp')'."
+}
+if ($builderSource -match '(?<!\d)2022(?!\d)') {
+  throw 'The Windows native build must not reference obsolete Visual Studio 2022 tooling.'
+}
+if ($builderSource -notmatch '--msvs_version=2026') {
+  throw 'The Windows native build must explicitly target Visual Studio 2026.'
+}
+
 $tokens = $null
 $parseErrors = $null
 $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile($builder, [ref] $tokens, [ref] $parseErrors)
