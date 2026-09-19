@@ -92,7 +92,7 @@ test("init remains JSON-only and does not enroll assistant configuration", () =>
   expect(result.stderr).toBe("");
   expect(existsSync(join(dir, "user", ".claude.json"))).toBe(false);
   expect(existsSync(join(dir, "user", ".codex", "config.toml"))).toBe(false);
-  const store = new MemoryWorkspace(new WorkspaceConfig(join(dir, "user", ".forge614"))).open(true);
+  const store = new MemoryWorkspace(new WorkspaceConfig(join(dir, "user", ".forge614", "engram"))).open(true);
   try { expect(store.controlCenter().capabilities.assistantIntegration).toBe(false); }
   finally { store.close(); }
 });
@@ -100,7 +100,7 @@ test("init remains JSON-only and does not enroll assistant configuration", () =>
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", () => {
   const dir=workspace();
   expect(run(dir,"init").code).toBe(0);
-  const config=new WorkspaceConfig(join(dir,"user",".forge614"));
+  const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
   const memoryWorkspace=new MemoryWorkspace(config);
   let store=memoryWorkspace.open(true);
   try { expect(store.reinforcementEnabled()).toBe(false); }

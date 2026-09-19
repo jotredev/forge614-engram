@@ -25,7 +25,7 @@ function create(dir: string, name = "demo"): string {
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
 test("sync-watch reports offline retry state and exits on SIGINT without blocking local writes",async()=>{
   const dir=workspace();const id=create(dir);
-  const config=new WorkspaceConfig(join(dir,"user",".forge614"));
+  const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
   config.configurePostgres("postgresql://u:SECRET@127.0.0.1:1/db?sslmode=disable",config.revision());
   const child=Bun.spawn([process.execPath,"--preload",preload,cli,"sync-watch","--interval","1"],{
     cwd:dir,env:{...process.env,FORGE614_TEST_USER_DIRECTORY:join(dir,"user")},stdout:"pipe",stderr:"pipe",
