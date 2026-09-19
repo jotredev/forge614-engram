@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { postgresOptions } from "../postgres/replica";
 import { isAbsolute, join, resolve } from "node:path";
 import { MemoryError } from "../../shared/errors";
-import { userStorageDirectory } from "./paths";
+import { forge614Home, userStorageDirectory } from "./paths";
+import { EngramProductHome } from "./product-home";
 
 export type { WorkspaceSettings } from "../../modules/workspace";
 import type { WorkspaceSettings } from "../../modules/workspace";
@@ -25,7 +26,10 @@ export class WorkspaceConfig {
   }
   get databasePath(): string { return join(this.root, "engram.db"); }
 
-  prepare(): void { this.directory(true, true); }
+  prepare(): void {
+    if (this.root === userStorageDirectory()) new EngramProductHome(forge614Home(), this.root).migrateLegacyWorkspace();
+    this.directory(true, true);
+  }
   /** Tighten only an existing ordinary user-owned directory; never creates one. */
   repairExistingRoot(): void { this.directory(false, true); }
 
