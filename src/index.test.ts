@@ -8,6 +8,7 @@ import { validateSearchLimit } from "./modules/search";
 const RUNTIME_EXPORTS = [
   "MemoryError", "MemoryStore", "MemoryWorkspace", "WorkspaceConfig",
   "defaultDatabasePath", "memoryTypes", "saveProjectMemoryWithSession", "startProjectSession",
+  "memoryProtocol",
   "inspectMemoryInitialization", "previewMemoryInitialization", "applyMemoryInitialization",
 ];
 
@@ -33,6 +34,13 @@ describe("public SDK contract", () => {
     expect(typeof sdk.inspectMemoryInitialization).toBe("function");
     expect(typeof sdk.previewMemoryInitialization).toBe("function");
     expect(typeof sdk.applyMemoryInitialization).toBe("function");
+  });
+
+  test("exports the versioned memory protocol for Forge614 Engines", () => {
+    expect(sdk.memoryProtocol()).toMatchObject({
+      id: "forge614-engram-memory",
+      version: 1,
+    });
   });
 
   test("uses one MemoryError identity across module validation", () => {

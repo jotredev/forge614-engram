@@ -1,5 +1,7 @@
 export { memoryTypes } from "./modules/memory";
 export type { MemoryType,MemoryScope,SearchScope,SaveInput,MemoryVersion,Memory,SearchResult,Confirmation,ConfirmationRequest } from "./modules/memory";
+export { memoryProtocol } from "./modules/memory-protocol";
+export type { MemoryProtocol } from "./modules/memory-protocol";
 export type { Project } from "./modules/projects";
 export { MemoryError } from "./shared/errors";
 export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields } from "./modules/sessions";
