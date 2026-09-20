@@ -6,7 +6,7 @@ Forge614 Engram es el motor de memoria persistente del ecosistema Forge614. Es d
 
 Intencionalmente **no** es un espacio visual, detector de asistentes, configurador de asistentes, administrador de hooks ni cliente de chat. Esas responsabilidades pertenecen a Forge614 Shell y Forge614 Engines mediante contratos públicos.
 
-## Capacidades disponibles en v1.2.0
+## Capacidades disponibles en v1.2.1
 
 - Hogar privado en `~/.forge614/engram/` con `engram.db`, `.env` y `bin/`.
 - SQLite y FTS5 locales para todos los proyectos y recuerdos compartidos. La búsqueda local funciona sin red.
