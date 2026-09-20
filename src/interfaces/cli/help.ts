@@ -2,19 +2,15 @@ export const HELP = `Forge614 Engram — una base, recuerdos por proyecto y comp
 
 Uso: forge614-engram <comando> [opciones]
 
-tui             Centro de control local. Asistentes con vista previa y confirmación explícita.
 init [--json]   Inicializa Engram; sin --json guía y confirma en terminal. --json no pregunta.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
 sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
-integration-enable  Habilita explícitamente MCP y asociaciones locales (esquema 5).
 sessions-enable Habilita explícitamente sesiones (esquema 6).
 reinforcement-enable
                 Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
-assistant-list  Detecta asistentes y muestra configuración/cobertura sin escribir archivos.
-memory-hook     --client <claude-code|codex|cursor|opencode|antigravity>
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
@@ -64,7 +60,7 @@ Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
 Actualizar un tema requiere --expected-version. Archivar conserva el historial.
-init sin --json y tui muestran texto y requieren terminal; cancelar devuelve código 130.
+init sin --json muestra texto y requiere terminal; cancelar devuelve código 130.
 Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
 MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
 uninstall requiere REMOVE FORGE614-ENGRAM; si Atlas existe requiere REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS.

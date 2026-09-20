@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { MemoryStore, MemoryWorkspace } from "../../app";
 import { MemoryError } from "../../shared/errors";
-import { MEMORY_PROTOCOL } from "../../modules/assistants";
+import { MEMORY_PROTOCOL } from "../../modules/mcp";
 import { version } from "../../../package.json";
 import { directoryResolver } from "./project-directory";
 import { registerTools } from "./tools";

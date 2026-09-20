@@ -11,7 +11,7 @@ import { safely, type ToolContext } from "../context";
 // Real SDK transports and ephemeral SQLite; no module mocks or personal paths.
 export async function sdkHarness(register?: (context:ToolContext,server:McpServer)=>void, roots?:string[]) {
   const directory=mkdtempSync(join(tmpdir(),"engram-handler-"));
-  const store=new MemoryStore(":memory:"); store.enableAssistantIntegration(); store.enableSessions();
+  const store=new MemoryStore(":memory:"); store.enableProjectBindings(); store.enableSessions();
   const server=new McpServer({name:"handler-test",version:"1"});
   const client=new Client({name:"test",version:"1"},{capabilities:roots?{roots:{}}:{}});
   if(roots) client.setRequestHandler(ListRootsRequestSchema,()=>({roots:roots.map(uri=>({uri}))}));

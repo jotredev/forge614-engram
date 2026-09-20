@@ -54,12 +54,3 @@ test("removes the installer PATH block when the product path contains spaces", a
     expect(readFileSync(path, "utf8")).toBe("keep=1\n");
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
-
-test("uses the injected Windows PATH removal only for the owned product bin", async () => withHome(async home => {
-  let requested = "";
-  const removed = await removePathPublication({
-    home, platform: "win32", runWindowsRemoval: async directory => { requested = directory; return true; },
-  });
-  const expected = join(home, ".forge614", "engram", "bin");
-  expect(requested).toBe(expected); expect(removed).toEqual([expected]);
-}));

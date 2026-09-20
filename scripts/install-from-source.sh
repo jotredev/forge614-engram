@@ -101,10 +101,10 @@ fi
 staging=''
 printf 'Installed: %s\n' "$destination"
 case ":${PATH:-}:" in
-  *":$bin_dir:"*) printf '%s\n' 'forge614-engram setup' ;;
+  *":$bin_dir:"*) printf '%s\n' 'forge614-engram init' ;;
   *)
     printf '%s\n' 'Add this directory to your terminal PATH to use the command by name:'
     printf 'export PATH=%q:"$PATH"\n' "$bin_dir"
     printf '%s\n' 'The preceding line works in Bash/Zsh; save it in your shell configuration to keep it.'
-    printf '%s\n' 'forge614-engram setup' ;;
+    printf '%s\n' 'forge614-engram init' ;;
 esac

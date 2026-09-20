@@ -46,24 +46,24 @@ afterEach(() => {
 });
 
 
-test("assistant enrollment explicitly upgrades schema 3 or 4 to exact schema 5", () => {
+test("project-binding enrollment explicitly upgrades schema 3 or 4 to exact schema 5", () => {
   for (const enableSync of [false, true]) {
     const path = join(temporary(), "engram.db");
     const value = store(path);
     if (enableSync) value.enableSync();
-    value.enableAssistantIntegration();
+    value.enableProjectBindings();
     const db = new Database(path, { readonly: true });
     expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 5 });
     expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('sync_checkpoints','project_bindings') ORDER BY name").all())
       .toEqual([{ name: "project_bindings" }, { name: "sync_checkpoints" }]);
     db.close();
-    value.enableAssistantIntegration();
+    value.enableProjectBindings();
   }
 });
 
 
 test("read-only resolution never creates a project or binding", () => {
-  const value = store(); value.enableAssistantIntegration();
+  const value = store(); value.enableProjectBindings();
   const directory = temporary();
   expect(resolveProjectContext(value, directory, false)).toEqual({
     projectId: null, directory: realpathSync(directory), source: "unbound",
@@ -73,7 +73,7 @@ test("read-only resolution never creates a project or binding", () => {
 
 
 test("nested Git directories and linked worktrees share the Git common-directory binding", () => {
-  const value = store(); value.enableAssistantIntegration();
+  const value = store(); value.enableProjectBindings();
   const repo = repository(); const child = join(repo, "src", "nested"); mkdirSync(child, { recursive: true });
   const linked = temporary("forge614-worktree-"); rmSync(linked, { recursive: true });
   git(repo, "worktree", "add", "--quiet", "-b", "fixture-worktree", linked);
@@ -119,7 +119,7 @@ test("non-Git session roots are explicit and a failed start rolls back project a
 
 
 test("inherited Git redirection variables cannot replace the explicit repository", () => {
-  const value = store(); value.enableAssistantIntegration();
+  const value = store(); value.enableProjectBindings();
   const expected = repository(); const redirected = repository();
   const previous = { dir:process.env.GIT_DIR,tree:process.env.GIT_WORK_TREE,common:process.env.GIT_COMMON_DIR };
   process.env.GIT_DIR = join(redirected,".git"); process.env.GIT_WORK_TREE = redirected; process.env.GIT_COMMON_DIR = join(redirected,".git");
@@ -133,7 +133,7 @@ test("inherited Git redirection variables cannot replace the explicit repository
 
 
 test("a broken enclosing Git repository fails closed without creating a second identity", () => {
-  const value = store(); value.enableAssistantIntegration();
+  const value = store(); value.enableProjectBindings();
   const repo = repository(); const child = join(repo,"src"); mkdirSync(child);
   const first = saveProjectMemory(value,repo,{ title:"Root",content:"Original identity",type:"fact" });
   expect(first.projectId).not.toBeNull();
@@ -145,7 +145,7 @@ test("a broken enclosing Git repository fails closed without creating a second i
 
 
 test("an unavailable Git executable is not mistaken for a non-Git project", () => {
-  const value = store(); value.enableAssistantIntegration(); const directory = temporary();
+  const value = store(); value.enableProjectBindings(); const directory = temporary();
   const original = process.env.PATH; process.env.PATH = "";
   try { expect(() => resolveProjectContext(value,directory,true)).toThrow("identidad Git"); }
   finally { if (original === undefined) delete process.env.PATH; else process.env.PATH = original; }
@@ -154,7 +154,7 @@ test("an unavailable Git executable is not mistaken for a non-Git project", () =
 
 
 test("Git discovery has a finite timeout and leaves storage unchanged when config input blocks", async () => {
-  const path = join(temporary(),"engram.db"); const value = store(path); value.enableAssistantIntegration(); value.close();
+  const path = join(temporary(),"engram.db"); const value = store(path); value.enableProjectBindings(); value.close();
   const repo = repository(); const fifo = join(repo,".git","blocking-config");
   const made = Bun.spawnSync(["mkfifo",fifo],{ stderr:"pipe" });
   if (made.exitCode !== 0) throw new Error(made.stderr.toString());
@@ -184,7 +184,7 @@ test("Git discovery has a finite timeout and leaves storage unchanged when confi
 
 
 test("same-name existing projects require an explicit binding instead of identity guessing", () => {
-  const value = store(); value.enableAssistantIntegration();
+  const value = store(); value.enableProjectBindings();
   const directory = temporary();
   const existing = value.createProject(basename(directory));
   expect(() => resolveProjectContext(value, directory, true)).toThrow("vinculación explícita");
@@ -195,7 +195,7 @@ test("same-name existing projects require an explicit binding instead of identit
 
 
 test.each([false,true])("renaming a %s Git directory requires explicit binding and preserves memory identity", (withGit) => {
-  const value=store();value.enableAssistantIntegration();
+  const value=store();value.enableProjectBindings();
   const root=temporary(),old=join(root,"old-name"),moved=join(root,"new-name");mkdirSync(old);
   if(withGit)git(old,"init","--quiet");
   const saved=saveProjectMemory(value,old,{title:"Before",content:"Keep identity",type:"fact"});
@@ -215,7 +215,7 @@ test.each([false,true])("renaming a %s Git directory requires explicit binding a
 
 
 test("an inaccessible recorded binding fails closed but synthetic store bindings remain usable",()=>{
-  const value=store();value.enableAssistantIntegration();const root=temporary();
+  const value=store();value.enableProjectBindings();const root=temporary();
   const notDirectory=join(root,"file");writeFileSync(notDirectory,"fixture");
   value.resolveProjectDirectory(join(notDirectory,"child"),"Synthetic",true);
   // stat fails with ENOTDIR, which must be treated as unavailable, never as evidence of a live project.
@@ -225,7 +225,7 @@ test("an inaccessible recorded binding fails closed but synthetic store bindings
 
 
 test("missing, home and filesystem-root directories are rejected without writes", () => {
-  const value = store(); value.enableAssistantIntegration();
+  const value = store(); value.enableProjectBindings();
   for (const directory of [join(temporary(), "missing"), homedir(), realpathSync("/")]) {
     expect(() => resolveProjectContext(value, directory, true)).toThrow();
   }
@@ -234,7 +234,7 @@ test("missing, home and filesystem-root directories are rejected without writes"
 
 
 test("first project save creates identity, binding and memory atomically", () => {
-  const value = store(); value.enableAssistantIntegration();
+  const value = store(); value.enableProjectBindings();
   const directory = temporary();
   expect(() => saveProjectMemory(value, directory, {
     title: " ", content: "invalid", type: "fact",
@@ -253,7 +253,7 @@ test("first project save creates identity, binding and memory atomically", () =>
 
 
 test("sync snapshots preserve project UUIDs but exclude machine-local path bindings", () => {
-  const value = store(); value.enableAssistantIntegration();
+  const value = store(); value.enableProjectBindings();
   const directory = temporary();
   const saved = saveProjectMemory(value, directory, { title: "Local", content: "Bound", type: "fact" });
   const snapshot = value.syncSnapshot();
@@ -265,7 +265,7 @@ test("sync snapshots preserve project UUIDs but exclude machine-local path bindi
 
 
 test("concurrent first resolution creates one project identity and one binding", async () => {
-  const path = join(temporary(),"engram.db"); const value = store(path); value.enableAssistantIntegration(); value.close();
+  const path = join(temporary(),"engram.db"); const value = store(path); value.enableProjectBindings(); value.close();
   const directory = temporary(); const storeModule = resolve(import.meta.dir,"../memory-store.ts");
   const contextModule = resolve(import.meta.dir,"../project-context.ts");
   const script = `import {MemoryStore} from ${JSON.stringify(storeModule)};

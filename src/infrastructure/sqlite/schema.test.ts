@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { initialize, enableSynchronization, enableAssistantIntegration, enableSessionLifecycle, enableSearchReinforcement } from "./schema";
+import { initialize, enableSynchronization, enableProjectBindings, enableSessionLifecycle, enableSearchReinforcement } from "./schema";
 import { createProject } from "./projects";
 import { save } from "./writes";
 
@@ -9,7 +9,7 @@ test("explicit additive enrollment preserves rows and validates repeated enrollm
   try {
     initialize(db);
     db.exec("INSERT INTO projects VALUES ('p','Kept','now','now')");
-    enableSynchronization(db); enableAssistantIntegration(db); enableSessionLifecycle(db); enableSessionLifecycle(db);
+    enableSynchronization(db); enableProjectBindings(db); enableSessionLifecycle(db); enableSessionLifecycle(db);
     expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 6 });
     expect(db.query("SELECT name FROM projects").get()).toEqual({ name: "Kept" });
     db.exec("DROP INDEX local_session_directory");
@@ -34,11 +34,11 @@ test("reinforcement enrollment upgrades schemas 3 through 6 atomically and prese
       const project=createProject(db,`Version ${version}`);
       const saved=save(db,{projectId:project.projectId,title:"Kept",content:"History",type:"fact"});
       if(version>=4) enableSynchronization(db);
-      if(version>=5) enableAssistantIntegration(db);
+      if(version>=5) enableProjectBindings(db);
       if(version>=6) enableSessionLifecycle(db);
       const before=db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=1").get(saved.id);
       enableSearchReinforcement(db); enableSearchReinforcement(db);
-      enableSynchronization(db);enableAssistantIntegration(db);enableSessionLifecycle(db);
+      enableSynchronization(db);enableProjectBindings(db);enableSessionLifecycle(db);
       expect(db.query("PRAGMA user_version").get()).toEqual({user_version:7});
       expect(db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=1").get(saved.id)).toEqual(before);
       expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('sync_checkpoints','project_bindings','sessions','confirmations','confirmation_requests') ORDER BY name").all())

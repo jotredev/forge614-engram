@@ -1,53 +1,23 @@
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, detectAssistants, uninstallEngram } from "../../app";
+import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, uninstallEngram } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
-import { isClientId } from "../../modules/assistants";
 import { initTerminal } from "../terminal/setup";
 import { watchSync } from "../terminal/sync-watch";
 import { startMcp } from "../mcp/server";
-import { runMemoryHook } from "../terminal/hooks";
-import { assistantTui } from "../tui/controller";
-import { controlCenterTui, type ControlCenterTuiResult } from "../tui/control-center";
 import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
 
-export interface TuiRunners {
-  controlCenter?: () => Promise<ControlCenterTuiResult>;
-  assistants?: () => Promise<{cancelled:boolean}>;
-}
-
-export async function runTuiCommand(runners:TuiRunners = {}):Promise<void> {
-  const runControlCenter = runners.controlCenter ?? controlCenterTui;
-  const runAssistants = runners.assistants ?? assistantTui;
-  for (;;) {
-    const result = await runControlCenter();
-    if (result.cancelled) { process.exitCode = 130; return; }
-    if (!result.openAssistants) return;
-    const assistants = await runAssistants();
-    if (assistants.cancelled) { process.exitCode = 130; return; }
-  }
-}
-
-export async function dispatch({command,values,need}:ParsedCommand, tuiRunners:TuiRunners = {}):Promise<void> {
+export async function dispatch({command,values,need}:ParsedCommand):Promise<void> {
   if (command === "init" && !values.has("json")) { await initTerminal(); return; }
   if (command === "uninstall") {
     const result=await uninstallEngram({confirmation:need("confirm")},{executable:process.execPath});
     console.log(JSON.stringify(result,null,2));return;
   }
-  if (command === "tui") { await runTuiCommand(tuiRunners); return; }
   if (command === "sync") {console.log(JSON.stringify(await syncWorkspace(undefined,{upgradeFormat:values.has("upgrade-format")}),null,2));return;}
   if(command==="sync-watch"&&values.has("upgrade-format"))invalid("sync-watch no acepta --upgrade-format.");
   if (command === "sync-watch") {await watchSync(values.has("interval")?integer(need("interval"),"interval",3600):30);return;}
   if (command === "mcp") { await startMcp(); return; }
-  if (command === "assistant-list") {console.log(JSON.stringify(detectAssistants({engramExecutable:process.execPath}),null,2));return;}
-  if (command === "memory-hook") {const client=need("client");if(!isClientId(client))invalid("Asistente desconocido.");await runMemoryHook(client);return;}
   const workspace = new MemoryWorkspace();
-  if (command === "integration-enable") {
-    workspace.init(); const store = workspace.open();
-    try { store.enableAssistantIntegration(); }
-    finally { store.close(); }
-    console.log(JSON.stringify({ enabled:true,schema:5 },null,2)); return;
-  }
   if(command==="sessions-enable"){
     workspace.init();const store=workspace.open();try{store.enableSessions();}finally{store.close();}
     console.log(JSON.stringify({enabled:true,schema:6},null,2));return;
@@ -65,7 +35,12 @@ export async function dispatch({command,values,need}:ParsedCommand, tuiRunners:T
   if (command === "init" || command.startsWith("project-")) {
     let result: unknown;
     switch (command) {
-      case "init": workspace.init(); result = { initialized: true, storage: "sqlite" }; break;
+      case "init": {
+        workspace.init(); const store=workspace.open();
+        try { store.enableProjectBindings(); }
+        finally { store.close(); }
+        result = { initialized: true, storage: "sqlite" }; break;
+      }
       case "project-create": result = workspace.createProject(need("name")); break;
       case "project-list": result = workspace.listProjects(); break;
       case "project-rename": result = workspace.renameProject(projectIdentity(need("project-id")),need("name")); break;

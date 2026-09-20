@@ -2,17 +2,6 @@ import { createInterface } from "node:readline";
 import { Writable } from "node:stream";
 import { MemoryError } from "../../shared/errors";
 import { runSetup } from "../../app";
-import { assistantTui } from "../tui/controller";
-
-/** Human-facing initialization adapter; init --json and the other CLI commands stay scriptable. */
-export async function completeSetup<T extends { cancelled: boolean }>(
-  run: () => Promise<T>,
-  openAssistants: () => Promise<{ cancelled: boolean }>,
-): Promise<T> {
-  const result = await run();
-  if (!result.cancelled) await openAssistants();
-  return result;
-}
 
 async function runTerminalSetup(): Promise<{ cancelled: true } | { cancelled: false; storage: "sqlite" }> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -47,6 +36,6 @@ async function runTerminalSetup(): Promise<{ cancelled: true } | { cancelled: fa
 }
 
 export async function initTerminal(): Promise<void> {
-  const result = await completeSetup(runTerminalSetup, assistantTui);
+  const result = await runTerminalSetup();
   if (result.cancelled) process.exitCode = 130;
 }

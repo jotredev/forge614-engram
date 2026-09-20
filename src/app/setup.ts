@@ -87,6 +87,9 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     }
     if(config.revision()!==revision) throw new MemoryError("CONFIG_CHANGED","La configuración cambió; ejecuta init de nuevo.");
     workspace.init(); // Revalidate after confirmation; never replace a missing configured database.
+    const initializedStore=workspace.open();
+    try { initializedStore.enableProjectBindings(); }
+    finally { initializedStore.close(); }
     if(postgresUrl||enableReinforcement) {
       const store=workspace.open();
       try {
@@ -98,7 +101,7 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     io.write("Configuración global lista. No necesitas elegir un proyecto para configurar Engram.");
     if(enableReinforcement) io.write("El refuerzo de recuerdos está habilitado. Para promover una réplica remota ejecuta por separado forge614-engram sync --upgrade-format, después de actualizar todos los equipos para que entiendan el formato 3.");
     if(postgresUrl) io.write("Ejecuta forge614-engram sync para sincronizar ahora, o forge614-engram sync-watch para reintentar automáticamente mientras esté abierto. No se instaló un servicio permanente.");
-    io.write("Ejecuta forge614-engram tui para configurar asistentes con vista previa. MCP permite identificar proyectos y guardar recuerdos; el modelo puede omitir guardados y no se garantiza un resumen al cerrar.");
+    io.write("MCP permite identificar proyectos y guardar recuerdos; el modelo puede omitir guardados y no se garantiza un resumen al cerrar.");
     return { cancelled: false, storage: "sqlite" };
   } catch (error) {
     if (!(error instanceof Cancelled)) throw error;

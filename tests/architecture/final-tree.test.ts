@@ -11,9 +11,8 @@ test("the actual production tree has only stable root entries and respects all b
 
 test("CLI can compose sibling interfaces without a reverse dependency", () => {
   const files = {
-    "src/interfaces/cli/main.ts": 'import "../mcp/server"; import "../tui/controller"; import "../terminal/setup";',
+    "src/interfaces/cli/main.ts": 'import "../mcp/server"; import "../terminal/setup";',
     "src/interfaces/mcp/server.ts": "export {};",
-    "src/interfaces/tui/controller.ts": "export {};",
     "src/interfaces/terminal/setup.ts": "export {};",
   };
   expect(auditImports(files)).toEqual([]);

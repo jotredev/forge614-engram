@@ -84,7 +84,7 @@ test("CLI rejects valued boolean flags, malformed summaries, unknown summary key
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
 });
 
-test("init --json remains noninteractive and does not enroll assistant configuration", () => {
+test("init --json remains noninteractive and does not configure external clients", () => {
   const dir = workspace();
   const result = run(dir, "init", "--json");
   expect(result.code).toBe(0);
@@ -92,9 +92,6 @@ test("init --json remains noninteractive and does not enroll assistant configura
   expect(result.stderr).toBe("");
   expect(existsSync(join(dir, "user", ".claude.json"))).toBe(false);
   expect(existsSync(join(dir, "user", ".codex", "config.toml"))).toBe(false);
-  const store = new MemoryWorkspace(new WorkspaceConfig(join(dir, "user", ".forge614", "engram"))).open(true);
-  try { expect(store.controlCenter().capabilities.assistantIntegration).toBe(false); }
-  finally { store.close(); }
 });
 
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", () => {
@@ -106,7 +103,7 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
   try { expect(store.reinforcementEnabled()).toBe(false); }
   finally { store.close(); }
 
-  expect(run(dir,"integration-enable").code).toBe(0);
+  expect(run(dir,"init","--json").code).toBe(0);
   expect(run(dir,"sessions-enable").code).toBe(0);
   store=memoryWorkspace.open(true);
   try { expect(store.reinforcementEnabled()).toBe(false); }
@@ -126,46 +123,4 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
   expect(missing.code).toBe(1);
   expect(JSON.parse(missing.stderr).code).toBe("DATABASE_MISSING");
   expect(existsSync(config.databasePath)).toBe(false);
-});
-
-test("tui dispatch composes assistants sequentially between fresh control-center sessions", async () => {
-  const order:string[] = [];
-  let centers = 0;
-  const previousExitCode = process.exitCode;
-  process.exitCode = undefined;
-  try {
-    await dispatch(parseArguments(["tui"]), {
-      controlCenter:async () => {
-        order.push("control-center");
-        centers += 1;
-        return {cancelled:false, openAssistants:centers === 1};
-      },
-      assistants:async () => { order.push("assistants"); return {cancelled:false}; },
-    });
-    expect(order).toEqual(["control-center", "assistants", "control-center"]);
-    expect(process.exitCode).toBeUndefined();
-  } finally { process.exitCode = previousExitCode ?? 0; }
-});
-
-test("tui dispatch stops with code 130 when either sequential screen cancels", async () => {
-  const previousExitCode = process.exitCode;
-  try {
-    for (const cancelledBy of ["control-center", "assistants"] as const) {
-      process.exitCode = undefined;
-      let centers = 0;
-      let assistants = 0;
-      await dispatch(parseArguments(["tui"]), {
-        controlCenter:async () => {
-          centers += 1;
-          return cancelledBy === "control-center"
-            ? {cancelled:true, openAssistants:false}
-            : {cancelled:false, openAssistants:true};
-        },
-        assistants:async () => { assistants += 1; return {cancelled:true}; },
-      });
-      expect(Number(process.exitCode)).toBe(130);
-      expect(centers).toBe(1);
-      expect(assistants).toBe(cancelledBy === "assistants" ? 1 : 0);
-    }
-  } finally { process.exitCode = previousExitCode ?? 0; }
 });

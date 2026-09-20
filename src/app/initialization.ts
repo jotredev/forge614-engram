@@ -90,6 +90,9 @@ export async function applyMemoryInitialization(
   await validatePostgres(value.postgresUrl);
   const workspace = new MemoryWorkspace(config);
   workspace.init();
+  const initializedStore = workspace.open();
+  try { initializedStore.enableProjectBindings(); }
+  finally { initializedStore.close(); }
   config.configurePostgres(value.postgresUrl, config.revision());
   if (value.enableReinforcement && !before.reinforcementEnabled) {
     const store = workspace.open();

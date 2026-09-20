@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { createProject, getProject, listProjects, projectForDirectory, resolveProjectDirectory } from "./projects";
-import { enableAssistantIntegration } from "./schema";
+import { enableProjectBindings } from "./schema";
 import { withDatabase } from "../__test-support__/fixtures";
 
 test("project persistence trims display names and sorts independently of insertion order", () => withDatabase(db => {
@@ -12,7 +12,7 @@ test("project persistence trims display names and sorts independently of inserti
 }));
 
 test("directory resolution reuses its binding and refuses same-name ambiguity", () => withDatabase(db => {
-  enableAssistantIntegration(db);
+  enableProjectBindings(db);
   expect(resolveProjectDirectory(db, "/new", "New", false)).toEqual({ project: null, created: false });
   const first = resolveProjectDirectory(db, "/new", "New", true);
   expect(first.created).toBe(true);
@@ -22,8 +22,8 @@ test("directory resolution reuses its binding and refuses same-name ambiguity", 
   expect(listProjects(db)).toHaveLength(1);
 }));
 
-test("schema 7 retains assistant integration without admitting future versions", () => withDatabase(db => {
-  enableAssistantIntegration(db); db.exec("PRAGMA user_version=7");
+test("schema 7 retains project bindings without admitting future versions", () => withDatabase(db => {
+  enableProjectBindings(db); db.exec("PRAGMA user_version=7");
   expect(resolveProjectDirectory(db,"/seven","Seven",true).project?.name).toBe("Seven");
   db.exec("PRAGMA user_version=8");
   expect(()=>projectForDirectory(db,"/seven")).toThrow(expect.objectContaining({code:"MIGRATION_REQUIRED"}));

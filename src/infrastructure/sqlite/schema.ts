@@ -172,8 +172,8 @@ export function enableSynchronization(db: Database): void {
   }).immediate();
 }
 
-/** Explicit enrollment for assistant integration and machine-local project bindings. */
-export function enableAssistantIntegration(db: Database): void {
+/** Enables machine-local project bindings required by MCP and project context. */
+export function enableProjectBindings(db: Database): void {
   db.transaction(() => {
     const { user_version } = db.query("PRAGMA user_version").get() as {user_version:number};
     if (user_version === 7) { validate(db,7); return; }
@@ -182,7 +182,7 @@ export function enableAssistantIntegration(db: Database): void {
     if (user_version === 4) {
       validate(db,4); db.exec(BINDING_SCHEMA); db.exec("PRAGMA user_version=5"); return;
     }
-    if (user_version !== 3) throw new MemoryError("MIGRATION_REQUIRED","No se puede habilitar la integración de asistentes en este formato.");
+    if (user_version !== 3) throw new MemoryError("MIGRATION_REQUIRED","No se pueden habilitar vínculos de proyecto en este formato.");
     validate(db,3);
     db.exec(SYNC_SCHEMA + BINDING_SCHEMA);
     db.exec("PRAGMA user_version=5");

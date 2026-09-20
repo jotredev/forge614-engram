@@ -1,7 +1,7 @@
 import type { ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { z } from "zod";
 import type { MemoryStore } from "../../app";
-import type { McpToolName } from "../../modules/assistants";
+import type { McpToolName } from "../../modules/mcp";
 import { MemoryError } from "../../shared/errors";
 function result(value: unknown) {
   return { content:[{ type:"text" as const,text:JSON.stringify(value) }] };

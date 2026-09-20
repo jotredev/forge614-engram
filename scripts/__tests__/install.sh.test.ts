@@ -63,6 +63,7 @@ async function withFixtureEnvironment<T>(
     shell: process.env.SHELL,
     releaseBaseUrl: process.env[testReleaseBaseUrl],
     testMode: process.env[testMode],
+    enginesInstaller: process.env.FORGE614_ENGINES_INSTALLER_TEST_URL,
   };
   process.env.HOME = home;
   if (shell === undefined) delete process.env.SHELL;
@@ -70,6 +71,17 @@ async function withFixtureEnvironment<T>(
   process.env[testReleaseBaseUrl] = releaseBaseUrl;
   if (includeTestSentinel) process.env[testMode] = "1";
   else delete process.env[testMode];
+  if (includeTestSentinel && process.env.FORGE614_ENGINES_INSTALLER_TEST_URL === undefined) {
+    const enginesInstaller = join(home, "forge614-engines-test-installer.sh");
+    writeFileSync(enginesInstaller, [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "mkdir -p \"$HOME/.forge614/engines/bin\"",
+      "printf '#!/usr/bin/env sh\\nexit 0\\n' > \"$HOME/.forge614/engines/bin/forge614-engines\"",
+      "chmod 700 \"$HOME/.forge614/engines/bin/forge614-engines\"",
+    ].join("\n"));
+    process.env.FORGE614_ENGINES_INSTALLER_TEST_URL = `file://${enginesInstaller}`;
+  }
   try {
     return await operation();
   } finally {
@@ -78,6 +90,7 @@ async function withFixtureEnvironment<T>(
       SHELL: saved.shell,
       [testReleaseBaseUrl]: saved.releaseBaseUrl,
       [testMode]: saved.testMode,
+      FORGE614_ENGINES_INSTALLER_TEST_URL: saved.enginesInstaller,
     })) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
@@ -337,7 +350,7 @@ test("leaves shell files untouched and prints manual PATH guidance for an unknow
   }
 });
 
-test("downloads a verified release binary without writing user state", async () => {
+test("downloads verified Engram and Engines binaries without configuring an AI client", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
   const destination = join(root, "chosen-bin");
@@ -354,8 +367,9 @@ test("downloads a verified release binary without writing user state", async () 
     expect(result.exitCode, result.stderr).toBe(0);
     expect(existsSync(join(destination, "forge614-engram"))).toBe(true);
     expect(readFileSync(join(destination, "forge614-engram"), "utf8")).toBe(fixtureBytes);
-    expect(existsSync(join(fakeHome, ".forge614"))).toBe(false);
-    expect(result.stdout).toContain("forge614-engram setup");
+    expect(existsSync(join(fakeHome, ".forge614", "engines", "bin", "forge614-engines"))).toBe(true);
+    expect(existsSync(join(fakeHome, ".claude.json"))).toBe(false);
+    expect(result.stdout).toContain("forge614-engram init");
   } finally {
     server.stop(true);
   }
@@ -397,7 +411,7 @@ test("refuses replacement without force", async () => {
     );
     expect(secondWithoutForce.exitCode).not.toBe(0);
     expect(readFileSync(join(destination, "forge614-engram"), "utf8")).toBe(fixtureBytes);
-    expect(existsSync(join(fakeHome, ".forge614"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".forge614", "engines", "bin", "forge614-engines"))).toBe(true);
   } finally {
     server.stop(true);
   }
@@ -476,6 +490,37 @@ test("rejects non-loopback release asset URLs from a test fixture", async () => 
     expect(existsSync(destination)).toBe(false);
     expect(existsSync(join(fakeHome, ".forge614"))).toBe(false);
   } finally {
+    server.stop(true);
+  }
+});
+
+test("installs Forge614 Engines as a dependency without configuring an AI client", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "bin");
+  const fakeHome = join(root, "home");
+  const enginesInstaller = join(root, "engines-install.sh");
+  mkdirSync(fakeHome, { recursive: true });
+  writeFileSync(fixture, fixtureBytes);
+  writeFileSync(enginesInstaller, [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    "mkdir -p \"$HOME/.forge614/engines/bin\"",
+    "printf '#!/usr/bin/env sh\\nexit 0\\n' > \"$HOME/.forge614/engines/bin/forge614-engines\"",
+    "chmod 700 \"$HOME/.forge614/engines/bin/forge614-engines\"",
+  ].join("\n"));
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  const previous = process.env.FORGE614_ENGINES_INSTALLER_TEST_URL;
+  process.env.FORGE614_ENGINES_INSTALLER_TEST_URL = `file://${enginesInstaller}`;
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]));
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(existsSync(join(fakeHome, ".forge614", "engines", "bin", "forge614-engines"))).toBe(true);
+    expect(existsSync(join(fakeHome, ".claude.json"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".codex", "config.toml"))).toBe(false);
+  } finally {
+    if (previous === undefined) delete process.env.FORGE614_ENGINES_INSTALLER_TEST_URL;
+    else process.env.FORGE614_ENGINES_INSTALLER_TEST_URL = previous;
     server.stop(true);
   }
 });

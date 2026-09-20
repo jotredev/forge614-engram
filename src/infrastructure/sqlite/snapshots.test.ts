@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { applySnapshot, checkpoint, exportSnapshot } from "./snapshots";
 import { createProject } from "./projects";
-import { enableAssistantIntegration, enableSearchReinforcement, enableSessionLifecycle, enableSynchronization } from "./schema";
+import { enableProjectBindings, enableSearchReinforcement, enableSessionLifecycle, enableSynchronization } from "./schema";
 import { save, saveWithSession, startSession } from "./writes";
 import { withDatabase } from "../__test-support__/fixtures";
 
@@ -26,7 +26,7 @@ test("snapshot format follows explicit SQLite capabilities without silently upgr
     expect(exportSnapshot(db).format).toBe(1);
   });
   withDatabase(db => {
-    enableAssistantIntegration(db);
+    enableProjectBindings(db);
     expect(exportSnapshot(db).format).toBe(1);
   });
   withDatabase(db => {

@@ -3,8 +3,6 @@ export const RELEASE_TARGETS = [
   { platform: "darwin", architecture: "x64", artifact: "forge614-engram-darwin-x64" },
   { platform: "linux", architecture: "x64", artifact: "forge614-engram-linux-x64" },
   { platform: "linux", architecture: "arm64", artifact: "forge614-engram-linux-arm64" },
-  { platform: "win32", architecture: "x64", artifact: "forge614-engram-windows-x64.exe" },
-  { platform: "win32", architecture: "arm64", artifact: "forge614-engram-windows-arm64.exe" },
 ] as const;
 
 type ReleaseTarget = (typeof RELEASE_TARGETS)[number];

@@ -1,13 +1,11 @@
 import { join } from "node:path";
-import { AssistantConfigurationError, fail, guardedWrite, readSafeFile, type PrivateWrite } from "./private-files";
+import { PrivateFileError, fail, guardedWrite, readSafeFile, type PrivateWrite } from "./private-files";
 
 const START = "# >>> forge614-engram PATH >>>";
 const END = "# <<< forge614-engram PATH <<<";
 
 export interface PathPublicationOptions {
   readonly home: string;
-  readonly platform?: NodeJS.Platform;
-  readonly runWindowsRemoval?: (directory: string) => Promise<boolean>;
 }
 
 function shellQuote(value: string): string {
@@ -57,32 +55,10 @@ function unixWrites(home: string): PrivateWrite[] {
   return writes;
 }
 
-async function defaultWindowsRemoval(directory: string): Promise<boolean> {
-  const script = [
-    "$target = $env:FORGE614_ENGRAM_BIN.TrimEnd([char[]]@('\\', '/'))",
-    "$current = [string][Environment]::GetEnvironmentVariable('Path', 'User')",
-    "$parts = @($current -split ';' | Where-Object { $_ -and $_.TrimEnd([char[]]@('\\', '/')) -ine $target })",
-    "if ($parts.Count -eq @($current -split ';' | Where-Object { $_ }).Count) { exit 0 }",
-    "[Environment]::SetEnvironmentVariable('Path', ($parts -join ';'), 'User')",
-    "exit 0",
-  ].join("; ");
-  const child = Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], {
-    env: { ...process.env, FORGE614_ENGRAM_BIN: directory }, stdin: "ignore", stdout: "ignore", stderr: "ignore",
-  });
-  return await child.exited === 0;
-}
-
 /** Removes only the exact PATH publication created by Forge614 Engram's installers. */
 export async function removePathPublication(options: PathPublicationOptions): Promise<string[]> {
   try {
-    const platform = options.platform ?? process.platform;
-    if (platform === "win32") {
-      const directory = join(options.home, ".forge614", "engram", "bin");
-      const removed = await (options.runWindowsRemoval ?? defaultWindowsRemoval)(directory);
-      if (!removed) fail("PATH_REMOVE_FAILED", "Forge614 Engram could not remove its Windows PATH entry.");
-      return removed ? [directory] : [];
-    }
-    if (platform !== "darwin" && platform !== "linux") return [];
+    if (process.platform !== "darwin" && process.platform !== "linux") return [];
     const writes = unixWrites(options.home);
     const applied: string[] = [];
     for (const write of writes) {
@@ -90,7 +66,7 @@ export async function removePathPublication(options: PathPublicationOptions): Pr
     }
     return applied;
   } catch (error) {
-    if (error instanceof AssistantConfigurationError) throw error;
+    if (error instanceof PrivateFileError) throw error;
     fail("PATH_REMOVE_FAILED", "Forge614 Engram could not safely remove its PATH publication.");
   }
 }

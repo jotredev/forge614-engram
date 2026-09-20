@@ -20,22 +20,22 @@ export function listProjects(db: Database): Project[] {
     return db.query("SELECT * FROM projects ORDER BY name,projectId").all() as Project[];
   }
 
-export function requireAssistantIntegration(db: Database): void {
+export function requireProjectBindings(db: Database): void {
     const version = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
     if (version !== 5 && version !== 6 && version !== 7) {
-      throw new MemoryError("MIGRATION_REQUIRED", "Habilita primero la integración de asistentes con integration-enable.");
+      throw new MemoryError("MIGRATION_REQUIRED", "Inicializa Engram para habilitar los vínculos de proyecto.");
     }
   }
 
 export function projectForDirectory(db: Database, directory: string): Project | null {
-    requireAssistantIntegration(db);
+    requireProjectBindings(db);
     const path = required(directory,"directory");
     return db.query(`SELECT p.* FROM project_bindings b JOIN projects p ON p.projectId=b.projectId
       WHERE b.directory=?`).get(path) as Project | null;
   }
 
 export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } {
-    requireAssistantIntegration(db);
+    requireProjectBindings(db);
     const path = required(directory,"directory"); const displayName = required(name,"name");
     const operation = () => {
       const bound = projectForDirectory(db, path);

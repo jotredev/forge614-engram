@@ -2,8 +2,7 @@ import { closeDatabase,defaultDatabasePath,openDatabase } from "../infrastructur
 import * as memory from "../infrastructure/sqlite/memory";
 import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
-import * as controlCenter from "../infrastructure/sqlite/control-center";
-import { enableAssistantIntegration,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
+import { enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
@@ -13,7 +12,6 @@ import { type Project } from "../modules/projects";
 import { type ContextInput,type ContextResult,type PreviewResult,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";
 import { type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
 import type { SyncSnapshot } from "../modules/synchronization";
-import type { CapabilityState, ProjectSummary, SharedSummary } from "../modules/control-center";
 
 export class MemoryStore {
   private readonly db: ReturnType<typeof openDatabase>;
@@ -24,7 +22,6 @@ export class MemoryStore {
   createProject(name: string): Project { return projects.createProject(this.db, name); }
   getProject(projectId: string): Project | null { return projects.getProject(this.db, projectId); }
   listProjects(): Project[] { return projects.listProjects(this.db); }
-  controlCenter(): {capabilities:CapabilityState; projects:ProjectSummary[]; shared:SharedSummary|null} { return controlCenter.readControlCenter(this.db); }
   renameProject(projectId: string, name: string): Project { return writes.renameProject(this.db, projectId, name); }
   sessionsEnabled(): boolean { return sessions.sessionsEnabled(this.db); }
   reinforcementEnabled(): boolean { return confirmations.reinforcementEnabled(this.db); }
@@ -58,7 +55,7 @@ export class MemoryStore {
   restore(projectId: string | null, id: string): Memory { return writes.restore(this.db, projectId, id); }
   close(): void { if (!this.closed) { closeDatabase(this.db); this.closed = true; } }
   enableSync(): void { return enableSynchronization(this.db); }
-  enableAssistantIntegration(): void { return enableAssistantIntegration(this.db); }
+  enableProjectBindings(): void { return enableProjectBindings(this.db); }
   syncSnapshot(): SyncSnapshot { return exportSnapshot(this.db); }
   syncCheckpoint(replica: string): SyncSnapshot { return checkpoint(this.db, replica); }
   applySync(expected: SyncSnapshot, next: SyncSnapshot, replica: string): void { return applySnapshot(this.db, expected, next, replica); }

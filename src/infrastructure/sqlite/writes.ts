@@ -6,12 +6,12 @@ import { sessionIdentity,summaryContent,type Session,type SessionSaveOptions,typ
 import { MemoryError } from "../../shared/errors";
 import { confirmationCandidate,confirmationRequest,reinforcementEnabled } from "./confirmations";
 import { get,required,type Row } from "./memory";
-import { getProject,projectForDirectory,requireAssistantIntegration,resolveProjectDirectory as resolveProjectDirectoryInTransaction } from "./projects";
+import { getProject,projectForDirectory,requireProjectBindings,resolveProjectDirectory as resolveProjectDirectoryInTransaction } from "./projects";
 import { endRuntimeSession,inferredSessions,manualSession,requireSessions,sessionsEnabled,startRuntimeSession,validateSelectedSession } from "./sessions";
 
 // Composite local writes own their outer transaction here. Leaf helpers use the same connection.
 export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } {
-  requireAssistantIntegration(db);
+  requireProjectBindings(db);
   const path = required(directory,"directory"), displayName = required(name,"name");
   const operation = () => resolveProjectDirectoryInTransaction(db,path,displayName,create,bindingAvailable);
   return create ? db.transaction(operation).immediate() : operation();
@@ -51,7 +51,7 @@ export function startSessionForProjectDirectory(db: Database, directory: string,
   }
 
 export function bindProjectDirectory(db: Database, directory: string, projectId: string): Project {
-    requireAssistantIntegration(db);
+    requireProjectBindings(db);
     const path = required(directory,"directory"); const identity = projectIdentity(projectId);
     return db.transaction(() => {
       const project = getProject(db, identity);
@@ -67,7 +67,7 @@ export function bindProjectDirectory(db: Database, directory: string, projectId:
   }
 
 export function saveForProjectDirectory(db: Database, directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean): MemoryVersion {
-    requireAssistantIntegration(db);
+    requireProjectBindings(db);
     return db.transaction(() => {
       const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
       return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },{},new Date().toISOString()).memory;
@@ -75,7 +75,7 @@ export function saveForProjectDirectory(db: Database, directory: string, name: s
   }
 
 export function saveWithSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, input: Omit<SaveInput,"projectId"|"scope">, options: SessionSaveOptions = {}, bindingAvailable?: (directory:string)=>boolean): SessionSaveResult {
-    requireAssistantIntegration(db);
+    requireProjectBindings(db);
     const runtime = required(runtimeDirectory,"runtimeDirectory");
     return db.transaction(() => {
       const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);

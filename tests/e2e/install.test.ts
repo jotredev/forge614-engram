@@ -17,7 +17,7 @@ function workspace() {
 }
 function install(cwd: string, args: string[], env = buildEnv) {
   const home=join(cwd,'isolated-home');mkdirSync(home,{recursive:true});
-  const result = Bun.spawnSync(["/bin/bash",installer,...args],{cwd,env:{...env,HOME:home,CLAUDE_CONFIG_DIR:join(home,'.claude'),CODEX_HOME:join(home,'.codex'),XDG_CONFIG_HOME:join(home,'.config'),OPENCODE_CONFIG_DIR:join(home,'.config/opencode'),OPENCODE_CONFIG:join(home,'.config/opencode/opencode.json'),OPENCODE_CONFIG_CONTENT:'',GEMINI_CLI_HOME:home,BUN_RUNTIME_TRANSPILER_CACHE_PATH:'0'}});
+  const result = Bun.spawnSync(["/bin/bash",installer,...args],{cwd,env:{...env,HOME:home,BUN_RUNTIME_TRANSPILER_CACHE_PATH:'0'}});
   return { code: result.exitCode, out: result.stdout.toString(), error: result.stderr.toString() };
 }
 afterEach(() => { for(const dir of dirs.splice(0)) rmSync(dir,{recursive:true}); });
@@ -27,9 +27,7 @@ test("developer source installer produces a standalone CLI usable outside the re
   const bin = join(dir,"bin with spaces");
   const installed = install(dir,["--bin-dir",bin]);
   expect(installed.code).toBe(0);
-  expect(installed.out).toContain('forge614-engram setup');
-  expect(installed.out).not.toContain('assistant-list');
-  expect(installed.out).not.toContain('tui');
+  expect(installed.out).toContain('forge614-engram init');
   expect(existsSync(join(dir,'isolated-home/.forge614'))).toBe(false);
   const target = join(bin,"forge614-engram");
   expect(existsSync(target)).toBe(true);

@@ -58,23 +58,17 @@ afterEach(async () => {
   for (const directory of temporaryDirectories.splice(0).reverse()) rmSync(directory, { recursive: true, force: true });
 });
 
-test("mcp never enrolls implicitly and resolves one client root without creating a project", async () => {
+test("init enables project bindings and MCP resolves one client root without creating a project", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
   expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
-  let connection = await connect({ cwd: root, userDirectory, roots: [project] });
-  const before = await call(connection.client, "memory_current_project");
-  expect(before.isError).toBe(true);
-  await connection.client.close();
-
-  expect(runCli(root, userDirectory, "integration-enable").code).toBe(0);
-  connection = await connect({ cwd: root, userDirectory, roots: [project] });
+  const connection = await connect({ cwd: root, userDirectory, roots: [project] });
   expect(data(await call(connection.client, "memory_current_project"))).toMatchObject({ projectId: null, source: "unbound" });
   expect(JSON.parse(runCli(root, userDirectory, "project-list").stdout)).toEqual([]);
 });
 
 test("a non-Git process cwd is not treated as an implicit non-Git project root", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
-  expect(runCli(root, userDirectory, "integration-enable").code).toBe(0);
+  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
   const { client } = await connect({ cwd:root,userDirectory });
   expect((await call(client,"memory_current_project")).isError).toBe(true);
   expect(JSON.parse(runCli(root,userDirectory,"project-list").stdout)).toEqual([]);
@@ -82,7 +76,7 @@ test("a non-Git process cwd is not treated as an implicit non-Git project root",
 
 test("stdio save, search, get, history, update and request replay persist across restarts", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
-  expect(runCli(root, userDirectory, "integration-enable").code).toBe(0);
+  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
   let connection = await connect({ cwd: project, userDirectory });
   const input = {
     directory: project, title: "Database decision", content: "Use SQLite locally", type: "decision",
@@ -126,7 +120,7 @@ test("stdio duplicate saves reinforce only the selected project without increasi
 
 test("shared saves require explicit scope and a nonempty global-intent explanation", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
-  expect(runCli(root, userDirectory, "integration-enable").code).toBe(0);
+  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
   const { client } = await connect({ cwd: root, userDirectory });
   const base = { scope: "shared", title: "Global preference", content: "Use Spanish", type: "preference" };
   expect((await call(client, "memory_save", base)).isError).toBe(true);
@@ -139,7 +133,7 @@ test("shared saves require explicit scope and a nonempty global-intent explanati
 
 test("owner mismatch, unbound default search, multiple roots and oversized inputs fail safely", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const a = temporary(); const b = temporary();
-  expect(runCli(root, userDirectory, "integration-enable").code).toBe(0);
+  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
   const { client } = await connect({ cwd: root, userDirectory, roots: [a, b] });
   expect((await call(client, "memory_current_project")).isError).toBe(true);
   const saved = data(await call(client, "memory_save", {

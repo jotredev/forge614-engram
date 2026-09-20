@@ -11,20 +11,16 @@ test("selects the exact standalone artifact for every supported host", () => {
   expect(selectReleaseTarget("darwin", "x64")).toBe("forge614-engram-darwin-x64");
   expect(selectReleaseTarget("linux", "x64")).toBe("forge614-engram-linux-x64");
   expect(selectReleaseTarget("linux", "arm64")).toBe("forge614-engram-linux-arm64");
-  expect(selectReleaseTarget("win32", "x64")).toBe("forge614-engram-windows-x64.exe");
-  expect(selectReleaseTarget("win32", "arm64")).toBe("forge614-engram-windows-arm64.exe");
   expect(() => selectReleaseTarget("freebsd", "x64")).toThrow("Unsupported platform");
   expect(() => selectReleaseTarget("linux", "x86_64")).toThrow("Unsupported architecture");
 });
 
-test("defines only the six supported release targets", () => {
+test("defines only the four supported release targets", () => {
   expect(RELEASE_TARGETS).toEqual([
     { platform: "darwin", architecture: "arm64", artifact: "forge614-engram-darwin-arm64" },
     { platform: "darwin", architecture: "x64", artifact: "forge614-engram-darwin-x64" },
     { platform: "linux", architecture: "x64", artifact: "forge614-engram-linux-x64" },
     { platform: "linux", architecture: "arm64", artifact: "forge614-engram-linux-arm64" },
-    { platform: "win32", architecture: "x64", artifact: "forge614-engram-windows-x64.exe" },
-    { platform: "win32", architecture: "arm64", artifact: "forge614-engram-windows-arm64.exe" },
   ]);
 });
 

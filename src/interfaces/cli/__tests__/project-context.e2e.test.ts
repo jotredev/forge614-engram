@@ -48,7 +48,7 @@ afterEach(() => {
 
 test("project-bind is scriptable recovery for a colliding existing project name", () => {
   const root = temporary(); const userDirectory = join(root,"user"); const directory = temporary();
-  expect(runCli(root,userDirectory,"integration-enable").code).toBe(0);
+  expect(runCli(root,userDirectory,"init","--json").code).toBe(0);
   const created = runCli(root,userDirectory,"project-create","--name",basename(directory));
   expect(created.code).toBe(0); const projectId = JSON.parse(created.stdout).projectId;
   const bound = runCli(root,userDirectory,"project-bind","--directory",directory,"--project-id",projectId);

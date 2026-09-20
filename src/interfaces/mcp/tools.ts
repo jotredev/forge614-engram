@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { MemoryStore } from "../../app";
-import { MCP_TOOL_NAMES } from "../../modules/assistants";
+import { MCP_TOOL_NAMES } from "../../modules/mcp";
 import { safely, type ToolContext } from "./context";
 import { registerMemoryTools } from "./memory-tools";
 import { registerSessionTools } from "./sessions-tools";

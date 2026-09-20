@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { save, archive, restore, saveForProjectDirectory } from "./writes";
 import { createProject, listProjects } from "./projects";
-import { enableAssistantIntegration,enableSearchReinforcement } from "./schema";
+import { enableProjectBindings,enableSearchReinforcement } from "./schema";
 import { withDatabase } from "../__test-support__/fixtures";
 
 test("idempotent replay retains the original version and conflicts leave history untouched", () => withDatabase(db => {
@@ -18,7 +18,7 @@ test("idempotent replay retains the original version and conflicts leave history
 }));
 
 test("invalid directory save rolls back newly created project and binding", () => withDatabase(db => {
-  enableAssistantIntegration(db);
+  enableProjectBindings(db);
   expect(() => saveForProjectDirectory(db, "/new", "New", { type: "fact", title: "", content: "body" })).toThrow();
   expect(listProjects(db)).toEqual([]);
   expect(db.query("SELECT * FROM project_bindings").all()).toEqual([]);

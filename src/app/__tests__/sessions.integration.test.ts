@@ -87,7 +87,7 @@ test.each([3,4,5] as const)("schema %d enrolls additively without changing saved
   const first = new MemoryStore(path); const project = first.createProject("Demo");
   const saved = first.save({projectId:project.projectId,title:"Keep",content:"History",type:"fact",requestKey:"request-1"});
   if (version >= 4) first.enableSync();
-  if (version >= 5) first.enableAssistantIntegration();
+  if (version >= 5) first.enableProjectBindings();
   const before = first.syncSnapshot();
   first.close();
 
@@ -113,7 +113,7 @@ test("schema 6 reopens exactly and older enrollment facades accept it", () => {
   const reopened = new MemoryStore(path);
   try {
     expect(reopened.sessionsEnabled()).toBe(true);
-    reopened.enableSync(); reopened.enableAssistantIntegration(); reopened.enableSessions();
+    reopened.enableSync(); reopened.enableProjectBindings(); reopened.enableSessions();
   } finally { reopened.close(); }
 });
 
@@ -126,7 +126,7 @@ test("a malformed enrollment candidate remains byte-for-byte unchanged", () => {
 });
 
 test("a migration failure rolls back every session table and the version bump", () => {
-  const path = database(); const store = new MemoryStore(path); store.enableAssistantIntegration(); store.close();
+  const path = database(); const store = new MemoryStore(path); store.enableProjectBindings(); store.close();
   const db = new Database(path); const execute = db.exec.bind(db);
   Object.defineProperty(db,"exec",{value:(sql:string) => execute(sql.includes("CREATE TABLE sessions")
     ? sql.replace("CREATE INDEX sessions_project_started", "THIS IS NOT SQL; CREATE INDEX sessions_project_started") : sql)});

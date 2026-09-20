@@ -190,7 +190,7 @@ test("individually valid snapshots cannot merge past the size limit",()=>{
 test('schema5 sync updates memory history and FTS while preserving only local machine bindings',()=>{
   const a=new MemoryStore(':memory:'),b=new MemoryStore(':memory:');
   try{
-    a.enableAssistantIntegration();b.enableAssistantIntegration();
+    a.enableProjectBindings();b.enableProjectBindings();
     const p=a.createProject('Cross machine');
     const m=a.save({projectId:p.projectId,title:'Topic',content:'firstword',type:'fact',topicKey:'topic'});
     a.bindProjectDirectory('/synthetic/machine-A/project',p.projectId);

@@ -19,6 +19,12 @@ test("parser accepts JSON only for noninteractive initialization", () => {
   expect(() => parseArguments(["project-list", "--json"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+test("parser no longer exposes assistant ownership or a local TUI", () => {
+  for (const command of ["tui", "assistant-list", "memory-hook", "integration-enable"]) {
+    expect(() => parseArguments([command])).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+  }
+});
+
 test("parser requires one explicit uninstall confirmation", () => {
   expect(parseArguments(["uninstall", "--confirm", "REMOVE FORGE614-ENGRAM"]).need("confirm")).toBe("REMOVE FORGE614-ENGRAM");
   expect(() => parseArguments(["uninstall"])).not.toThrow();

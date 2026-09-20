@@ -1,50 +1,38 @@
 import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readSync, renameSync, unlinkSync, writeFileSync, fsyncSync } from 'node:fs';
 import { dirname, isAbsolute, parse, resolve } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { hasWindowsReparsePoint } from './windows-reparse-guard';
 
 export const MAX_CONFIG_BYTES=1024*1024;
-export class AssistantConfigurationError extends Error {
-  constructor(public readonly code:string,message:string){super(message);this.name='AssistantConfigurationError';}
+export class PrivateFileError extends Error {
+  constructor(public readonly code:string,message:string){super(message);this.name='PrivateFileError';}
 }
-export function fail(code:string,message:string):never{throw new AssistantConfigurationError(code,message);}
+export function fail(code:string,message:string):never{throw new PrivateFileError(code,message);}
 export function validPath(path:string):string {
   if(typeof path!=='string'||!isAbsolute(path)||/[\0\r\n]/.test(path)||path===parse(path).root)fail('INVALID_PATH','An absolute file or directory path is required.');
   return resolve(path);
 }
 function stat(path:string){try{return lstatSync(path);}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;}}
-function safeOpenFlag(unixFlags:number,windowsFlag:'r'|'wx'):number|'r'|'wx'{return process.platform==='win32'?windowsFlag:unixFlags|constants.O_NOFOLLOW;}
-type WindowsReparsePointChecker = (path:string) => unknown;
-function assertNoWindowsReparsePoints(paths:readonly string[],checker:WindowsReparsePointChecker):void{
-  for(const path of paths){
-    let result:unknown;
-    try{result=checker(path);}catch{fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');}
-    if(result===true)fail('UNSAFE_PATH','Configuration paths must not traverse Windows reparse points.');
-    if(result!==false)fail('UNSAFE_PATH','Could not verify Windows reparse-point safety.');
-  }
-}
-export function assertSafePath(path:string,platform:NodeJS.Platform=process.platform):void{
+function safeOpenFlag(unixFlags:number):number{return unixFlags|constants.O_NOFOLLOW;}
+export function assertSafePath(path:string):void{
   validPath(path);let current=path;const entries:{path:string;entry:ReturnType<typeof stat>}[]=[];
   while(current!==parse(current).root){
     const entry=stat(current);
     if(entry)entries.push({path:current,entry});
     current=dirname(current);
   }
-  if(platform==='win32'&&process.platform==='win32')assertNoWindowsReparsePoints(entries.map(({path})=>path),hasWindowsReparsePoint);
   for(const {path:current,entry} of entries){
     // macOS ships these root-owned system aliases; user-controlled symlinks remain forbidden.
     const systemAlias=process.platform==='darwin'&&['/var','/tmp'].includes(current)&&entry?.uid===0;
     if(entry?.isSymbolicLink()&&!systemAlias)fail('UNSAFE_PATH','Configuration paths must not traverse symbolic links.');
     if(entry&&current!==path&&!entry.isDirectory()&&!systemAlias)fail('UNSAFE_PATH','A configuration parent is not a directory.');
-    // Windows mode bits are synthesized from the read-only attribute, not ACL permissions.
-    if(platform!=='win32'&&entry&&current!==path&&!systemAlias&&(entry.mode&0o002)&&!(entry.mode&0o1000))fail('UNSAFE_PATH','A configuration parent is writable by other users.');
+    if(entry&&current!==path&&!systemAlias&&(entry.mode&0o002)&&!(entry.mode&0o1000))fail('UNSAFE_PATH','A configuration parent is writable by other users.');
   }
 }
 export function readSafeFile(path:string):string|null{
   assertSafePath(path);const entry=stat(path);if(!entry)return null;
   if(!entry.isFile()||(typeof process.getuid==='function'&&entry.uid!==process.getuid())||entry.nlink!==1)fail('UNSAFE_FILE','Configuration must be a regular file owned by the current user.');
   if(entry.size>MAX_CONFIG_BYTES)fail('FILE_TOO_LARGE','Configuration exceeds the 1 MiB limit.');
-  const fd=openSync(path,safeOpenFlag(constants.O_RDONLY,'r'));
+  const fd=openSync(path,safeOpenFlag(constants.O_RDONLY));
   try{
     const opened=fstatSync(fd);if(opened.ino!==entry.ino||opened.dev!==entry.dev)fail('CHANGED','Configuration changed during inspection.');
     // Bound allocation and reads even if another writer grows the file after lstat.
@@ -73,7 +61,7 @@ export function guardedWrite(write:PrivateWrite,onBackup:(path:string)=>void,onP
   }
   const temporary=write.path+'.forge614-tmp-'+randomUUID();let created=false;
   try{
-    const fd=openSync(temporary,safeOpenFlag(constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL,'wx'),0o600);created=true;
+    const fd=openSync(temporary,safeOpenFlag(constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL),0o600);created=true;
     try{writeFileSync(fd,write.after);fsyncSync(fd);}finally{closeSync(fd);}
     if(readSafeFile(write.path)!==write.before)fail('CHANGED','Configuration changed before replacement. The original backup was retained.');
     assertSafePath(write.path);io.rename(temporary,write.path);created=false;onPublished(write.path);

@@ -122,6 +122,28 @@ is_loopback_test_url() {
   (( 10#$port >= 1 && 10#$port <= 65535 ))
 }
 
+install_engines_dependency() {
+  local engines_command engines_installer installer_url
+  engines_command="$HOME/.forge614/engines/bin/forge614-engines"
+  if [ -x "$engines_command" ]; then
+    printf '%s\n' "Forge614 Engines is already available: $engines_command"
+    return 0
+  fi
+
+  installer_url='https://github.com/jotredev/forge614-engines/releases/latest/download/install.sh'
+  if [ -n "${FORGE614_ENGINES_INSTALLER_TEST_URL:-}" ]; then
+    [ "${FORGE614_ENGRAM_INSTALLER_TEST:-}" = '1' ] || fail 'The Engines installer override is reserved for test fixtures.'
+    installer_url="$FORGE614_ENGINES_INSTALLER_TEST_URL"
+    case "$installer_url" in file:///*) ;; *) fail 'The Engines test installer must be a local file URL.' ;; esac
+  fi
+
+  engines_installer="$download_dir/forge614-engines-install.sh"
+  curl --fail --location --proto '=https,file' --tlsv1.2 --silent --show-error "$installer_url" --output "$engines_installer" \
+    || fail 'Could not download the Forge614 Engines installer.'
+  bash "$engines_installer" --latest || fail 'Forge614 Engines could not be installed; Engram was not changed.'
+  [ -x "$engines_command" ] || fail 'Forge614 Engines installation did not provide its required command.'
+}
+
 repo='jotredev/forge614-engram'
 bin_dir="${HOME:?HOME must be set}/.forge614/engram/bin"
 version=''
@@ -245,6 +267,7 @@ else
 fi
 [ "$expected_digest" = "$actual_digest" ] || fail "Checksum verification failed for ${artifact}."
 
+install_engines_dependency
 prepare_bin_directory || fail 'Could not safely create the selected Engram installation directory.'
 [ ! -d "$destination" ] || fail 'The destination is a directory; choose a different --bin-dir.'
 if { [ -e "$destination" ] || [ -L "$destination" ]; } && [ "$force" -ne 1 ]; then
@@ -265,4 +288,4 @@ if ! publish_path_for_future_shell "$bin_dir"; then
   printf '%s\n' 'Could not update PATH configuration automatically.'
   manual_path_guidance "$bin_dir"
 fi
-printf '%s\n' 'forge614-engram setup'
+printf '%s\n' 'forge614-engram init'

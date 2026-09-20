@@ -76,7 +76,7 @@ test("compiled executable completes the official SDK stdio handshake without use
 
 test("raw stdin EOF cancels an unanswered roots request and exits promptly", async () => {
   const root = temporary(); const userDirectory = join(root,"user");
-  expect(runCli(root,userDirectory,"integration-enable").code).toBe(0);
+  expect(runCli(root,userDirectory,"init","--json").code).toBe(0);
   const child = Bun.spawn([process.execPath,"--preload",preload,cli,"mcp"],{
     cwd:root,env:environment(userDirectory),stdin:"pipe",stdout:"pipe",stderr:"pipe",
   });
