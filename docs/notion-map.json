@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "notionHub": {
+    "title": "Forge614 Engram — Memoria Personal Local",
+    "url": "https://app.notion.com/p/3dd21943d12981d79156f470e0462780?pvs=204",
+    "path": "AI Engineer / Librerías"
+  },
+  "documents": [
+    {
+      "localPath": "docs/es/09-protocolo-publico-de-memoria.md",
+      "language": "es",
+      "notionUrl": "https://app.notion.com/p/3e121943d12981f8a00de8930f868166?pvs=204",
+      "reviewedProductVersion": "1.3.0",
+      "contentFingerprint": "sha256:cdbcb154cc74791e0194aa36a2b1a6a2e65c2e406a5d9fd1eb180360752a5fb0"
+    },
+    {
+      "localPath": "docs/en/09-public-memory-protocol.md",
+      "language": "en",
+      "notionUrl": "https://app.notion.com/p/3e121943d12981b99bdbc45a7f724b75?pvs=204",
+      "reviewedProductVersion": "1.3.0",
+      "contentFingerprint": "sha256:72f533898e35d0c2d80e86fcde1857a4e597e88b1216155c57e7d3a2910c4c9d"
+    }
+  ]
+}

@@ -13,9 +13,20 @@ sync [--upgrade-format]                 synchronize configured PostgreSQL replic
 sync-watch [--interval <1..3600>]       retry synchronization while the process remains open
 sessions-enable                         explicitly enable session lifecycle
 reinforcement-enable                    explicitly enable local repeated-memory ordering
+memory-protocol --json                  print the public memory contract without initializing storage
 ```
 
 `setup` is retired and returns `COMMAND_RETIRED`. There is no `tui`, `assistant-list`, `integration-enable`, or `memory-hook` command.
+
+## Memory protocol contract
+
+```text
+forge614-engram memory-protocol --json
+```
+
+This non-interactive command publishes the versioned JSON contract that Forge614 Engines can use to prepare a safe installation in compatible AI clients. It requires `--json`; without it, or with unknown flags, it writes the standard `{code,error}` JSON error to stderr and exits with code `1`.
+
+It does not require a TTY, create or open `~/.forge614/engram/`, initialize SQLite, or query projects, PostgreSQL, or user data. The contract is available from release `v1.3.0`; that does not mean Engram configures AI clients directly. See [09. Public Memory Protocol](09-public-memory-protocol.md) for lifecycle, security, and boundaries.
 
 ## Projects
 

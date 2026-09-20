@@ -25,6 +25,14 @@ It is intentionally **not** a visual workspace, assistant detector, assistant co
 - No embeddings or cloud-only search. FTS5 and SQLite remain the primary local path.
 - No automatic creation or selection of projects during initialization.
 
+## Public memory protocol: integration status
+
+The `forge614-engram-memory` version `1` contract is available from release `v1.3.0` and can be inspected with `forge614-engram memory-protocol --json`. Its publication does not mean that an AI-client integration is already installed.
+
+It does **not yet** install MCP, instructions, hooks, or plugins in Claude Code, Codex, or Cursor. Forge614 Engines will consume the public command and apply the protocol through each assistant's safe mechanism. Forge614 Shell will show a preview and request human confirmation. Engram does not configure AI clients directly.
+
+PostgreSQL remains an optional replica synchronized explicitly through `sync` or `sync-watch`; this delivery does not add permanent automatic synchronization or a TUI.
+
 ## Operational model
 
 `forge614-engram init` remains a small terminal-only memory initialization flow for compatibility. It asks only about PostgreSQL synchronization and search reinforcement; it does not configure AI clients. `forge614-engram init --json` is the automation contract.

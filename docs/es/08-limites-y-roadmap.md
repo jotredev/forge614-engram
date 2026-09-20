@@ -25,6 +25,14 @@ Intencionalmente **no** es un espacio visual, detector de asistentes, configurad
 - No hay embeddings ni búsqueda exclusiva en nube. FTS5 y SQLite siguen siendo la ruta local primaria.
 - La inicialización no crea ni selecciona proyectos automáticamente.
 
+## Protocolo público de memoria: estado de integración
+
+El contrato `forge614-engram-memory` versión `1` está disponible desde la release `v1.3.0` y se puede inspeccionar con `forge614-engram memory-protocol --json`. Su publicación no significa que una integración de asistentes ya esté instalada.
+
+Todavía **no** instala MCP, instrucciones, hooks ni plugins en Claude Code, Codex o Cursor. Forge614 Engines será quien consuma el comando público y aplique el protocolo mediante el mecanismo seguro de cada asistente. Forge614 Shell mostrará una vista previa y pedirá confirmación humana. Engram no configura asistentes directamente.
+
+PostgreSQL sigue siendo una réplica opcional, sincronizada explícitamente con `sync` o `sync-watch`; esta entrega no añade sincronización automática permanente ni una TUI.
+
 ## Modelo operativo
 
 `forge614-engram init` permanece como un flujo pequeño de inicialización de memoria en terminal por compatibilidad. Solo pregunta sobre sincronización PostgreSQL y refuerzo de búsqueda; no configura clientes de IA. `forge614-engram init --json` es el contrato para automatización.

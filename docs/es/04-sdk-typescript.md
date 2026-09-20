@@ -4,7 +4,8 @@ Importa únicamente desde la entrada pública del paquete:
 
 ```ts
 import { MemoryWorkspace, MemoryStore, inspectMemoryInitialization,
-  previewMemoryInitialization, applyMemoryInitialization } from "forge614-engram";
+  previewMemoryInitialization, applyMemoryInitialization,
+  memoryProtocol, type MemoryProtocol } from "forge614-engram";
 ```
 
 `MemoryWorkspace` es dueño de la única base del producto. Usa `init()`, `createProject()`, `listProjects()`, `renameProject()` y `open()`. Siempre cierra el store:
@@ -24,3 +25,5 @@ try {
 Para inicialización no visual, llama `inspectMemoryInitialization()`, genera una solicitud con `previewMemoryInitialization()` y después llama `applyMemoryInitialization()` con la revisión de la vista previa. Un producto hermano no debe leer archivos privados de Engram ni importar carpetas internas.
 
 Atlas usa este SDK para escrituras estructuradas y consultas exactas por `topicKey`. La detección de motores de IA pertenece a Forge614 Engines, no a este SDK.
+
+`memoryProtocol()` devuelve el contrato público e inmutable de memoria (`MemoryProtocol`) con el identificador `forge614-engram-memory` y versión `1`. Engines debe consumir este contrato por el comando público `forge614-engram memory-protocol --json` cuando prepare integraciones; este export permite a consumidores del SDK inspeccionarlo sin importar módulos internos. La funcionalidad está disponible desde la release `v1.3.0`.
