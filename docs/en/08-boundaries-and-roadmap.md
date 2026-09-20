@@ -6,7 +6,7 @@ Forge614 Engram is the persistent-memory engine of the Forge614 ecosystem. It ow
 
 It is intentionally **not** a visual workspace, assistant detector, assistant configurator, hook manager, or AI chat client. Those responsibilities belong to Forge614 Shell and Forge614 Engines through public contracts.
 
-## Capabilities available in v1.2.0
+## Capabilities available in v1.2.1
 
 - A private product home at `~/.forge614/engram/` with `engram.db`, `.env`, and `bin/`.
 - Local SQLite and FTS5 for every project and shared memory. Local search works without a network connection.
