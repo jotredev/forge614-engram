@@ -16,7 +16,7 @@ function terminal(input: string) {
     process.execPath, "--preload", resolve(import.meta.dir, "../../../tests/fixtures/user-directory.ts"),
     "--preload", resolve(import.meta.dir, "../../../tests/fixtures/interactive-terminal.ts"),
     "--preload", rawMode,
-    resolve(import.meta.dir, "../../cli.ts"), "setup",
+    resolve(import.meta.dir, "../../cli.ts"), "init",
   ], { cwd: dir, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: dir }, stdin: Buffer.from(input), timeout: 5000 });
   return { result, config: new WorkspaceConfig(join(dir, ".forge614", "engram")) };
 }
@@ -29,7 +29,7 @@ async function terminalAfterSetup(input: string) {
     process.execPath, "--preload", resolve(import.meta.dir, "../../../tests/fixtures/user-directory.ts"),
     "--preload", resolve(import.meta.dir, "../../../tests/fixtures/interactive-terminal.ts"),
     "--preload", rawMode,
-    resolve(import.meta.dir, "../../cli.ts"), "setup",
+    resolve(import.meta.dir, "../../cli.ts"), "init",
   ], { cwd: dir, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: dir }, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   child.stdin.write(input);
   await Bun.sleep(100);

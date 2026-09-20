@@ -9,6 +9,7 @@ import type { AssistantDescriptor, AssistantLocation, AssistantOptions, Assistan
 const RUNTIME_EXPORTS = [
   "MemoryError", "MemoryStore", "MemoryWorkspace", "WorkspaceConfig",
   "defaultDatabasePath", "memoryTypes", "saveProjectMemoryWithSession", "startProjectSession",
+  "inspectMemoryInitialization", "previewMemoryInitialization", "applyMemoryInitialization",
   "CLIENT_IDS", "LABELS", "isClientId", "inspectAssistant", "resolveAssistantPaths", "coverageWarnings",
 ];
 
@@ -22,7 +23,7 @@ type AssistantDetectionSdkTypes = {
 
 const PUBLIC_STORE_METHODS = [
   "applySync", "archive", "bindProjectDirectory", "close", "context", "controlCenter", "createProject",
-  "enableAssistantIntegration", "enableSessions", "enableSync", "endSession", "get", "getProject",
+  "enableAssistantIntegration", "enableSessions", "enableSync", "endSession", "get", "getByTopic", "getProject",
   "enableSearchReinforcement", "getSession", "getVersion", "history", "listProjects", "reinforcementEnabled",
   "projectForDirectory", "renameProject", "resolveProjectDirectory", "restore", "save",
   "saveForProjectDirectory", "saveSessionSummary", "saveWithSession", "saveWithSessionForProjectDirectory",
@@ -46,6 +47,12 @@ describe("public SDK contract", () => {
     expect(typeof sdk.inspectAssistant).toBe("function");
     expect(typeof sdk.resolveAssistantPaths).toBe("function");
     expect(typeof sdk.coverageWarnings).toBe("function");
+  });
+
+  test("exports the nonvisual initialization API needed by Forge614 Shell", () => {
+    expect(typeof sdk.inspectMemoryInitialization).toBe("function");
+    expect(typeof sdk.previewMemoryInitialization).toBe("function");
+    expect(typeof sdk.applyMemoryInitialization).toBe("function");
   });
 
   test("uses one MemoryError identity across module validation", () => {

@@ -2,9 +2,8 @@ export const HELP = `Forge614 Engram — una base, recuerdos por proyecto y comp
 
 Uso: forge614-engram <comando> [opciones]
 
-setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
 tui             Centro de control local. Asistentes con vista previa y confirmación explícita.
-init            Inicializa una sola configuración y base local, sin borrar datos.
+init [--json]   Inicializa Engram; sin --json guía y confirma en terminal. --json no pregunta.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
@@ -54,18 +53,18 @@ No hay conexiones, carpetas .env ni bases diferentes por proyecto.
 --db, --project y --id-project no se admiten. El identificador se llama projectId.
 project-create inicializa el espacio si aún no existe configuración.
 Para guardar shared sin crear un proyecto, ejecuta init primero.
-init y setup pueden mover la ubicación antigua de Engram a ~/.forge614/engram cuando es seguro; nunca reemplazan datos en conflicto.
-SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada en setup.
+init puede mover la ubicación antigua de Engram a ~/.forge614/engram cuando es seguro; nunca reemplaza datos en conflicto.
+SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada con init.
 sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
 Antes de sync --upgrade-format, actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
 sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
-setup ofrece el refuerzo explícitamente; registrar repeticiones mejora el orden, no verifica la verdad.
+init ofrece el refuerzo explícitamente; registrar repeticiones mejora el orden, no verifica la verdad.
 La habilitación local no promueve la réplica: ejecuta sync --upgrade-format por separado.
 Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
 Actualizar un tema requiere --expected-version. Archivar conserva el historial.
-setup y tui muestran texto y requieren terminal; cancelar devuelve código 130.
+init sin --json y tui muestran texto y requieren terminal; cancelar devuelve código 130.
 Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
 MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
 uninstall requiere REMOVE FORGE614-ENGRAM; si Atlas existe requiere REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS.

@@ -2,10 +2,10 @@
 
 > **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Desinstalador Coordinado, Memoria Local y Sincronización PostgreSQL Opcional
 > **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas) / 7 (confirmaciones inmutables y orden reforzado) | Réplica PostgreSQL Formatos 1, 2 y 3 (promoción explícita con `sync --upgrade-format`; tabla física remota `state.format = 1`)
-> **Estado:** Vigente y Activo v1.1.0 (572 pruebas superadas y 15 omitidas en 90 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
+> **Estado:** Vigente y Activo v1.1.0 (582 pruebas superadas y 15 omitidas en 92 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
 > **Traducción hermana:** [02 (EN). Guided System Walkthrough](../en/02-guided-walkthrough.md)
 
-Este recorrido práctico te guía paso a paso por el ciclo de vida integral de Forge614 Engram: desde configurar el espacio global en su hogar propio (`~/.forge614/engram/`) interactivamente con `setup` y migrar automáticamente versiones anteriores, supervisar y administrar el sistema mediante el **Centro de Control interactivo en terminal (`tui`)**, conectar tus asistentes de desarrollo mediante su subflujo seguro con autoprueba de 5 segundos, interactuar a través de las 10 herramientas del protocolo MCP nativo con resolución automática de proyectos por Git, gestionar sesiones de trabajo progresivas con líneas temporales (`timeline`), registrar recuerdos repetidos mediante confirmaciones inmutables sin fabricar versiones redundantes (Esquema 7), ensamblar contextos de prompt clasificados (`context`), realizar búsquedas FTS5 reforzadas con factores matemáticos transparentes sin embeddings, gestionar actualizaciones seguras de plugins en OpenCode, sincronizar réplicas con PostgreSQL con promoción explícita a Formato 3 y desinstalar el sistema de forma coordinada y quirúrgica si decides retirarlo.
+Este recorrido práctico te guía paso a paso por el ciclo de vida integral de Forge614 Engram: desde configurar el espacio global en su hogar propio (`~/.forge614/engram/`) interactivamente con `init` y migrar automáticamente versiones anteriores, supervisar y administrar el sistema mediante el **Centro de Control interactivo en terminal (`tui`)**, conectar tus asistentes de desarrollo mediante su subflujo seguro con autoprueba de 5 segundos, interactuar a través de las 10 herramientas del protocolo MCP nativo con resolución automática de proyectos por Git, gestionar sesiones de trabajo progresivas con líneas temporales (`timeline`), registrar recuerdos repetidos mediante confirmaciones inmutables sin fabricar versiones redundantes (Esquema 7), ensamblar contextos de prompt clasificados (`context`), realizar búsquedas FTS5 reforzadas con factores matemáticos transparentes sin embeddings, gestionar actualizaciones seguras de plugins en OpenCode, sincronizar réplicas con PostgreSQL con promoción explícita a Formato 3 y desinstalar el sistema de forma coordinada y quirúrgica si decides retirarlo.
 
 ---
 
@@ -41,13 +41,15 @@ Un recuerdo compartido se guarda **una sola vez en la base de datos**; no se clo
 
 ## 3. Recorrido Paso a Paso del Ciclo de Vida
 
-### Paso 1: Configurar el Espacio Global (`setup` o `init`)
+### Paso 1: Configurar el Espacio Global (`init` o `init --json`)
 
 Para inicializar tu espacio central de trabajo de forma guiada:
 
 ```bash
-forge614-engram setup
+forge614-engram init
 ```
+
+Para entornos automatizados o scripts desatendidos, utiliza `forge614-engram init --json`.
 
 **Flujo interactivo en la terminal:**
 1. Muestra la ubicación de los archivos centrales (`~/.forge614/engram/.env` y `~/.forge614/engram/engram.db`), verifica la carpeta propia de Engram con permisos `0700` y **repara automáticamente a `0700`** cualquier carpeta preexistente propiedad del usuario antes de formular preguntas. Si detecta archivos antiguos sueltos en `~/.forge614/` (`.env`, `engram.db`, diarios WAL/SHM y cerrojo), los migra de forma automática y atómica al nuevo subdirectorio `engram/`.
@@ -59,7 +61,7 @@ forge614-engram setup
    - Si respondes `sí`, registrará la activación de confirmaciones inmutables y orden reforzado sin embeddings.
 4. Presenta el resumen de cambios y pide confirmación explícita (`¿Confirmar? [si/NO]`).
 5. Al confirmar, prepara la carpeta `0700` de Engram (creándola o asegurándola), escribe el archivo `.env` en `0600` e inicializa `engram.db` (también protegido en `0600`).
-6. **Transición automática a la incorporación de asistentes:** Al concluir la memoria, `setup` cierra de forma limpia el lector de terminal y abre de inmediato la TUI de selección de asistentes (`assistantTui`). Detecta los 5 asistentes compatibles (Claude Code, Codex, Cursor, OpenCode y Antigravity), permitiendo seleccionarlos, previsualizar cambios exactos, crear respaldos automáticos y aplicar la conexión sin modificaciones silenciosas.
+6. **Transición automática a la incorporación de asistentes:** Al concluir la memoria, `init` interactivo cierra de forma limpia el lector de terminal y abre de inmediato la TUI de selección de asistentes (`assistantTui`). Detecta los 5 asistentes compatibles (Claude Code, Codex, Cursor, OpenCode y Antigravity), permitiendo seleccionarlos, previsualizar cambios exactos, crear respaldos automáticos y aplicar la conexión sin modificaciones silenciosas.
 7. **Cancelación segura:** Cancelar durante la configuración de memoria (`Ctrl+C` o `no`) sale con código **130** sin abrir la TUI y sin crear `.env` ni `engram.db` (únicamente se asegura el permiso `0700` si la carpeta ya existía). Si completas la memoria y cancelas en la TUI de asistentes, la memoria inicializada se preserva intacta.
 
 ---
@@ -77,7 +79,7 @@ forge614-engram tui
 
 #### 1. Principio de Solo Lectura por Defecto:
 Al abrirse, el Centro de Control lee el estado local de forma completamente pasiva:
-- No crea bases de datos ni archivos `.env`. Si no hay configuración, explica que uses `setup` o `init` y permanece sin escribir.
+- No crea bases de datos ni archivos `.env`. Si no hay configuración, explica que uses `init` y permanece sin escribir.
 - No registra proyectos ficticios ni altera contadores.
 - Puedes navegar libremente entre secciones sin temor a modificar nada.
 
@@ -458,7 +460,7 @@ En OpenCode, Engram genera el plugin de integración en `plugins/forge614-engram
 
 ### Paso 10: Sincronización PostgreSQL y Promoción a Formato 3 (`sync --upgrade-format`)
 
-Si configuraste una réplica PostgreSQL en `setup`:
+Si configuraste una réplica PostgreSQL en `init`:
 
 #### Sincronización Ordinaria:
 Puede ejecutarse desde la pestaña `Actions > Synchronize now` en `forge614-engram tui` o directamente en la línea de comandos:

@@ -1,11 +1,11 @@
 # 06. Resolución de Problemas y Catálogo de Errores
 
-> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Desinstalador Coordinado, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 1.1.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo v1.1.0 (572 pruebas superadas y 15 omitidas en 90 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
+> **Etapa:** Transición a Motor No Visual (Task 1: Inspección y Vista Previa, Task 2: Aplicación Atómica de Inicialización), Retiro de setup (`COMMAND_RETIRED`), Contrato de Ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Desinstalador Coordinado, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.1.0-beta.2 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo (582 pruebas superadas y 15 omitidas en 92 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
 > **Traducción hermana:** [06 (EN). Troubleshooting and Error Diagnostics](../en/06-troubleshooting.md)
 
-Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de error de Forge614 Engram, incluyendo el Centro de Control TUI, refuerzo de búsqueda FTS5, confirmaciones inmutables (Esquema 7), sincronización en Formato 3, hogar propio de producto, migración segura de datos legados, desinstalación quirúrgica coordinada, desfases de reloj (*clock skew*), reintentos idempotentes y conflictos de configuración, detallando su causa raíz y la solución recomendada.
+Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de error de Forge614 Engram, incluyendo el retiro formal de `setup` (`COMMAND_RETIRED`), la inicialización guiada y no interactiva (`init` e `init --json`), el Centro de Control TUI, refuerzo de búsqueda FTS5, confirmaciones inmutables (Esquema 7), sincronización en Formato 3, hogar propio de producto, migración segura de datos legados, desinstalación quirúrgica coordinada, desfases de reloj (*clock skew*), reintentos idempotentes y conflictos de configuración, detallando su causa raíz y la solución recomendada.
 
 ---
 
@@ -21,6 +21,7 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
 
 | Código de Error | Mensaje Habitual | Causa Raíz Explicada | Solución Recomendada |
 | :--- | :--- | :--- | :--- |
+| `COMMAND_RETIRED` | *"El comando setup fue retirado. Usa forge614-engram init."* | Se invocó el comando histórico `setup`, el cual ha sido retirado formalmente para converger con la arquitectura unificada del ecosistema Forge614. | Reemplaza invocaciones en scripts o terminal por `forge614-engram init` (modo interactivo en terminal) o `forge614-engram init --json` (modo no interactivo para automatizaciones). |
 | `LEGACY_UNSAFE` | *"Ruta o archivo legado no seguro para migración..."* | La carpeta `~/.forge614` o un archivo legado es un enlace simbólico, pertenece a otro usuario o permite escrituras de otros usuarios. | Asegurar propiedad del usuario actual, eliminar enlaces simbólicos y retirar permisos de escritura inseguros sin alterar productos hermanos. |
 | `LEGACY_CONFLICT` | *"Conflicto en la carpeta destino de Engram..."* | La carpeta `~/.forge614/engram/` ya contiene archivos que colisionarían con los legados, o hay diarios WAL/SHM huérfanos sin su base de datos principal. | Verificar que `~/.forge614/engram/` no contenga archivos duplicados y que `engram.db` acompañe a sus diarios. |
 | `LEGACY_MIGRATION_FAILED` | *"Fallo de migración de archivos legados..."* | Fallo de E/S al mover archivos antiguos de Engram; reversión atómica automática aplicada. | Comprobar espacio en disco y permisos de escritura en `~/.forge614/`. |
@@ -45,7 +46,7 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
 | `SUMMARY_TOPIC_RESERVED` | *"El tema está reservado para un resumen de sesión."* | Se intentó guardar un recuerdo ordinario con un tema que sigue el patrón reservado `session/<id>/summary`. | Utiliza un identificador de tema ordinario (ej. `arquitectura-db`) o utiliza el comando oficial `session-summary`. |
 | `SUMMARY_TOPIC_CONFLICT` | *"El tema reservado ya pertenece a otro recuerdo."* o *"El resumen no coincide con su puntero."* | Existe una discrepancia de puntero entre la tabla `session_summaries` y el registro temático en `memories`. | Consulta el resumen previo con `get` y envía el comando con `--expected-version` o verifica tu clave de petición. |
 | `CONFLICT` | *"The dedicated Engram plugin already exists with different contents..."* | En OpenCode, el archivo `plugins/forge614-engram.js` ya existe en disco pero contiene código o modificaciones personalizadas distintas al plugin estándar. | Engram no sobrescribe archivos divergentes por seguridad. Haz un respaldo manual del plugin, elimínalo o concílialo y vuelve a ejecutar `forge614-engram tui`. |
-| `INTERACTIVE_REQUIRED` | *"tui necesita una terminal interactiva..."* o *"setup necesita una terminal interactiva..."* | Se invocó el Centro de Control TUI (`tui`) o el asistente de configuración (`setup`) en un entorno desatendido, canalización (`\|`), redirección (`< /dev/null`) o subshell sin soporte de modo crudo (*raw mode* TTY). | Ejecuta el comando directamente en una terminal interactiva real. Para scripts, flujos automatizados o pipelines CI/CD, utiliza comandos CLI sin interfaz como `project-list`, `assistant-list`, `status`, `health` o las funciones del SDK (`readControlCenter()`). |
+| `INTERACTIVE_REQUIRED` | *"tui necesita una terminal interactiva..."* o *"init necesita una terminal interactiva. Para scripts utiliza init --json y project-create --name <nombre>."* | Se invocó el Centro de Control TUI (`tui`) o la inicialización interactiva (`init`) en un entorno desatendido, canalización (`\|`), redirección (`< /dev/null`) o subshell sin soporte de modo crudo (*raw mode* TTY). | Ejecuta el comando directamente en una terminal interactiva real. Para scripts, flujos automatizados o pipelines CI/CD, utiliza `init --json` para inicializar el espacio y comandos CLI sin interfaz como `project-create`, `project-list`, `assistant-list`, `status`, `health` o las funciones del SDK (`inspectMemoryInitialization`, `applyMemoryInitialization`). |
 | `PROJECT_IDENTITY_UNAVAILABLE`| *"No se pudo determinar de forma segura la identidad Git del proyecto."* | Git no está instalado, no se encuentra en el PATH, o la invocación de `git rev-parse` falló. | Instala Git (`git --version`) y asegúrate de que esté accesible en el PATH del sistema. |
 | `PROJECT_DIRECTORY_REQUIRED` | *"Una carpeta sin Git requiere directory explícito o una raíz MCP única."* | Se invocó una herramienta MCP en una carpeta sin Git sin especificar la ruta, o se intentó usar el directorio del binario como proyecto. | Especifica el parámetro `directory` en la llamada a la herramienta MCP o vincula la carpeta previamente con `project-bind`. |
 | `PROJECT_NOT_BOUND` | *"La carpeta todavía no está vinculada; guardar puede crearla o project-bind puede recuperarla."* | Se intentó consultar o buscar en una carpeta no registrada antes de guardar el primer recuerdo o iniciar sesión. | Guarda una primera nota técnica con `memory_save` o asocia la carpeta con `project-bind`. |
@@ -58,15 +59,16 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
 | `PUBLISHED_UNVERIFIED` | *"The file was published but its planned bytes could not be safely verified..."* | Se aplicó la configuración al archivo del cliente, pero la verificación posterior de bytes falló por escrituras concurrentes de otro proceso. | Engram retiene la copia de respaldo `.forge614-backup-<UUID>` sin ejecutar rollback destructivo. Cierra el editor y vuelve a aplicar la configuración desde `tui`. |
 | `UNSAFE_PATH` | *"Configuration paths must not traverse Windows reparse points."* o *"Could not verify Windows reparse-point safety."* o *"Configuration paths must not traverse symbolic links."* | La ruta de destino o alguno de sus directorios ancestros contiene enlaces simbólicos, *junctions*, *reparse points* (en Windows), permisos de escritura para otros usuarios (en Unix), o el módulo nativo de Windows falló (*fail-closed*). | Elimina cualquier enlace simbólico o junction en la ruta. En Windows, si compilas desde fuentes, compila el módulo nativo con `scripts/build-windows-reparse-addon.ps1`. |
 | `CHANGED` | *"Configuration changed after preview..."* o *"Configuration changed before replacement..."* | El contenido del archivo de configuración cambió en el disco mientras el usuario revisaba la vista previa o mientras se preparaba el temporal. | Se detiene para evitar sobrescribir cambios ajenos. Cierra editores en segundo plano y vuelve a generar la vista previa en `tui`. |
+| `CONFIG_CHANGED` | *"La configuración cambió; genera una vista previa nueva antes de aplicar cambios."* | Al invocar `applyMemoryInitialization` desde el SDK, la huella digital del archivo `.env` difiere de la obtenida en la vista previa (`expectedRevision`). | Vuelve a solicitar una vista previa fresca con `previewMemoryInitialization` y solicita confirmación con la nueva revisión. |
 | `UNSAFE_FILE` | *"Configuration must be a regular file owned by the current user."* | El archivo de destino no es un archivo regular, tiene enlaces duros múltiples (`nlink !== 1`), o pertenece a otro usuario del sistema. | Asegúrate de que el archivo de configuración pertenezca a tu usuario actual y no tenga enlaces duros compartidos. |
 | `AMBIGUOUS` | *"Both OpenCode JSON and JSONC configs exist..."* | En OpenCode existen archivos simultáneos `.json` y `.jsonc`, o múltiples fuentes de configuración activas sin selección. | Selecciona el archivo deseado en el menú interactivo o retira la configuración duplicada en OpenCode. |
 | `INVALID_INPUT` | *"El campo [campo] debe ser texto no vacío..."* | Opciones vacías, caracteres nulos (`\0`), números fuera de rango o argumentos incompatibles (ej. `--upgrade-format` en `sync-watch`). | Consulta las opciones válidas con `forge614-engram help`. |
-| `PROJECT_NOT_FOUND` | *"Proyecto no encontrado en esta base."* | El `projectId` no existe en la tabla `projects` de `~/.forge614/engram.db`. | Ejecuta `forge614-engram project-list` para verificar los UUIDs de tus proyectos registrados. |
+| `PROJECT_NOT_FOUND` | *"Proyecto no encontrado en esta base."* | El `projectId` no existe en la tabla `projects` de `~/.forge614/engram/engram.db`. | Ejecuta `forge614-engram project-list` para verificar los UUIDs de tus proyectos registrados. |
 | `VERSION_CONFLICT` | *"La versión esperada no coincide. Lee el tema antes de actualizarlo."* | El valor de `--expected-version` no coincide con la versión activa actual en la base de datos. | Consulta la versión actual con `get` o `history` y actualiza indicando la versión correcta. |
 | `ARCHIVED` | *"Restaura el recuerdo antes de actualizar su tema."* | Se intentó actualizar un tema cuya memoria está archivada. | Ejecuta `restore` sobre ese recuerdo antes de guardar la nueva versión. |
 | `NOT_FOUND` | *"Recuerdo no encontrado en el alcance seleccionado."* | El ID del recuerdo no existe en la base o no pertenece al proyecto indicado. | Revisa si el recuerdo era de proyecto o compartido y verifica que el UUID sea exacto. |
-| `CONFIG_BUSY` | *"Otra configuración está en curso. No se reemplazó el archivo."* | Existe el cerrojo `~/.forge614/.config-lock` porque otro proceso está ejecutando `setup` o `tui`. | Espera a que concluya el otro proceso o retira `.config-lock` si fue una interrupción abrupta anterior. |
-| `SYNC_DISABLED` | *"Sincronización PostgreSQL desactivada. Ejecuta setup para configurarla."* | Se ejecutó `sync` o `sync-watch` pero `.env` no tiene `POSTGRES_URL`. | Ejecuta `forge614-engram setup` y elige `Sí, configurar PostgreSQL`. |
+| `CONFIG_BUSY` | *"Otra configuración está en curso. No se reemplazó el archivo."* | Existe el cerrojo `~/.forge614/engram/.config-lock` porque otro proceso está ejecutando `init` o `tui`. | Espera a que concluya el otro proceso o retira `.config-lock` si fue una interrupción abrupta anterior. |
+| `SYNC_DISABLED` | *"Sincronización PostgreSQL desactivada. Ejecuta init para configurarla."* | Se ejecutó `sync` o `sync-watch` pero `.env` no tiene `POSTGRES_URL`. | Ejecuta `forge614-engram init` y elige configurar PostgreSQL, o utiliza `applyMemoryInitialization({ postgresUrl: ... })` desde el SDK. |
 | `SYNC_CONFLICT` | *"SYNC_CONFLICT: sincronización detenida; se conservan los datos locales y remotos."* | Modificaciones concurrentes incompatibles sobre una misma entidad entre local y remoto. | Detiene la sincronización para proteger los datos. No hay pérdida de información; no borres tablas. |
 | `SYNC_TOO_LARGE` | *"SYNC_TOO_LARGE: sincronización detenida; se conservan los datos..."* | La instantánea unificada supera el límite estricto de 8 MiB (`8,388,608 bytes`). | Se trata de un límite físico de carga, no de un conflicto histórico. Archiva datos obsoletos. |
 | `POSTGRES_URL` | *"POSTGRES_URL: conexión inválida..."* | Protocolo inválido o intento de `sslmode=disable` fuera de `127.0.0.1`/`localhost`. | Conexiones remotas exigen TLS verificado de manera estricta. |
@@ -143,12 +145,14 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
 
 ---
 
-### 6. Control de Seguridad, Cancelación y Ejecución Desatendida en el Centro de Control TUI (`INTERACTIVE_REQUIRED`)
-- **Síntoma:** Al invocar `forge614-engram tui` dentro de un script, pipe o entorno CI/CD, el proceso finaliza inmediatamente con código de salida `1` y el mensaje: *"tui necesita una terminal interactiva (TTY y raw mode) para renderizar el Centro de Control o configurar asistentes."*
-- **Causa:** El Centro de Control TUI requiere una terminal física con modo crudo (*raw mode*) para capturar eventos de teclado, redimensionamiento dinámico y renderizar el panel interactivo. Para evitar bloqueos indefinidos o salidas corruptas en flujos desatendidos, aborta de manera preventiva sin alterar el sistema.
+### 6. Control de Seguridad, Cancelación y Ejecución Desatendida (`INTERACTIVE_REQUIRED`)
+- **Síntoma:** Al invocar `forge614-engram tui` o `forge614-engram init` (sin `--json`) dentro de un script, pipe, redirección o entorno CI/CD, el proceso finaliza inmediatamente con código de salida `1` y un mensaje de error estructurado:
+  - En `tui`: *"tui necesita una terminal interactiva (TTY y raw mode) para renderizar el Centro de Control o configurar asistentes."*
+  - En `init`: *"init necesita una terminal interactiva. Para scripts utiliza init --json y project-create --name <nombre>."*
+- **Causa:** Tanto el Centro de Control TUI como el asistente interactivo de inicialización requieren una terminal física interactiva con soporte de modo crudo (*raw mode*) para capturar eventos del teclado de forma segura y renderizar la interfaz. Para evitar bloqueos indefinidos o salidas corruptas en flujos desatendidos, abortan de manera preventiva sin alterar el sistema.
 - **Procedimiento de Recuperación y Salvaguardas:**
   1. **Para flujos interactivos:** Ejecuta el comando directamente en tu emulador de terminal estándar (Ghostty, iTerm2, Alacritty, Terminal.app).
-  2. **Para scripts automatizados y pipelines CI/CD:** No invoques `tui`. Utiliza los subcomandos CLI especializados que emiten salidas directas o JSON (ej. `forge614-engram project-list`, `forge614-engram assistant-list`, `forge614-engram status`, `forge614-engram health`) o consume la API mediante el SDK TypeScript (`readControlCenter()`).
+  2. **Para scripts automatizados y pipelines CI/CD:** Utiliza la bandera no interactiva oficial `forge614-engram init --json` (que inicializa SQLite localmente y devuelve `{"initialized": true, "storage": "sqlite"}` sin pedir confirmaciones), seguida de comandos CLI sin interfaz como `forge614-engram project-create --name <nombre>`, `forge614-engram project-list`, `forge614-engram assistant-list`, `forge614-engram status`, `forge614-engram health` o las funciones del SDK TypeScript (`inspectMemoryInitialization`, `applyMemoryInitialization`).
   3. **Cancelación segura sin escrituras:** El Centro de Control inicia 100% en modo de solo lectura. Navegar pestañas (`Resumen`, `Proyectos`, `Compartido`, `Almacenamiento`), redimensionar la ventana o presionar `Escape`, `q` o `Ctrl+C` finaliza la interfaz de inmediato y restaura el cursor y la terminal sin haber escrito un solo byte en disco.
   4. **Protección durante acciones en curso:** Si ejecutas una acción confirmada (escribiendo deliberadamente `confirm` y presionando `Enter`), el Centro de Control bloquea el teclado y descarta cualquier pulsación de teclas entrante mientras la operación está en curso (por ejemplo, migraciones o sincronización con PostgreSQL). Esto previene la acumulación de comandos accidentales en el búfer de entrada.
 
@@ -171,7 +175,7 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
      ```powershell
      pwsh -File scripts/build-windows-reparse-addon.ps1
      ```
-  3. En sistemas Unix, `forge614-engram setup` y `forge614-engram init` reparan a `0700` únicamente la carpeta propia existente `~/.forge614/engram`; validan pero no aplican `chmod` al contenedor compartido `~/.forge614`.
+  3. En sistemas Unix, `forge614-engram init` e `init --json` reparan a `0700` únicamente la carpeta propia existente `~/.forge614/engram`; validan pero no aplican `chmod` al contenedor compartido `~/.forge614`.
      Si la carpeta pertenece a otro usuario (como `root` por un comando previo con `sudo`), debes corregir la propiedad y permisos de la cuenta:
      ```bash
      sudo chown -R $(id -un):$(id -gn) ~/.forge614
@@ -194,7 +198,7 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
 ---
 
 ### 9. Migración Segura de Espacio Legado y Resolución de Conflictos (`LEGACY_CONFLICT`, `LEGACY_UNSAFE`, `LEGACY_MIGRATION_FAILED`)
-- **Síntoma:** Al invocar `setup` o `init`, el proceso falla con `LEGACY_CONFLICT`, `LEGACY_UNSAFE` o `LEGACY_MIGRATION_FAILED`.
+- **Síntoma:** Al invocar `init` o `init --json`, el proceso falla con `LEGACY_CONFLICT`, `LEGACY_UNSAFE` o `LEGACY_MIGRATION_FAILED`.
 - **Causas Raíz:**
   - `LEGACY_UNSAFE`: La carpeta contenedora `~/.forge614` o alguno de los archivos sueltos (`.env`, `engram.db`, etc.) es un enlace simbólico, pertenece a otro usuario o sus permisos no pueden ser verificados con seguridad.
   - `LEGACY_CONFLICT`: La carpeta de destino `~/.forge614/engram/` ya contiene archivos que colisionan con los archivos legados en `~/.forge614/`, o existen diarios WAL/SHM huérfanos sin la base de datos principal `engram.db`.
@@ -228,3 +232,25 @@ Esta guía documenta el catálogo exhaustivo de diagnósticos y códigos de erro
      ```
   3. Si reporta `ATLAS_UNINSTALL_REQUIRED`, asegúrate de que el binario de Atlas esté presente en `~/.forge614/atlas/bin/forge614-atlas` con permisos de ejecución (`0755`).
   4. Si reporta `PATH_CONFLICT`, abre tu archivo de inicio de shell (`.zshrc`, `.bashrc`, etc.) y limpia manualmente el bloque `# >>> forge614-engram PATH >>>` antes de reintentar.
+
+---
+
+### 11. Retiro Formal del Comando setup (`COMMAND_RETIRED`)
+- **Síntoma:** Al ejecutar `forge614-engram setup`, el comando falla inmediatamente con código de salida `1` y emite por stderr el JSON estructurado:
+  ```json
+  {
+    "code": "COMMAND_RETIRED",
+    "error": "El comando setup fue retirado. Usa forge614-engram init."
+  }
+  ```
+- **Causa Raíz:** Como parte de la transición hacia el ecosistema Forge614 unificado (`FORGE614_ECOSYSTEM_CONTRACT.md`), el subcomando `setup` fue retirado por completo del binario público. Engram ya no admite `setup` ni lo mantiene como un alias silencioso, garantizando contratos de CLI inequívocos y deterministas.
+- **Procedimiento de Recuperación:**
+  1. Si deseas una experiencia guiada e interactiva en la terminal (selección de almacenamiento, configuración opcional de PostgreSQL, activación aditiva de refuerzo FTS5 y transición a `assistantTui`), ejecuta:
+     ```bash
+     forge614-engram init
+     ```
+  2. Si estás automatizando entornos, escribiendo scripts bash o configurando contenedores en pipelines CI/CD, ejecuta la modalidad desatendida:
+     ```bash
+     forge614-engram init --json
+     ```
+     Este comando no abrirá pantallas interactivas, no intentará leer de stdin y devolverá inmediatamente `{"initialized": true, "storage": "sqlite"}` con código de salida 0.

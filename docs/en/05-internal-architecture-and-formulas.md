@@ -1,8 +1,8 @@
 # 05 (EN). Internal Architecture, Modular Monolith, FTS5, and Ranking Formulas
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Coordinated Uninstaller, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active v1.1.0 (572 total tests across 90 files: 572 passed, 15 skipped on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
+> **Stage:** Nonvisual Engine Transition (Task 1: Inspection & Preview, Task 2: Atomic Initialization Application), Ecosystem Contract (`FORGE614_ECOSYSTEM_CONTRACT.md`), TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Coordinated Uninstaller, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 1.1.0-beta.2 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active (582 tests passed, 15 skipped across 92 files on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
 > **Sister translation:** [05. Arquitectura Interna, Monolito Modular por Funcionalidad, SQLite FTS5 y Fórmulas Matemáticas](../es/05-arquitectura-interna-y-formulas.md)
 
 This document presents the internal architecture of Forge614 Engram with thesis-level technical rigor: the foundations of the **Feature-Oriented Modular Monolith**, the concrete problems resolved, the physical directory structure and responsibilities, strict dependency rules enforced via TypeScript AST auditing, the design of the **Terminal Control Center (TUI)**, compound atomic transactions, directory change guidelines, colocated testing conventions, relational SQLite Schemas 3 to 7, the PostgreSQL Formats 1 to 3 replication protocol, dedicated product home isolation (`~/.forge614/engram/`), safe legacy data migration, guarded coordinated uninstallation, and the exact mathematical formulas for weighted BM25, 30-day recency, asymptotic stability saturation via immutable confirmations, and sliding window deduplication without embeddings.
@@ -663,6 +663,52 @@ Located in `src/app/uninstall.ts`, the `uninstallEngram` function executes the f
 - **Exclusive Product Home Removal:**
   - Deletes only the `~/.forge614/engram/` subdirectory.
   - The family root container `~/.forge614/` and sibling tools remain untouched.
+
+### 9.11. Forge614 Ecosystem Hierarchy and Nonvisual Transition Contract (`src/app/initialization.ts`)
+
+With the formalization of the master ecosystem contract (`FORGE614_ECOSYSTEM_CONTRACT.md`), Forge614 establishes a clear product hierarchy with explicit boundaries:
+
+```text
+forge614-ai                         Core and ecosystem orchestrator (future owner of forge614 init)
+├─ forge614-shell                   The only visual experience for human users
+├─ forge614-engines                 Installed-AI discovery and adapters (internal dependency)
+├─ forge614-engram                  Persistent memory engine (SQLite, FTS5, optional replica, MCP & SDK)
+└─ forge614-atlas                   Deep repository contextualization (deposits into Engram)
+```
+
+**Key Hierarchy Principles:**
+1. **One Single Visual Experience:** Forge614 Shell is the sole interface featuring interactive windows or terminal screens (TUI) for humans during initial onboarding. All other products operate as engines, services, or headless tools without their own graphical or terminal screens.
+2. **Engram is a Memory Engine, Not a Setup Wizard:** Engram owns its dedicated local storage (`~/.forge614/engram/`), SQLite, FTS5, search, project identities (`projectId`), and synchronization. Long term, Engram does not maintain its own TUI or duplicate Shell's setup screens.
+3. **Shell Runtime Role (Optional in Daily Work):** Forge614 Shell is the official visual onboarding and guided setup environment, but **running Shell is strictly optional and not required during day-to-day coding**. Connected external AI assistants (ADE Orca, Claude Code, Codex, Antigravity) communicate directly with Engram via its local stdio MCP server, without needing Shell to remain open or running in the background.
+4. **Retirement of `setup` in Favor of `init` (`COMMAND_RETIRED`):** Aligning with ecosystem convergence, the legacy command `forge614-engram setup` has been **completely retired** (returning structured error `COMMAND_RETIRED` with exit code 1). Initialization is channeled exclusively through `forge614-engram init` (interactive guided terminal mode delegating to `assistantTui`) and `forge614-engram init --json` (non-interactive mode for scripts, automation, and SDK).
+5. **Global Command Ownership:** The future global `forge614 init` command will belong to `forge614-ai`. No other product (including Engram) owns or implements `forge614 init`.
+
+**Nonvisual Module Architecture (`src/app/initialization.ts`):**
+Located in `src/app/initialization.ts` and exported from the package root (`src/index.ts`), this module implements the Task 1 and Task 2 contracts for the nonvisual engine transition:
+
+- **`inspectMemoryInitialization(config?: WorkspaceConfig): MemoryInitializationStatus`:**
+  - Passively inspects `~/.forge614/engram/` without causing any side effects.
+  - If the directory does not exist, returns `{ initialized: false, storage: "sqlite", postgresConfigured: false, reinforcementEnabled: false }` without touching the disk.
+  - If it exists, opens SQLite in read-only mode (`open(true)`), verifies the presence of the `confirmations` table (Schema 7), and immediately closes the handle in a `finally` block.
+  - Checks if `POSTGRES_URL` is defined in `.env` and returns strictly a boolean flag, preventing credential leaks.
+
+- **`previewMemoryInitialization(request: MemoryInitializationRequest, config?: WorkspaceConfig): Promise<MemoryInitializationPreview>`:**
+  - Processes an initialization request `{ postgresUrl: string | null, enableReinforcement: boolean }`.
+  - Writes no files, creates no directories, and executes no migrations.
+  - Validates `postgresUrl` syntax locally using `postgresOptions()`, ensuring URL safety without opening network sockets to remote servers.
+  - Reads the current configuration fingerprint via `config.revision()` (`expectedRevision`), allowing callers to detect concurrency races if another process edits `.env` before human confirmation.
+  - Projects required changes using boolean flags (`initializesStorage`, `configuresPostgres`, `enablesReinforcement`).
+
+- **`applyMemoryInitialization(request: MemoryInitializationRequest, expectedRevision: string | null, config?: WorkspaceConfig): Promise<MemoryInitializationResult>`:**
+  - Atomically applies the initialization approved by the user in Shell.
+  - **Optimistic Concurrency Control:** Compares `config.revision() === expectedRevision`. If external drift is detected, it strictly aborts throwing `CONFIG_CHANGED` without touching the disk.
+  - **Pre-Flight PostgreSQL Connectivity Check:** When `postgresUrl` is provided, it runs a transient test connection and read (`PostgresReplica.connect(url, true); await replica.read(); await replica.close()`) **before performing any local mutations**. If the connection fails, it aborts cleanly without leaving files or configuration in an inconsistent state.
+  - **Idempotent Initialization:** Executes `workspace.init()` to ensure restrictive permissions (`0700` directory and `0600` for `.env`/`engram.db`), preserving pre-existing data.
+  - **Additive Reinforcement (No Downgrade):** When `enableReinforcement` is `true`, it activates `store.enableSearchReinforcement()`. When `false`, it never disables or downgrades existing reinforcement.
+  - Atomically writes the PostgreSQL URL via `config.configurePostgres(request.postgresUrl)` and returns the final inspected state.
+
+**Isolation Invariants:**
+Engram operates exclusively inside `~/.forge614/engram/`. It never reads, modifies, or removes sibling directories `shell/`, `engines/`, or `atlas/`, respecting the sovereignty of each component in the ecosystem.
 
 ---
 

@@ -2,7 +2,7 @@
 
 > **Etapa:** Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura de Espacio Anterior, Desinstalación Protegida (`uninstall`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
 > **Versiones de esta entrega:** Programa 1.1.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo (572 superadas, 15 omitidas de plataforma/PG local, 0 fallos, 2786 aserciones en 90 archivos en macOS ARM64 con Bun 1.3.8; validación de release para 6 ejecutables nativos en GitHub Actions)
+> **Estado:** Vigente y Activo (582 superadas, 15 omitidas de plataforma/PG local, 0 fallos, 2781 aserciones en 92 archivos en macOS ARM64 con Bun 1.3.8; validación de release para 6 ejecutables nativos en GitHub Actions)
 > **Traducción hermana:** [03 (EN). Terminal CLI Command Reference](../en/03-cli-reference.md)
 
 Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sintaxis, códigos de salida y formatos de respuesta de la interfaz de línea de comandos (CLI) de Forge614 Engram.
@@ -23,10 +23,10 @@ Esta guía documenta exhaustivamente todos los comandos, opciones, reglas de sin
 3. **Comillas obligatorias para textos con espacios:** Todo título, texto, JSON o nombre con espacios debe encerrarse entre comillas dobles (`"..."`).
 4. **Validación estricta previa:** Si pasas una opción desconocida, repites una opción, o envías argumentos incompatibles (por ejemplo combinar `--scope shared` con `--project-id` en operaciones de recuerdo individual o pasar `--upgrade-format` a `sync-watch`), el programa termina inmediatamente con error de sintaxis `INVALID_INPUT` **antes de leer la configuración o abrir SQLite**.
 5. **Canales de salida y códigos de salida:**
-   - **Comandos interactivos (`setup`, `tui`):** Emiten texto comprensible para personas a través de `stdout`. Devuelven código `0` en caso de éxito/confirmación; código `130` si el usuario cancela voluntariamente (`Ctrl+C`, `Escape`, `cancelar`, `q` o `no`); y código `1` si ocurre un error o si se invocan sin terminal interactiva (`isTTY` falso arrojando `INTERACTIVE_REQUIRED`).
+   - **Comandos interactivos (`init` sin `--json`, `tui`):** Emiten texto comprensible para personas a través de `stdout`. Devuelven código `0` en caso de éxito/confirmación; código `130` si el usuario cancela voluntariamente (`Ctrl+C`, `Escape`, `cancelar`, `q` o `no`); y código `1` si ocurre un error o si se invocan sin terminal interactiva (`isTTY` falso arrojando `INTERACTIVE_REQUIRED`).
    - **Servidor MCP (`mcp`):** Reserva `stdout` exclusivamente para tramas JSON-RPC del protocolo MCP. Al cerrarse con `Ctrl+C` (SIGINT) devuelve código `130`; con SIGTERM devuelve código `143`.
    - **Observador de sincronización (`sync-watch`):** Emite rondas exitosas en JSON a `stdout` y avisos de reintento a `stderr`. Al interrumpirse con `Ctrl+C` finaliza con código `130`.
-   - **Comandos de datos y automatización (`init`, `uninstall`, `sync`, `assistant-list`, `integration-enable`, `sessions-enable`, `reinforcement-enable`, `project-*`, `save`, `search`, `session-*`, `timeline`, `context`, etc.):** Emiten respuestas en formato **JSON estructurado** a través de `stdout` con código de salida `0` en caso de éxito. En caso de error, emiten un objeto JSON de error a través de `stderr` con código de salida `1`.
+   - **Comandos de datos y automatización (`init --json`, `uninstall`, `sync`, `assistant-list`, `integration-enable`, `sessions-enable`, `reinforcement-enable`, `project-*`, `save`, `search`, `session-*`, `timeline`, `context`, etc.):** Emiten respuestas en formato **JSON estructurado** a través de `stdout` con código de salida `0` en caso de éxito. En caso de error, emiten un objeto JSON de error a través de `stderr` con código de salida `1`.
 6. **Banderas eliminadas que NO se admiten:**
    - `--db`: No se admite. La base de datos es fija: `~/.forge614/engram/engram.db`.
    - `--project` (por nombre): No se admite. El identificador es estrictamente `--project-id <UUID>`.
@@ -59,27 +59,46 @@ forge614-engram help
 
 ---
 
-### 2.3. `setup`
-Asistente interactivo guiado de incorporación (*onboarding*) que primero configura el espacio de almacenamiento en el hogar propio de Engram (`~/.forge614/engram/.env` y `~/.forge614/engram/engram.db`, migrando datos antiguos sueltos si existían de forma segura, ofreciendo sincronización opcional con PostgreSQL y refuerzo de búsqueda FTS5 del Esquema 7) y, tras la confirmación exitosa de memoria, cierra limpiamente su lector de terminal y abre automáticamente la TUI de selección de asistentes (`assistantTui`).
+### 2.3. `init [--json]`
+Punto de entrada oficial para inicializar y verificar el espacio central de almacenamiento en el hogar propio de Engram (`~/.forge614/engram/.env` y `~/.forge614/engram/engram.db`). Dispone de dos modalidades operativas según el contexto de ejecución: guiado e interactivo para personas en terminal, o silencioso y estructurado en JSON para scripts, flujos automatizados y herramientas del ecosistema.
+
+#### Modalidad A: Asistente Interactivo en Terminal (`forge614-engram init`)
 
 ```bash
-forge614-engram setup
+forge614-engram init
 ```
-- **Opciones:** Ninguna.
-- **Requisitos:** Terminal interactiva (`stdin` y `stdout` TTY). Si se ejecuta sin TTY, termina inmediatamente con código `1` y error `INTERACTIVE_REQUIRED`.
+- **Opciones:** Ninguna (sin la bandera `--json`).
+- **Requisitos:** Terminal interactiva (`stdin` y `stdout` TTY). Si se ejecuta en un entorno desatendido, canalización (`|`) o redirección sin TTY, termina inmediatamente con código `1` y error estructurado `INTERACTIVE_REQUIRED` ("init necesita una terminal interactiva. Para scripts utiliza init --json y project-create --name <nombre>.").
 - **Flujo de Ejecución:**
-  1. Preparación del hogar de producto `~/.forge614/engram/`, reparación de permisos (`0700`), migración no destructiva de archivos antiguos sueltos en `~/.forge614/`, opción de PostgreSQL y oferta de refuerzo de búsqueda.
-  2. Resumen y confirmación previa del almacenamiento (`¿Confirmar? [si/NO]`).
-  3. Al confirmar, inicializa la base y entrega el control secuencialmente a la TUI de asistentes.
-  4. La TUI audita y detecta los 5 asistentes compatibles (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`), permitiendo seleccionarlos, previsualizar rutas y respaldos, y aplicar la integración con confirmación explícita (cero modificaciones silenciosas).
+  1. **Preparación y Aseguramiento:** Prepara el hogar de producto `~/.forge614/engram/`, restringe permisos a `0700` (`rwx------`) si la carpeta existe y pertenece al usuario, y migra automáticamente archivos antiguos sueltos desde `~/.forge614/` de forma no destructiva si los hubiera.
+  2. **Configuración Guiada:** Pregunta de forma conversacional si se desea configurar una réplica de sincronización remota con PostgreSQL (con validación transitoria segura) y si se desea habilitar el refuerzo de búsqueda FTS5 del Esquema 7.
+  3. **Resumen y Confirmación Explícita:** Muestra las rutas de `.env` y `engram.db`, junto con un resumen claro, solicitando confirmación deliberada (`¿Confirmar? [si/NO]`).
+  4. **Inicialización y Traspaso:** Al confirmar, inicializa la base SQLite, cierra limpiamente el lector de terminal y **abre automáticamente el Centro de Selección de Asistentes (`assistantTui`)** para auditar y conectar asistentes compatibles (`claude-code`, `codex`, `cursor`, `opencode`, `antigravity`) con vista previa y confirmación explícita (cero cambios silenciosos).
 - **Semántica de Cancelación:**
-  - Cancelar durante la configuración de memoria (`Ctrl+C`, `Escape` o `no`) sale con código `130` (*Cancelled*) sin abrir la TUI de asistentes y sin escribir archivos en disco.
-  - Cancelar o salir de la TUI de asistentes tras completar la memoria conserva el almacenamiento inicializado y finaliza limpiamente con código `0`.
-- **Diferencia con `init` y `assistant-list`:**
-  - `setup`: Flujo completo interactivo (almacenamiento + TUI interactiva de asistentes).
-  - `init`: Inicialización no interactiva de almacenamiento únicamente (crea/verifica `~/.forge614/engram/` en modo headless; no detecta ni conecta asistentes).
-  - `assistant-list`: Inspección de solo lectura en JSON (no crea archivos, no modifica almacenamiento, no abre interfaces interactivas).
-- **Códigos de salida:** `0` al confirmar y aplicar; `130` al cancelar durante la memoria; `1` ante error o falta de terminal interactiva (`INTERACTIVE_REQUIRED`).
+  - Cancelar durante la configuración de memoria (`Ctrl+C`, `Escape`, `q`, `cancelar` o `no`) sale con código `130` (*Cancelled*) sin abrir la TUI de asistentes y sin crear archivos de base de datos ni `.env`.
+  - Cancelar o salir de la TUI de asistentes tras haber confirmado la memoria conserva el almacenamiento inicializado y finaliza limpiamente con código `0`.
+
+#### Modalidad B: Automatización No Interactiva (`forge614-engram init --json`)
+
+```bash
+forge614-engram init --json
+```
+- **Opciones:** `--json` (bandera booleana obligatoria para este modo).
+- **Requisitos:** Ninguno. Diseñado específicamente para scripts de shell, pipelines CI/CD, SDKs y herramientas del ecosistema Forge614 (como Forge614 Shell o Forge614 AI). Nunca conecta con `stdin` interactivo ni solicita confirmación humana.
+- **Flujo de Ejecución:**
+  1. Prepara de forma segura el directorio `~/.forge614/engram/` y asegura sus permisos privados (`0700`).
+  2. Migra datos antiguos de `~/.forge614/` si existen de forma no destructiva.
+  3. Inicializa el almacén SQLite local con su configuración predeterminada de forma idempotente.
+  4. **No crea proyectos** ni registros ficticios.
+  5. **No detecta ni altera configuraciones de asistentes de IA.**
+- **Salida JSON:**
+  ```json
+  {
+    "initialized": true,
+    "storage": "sqlite"
+  }
+  ```
+- **Códigos de salida:** `0` en caso de éxito; `1` si ocurre un fallo de permisos o de disco (`STORAGE_ERROR`).
 
 ---
 
@@ -102,7 +121,7 @@ forge614-engram tui
   - `Ctrl+C` o `EOF`: Terminar la sesión inmediatamente, restaurar la terminal y salir con código `130`.
 - **Comportamiento de Solo Lectura por Defecto:**
   - Abrir la pantalla, navegar, redimensionar la terminal o presionar teclas no reconocidas **jamás escribe archivos en el disco**, no crea `~/.forge614/.env`, no crea `engram.db` ni registra proyectos.
-  - Si el almacén no existe, muestra un estado claro sin inicializar e indica usar `setup` o `init`; no crea archivos automáticamente.
+  - Si el almacén no existe, muestra un estado claro sin inicializar e indica usar `init`; no crea archivos automáticamente.
 - **Vistas y Metadatos Disponibles:**
   - **Summary:** Inicialización, esquema SQLite activo (3 a 7), capacidades habilitadas, total de proyectos y estadísticas agregadas de memoria compartida.
   - **Projects:** Lista proyectos con nombre descriptivo, UUID abreviado y conteo de recuerdos activos/archivados. Al pulsar Enter, muestra el detalle con UUID canónico completo, marcas temporales y rutas locales vinculadas (`bindings`).
@@ -185,7 +204,7 @@ forge614-engram reinforcement-enable
     "schema": 7
   }
   ```
-- **Efectos secundarios:** Migración aditiva irreversible. Si la base estaba en Esquema 3, 4, 5 o 6, la promueve al Esquema 7. Los comandos normales de apertura o `mcp` jamás auto-migran bases de datos existentes a Esquema 7; la ejecución de `reinforcement-enable` (o seleccionarlo en `setup`) es obligatoria para activar el ranking reforzado.
+- **Efectos secundarios:** Migración aditiva irreversible. Si la base estaba en Esquema 3, 4, 5 o 6, la promueve al Esquema 7. Los comandos normales de apertura o `mcp` jamás auto-migran bases de datos existentes a Esquema 7; la ejecución de `reinforcement-enable` (o seleccionarlo en `init`) es obligatoria para activar el ranking reforzado.
 
 ---
 
@@ -247,18 +266,7 @@ forge614-engram project-bind \
 
 ---
 
-### 2.12. `init`
-Inicializa programáticamente el espacio global en el hogar propio (`~/.forge614/engram/.env` y `~/.forge614/engram/engram.db`) en modo exclusivamente local. Si detecta archivos antiguos sueltos en `~/.forge614/`, los migra de forma automática y segura.
-
-```bash
-forge614-engram init
-```
-- **Salida JSON:** `{"initialized":true,"storage":"sqlite"}`
-- **Efectos secundarios:** Es idempotente. Si la base ya existe con recuerdos previos, no borra ni modifica datos.
-
----
-
-### 2.13. `sync`
+### 2.12. `sync`
 Ejecuta una ronda inmediata de sincronización por fusión de tres vías (*3-way merge snapshot sync*) contra el servidor PostgreSQL configurado en `~/.forge614/engram/.env`.
 
 ```bash
@@ -291,7 +299,7 @@ forge614-engram sync --upgrade-format
 
 ---
 
-### 2.14. `sync-watch`
+### 2.13. `sync-watch`
 Ejecuta una ronda inmediata de sincronización y mantiene un bucle en primer plano que reintenta periódicamente.
 
 ```bash
@@ -303,7 +311,7 @@ forge614-engram sync-watch [--interval <1..3600>]
 
 ---
 
-### 2.15. `uninstall`
+### 2.14. `uninstall`
 Desinstalador protegido y coordinado de Forge614 Engram. Realiza la retirada quirúrgica de configuraciones de asistentes, publicaciones de PATH y eliminación exclusiva de su subcarpeta de producto `~/.forge614/engram/`.
 
 ```bash
@@ -331,6 +339,23 @@ forge614-engram uninstall --confirm "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"
   }
   ```
 - **Códigos de salida:** `0` en caso de éxito; `1` ante frase incorrecta (`UNINSTALL_CONFIRMATION`), fallo de desinstalación de Atlas (`ATLAS_UNINSTALL_FAILED`), conflicto de PATH (`PATH_CONFLICT`) o error de asistentes (`ASSISTANT_REMOVE_FAILED`).
+
+---
+
+### 2.15. Comando Retirado: `setup` (`COMMAND_RETIRED`)
+El comando `forge614-engram setup` ha sido **completamente retirado** y ya no es un alias ni un comando público disponible.
+
+```bash
+forge614-engram setup
+```
+- **Comportamiento:** Si un usuario o script invoca `forge614-engram setup`, el proceso se detiene inmediatamente con código de salida `1` y emite un error estructurado en JSON por `stderr`:
+  ```json
+  {
+    "code": "COMMAND_RETIRED",
+    "error": "El comando setup fue retirado. Usa forge614-engram init."
+  }
+  ```
+- **Motivación Arquitectónica:** Dentro de la transición del ecosistema Forge614 (`FORGE614_ECOSYSTEM_CONTRACT.md`), el verbo canónico de inicialización es `init`. Para inicialización interactiva guiada en terminal con confirmación humana, ejecuta `forge614-engram init`. Para inicialización desatendida desde scripts, SDKs o automatización, ejecuta `forge614-engram init --json`.
 
 ---
 
@@ -685,8 +710,9 @@ Cuando la CLI falla, emite un objeto JSON en `stderr` con código de salida `1` 
 | `PROJECT_BINDING_REQUIRED` | Una carpeta asociada previamente fue borrada, renombrada o desmontada. | Usar `project-bind` para asociar la ruta actual al proyecto deseado. |
 | `CONFLICT` | En OpenCode, existe un plugin local con modificaciones no gestionadas. | Respaldar y conciliar el plugin manualmente antes de usar `tui`. |
 | `PUBLISHED_UNVERIFIED` | Un archivo de configuración de asistente fue alterado concurrentemente tras guardarse. | Verificar los archivos de configuración y reintentar la operación. |
-| `INTERACTIVE_REQUIRED` | `setup` o `tui` fueron invocados sin una terminal interactiva TTY real. | Ejecutar el comando en una terminal interactiva humana. |
-| `SYNC_DISABLED` | Se invocó `sync` pero no hay configuración PostgreSQL en `~/.forge614/engram/.env`. | Ejecutar `forge614-engram setup` para configurar la réplica. |
+| `INTERACTIVE_REQUIRED` | `init` (sin `--json`) o `tui` fueron invocados sin una terminal interactiva TTY real. | Ejecutar el comando en una terminal interactiva humana o utilizar `init --json` para scripts. |
+| `COMMAND_RETIRED` | Se invocó el comando retirado `setup`. | Ejecutar `forge614-engram init` (interactivo) o `init --json` (desatendido). |
+| `SYNC_DISABLED` | Se invocó `sync` pero no hay configuración PostgreSQL en `~/.forge614/engram/.env`. | Ejecutar `forge614-engram init` para configurar la réplica. |
 | `SYNC_CONFLICT` | Conflicto irreconciliable de tres vías entre la base local y la réplica remota. | Resolver la divergencia inspeccionando las versiones en conflicto. |
 | `SYNC_TOO_LARGE` | La instantánea acumulada de sincronización supera el límite de 8 MiB. | Purgar o archivar entidades históricas para reducir el paquete. |
 | `POSTGRES_UNAVAILABLE` | El servidor PostgreSQL remoto no responde o rechazó la conexión. | Verificar la red, estado del servidor PostgreSQL y credenciales. |
@@ -697,9 +723,8 @@ Cuando la CLI falla, emite un objeto JSON en `stderr` con código de salida `1` 
 
 | Comando | Opciones Obligatorias | Opciones Opcionales | Salida |
 | :--- | :--- | :--- | :--- |
-| `setup` | Ninguna | Ninguna | Texto interactivo |
+| `init` | Ninguna | `--json` | Texto interactivo (sin `--json`) o JSON (con `--json`) |
 | `tui` | Ninguna | Ninguna | Pantalla interactiva |
-| `init` | Ninguna | Ninguna | JSON |
 | `uninstall` | `--confirm` | Ninguna | JSON |
 | `assistant-list` | Ninguna | Ninguna | JSON |
 | `integration-enable` | Ninguna | Ninguna | JSON |

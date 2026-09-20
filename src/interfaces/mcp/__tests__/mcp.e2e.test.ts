@@ -60,7 +60,7 @@ afterEach(async () => {
 
 test("mcp never enrolls implicitly and resolves one client root without creating a project", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
-  expect(runCli(root, userDirectory, "init").code).toBe(0);
+  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
   let connection = await connect({ cwd: root, userDirectory, roots: [project] });
   const before = await call(connection.client, "memory_current_project");
   expect(before.isError).toBe(true);

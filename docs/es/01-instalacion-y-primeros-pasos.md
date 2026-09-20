@@ -1,12 +1,12 @@
 # 01. Instalación, Configuración y Primeros Pasos
 
-> **Etapa:** Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura de Espacio Anterior, Desinstalación Protegida (`uninstall`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
+> **Etapa:** Transición a Motor No Visual (Task 1: Inspección y Vista Previa), Contrato de Ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura de Espacio Anterior, Desinstalación Protegida (`uninstall`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones de Memoria Progresiva, Contexto Clasificado, 10 Herramientas MCP, Memoria Local y Sincronización PostgreSQL Opcional
 > **Esquemas:** SQLite Esquemas 3 (local) / 4 (sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas) / 7 (confirmaciones inmutables y orden reforzado) | Réplica PostgreSQL Formatos 1, 2 y 3 (promoción explícita con `sync --upgrade-format`; tabla física remota `state.format = 1`)
 > **Habilitaciones:** Explícitas y aditivas (`integration-enable` para Esquema 5; `sessions-enable` para Esquema 6; `reinforcement-enable` para Esquema 7; `sync --upgrade-format` para réplica Formato 2 o Formato 3). La apertura de base, el centro de control TUI y los comandos ordinarios nunca migran automáticamente.
-> **Estado:** Vigente y Verificado (572 superadas, 15 omitidas de plataforma/PG local, 0 fallos, 2786 aserciones en 90 archivos en macOS ARM64 con Bun 1.3.8; validación de release para 6 ejecutables nativos en GitHub Actions)
+> **Estado:** Vigente y Verificado (582 superadas, 15 omitidas de plataforma/PG local, 0 fallos, 2781 aserciones en 92 archivos en macOS ARM64 con Bun 1.3.8; validación de release para 6 ejecutables nativos en GitHub Actions)
 > **Traducción hermana:** [01 (EN). Installation, Setup, and Getting Started](../en/01-installation-and-getting-started.md)
 
-Esta guía explica paso a paso cómo instalar el comando `forge614-engram`, usar el asistente interactivo `setup`, conectar asistentes con aprobación explícita, trabajar con sesiones progresivas y confirmaciones inmutables de FTS5, y coordinar equipos pares.
+Esta guía explica paso a paso cómo instalar el comando `forge614-engram`, inicializar el espacio de memoria de forma interactiva (`init`) o desatendida (`init --json`), conectar asistentes con aprobación explícita, trabajar con sesiones progresivas y confirmaciones inmutables de FTS5, y coordinar equipos pares.
 
 ---
 
@@ -96,7 +96,7 @@ irm https://github.com/jotredev/forge614-engram/releases/download/v1.1.0-beta.2/
    & { irm ... | iex } -BinDir C:\MiRuta\bin
    ```
 6. **Configuración automática e idempotente de la variable PATH:** Configura la variable PATH de tu terminal (ver Sección 3).
-7. **Cero almacenamiento prematuro:** El instalador prepara la carpeta de binarios pero **jamás inicializa la base de datos ni crea `.env` prematuramente** durante la instalación. Ese paso se realiza deliberadamente durante el flujo de bienvenida (`setup`) o inicialización (`init`).
+7. **Cero almacenamiento prematuro:** El instalador prepara la carpeta de binarios pero **jamás inicializa la base de datos ni crea `.env` prematuramente** durante la instalación. Ese paso se realiza deliberadamente durante el flujo de bienvenida interactivo (`init`) o la inicialización desatendida (`init --json`).
 
 ### Opción alternativa: Compilación desde código fuente (Desarrolladores)
 
@@ -172,9 +172,8 @@ Forge614 Engram — una base, recuerdos por proyecto y compartidos
 
 Uso: forge614-engram <comando> [opciones]
 
-setup           Asistente interactivo; confirma antes de guardar. Cancelar no aplica cambios.
 tui             Centro de control local. Asistentes con vista previa y confirmación explícita.
-init            Inicializa una sola configuración y base local, sin borrar datos.
+init [--json]   Inicializa Engram; sin --json guía y confirma en terminal. --json no pregunta.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
@@ -224,18 +223,18 @@ No hay conexiones, carpetas .env ni bases diferentes por proyecto.
 --db, --project y --id-project no se admiten. El identificador se llama projectId.
 project-create inicializa el espacio si aún no existe configuración.
 Para guardar shared sin crear un proyecto, ejecuta init primero.
-init y setup pueden mover la ubicación antigua de Engram a ~/.forge614/engram cuando es seguro; nunca reemplazan datos en conflicto.
-SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada en setup.
+init puede mover la ubicación antigua de Engram a ~/.forge614/engram cuando es seguro; nunca reemplazan datos en conflicto.
+SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada con init.
 sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
 Antes de sync --upgrade-format, actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
 sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
-setup ofrece el refuerzo explícitamente; registrar repeticiones mejora el orden, no verifica la verdad.
+init ofrece el refuerzo explícitamente; registrar repeticiones mejora el orden, no verifica la verdad.
 La habilitación local no promueve la réplica: ejecuta sync --upgrade-format por separado.
 Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
 Actualizar un tema requiere --expected-version. Archivar conserva el historial.
-setup y tui muestran texto y requieren terminal; cancelar devuelve código 130.
+init sin --json y tui muestran texto y requieren terminal; cancelar devuelve código 130.
 Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
 MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
 uninstall requiere REMOVE FORGE614-ENGRAM; si Atlas existe requiere REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS.
@@ -244,15 +243,28 @@ La resolución de directorios de proyecto requiere Git disponible, incluso para 
 
 ---
 
-## 5. Inicializar el Espacio Central: El Asistente `setup`
+## 5. Inicializar el Espacio Central: `init` e `init --json`
 
-Para crear tu espacio central por primera vez o reconfigurarlo interactivamente, ejecuta:
+Para crear tu espacio central por primera vez o reconfigurarlo interactivamente en tu terminal, ejecuta:
 
 ```bash
-forge614-engram setup
+forge614-engram init
 ```
 
-El asistente requiere terminal interactiva (`stdin` y `stdout`). Presenta una pantalla paso a paso:
+Para scripts, entornos de integración continua (CI/CD) o herramientas del ecosistema que requieren inicialización silenciosa y desatendida, ejecuta:
+
+```bash
+forge614-engram init --json
+```
+
+> [!NOTE]
+> **Aclaración de Arquitectura: Forge614 Shell es Opcional en el Trabajo Diario**
+> De acuerdo con el Contrato de Ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), **Forge614 Shell** es la interfaz visual oficial para la instalación, primera configuración e incorporación guiada de la suite Forge614. Sin embargo, **Forge614 Shell es estrictamente opcional durante el trabajo de desarrollo cotidiano**.
+> Una vez completada la inicialización, desarrolladores que programan en ADE Orca, Claude Code, Codex, Cursor o en su terminal nativa interactúan con Forge614 Engram directamente a través de su servidor local MCP por entrada/salida estándar (`stdio`). **Forge614 Shell no necesita estar abierto ni ejecutándose en segundo plano para que Engram atienda a tus asistentes de inteligencia artificial.**
+>
+> Asimismo, el comando anterior `forge614-engram setup` ha sido **completamente retirado** (no es un alias). Si se invoca, responde inmediatamente con código `1` y el error estructurado `COMMAND_RETIRED` ("El comando setup fue retirado. Usa forge614-engram init."). El verbo canónico de inicialización en todo el ecosistema es `init`.
+
+El asistente interactivo `forge614-engram init` requiere terminal interactiva (`stdin` y `stdout` TTY). Presenta una pantalla paso a paso:
 
 ```text
 === Asistente de configuración de Forge614 Engram ===
@@ -292,7 +304,7 @@ A partir de la versión 1.1.0, Forge614 Engram deja de almacenar archivos direct
 
 ### Migración Automática y Segura desde Ubicaciones Anteriores
 
-Si ya contabas con una instalación anterior que guardaba sus datos directamente dentro de `~/.forge614/`, tanto `setup` como `init` ejecutan automáticamente un procedimiento de migración no destructiva (`EngramProductHome.migrateLegacyWorkspace`):
+Si ya contabas con una instalación anterior que guardaba sus datos directamente dentro de `~/.forge614/`, tanto `init` interactivo como `init --json` ejecutan automáticamente un procedimiento de migración no destructiva (`EngramProductHome.migrateLegacyWorkspace`):
 
 1. **Archivos reconocidos:** Únicamente traslada los nombres de archivo exactos de Engram situados directamente en la raíz de `~/.forge614/`: `.env`, `engram.db`, `engram.db-wal`, `engram.db-shm` y `.config-lock`. Jamás toca carpetas ni archivos no reconocidos.
 2. **Inspección de seguridad antes de mover:**
@@ -302,7 +314,7 @@ Si ya contabas con una instalación anterior que guardaba sus datos directamente
 3. **Movimiento atómico con reversión:** Si ocurre un fallo inesperado del sistema de archivos a mitad de la mudanza, Engram revierte atómicamente los archivos ya movidos a su ubicación original y emite el error `LEGACY_MIGRATION_FAILED` para no dejar el estado a medias.
 
 ### Reparación Automática de Permisos Privados (`0700` y `0600`)
-Antes de leer la configuración o formular preguntas interactivas, `setup` valida el contenedor compartido `~/.forge614/` sin modificarlo y después inspecciona la carpeta propia `~/.forge614/engram/`. Si esa carpeta de producto existe, es ordinaria y pertenece al usuario actual, Engram puede restringir sus permisos a `0700` (`rwx------`).
+Antes de leer la configuración o formular preguntas interactivas, `init` valida el contenedor compartido `~/.forge614/` sin modificarlo y después inspecciona la carpeta propia `~/.forge614/engram/`. Si esa carpeta de producto existe, es ordinaria y pertenece al usuario actual, Engram puede restringir sus permisos a `0700` (`rwx------`).
 - **¿Por qué son indispensables los permisos `0700` y `0600`?** La carpeta central contiene recuerdos personales, la base de datos SQLite `engram.db`, diarios WAL y potencialmente credenciales de conexión a PostgreSQL en `.env`. Los permisos `0700` en carpetas y `0600` en archivos garantizan que únicamente el usuario dueño de la cuenta pueda acceder a estos datos, bloqueando a cualquier otro usuario local de la máquina.
 - **Sin necesidad de `chmod`:** Los usuarios finales no necesitan comprender los permisos octales de UNIX ni ejecutar manualmente comandos como `chmod 0700 ~/.forge614/engram`.
 - **Límites estrictos de seguridad (*Fail-Closed*):** Esta reparación automática está intencionadamente limitada a directorios ordinarios propiedad del usuario actual. No crea carpetas si no existían en verificaciones pasivas, nunca repara ni sigue enlaces simbólicos (*symlinks*), y rechaza de inmediato rutas que no sean directorios, que pertenezcan a otros usuarios o cuyos permisos finales no puedan asegurarse.
@@ -336,7 +348,7 @@ Resumen: configurar el almacenamiento global SQLite y mantener habilitado el ref
 
 ### Transición Automática al Selector de Asistentes (Onboarding TUI)
 
-Una vez confirmada y aplicada la inicialización de memoria, `setup` cierra de forma limpia su lector de terminal (`readline`) y **abre automáticamente el Centro de Selección de Asistentes (`assistantTui`)** para completar tu incorporación:
+Una vez confirmada y aplicada la inicialización de memoria, `init` interactivo cierra de forma limpia su lector de terminal (`readline`) y **abre automáticamente el Centro de Selección de Asistentes (`assistantTui`)** para completar tu incorporación:
 
 1. **Detección exhaustiva de los 5 asistentes soportados:** Inspecciona la presencia y configuración de:
    - **Claude Code** (`claude-code`)
@@ -344,7 +356,7 @@ Una vez confirmada y aplicada la inicialización de memoria, `setup` cierra de f
    - **Cursor** (`cursor`)
    - **OpenCode** (`opencode`)
    - **Antigravity** (`antigravity`)
-2. **Cero modificaciones silenciosas:** El instalador y el comando `setup` **jamás alteran la configuración de ningún asistente sin tu autorización explícita**. Encontrar un asistente en tu máquina no escribe ni modifica archivos automáticamente.
+2. **Cero modificaciones silenciosas:** El instalador y el comando `init` **jamás alteran la configuración de ningún asistente sin tu autorización explícita**. Encontrar un asistente en tu máquina no escribe ni modifica archivos automáticamente.
 3. **Vista previa completa y detallada:** Puedes seleccionar o deseleccionar qué asistentes deseas integrar (usando la barra espaciadora o la autoprueba `t`). Antes de tocar el disco, el asistente presenta un plan pormenorizado que detalla:
    - Rutas exactas de archivos de configuración a modificar.
    - Entradas del servidor MCP `forge614-engram` que se añadirán o verificarán.
@@ -354,13 +366,13 @@ Una vez confirmada y aplicada la inicialización de memoria, `setup` cierra de f
 
 ### Semántica Estricta de Cancelación
 
-El flujo de incorporación `setup` maneja la cancelación de forma independiente y segura en cada fase:
+El flujo de incorporación `init` interactivo maneja la cancelación de forma independiente y segura en cada fase:
 - **Cancelación durante la configuración de memoria:** Si presionas `Ctrl+C`, `Escape` o respondes `no` antes de confirmar la memoria:
   - El comando finaliza de inmediato con código de salida **130** (*Cancelled*).
   - **No se abre la TUI de asistentes.**
-  - **No se crea `.env`, `engram.db`, proyectos ni recuerdos:** Si `~/.forge614/` no existía, permanece inexistente. Si ya existía, Engram sólo lo valida y no cambia sus permisos; ningún archivo adicional es creado.
+  - **No se crea `.env`, `engram.db`, proyectos ni recuerdos:** Si `~/.forge614/engram/` no existía, permanece inexistente. Si ya existía, Engram sólo lo valida y repara sus permisos a `0700` si es propiedad del usuario; ningún archivo adicional es creado.
 - **Cancelación o salida en la TUI de asistentes:** Si completaste y confirmaste la configuración de memoria pero decides salir o cancelar el selector de asistentes:
-  - El espacio de memoria inicializado **se conserva intacto** en `~/.forge614/`.
+  - El espacio de memoria inicializado **se conserva intacto** en `~/.forge614/engram/`.
   - No se revierte ni se destruye la base de datos recién configurada.
   - La salida no se convierte en un error; el comando termina con código `0` de forma segura.
 
@@ -368,11 +380,12 @@ El flujo de incorporación `setup` maneja la cancelación de forma independiente
 
 Para evitar confusiones operativas:
 
-| Comando | Tipo de Interfaz | ¿Configura Memoria (`~/.forge614`)? | ¿Detecta o Conecta Asistentes? |
+| Comando | Tipo de Interfaz | ¿Configura Memoria (`~/.forge614/engram`)? | ¿Detecta o Conecta Asistentes? |
 | :--- | :--- | :--- | :--- |
-| **`forge614-engram setup`** | Interactiva (TTY) | Sí (repara permisos de carpeta existente a `0700` antes de preguntar; guiado paso a paso con confirmación) | **Sí:** Abre automáticamente la TUI de asistentes tras configurar memoria |
-| **`forge614-engram init`** | No interactiva (Headless / JSON) | Sí (repara permisos existentes a `0700` y crea/verifica almacenamiento en modo silencioso) | **No:** No detecta asistentes ni abre interfaces interactivas |
-| **`forge614-engram assistant-list`** | De solo lectura (JSON) | **No:** Jamás crea `.forge614` ni escribe archivos | **Sí (Solo lectura):** Audita ejecutables y estado sin alterar configuraciones |
+| **`forge614-engram init`** | Interactiva (TTY) | Sí (repara permisos a `0700`, guiado paso a paso con confirmación, PostgreSQL opcional y refuerzo FTS5) | **Sí:** Abre automáticamente la TUI de asistentes tras confirmar memoria |
+| **`forge614-engram init --json`** | No interactiva (Headless / JSON) | Sí (repara permisos a `0700` y crea/verifica almacenamiento SQLite en modo silencioso) | **No:** No detecta asistentes ni abre interfaces interactivas |
+| **`forge614-engram setup`** | Retirado (`COMMAND_RETIRED`) | **No:** Detiene la ejecución con código 1 y explica que debe usarse `forge614-engram init` | **No:** Comando completamente retirado |
+| **`forge614-engram assistant-list`** | De solo lectura (JSON) | **No:** Jamás crea carpetas ni escribe archivos | **Sí (Solo lectura):** Audita ejecutables y estado sin alterar configuraciones |
 
 ---
 
@@ -400,7 +413,7 @@ Summary | Projects | Shared | Storage | Actions | Assistants | Exit
 ### Principio de Solo Lectura por Defecto
 El Centro de Control abre siempre en modo de **estricta lectura**:
 - Abrir la pantalla, recorrer sus menús, redimensionar la ventana o ingresar teclas no reconocidas **jamás escribe en el disco**, no crea `~/.forge614/.env`, no crea `engram.db`, no inventa proyectos ni registra carpetas.
-- Si el espacio aún no ha sido inicializado, el Centro de Control muestra un mensaje claro explicando que se debe ejecutar `setup` o `init`, sin intentar crear archivos automáticamente.
+- Si el espacio aún no ha sido inicializado, el Centro de Control muestra un mensaje claro explicando que se debe ejecutar `init`, sin intentar crear archivos automáticamente.
 - Requiere una terminal interactiva real (TTY). En entornos sin TTY (como redirecciones de tuberías o scripts CI sin consola), termina de inmediato arrojando el código seguro `INTERACTIVE_REQUIRED`.
 
 ### Información Visible vs. Información Oculta
@@ -633,7 +646,7 @@ Al auditar el sistema, Engram busca el ejecutable de Antigravity en el siguiente
    %LOCALAPPDATA%/agy/bin/agy.exe
    ```
 
-*(Nota: Encontrar Antigravity no modifica ningún archivo automáticamente. El usuario siempre debe seleccionarlo deliberadamente y confirmar la operación en el asistente `setup` o en el menú `tui`).*
+*(Nota: Encontrar Antigravity no modifica ningún archivo automáticamente. El usuario siempre debe seleccionarlo deliberadamente y confirmar la operación en el asistente interactivo `init` o en el menú `tui`).*
 
 #### Compatibilidad y Protección de Configuraciones Gemini Anteriores:
 * Forge614 Engram **ha dejado de administrar Gemini CLI**.
@@ -715,7 +728,7 @@ El guardado de archivos de configuración (`private-files.ts`) sigue un protocol
   3. **Ensamblado y sumas criptográficas:** Se generó y validó el archivo `SHA256SUMS` con los 6 binarios de release (macOS x64/ARM64, Linux x64/ARM64, Windows x64/ARM64), confirmando seis comprobaciones `OK`.
   4. **Salvaguarda de publicación:** La ejecución manual mediante `workflow_dispatch` omitió (*skipped*) deliberadamente la publicación de la GitHub Release; la publicación real queda estrictamente reservada para etiquetas oficiales `v*`.
 * **Verificación de la suite local de pruebas:**
-  La suite completa terminó con **572 superadas, 15 omitidas de plataforma/PG local, 0 fallos** y 2,786 aserciones en 90 archivos. Finalizaron con código 0: `bun run typecheck`, `git diff --check` y `bash -n scripts/install.sh scripts/install-from-source.sh`. Las pruebas nativas de Windows se ejecutan en los entornos automatizados de GitHub Actions en PRs y releases, no localmente en macOS.
+  La suite completa terminó con **582 superadas, 15 omitidas de plataforma/PG local, 0 fallos** y 2,781 aserciones en 92 archivos. Finalizaron con código 0: `bun run typecheck`, `git diff --check` y `bash -n scripts/install.sh scripts/install-from-source.sh`. Las pruebas nativas de Windows se ejecutan en los entornos automatizados de GitHub Actions en PRs y releases, no localmente en macOS.
 
 #### Preparación para Versiones Estables:
 Con la incrustación del módulo nativo en Windows, la migración al hogar propio `~/.forge614/engram/`, la verificación reforzada de carga en perfil vacío y la validación de `SHA256SUMS` completadas en CI, los requisitos de validación son:
@@ -725,12 +738,12 @@ Con la incrustación del módulo nativo en Windows, la migración al hogar propi
 
 ---
 
-## 11. Inicialización Programática Alternativa (`init`)
+## 11. Inicialización Programática Alternativa (`init --json`)
 
-Si estás configurando un entorno automatizado donde no deseas interacción humana con el asistente `setup`, puedes inicializar el espacio local básico directamente:
+Si estás configurando un entorno automatizado donde no deseas interacción humana con el asistente interactivo de terminal, puedes inicializar el espacio local básico directamente:
 
 ```bash
-forge614-engram init
+forge614-engram init --json
 ```
 
 Salida en JSON:

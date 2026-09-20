@@ -27,7 +27,7 @@ function create(dir: string, name = "demo"): string {
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
 test("CLI shared memories work without a project and require explicit scope for mutations", () => {
-  const dir = workspace(); expect(run(dir,"init").code).toBe(0);
+  const dir = workspace(); expect(run(dir,"init","--json").code).toBe(0);
   const result = run(dir,"save","--scope","shared","--title","Idioma","--content","Spanish","--type","preference","--topic","language");
   expect(result.code).toBe(0); const shared = JSON.parse(result.stdout);
   expect(shared.projectId).toBeNull(); expect(shared.scope).toBe("shared");
@@ -84,9 +84,9 @@ test("CLI rejects valued boolean flags, malformed summaries, unknown summary key
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
 });
 
-test("init remains JSON-only and does not enroll assistant configuration", () => {
+test("init --json remains noninteractive and does not enroll assistant configuration", () => {
   const dir = workspace();
-  const result = run(dir, "init");
+  const result = run(dir, "init", "--json");
   expect(result.code).toBe(0);
   expect(result.stdout).toBe('{\n  "initialized": true,\n  "storage": "sqlite"\n}\n');
   expect(result.stderr).toBe("");
@@ -99,7 +99,7 @@ test("init remains JSON-only and does not enroll assistant configuration", () =>
 
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", () => {
   const dir=workspace();
-  expect(run(dir,"init").code).toBe(0);
+  expect(run(dir,"init","--json").code).toBe(0);
   const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
   const memoryWorkspace=new MemoryWorkspace(config);
   let store=memoryWorkspace.open(true);

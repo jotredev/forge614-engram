@@ -1,8 +1,8 @@
 # 07 (EN). Plain-Language Glossary
 
-> **Stage:** TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Coordinated Uninstaller, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Active v1.1.0 (572 total tests across 90 files: 572 passed, 15 skipped on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
+> **Stage:** Nonvisual Engine Transition (Task 1: Inspection & Preview, Task 2: Atomic Initialization Application), Retirement of setup (`COMMAND_RETIRED`), Ecosystem Contract (`FORGE614_ECOSYSTEM_CONTRACT.md`), TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Coordinated Uninstaller, Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 1.1.0-beta.2 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) | SQLite Schemas 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Active (582 tests passed, 15 skipped across 92 files on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
 > **Sister translation:** [07. Glosario de Conceptos en Lenguaje Cotidiano](../es/07-glosario.md)
 
 This glossary explains each technical concept using everyday life analogies and metaphors first, followed immediately by its formal technical term in parentheses.
@@ -109,6 +109,9 @@ Like a professional modular toolbox where each drawer serves a clean, dedicated 
 ### Compatible Facade Pattern (`MemoryStore`)
 Like the reception desk of a grand hotel: a familiar, welcoming face providing an immutable public contract to SDK callers, while behind the desk specialized subsystems handle storage without breaking existing integration code.
 
+### Exact Topic Lookup (`store.getByTopic`)
+Like pulling an office folder directly from the filing cabinet by its exact spine label instead of skimming through every document searching for similar words: a deterministic relational SQLite query that retrieves a specific memory record by its exact `topicKey` and owner (`projectId` or `null` for universal shared scope), strictly isolating projects and avoiding a full-text search engine (FTS5). It is the official method utilized by Forge614 Atlas to verify whether a codebase module was already analyzed before resuming autonomous workflows.
+
 ### TypeScript AST Architecture Auditor (`import-rules`)
 Like a strict customs officer checking every parcel before admitting it across the border: an automated tool that parses the TypeScript Abstract Syntax Tree, analyzes all `import` declarations, enforces unidirectional flow, and fails tests if cyclical dependencies arise.
 
@@ -148,14 +151,14 @@ Like conducting a full dress rehearsal behind closed doors before opening night:
 ### Idempotent PATH Publishing
 Like neatly inserting a new business card into an organized rolodex without duplicate entries or scratching out other cards: the automated procedure whereby installers configure the binary directory in Unix startup dotfiles (`.zshrc`, `.bashrc`, `.bash_profile` when safe, or `forge614-engram.fish`) using bounded blocks, or in the Windows user PATH variable via the .NET API without `setx` or Administrator privileges. Repeated installations do not duplicate PATH entries. Symbolic-link and custom-managed dotfiles are left untouched and receive manual guidance instead. Requires opening a new terminal window for changes to take effect.
 
-### Setup Onboarding Flow (`setup` -> `assistantTui`)
-Like finishing the outfitting of a new workspace and immediately welcoming team members inside: the guided interactive workflow where `forge614-engram setup` first configures the central SQLite storage and, upon explicit confirmation, seamlessly transitions to the interactive Assistant Selection TUI to connect up to 5 AI development tools (Claude Code, Codex, Cursor, OpenCode, and Antigravity) with configuration path previews and explicit confirmation (zero silent modifications).
+### Guided Onboarding Flow (`init` -> `assistantTui`)
+Like finishing the outfitting of a new workspace and immediately welcoming team members inside: the guided interactive workflow where `forge614-engram init` first configures the central SQLite storage and, upon explicit confirmation, seamlessly transitions to the interactive Assistant Selection TUI to connect up to 5 AI development tools (Claude Code, Codex, Cursor, OpenCode, and Antigravity) with configuration path previews and explicit confirmation (zero silent modifications).
 
 ### Strengthened Addon Release Smoke Test
 Like firing up an engine on a clean test bench with zero leftover residue to verify every valve moves correctly: an automated verification in release CI where compiled Windows executables run `assistant-list` inside an empty temporary profile (`RUNNER_TEMP`), requiring that all 5 supported assistants report status `absent` and failing on any `blocked` status, thereby certifying that the embedded native C++ addon is genuinely loaded and operating in memory without storage pollution.
 
 ### Automatic Private Workspace Permission Repair (`repairExistingRoot`)
-Like a trusted locksmith who secures only their own archive room, not the whole shared building: the automated mechanism whereby `forge614-engram setup` and `init` restrict the existing product directory `~/.forge614/engram` owned by the current user to `0700` (`rwx------`) if its permissions were previously open. The shared `~/.forge614` container is validated but never chmodded by Engram, while symbolic links, files, foreign-owned directories, and unsafe shared write permissions are blocked fail-closed.
+Like a trusted locksmith who secures only their own archive room, not the whole shared building: the automated mechanism whereby `forge614-engram init` and `init --json` restrict the existing product directory `~/.forge614/engram` owned by the current user to `0700` (`rwx------`) if its permissions were previously open. The shared `~/.forge614` container is validated but never chmodded by Engram, while symbolic links, files, foreign-owned directories, and unsafe shared write permissions are blocked fail-closed.
 
 ### Assistant Detection & Inspection SDK (Public Detection Surface for Atlas)
 Like the concierge of an office building who checks the lobby directory to inform visitors which offices are occupied and on which floor, without opening anyone's desk drawers or unlocking rooms: the read-only public API surface exported from the root of `forge614-engram` (`CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths`, `coverageWarnings`) that enables companion orchestration products (such as Forge614 Atlas) to audit which AI assistant engines are installed on the host machine and determine their expected configuration paths, without modifying files, without touching MCP configurations, and without opening local databases.
@@ -171,3 +174,21 @@ Like carefully unmounting a built-in kitchen appliance by first disconnecting sh
 
 ### Surgical PATH Cleanup (`path-publication.ts`)
 Like removing a single labeled sticker from a filing cabinet without scratching the paint or disturbing other labels: the inverse of PATH publication that locates the exact delimited `# >>> forge614-engram PATH >>>` block in shell dotfiles or Windows user registry and removes it cleanly, halting with `PATH_CONFLICT` if manual user edits are detected.
+
+### Nonvisual Initialization Contract (`inspectMemoryInitialization`)
+Like a skilled mechanic checking a vehicle's dashboard diagnostics with a handheld scanner without opening the hood or replacing any components: a pure read-only API exposed by Engram's SDK allowing sibling products (such as Forge614 Shell or Forge614 AI) to inspect memory configuration status (storage readiness, SQLite engine, PostgreSQL replica presence, and Schema 7 reinforcement) without displaying a terminal interface or writing a single byte to disk.
+
+### Memory Initialization Preview (`previewMemoryInitialization`)
+Like an architect providing 3D rendered blueprints of a proposed home renovation showing exactly which walls will be relocated before any physical work begins: a safe asynchronous function that receives desired configuration parameters (PostgreSQL replica URL and reinforcement preference) and computes a structured forecast of actions that will occur upon confirmation, without creating directories, without opening remote network sockets, and without storing credentials.
+
+### Configuration Revision (`expectedRevision`)
+Like a wax seal stamped on an envelope certifying that no one opened or altered its contents during transit: a cryptographic or version fingerprint capturing the state of `.env` at preview generation time; if another process edits configuration before the user approves, the revision mismatch safely halts execution to prevent unintended concurrency overwrites.
+
+### Atomic Initialization Application (`applyMemoryInitialization`)
+Like a master builder who verifies that ground conditions and blueprints remain unchanged before pouring the foundation in a single continuous pour: the SDK function that validates configuration revision against concurrent mutations (`CONFIG_CHANGED`), performs a transient read-check against PostgreSQL prior to altering files, safely initializes storage with restrictive permissions (`0700`/`0600`), permanently activates search reinforcement, and outputs the final inspected status.
+
+### Shell Runtime Role (Operational Independence)
+Like a welcoming host who hands you the keys to your new home and shows you around on day one, but does not need to stay living with you for you to use your home: the architectural principle whereby Forge614 Shell is the official visual onboarding environment, but **running Shell is strictly optional during daily work**. External AI clients (ADE Orca, Claude Code, Codex, Antigravity) interact directly with Engram via its local stdio MCP server without requiring Shell to be open or running.
+
+### Retired Command (`COMMAND_RETIRED`)
+Like a clear highway detour sign marking an old road as permanently closed and directing traffic to the new freeway: the structured error returned when the legacy `setup` command is invoked, blocking obsolete calls and immediately instructing the user to use `forge614-engram init` (interactive mode) or `forge614-engram init --json` (headless automation).

@@ -1,8 +1,8 @@
 # 05. Arquitectura Interna, Monolito Modular por Funcionalidad, SQLite FTS5 y Fórmulas Matemáticas
 
-> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Desinstalador Coordinado, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 1.1.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo v1.1.0 (572 pruebas superadas y 15 omitidas en 90 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
+> **Etapa:** Transición a Motor No Visual (Task 1: Inspección y Vista Previa, Task 2: Aplicación Atómica de Inicialización), Contrato de Ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Desinstalador Coordinado, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.1.0-beta.2 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo (582 pruebas superadas y 15 omitidas en 92 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
 > **Traducción hermana:** [05 (EN). Internal Architecture, Modular Monolith, FTS5, and Ranking Formulas](../en/05-internal-architecture-and-formulas.md)
 
 Este documento expone con rigor de tesis técnica la arquitectura interna de Forge614 Engram: los fundamentos de la reorganización en **monolito modular por funcionalidad**, los problemas resueltos, el árbol de directorios real y responsabilidades, las reglas de dependencias y auditoría automática mediante AST, el diseño del **Centro de Control TUI**, las transacciones compuestas, la guía de colocación de cambios, la organización de pruebas colocadas (*colocated tests*), los esquemas relacionales SQLite 3 a 7, el protocolo de replicación PostgreSQL Formatos 1 a 3, el aislamiento en su hogar propio de producto (`~/.forge614/engram/`), la migración segura de datos heredados, la desinstalación quirúrgica coordinada y las fórmulas matemáticas exactas de BM25 ponderado, recencia de 30 días, saturación asintótica por confirmaciones inmutables y deduplicación por ventana móvil sin embeddings.
@@ -665,6 +665,52 @@ Ubicada en `src/app/uninstall.ts`, la función `uninstallEngram` ejecuta el prot
 - **Eliminación Exclusiva de Producto:**
   - Elimina únicamente la subcarpeta `~/.forge614/engram/`.
   - La carpeta familiar `~/.forge614/` y productos hermanos permanecen intactos.
+
+### 9.11. Jerarquía del Ecosistema Forge614 y Contrato de Transición a Motor No Visual (`src/app/initialization.ts`)
+
+Con la formalización del contrato maestro de ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), Forge614 establece una jerarquía clara de productos independientes con fronteras explícitas:
+
+```text
+forge614-ai                         Núcleo y orquestador del ecosistema (futuro dueño de forge614 init)
+├─ forge614-shell                   La única experiencia visual para la persona usuaria
+├─ forge614-engines                 Descubrimiento y adaptadores de IAs instaladas (dependencia interna)
+├─ forge614-engram                  Motor de memoria persistente (SQLite, FTS5, réplica opcional, MCP y SDK)
+└─ forge614-atlas                   Contextualización profunda de repositorios (deposita en Engram)
+```
+
+**Principios Clave de la Jerarquía:**
+1. **Una Sola Experiencia Visual:** Forge614 Shell es la única interfaz con ventanas o terminal interactiva (TUI) para humanos en la incorporación inicial. Los demás productos operan como motores, servicios o utilidades sin pantalla propia.
+2. **Engram es un Motor de Memoria, no un Asistente de Configuración:** Engram es dueño exclusivo de su almacenamiento local (`~/.forge614/engram/`), SQLite, FTS5, búsqueda, identidades de proyecto (`projectId`) y sincronización. A largo plazo, Engram no mantiene su propia TUI ni duplica la interfaz de configuración de Shell.
+3. **Rol de Shell en Tiempo de Ejecución (Opcional en el Día a Día):** Forge614 Shell es el entorno visual de incorporación y configuración guiada, pero **su ejecución no es obligatoria ni requerida durante la jornada diaria de desarrollo**. Los clientes y asistentes de IA conectados (ADE Orca, Claude Code, Codex, Antigravity) se comunican directamente con Engram a través de su servidor local MCP por entrada/salida estándar (stdio), sin necesidad de que Shell se encuentre abierto o ejecutándose en segundo plano.
+4. **Retiro de `setup` y Adopción de `init` (`COMMAND_RETIRED`):** En alineación con la convergencia del ecosistema, el comando histórico `forge614-engram setup` ha sido **retirado formalmente** (emite el error estructurado `COMMAND_RETIRED` con código de salida 1). La inicialización se canaliza exclusivamente a través de `forge614-engram init` (modo interactivo guiado en terminal que delega a `assistantTui`) e `forge614-engram init --json` (modo no interactivo para scripts, automatizaciones y SDK).
+5. **Propiedad de Comandos Globales:** El comando global futuro `forge614 init` pertenecerá a `forge614-ai`. Ningún otro producto (incluyendo Engram) es dueño ni implementa `forge614 init`.
+
+**Arquitectura del Módulo No Visual (`src/app/initialization.ts`):**
+Ubicado en `src/app/initialization.ts` y exportado en la raíz del paquete (`src/index.ts`), este módulo implementa los Contratos de las Tareas 1 y 2 de la transición hacia motor no visual:
+
+- **`inspectMemoryInitialization(config?: WorkspaceConfig): MemoryInitializationStatus`:**
+  - Inspecciona el espacio `~/.forge614/engram/` sin provocar ningún efecto secundario.
+  - Si el directorio no existe, devuelve `{ initialized: false, storage: "sqlite", postgresConfigured: false, reinforcementEnabled: false }` sin tocar el disco.
+  - Si existe, abre SQLite en modo de solo lectura (`open(true)`), comprueba la presencia de la tabla `confirmations` (Esquema 7) y cierra inmediatamente el descriptor en un bloque `finally`.
+  - Verifica si `POSTGRES_URL` está definida en `.env` retornando únicamente un valor booleano, protegiendo las credenciales contra cualquier filtración accidental.
+
+- **`previewMemoryInitialization(request: MemoryInitializationRequest, config?: WorkspaceConfig): Promise<MemoryInitializationPreview>`:**
+  - Procesa una solicitud de inicialización `{ postgresUrl: string | null, enableReinforcement: boolean }`.
+  - No escribe archivos, no crea carpetas y no ejecuta migraciones.
+  - Valida localmente la sintaxis de `postgresUrl` mediante `postgresOptions()`, garantizando que la URL sea segura sin abrir conexiones de red hacia servidores remotos.
+  - Lee la huella digital actual de la configuración mediante `config.revision()` (`expectedRevision`), permitiendo detectar carreras de concurrencia si otro proceso modifica el archivo `.env` antes de la confirmación humana.
+  - Proyecta los cambios requeridos mediante banderas booleanas (`initializesStorage`, `configuresPostgres`, `enablesReinforcement`).
+
+- **`applyMemoryInitialization(request: MemoryInitializationRequest, expectedRevision: string | null, config?: WorkspaceConfig): Promise<MemoryInitializationResult>`:**
+  - Aplica atómicamente la inicialización aprobada por la persona usuaria en Shell.
+  - **Control Optimista de Concurrencia:** Compara `config.revision() === expectedRevision`. Si detecta desviaciones o cambios concurrentes externos, aborta lanzando `CONFIG_CHANGED` sin alterar el disco.
+  - **Prueba Previa de Conectividad PostgreSQL:** Si `postgresUrl` está presente, ejecuta una conexión y lectura transitorias de prueba (`PostgresReplica.connect(url, true); await replica.read(); await replica.close()`) **antes de realizar cualquier mutación local**. Si la conexión falla, se aborta sin dejar archivos ni configuraciones corruptas.
+  - **Inicialización Idempotente:** Ejecuta `workspace.init()` para asegurar permisos restrictivos (`0700` en directorio y `0600` en `.env`/`engram.db`) preservando intactos los datos existentes.
+  - **Refuerzo Aditivo (Sin Degradación):** Si `enableReinforcement` es `true`, activa `store.enableSearchReinforcement()`. Si es `false`, nunca degrada ni revierte un refuerzo ya activo.
+  - Configura la URL de PostgreSQL atómicamente vía `config.configurePostgres(request.postgresUrl)` y retorna el estado final inspeccionado.
+
+**Invariantes de Aislamiento:**
+Engram opera exclusivamente dentro de `~/.forge614/engram/`. Nunca lee, modifica ni elimina los directorios hermanos `shell/`, `engines/` ni `atlas/`, respetando la soberanía de cada componente del ecosistema.
 
 ---
 

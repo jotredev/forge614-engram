@@ -28,6 +28,11 @@ export function get(db: Database, projectId: string | null, id: string): Memory 
     return row ? memory(row) : null;
   }
 
+export function getByTopic(db: Database, projectId: string | null, topicKey: string): Memory | null {
+    const row = db.query("SELECT * FROM memories WHERE projectId IS ? AND topic_key=?").get(owner(projectId),required(topicKey,"topicKey")) as Row | null;
+    return row ? memory(row) : null;
+  }
+
 export function history(db: Database, projectId: string | null, id: string): MemoryVersion[] {
     const rows = db.query("SELECT v.snapshot FROM memory_versions v JOIN memories m ON m.id=v.memory_id WHERE m.projectId IS ? AND m.id=? ORDER BY v.version")
       .all(owner(projectId),required(id,"id")) as { snapshot: string }[];

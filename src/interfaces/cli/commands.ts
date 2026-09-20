@@ -3,7 +3,7 @@ import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
 import { isClientId } from "../../modules/assistants";
-import { setupTerminal } from "../terminal/setup";
+import { initTerminal } from "../terminal/setup";
 import { watchSync } from "../terminal/sync-watch";
 import { startMcp } from "../mcp/server";
 import { runMemoryHook } from "../terminal/hooks";
@@ -29,7 +29,7 @@ export async function runTuiCommand(runners:TuiRunners = {}):Promise<void> {
 }
 
 export async function dispatch({command,values,need}:ParsedCommand, tuiRunners:TuiRunners = {}):Promise<void> {
-  if (command === "setup") { await setupTerminal(); return; }
+  if (command === "init" && !values.has("json")) { await initTerminal(); return; }
   if (command === "uninstall") {
     const result=await uninstallEngram({confirmation:need("confirm")},{executable:process.execPath});
     console.log(JSON.stringify(result,null,2));return;
