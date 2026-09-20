@@ -59,6 +59,29 @@ test("init rejects unknown flags without entering prompts or creating files", ()
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
 });
 
+test("memory-protocol is public, JSON-only, and creates no product files", () => {
+  const dir = workspace();
+  const result = run(dir, "memory-protocol", "--json");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    id: "forge614-engram-memory",
+    version: 1,
+  });
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+
+  const missingJson = run(dir, "memory-protocol");
+  expect(missingJson.code).toBe(1);
+  expect(JSON.parse(missingJson.stderr).code).toBe("INVALID_INPUT");
+  expect(missingJson.stdout).toBe("");
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+
+  const unknownFlag = run(dir, "memory-protocol", "--json", "--format", "text");
+  expect(unknownFlag.code).toBe(1);
+  expect(JSON.parse(unknownFlag.stderr).code).toBe("INVALID_INPUT");
+  expect(unknownFlag.stdout).toBe("");
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+});
+
 test("sync without PostgreSQL configuration never creates storage",()=>{
   const dir=workspace();const result=run(dir,"sync");
   expect(result.code).toBe(1);

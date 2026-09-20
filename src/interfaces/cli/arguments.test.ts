@@ -19,6 +19,12 @@ test("parser accepts update only as an optionless explicit command", () => {
   expect(() => parseArguments(["update", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+test("parser requires JSON for the public memory protocol", () => {
+  expect(parseArguments(["memory-protocol", "--json"]).values.get("json")).toBe("true");
+  expect(() => parseArguments(["memory-protocol"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
+  expect(() => parseArguments(["memory-protocol", "--json", "--format", "text"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
+});
+
 test("parser accepts an optional PostgreSQL URL only for noninteractive initialization", () => {
   expect(parseArguments(["init", "--json"]).values.get("json")).toBe("true");
   expect(parseArguments(["init", "--json", "--postgres-url", "postgresql://user:secret@host/db"]).values.get("postgres-url")).toBe("postgresql://user:secret@host/db");
