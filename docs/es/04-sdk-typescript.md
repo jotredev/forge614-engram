@@ -1,8 +1,8 @@
 # 04. Guía de Integración con el SDK de TypeScript
 
-> **Etapa:** Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Detección e Inspección de Asistentes para Atlas, Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 1.1.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo v1.1.0 (572 pruebas superadas, 15 omitidas en 90 archivos, tipos y valores de SDK verificados en macOS ARM64 con Bun 1.3.8)
+> **Etapa:** Transición a Motor No Visual (Task 1: Inspección y Vista Previa, Task 2: Aplicación Atómica de Inicialización), Contrato de Ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Detección e Inspección de Asistentes para Atlas, Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.1.0-beta.2 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Activo (582 pruebas superadas, 15 omitidas en 92 archivos, tipos y valores de SDK verificados en macOS ARM64 con Bun 1.3.8)
 > **Traducción hermana:** [04 (EN). TypeScript SDK Guide (MemoryStore)](../en/04-typescript-sdk.md)
 
 Esta guía documenta la API pública en TypeScript de Forge614 Engram, cómo utilizar las clases `MemoryWorkspace`, `WorkspaceConfig` y `MemoryStore` en tus propias herramientas o extensiones, el soporte del Esquema 7 para confirmaciones inmutables y refuerzo de búsqueda FTS5 sin embeddings, los tipos formales de recuperación progresiva y del Centro de Control, y la superficie pública de detección e inspección de asistentes de IA utilizada por productos hermanos como Forge614 Atlas.
@@ -75,6 +75,15 @@ import {
   type AssistantOptions,
   type AssistantDescriptor,
   type AssistantPaths,
+
+  // Contrato de inicialización no visual (para Forge614 Shell y Forge614 AI)
+  inspectMemoryInitialization,
+  previewMemoryInitialization,
+  applyMemoryInitialization,
+  type MemoryInitializationStatus,
+  type MemoryInitializationRequest,
+  type MemoryInitializationPreview,
+  type MemoryInitializationResult,
 } from "forge614-engram";
 ```
 
@@ -96,7 +105,7 @@ import {
 2. **`WorkspaceConfig` (Gestor de Configuración):**
    Gestiona la lectura y escritura atómica del archivo de configuración `~/.forge614/engram/.env`. Valida permisos (`0700` en carpeta, `0600` en archivo), formatos (Formato 2 local y Formato 3 con sincronización) y previene concurrencias con el cerrojo `.config-lock`. Su método `prepare()` ejecuta la migración atómica de archivos antiguos sueltos en `~/.forge614/` hacia `~/.forge614/engram/` antes de asegurar la carpeta en `0700`. Su propiedad `databasePath` apunta de forma predeterminada a `~/.forge614/engram/engram.db`. Incluye `repairExistingRoot()` para restringir automáticamente a `0700` directorios ordinarios preexistentes propiedad del usuario.
 3. **`MemoryStore` (Motor de Base de Datos SQLite):**
-   Ejecuta las operaciones directas sobre las tablas de SQLite (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, `controlCenter`, etc.).
+   Ejecuta las operaciones directas sobre las tablas de SQLite (`save`, `saveWithSession`, `search`, `searchPreviews`, `get`, `getByTopic`, `getVersion`, `history`, `timeline`, `context`, `startSession`, `endSession`, `saveSessionSummary`, `enableSessions`, `enableSearchReinforcement`, `reinforcementEnabled`, `controlCenter`, etc.).
 4. **`defaultDatabasePath(): string` (Ruta Predeterminada de Base de Datos):**
    Función auxiliar exportada que devuelve la ruta canónica hacia la base de datos local SQLite: `join(engramHome(), "engram.db")` (por defecto `~/.forge614/engram/engram.db`).
 
@@ -211,7 +220,43 @@ Resuelve la carpeta del proyecto y guarda el recuerdo con asociación de sesión
 
 ---
 
-### Recuperación Progresiva y Búsqueda Reforzada
+### Recuperación Directa, Progresiva y Búsqueda Reforzada
+
+#### `store.get(projectId: string | null, id: string): Memory | null`
+Recupera un recuerdo activo por su identificador UUID `id`.
+- Si `projectId` es una cadena, busca únicamente dentro del proyecto indicado (`projectId IS ? AND id=?`).
+- Si `projectId` es `null`, busca únicamente dentro del ámbito compartido (`scope: "shared"`).
+- Devuelve el objeto completo `Memory` o `null` si no existe o pertenece a otro ámbito.
+
+#### `store.getByTopic(projectId: string | null, topicKey: string): Memory | null`
+Busca un recuerdo existente de manera directa e indexada utilizando su clave temática unívoca (`topicKey`).
+- **Contrato exacto:**
+  ```typescript
+  getByTopic(projectId: string | null, topicKey: string): Memory | null
+  ```
+- **Comportamiento y garantías:**
+  - Busca un recuerdo existente usando su `topicKey`.
+  - Devuelve el recuerdo completo (`Memory`) o `null` si no existe.
+  - Con `projectId` (cadena de texto), busca **exclusivamente** dentro de ese proyecto (`WHERE projectId IS ? AND topic_key=?`).
+  - Con `projectId: null`, busca **exclusivamente** recuerdos de ámbito universal compartido (`scope: "shared"`).
+  - **Aislamiento estricto de propietario:** Nunca cruza recuerdos entre proyectos diferentes ni entre un proyecto y el ámbito compartido.
+  - **Validación rigurosa de entrada:** Valida que `topicKey` sea texto no vacío y sin caracteres nulos (`\0`). Si recibe una cadena vacía, espacios en blanco exclusivamente o caracteres nulos, arroja de inmediato `MemoryError` con código `INVALID_INPUT`.
+  - **Consulta exacta (NO búsqueda aproximada ni FTS5):** No debe describirse ni confundirse con búsqueda FTS5 ni con búsqueda semántica o aproximada. Es una consulta relacional SQLite exacta; su resultado está determinado por el propietario y la clave temática exactos.
+  - **Disponibilidad en el SDK:** Está disponible automáticamente desde el SDK porque `MemoryStore` ya se exporta como clase pública en `src/index.ts`; no requirió una exportación nueva independiente en la raíz.
+- **Caso de uso oficial de Forge614 Atlas:**
+  Forge614 Atlas utiliza esta función para comprobar instantáneamente si un módulo o artefacto de código ya fue analizado previamente por sus agentes autónomos, evitando reprocesamientos redundantes:
+  ```typescript
+  const previous = store.getByTopic(projectId, "atlas:module:authentication");
+
+  if (previous) {
+    // El módulo ya fue analizado y Atlas puede reanudar sin repetir trabajo.
+  } else {
+    // Atlas debe analizarlo y guardar el nuevo conocimiento.
+  }
+  ```
+
+#### `store.history(projectId: string | null, id: string): MemoryVersion[]`
+Devuelve el historial inmutable completo de versiones anteriores de un recuerdo, ordenadas cronológicamente por número de versión ascendente.
 
 #### `store.search(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[]`
 Búsqueda explicable en SQLite FTS5 con tokenizador trigram y ordenación reforzada `orderScore = bm25 * multiplier ASC`. Cada resultado incluye `explanation: SearchExplanation`.
@@ -349,13 +394,64 @@ try {
 
 ---
 
+### Ejemplo 3: Consulta Exacta por Tema (`getByTopic`) para Forge614 Atlas
+
+```typescript
+import { MemoryWorkspace, type Memory } from "forge614-engram";
+
+const workspace = new MemoryWorkspace();
+const store = workspace.open();
+
+try {
+  const projectId = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+  const topicKey = "atlas:module:authentication";
+
+  // 1. Consulta exacta indexada por topicKey y propietario (no FTS5, sin aproximaciones)
+  const previous: Memory | null = store.getByTopic(projectId, topicKey);
+
+  if (previous) {
+    // El módulo ya fue analizado y Atlas puede reanudar sin repetir trabajo
+    console.log(`Módulo ya analizado en versión ${previous.version} (ID: ${previous.id})`);
+    console.log(`Última actualización: ${previous.updatedAt}`);
+    console.log(`Contenido cacheado: ${previous.content}`);
+  } else {
+    // Atlas debe analizarlo y guardar el nuevo conocimiento estructurado
+    console.log("Módulo no analizado aún. Ejecutando análisis arquitectónico...");
+
+    store.save({
+      scope: "project",
+      projectId,
+      topicKey,
+      title: "Análisis Arquitectónico: Módulo de Autenticación",
+      content: "El módulo implementa OAuth2 con rotación de refresh tokens y firmas RS256.",
+      type: "procedure",
+      requestKey: "atlas-auth-analysis-v1",
+    });
+
+    console.log("Nuevo conocimiento de Atlas guardado exitosamente.");
+  }
+
+  // 2. Consulta exacta en ámbito compartido universal (scope: 'shared')
+  const globalStandard = store.getByTopic(null, "atlas:standard:typescript-strict");
+  if (globalStandard) {
+    console.log(`Estándar global activo: ${globalStandard.title}`);
+  }
+} finally {
+  store.close();
+}
+```
+
+---
+
 ## 6. Detección e Inspección de Asistentes de IA (Integración con Atlas)
 
 ### Propósito y Contexto de Integración
 
 **Forge614 Atlas** (producto hermano de automatización y orquestación de agentes de IA) importa **Forge614 Engram** como un paquete o biblioteca TypeScript (`import { ... } from "forge614-engram"`), y **no** a través de comandos del CLI de terminal.
 
-Atlas utiliza esta superficie pública del SDK para inspeccionar qué asistentes de desarrollo o motores de agente (`claude -p`, y en el futuro Codex u otros) están instalados en la máquina del usuario, con el fin de elegir el motor adecuado al coordinar subagentes autónomos.
+Atlas utiliza esta superficie pública del SDK para dos necesidades fundamentales:
+1. **Inspección de Asistentes:** Inspeccionar qué asistentes de desarrollo o motores de agente (`claude -p`, y en el futuro Codex u otros) están instalados en la máquina del usuario, con el fin de elegir el motor adecuado al coordinar subagentes autónomos.
+2. **Verificación Exacta de Conocimiento:** Invocar el método síncrono de la fachada `MemoryStore` `store.getByTopic(projectId, topicKey)` para consultar instantáneamente y sin coste de búsqueda aproximada si un módulo o artefacto analizado ya cuenta con un recuerdo registrado, permitiendo reanudar tareas sin repetir trabajo.
 
 ### Aclaraciones Obligatorias de Seguridad (Operación Estrictamente Pasiva)
 
@@ -363,8 +459,8 @@ Esta capacidad opera bajo estrictas garantías de aislamiento y seguridad:
 
 - **Inspección y cálculo de rutas de solo lectura:** No ejecuta comandos arbitrarios, no inicia procesos de asistentes ni altera archivos del sistema.
 - **No conecta, configura, instala ni modifica asistentes:** No descarga programas, no modifica archivos de configuración ajenos (`.claude.json`, `config.toml`, `mcp.json`, `opencode.json`) ni altera permisos.
-- **No agrega servidores MCP automáticamente:** La vinculación de herramientas MCP requiere los flujos explícitos de configuración de Engram (`forge614-engram setup` o `assistant-config`); este SDK solo informa si el asistente está instalado y en qué rutas se ubicaría su configuración.
-- **No toca la base de datos ni abre archivos de memoria:** No inicializa `~/.forge614/engram/`, no lee ni escribe `.env`, y no abre conexiones SQLite (`engram.db`) ni PostgreSQL.
+- **No agrega servidores MCP automáticamente:** La vinculación de herramientas MCP requiere los flujos explícitos de configuración de Engram (`forge614-engram init` o `assistant-config`); este SDK solo informa si el asistente está instalado y en qué rutas se ubicaría su configuración.
+- **No toca la base de datos ni abre archivos de memoria durante la inspección de asistentes:** Las utilidades de detección (`inspectAssistant`, `resolveAssistantPaths`) no inicializan `~/.forge614/engram/`, no leen ni escriben `.env`, y no abren conexiones SQLite (`engram.db`) ni PostgreSQL.
 - **Separación estricta de responsabilidades:** Atlas toma las decisiones operativas sobre qué motor invocar; Engram se limita a proporcionar información objetiva, uniforme y segura sobre la presencia y rutas de los asistentes en el equipo.
 - **Sin importaciones internas profundas:** El consumidor debe importar exclusivamente desde `forge614-engram`. No se debe importar desde rutas internas como `forge614-engram/src/...` ni `forge614-engram/src/modules/...`.
 
@@ -517,7 +613,164 @@ if (isClientId(requestedClient)) {
 ### Verificación y Calidad del Contrato del SDK
 
 La superficie pública del SDK se verifica mediante una prueba de contrato estricta en `src/index.test.ts`:
-1. **Verificación de Tipos y Tiempo de Ejecución:** Confirma que `CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths` y `coverageWarnings` están definidos como funciones o constantes públicas y que los tipos TypeScript compilan sin errores.
-2. **Suite Completa:** Ejecutada con `bun test src/index.test.ts` (4 pruebas correctas, 0 fallos) y `bun test` en toda la suite.
+1. **Verificación de Tipos y Tiempo de Ejecución:** Confirma que `CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths`, `coverageWarnings`, `inspectMemoryInitialization`, `previewMemoryInitialization` y `applyMemoryInitialization` están definidos como funciones o constantes públicas y que los tipos TypeScript compilan sin errores.
+2. **Suite Completa:** Ejecutada con `bun test src/index.test.ts` (5 pruebas correctas, 0 fallos) y `bun test` en toda la suite.
 3. **Tipado Estricto:** Verificado con `bun run typecheck` (`tsc --noEmit`).
 4. **Espacios y Formato:** Verificado con `git diff --check`.
+
+---
+
+## 8. Contrato de Inicialización No Visual, Vista Previa y Aplicación
+
+Como parte de la transición hacia el ecosistema conjunto de Forge614 (`FORGE614_ECOSYSTEM_CONTRACT.md`), Forge614 Engram expone un contrato público de TypeScript para que **Forge614 Shell** y, en el futuro, **Forge614 AI** puedan consultar el estado de la memoria, solicitar una vista previa de inicialización segura y aplicar las modificaciones confirmadas sin abrir la interfaz de terminal (TUI) de Engram:
+
+```typescript
+import {
+  inspectMemoryInitialization,
+  previewMemoryInitialization,
+  applyMemoryInitialization,
+  type MemoryInitializationStatus,
+  type MemoryInitializationRequest,
+  type MemoryInitializationPreview,
+  type MemoryInitializationResult,
+} from "forge614-engram";
+```
+
+### 8.1. `inspectMemoryInitialization(config?: WorkspaceConfig): MemoryInitializationStatus`
+
+Inspecciona pasivamente el estado de inicialización del espacio de trabajo de Engram:
+
+```typescript
+const status = inspectMemoryInitialization();
+// Retorna:
+// {
+//   initialized: boolean,
+//   storage: "sqlite",
+//   postgresConfigured: boolean,
+//   reinforcementEnabled: boolean
+// }
+```
+
+**Explicación de Campos en Lenguaje Cotidiano:**
+- **`initialized`:** Indica si el espacio propio de Engram (`~/.forge614/engram/`) ya existe y cuenta con una base de datos local preparada. Si es `false`, significa que la memoria no ha sido configurada todavía.
+- **`storage`:** Tipo de almacenamiento local utilizado. En Engram siempre es `"sqlite"` (los recuerdos se guardan primero en tu máquina de forma rápida y privada).
+- **`postgresConfigured`:** Indica si existe una URL de réplica hacia PostgreSQL registrada en el archivo `.env`. Si es `false`, la memoria opera en modo 100% local.
+- **`reinforcementEnabled`:** Indica si el refuerzo de recuerdos por repetición (Esquema 7) está activado en SQLite para ordenar resultados por estabilidad y recencia.
+
+**Garantías e Invariantes de Seguridad:**
+- **100% Solo Lectura:** Si Engram no existe todavía, retorna `{ initialized: false, storage: "sqlite", postgresConfigured: false, reinforcementEnabled: false }`. **No crea carpetas (`~/.forge614/engram`), no crea `.env`, no crea `engram.db`, no crea proyectos ni recuerdos.**
+- **Cierre Seguro de Conexión:** Si el espacio ya existe, abre SQLite en modo de solo lectura (`open(true)`), consulta si el Esquema 7 está activo y cierra la base de datos inmediatamente dentro de un bloque `finally`.
+- **Cero Fugas de Secretos:** `postgresConfigured` es un valor booleano deliberado. La URL de PostgreSQL y sus credenciales jamás se devuelven en este objeto.
+
+---
+
+### 8.2. `previewMemoryInitialization(request: MemoryInitializationRequest, config?: WorkspaceConfig): Promise<MemoryInitializationPreview>`
+
+Recibe una solicitud de inicialización no visual y genera un pronóstico estructurado de los cambios previstos sin alterar el sistema:
+
+```typescript
+const preview = await previewMemoryInitialization({
+  postgresUrl: "postgresql://user:password@127.0.0.1/db?sslmode=disable",
+  enableReinforcement: true,
+});
+// Retorna:
+// {
+//   status: { initialized: false, storage: "sqlite", postgresConfigured: false, reinforcementEnabled: false },
+//   expectedRevision: null,
+//   initializesStorage: true,
+//   configuresPostgres: true,
+//   enablesReinforcement: true
+// }
+```
+
+**Explicación de Campos en Lenguaje Cotidiano:**
+- **`status`:** El estado actual del sistema antes de aplicar cualquier acción (mismo objeto generado por `inspectMemoryInitialization`).
+- **`expectedRevision`:** La huella o versión actual de la configuración (`config.revision()`). Funciona como un sello de garantía: permite verificar posteriormente que nadie haya alterado el archivo `.env` mientras la persona leía la pantalla de confirmación. Si el espacio aún no existe, su valor es `null`.
+- **`initializesStorage`:** Bandera booleana (`true`/`false`). Indica si será necesario crear la carpeta de producto, el archivo `.env` y la base SQLite inicial si la persona aprueba la operación.
+- **`configuresPostgres`:** Bandera booleana. Indica si la URL de PostgreSQL solicitada provocará un cambio (alta, modificación o baja) respecto a la configuración existente.
+- **`enablesReinforcement`:** Bandera booleana. Indica si se aplicará la migración al Esquema 7 (refuerzo de búsqueda FTS5). Si el refuerzo ya estaba activo previamente, este valor es `false` porque no es necesario volver a activarlo.
+
+**Garantías e Invariantes de Seguridad:**
+- **Sin Escritura en Disco:** La vista previa no crea directorios, no escribe archivos ni muta tablas en SQLite.
+- **Sin Conexiones Remotas:** No abre sockets de red ni contacta al servidor PostgreSQL remoto durante la vista previa. Solo valida sintácticamente que la URL sea segura mediante `postgresOptions()`.
+- **Protección de Credenciales:** La cadena `postgresUrl` y sus credenciales jamás se serializan en el objeto `MemoryInitializationPreview`, ni se emiten en registros de depuración (*logs*) ni en mensajes de error.
+
+---
+
+### 8.3. `applyMemoryInitialization(request: MemoryInitializationRequest, expectedRevision: string | null, config?: WorkspaceConfig): Promise<MemoryInitializationResult>`
+
+Aplica de forma atómica y segura los cambios planificados y confirmados por la persona en Forge614 Shell:
+
+```typescript
+const result = await applyMemoryInitialization(
+  {
+    postgresUrl: "postgresql://user:password@127.0.0.1/db?sslmode=disable",
+    enableReinforcement: true,
+  },
+  preview.expectedRevision,
+);
+// Retorna:
+// {
+//   status: { initialized: true, storage: "sqlite", postgresConfigured: true, reinforcementEnabled: true },
+//   initializedStorage: true,
+//   configuredPostgres: true,
+//   enabledReinforcement: true
+// }
+```
+
+**Explicación de Parámetros y Campos en Lenguaje Cotidiano:**
+- **`request`:** La solicitud tipada que contiene la URL opcional de PostgreSQL (`postgresUrl: string | null`) y la preferencia de refuerzo (`enableReinforcement: boolean`).
+- **`expectedRevision`:** El sello de versión obtenido durante la vista previa (`preview.expectedRevision`). Si alguien modificó el archivo `.env` mientras la persona leía la pantalla de confirmación en Shell, la operación se detiene de inmediato arrojando el error `CONFIG_CHANGED` ("La configuración cambió; genera una vista previa nueva antes de aplicar cambios.").
+- **`config` (Opcional):** Instancia de configuración (`WorkspaceConfig`), por defecto vinculada a `~/.forge614/engram/`.
+- **`result.status`:** Estado final inspeccionado del sistema tras completar las operaciones.
+- **`result.initializedStorage`:** `true` si el almacenamiento SQLite local fue creado en esta ejecución; `false` si ya existía.
+- **`result.configuredPostgres`:** `true` si la configuración de PostgreSQL en `.env` cambió respecto a la existente.
+- **`result.enabledReinforcement`:** `true` si el refuerzo de búsqueda FTS5 (Esquema 7) fue activado en esta ejecución.
+
+**Garantías e Invariantes de Seguridad:**
+- **Control Optimista de Concurrencia:** Compara `config.revision() === expectedRevision`. Si detecta modificaciones externas concurrentes, aborta de forma estricta sin escribir archivos.
+- **Validación Transitoria de PostgreSQL Previa al Cambio:** Si `postgresUrl` no es nulo, realiza una prueba de conexión y lectura temporal (`PostgresReplica.connect(url, true); await replica.read(); await replica.close()`) **antes de realizar cualquier modificación local en disco**. Si el servidor no responde o las credenciales son incorrectas, falla sin dejar el archivo `.env` o la base de datos en un estado inconsistente.
+- **Inicialización Idempotente:** Invoca `workspace.init()` para garantizar la existencia de la carpeta propia `~/.forge614/engram/` (`0700`) y la base `engram.db` (`0600`) sin borrar ni alterar datos preexistentes.
+- **Refuerzo Aditivo (Sin Degradación):** Si `enableReinforcement` es `true` y no estaba activo previamente, ejecuta `store.enableSearchReinforcement()`. Si `enableReinforcement` es `false`, jamás degrada ni desactiva un refuerzo ya activo (el refuerzo en Engram es irreversible y estrictamente acumulativo).
+
+---
+
+### 8.4. Ejemplo de Integración Completo para Forge614 Shell
+
+```typescript
+import {
+  inspectMemoryInitialization,
+  previewMemoryInitialization,
+  applyMemoryInitialization,
+} from "forge614-engram";
+
+// 1. Consultar estado sin efectos secundarios
+const currentStatus = inspectMemoryInitialization();
+
+if (!currentStatus.initialized) {
+  console.log("Engram no está inicializado. Preparando solicitud...");
+
+  // 2. Construir la solicitud deseada a partir de las respuestas del usuario
+  const request = {
+    postgresUrl: null, // o la URL confidencial ingresada en Shell
+    enableReinforcement: true,
+  };
+
+  // 3. Generar la vista previa segura y capturar la revisión
+  const preview = await previewMemoryInitialization(request);
+
+  console.log("Vista previa calculada:");
+  console.log(`- ¿Creará almacenamiento local?: ${preview.initializesStorage ? "Sí" : "No"}`);
+  console.log(`- ¿Configurará réplica PostgreSQL?: ${preview.configuresPostgres ? "Sí" : "No"}`);
+  console.log(`- ¿Habilitará refuerzo FTS5?: ${preview.enablesReinforcement ? "Sí" : "No"}`);
+  console.log(`- Revisión esperada para confirmación: ${preview.expectedRevision ?? "Nueva instalación"}`);
+
+  // 4. Tras la confirmación explícita del usuario en Shell, aplicar cambios atómicamente
+  const result = await applyMemoryInitialization(request, preview.expectedRevision);
+
+  console.log("Inicialización completada exitosamente:");
+  console.log(`- Almacenamiento inicializado: ${result.initializedStorage}`);
+  console.log(`- PostgreSQL configurado: ${result.configuredPostgres}`);
+  console.log(`- Refuerzo habilitado: ${result.enabledReinforcement}`);
+}
+```

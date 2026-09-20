@@ -2,10 +2,10 @@
 
 > **Stage:** TUI Control Center, Reinforced FTS5 (no embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Product Home (`~/.forge614/engram/`), Safe Legacy Migration, Coordinated Uninstaller, Assistant TUI Menu & PostgreSQL Replica Format 3
 > **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (with sync) / 5 (assistant integration & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & reinforced ordering) | PostgreSQL Formats 1, 2 & 3 (explicit promotion via `sync --upgrade-format`; remote physical table `state.format = 1`)
-> **Status:** Current & Active v1.1.0 (572 total tests across 90 files: 572 passed, 15 skipped on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
+> **Status:** Current & Active v1.1.0 (582 total tests across 92 files: 582 passed, 15 skipped on macOS ARM64 with Bun 1.3.8; native Windows tests validated on release binaries in GitHub Actions)
 > **Sister translation:** [02. Recorrido Guiado del Sistema](../es/02-recorrido-guiado.md)
 
-This practical walkthrough guides you through the full operational lifecycle of Forge614 Engram: initializing global configuration in its product home (`~/.forge614/engram/`) via `setup` and safely migrating prior versions, supervising and managing the workspace through the interactive **Terminal Control Center (`tui`)**, connecting AI coding assistants via its safe subflow with an asynchronous 5-second self-test, interacting across 10 native MCP tools with Git-based canonical project resolution, tracking progressive sessions with event timelines (`timeline`), recording repeated observations as immutable confirmations without creating redundant versions (Schema 7), assembling ranked context dossiers (`context`), executing explainable FTS5 searches without embeddings, managing safe OpenCode plugin conflict resolution, synchronizing snapshots with PostgreSQL using Format 3 promotion, and performing guarded, coordinated uninstallation if you ever decide to remove the tool.
+This practical walkthrough guides you through the full operational lifecycle of Forge614 Engram: initializing global configuration in its product home (`~/.forge614/engram/`) via `init` and safely migrating prior versions, supervising and managing the workspace through the interactive **Terminal Control Center (`tui`)**, connecting AI coding assistants via its safe subflow with an asynchronous 5-second self-test, interacting across 10 native MCP tools with Git-based canonical project resolution, tracking progressive sessions with event timelines (`timeline`), recording repeated observations as immutable confirmations without creating redundant versions (Schema 7), assembling ranked context dossiers (`context`), executing explainable FTS5 searches without embeddings, managing safe OpenCode plugin conflict resolution, synchronizing snapshots with PostgreSQL using Format 3 promotion, and performing guarded, coordinated uninstallation if you ever decide to remove the tool.
 
 ---
 
@@ -41,13 +41,15 @@ A shared memory is stored **exactly once in the database**; it is never duplicat
 
 ## 3. Step-by-Step Lifecycle Walkthrough
 
-### Step 1: Initialize the Central Workspace (`setup` or `init`)
+### Step 1: Initialize the Central Workspace (`init` or `init --json`)
 
 To initialize your workspace with interactive guidance:
 
 ```bash
-forge614-engram setup
+forge614-engram init
 ```
+
+For automated scripts or headless pipelines, use `forge614-engram init --json`.
 
 **Interactive Terminal Flow:**
 1. Displays central file paths (`~/.forge614/engram/.env` and `~/.forge614/engram/engram.db`), ensures `~/.forge614/engram/` has `0700` permissions, and **automatically tightens permissions to `0700`** on any pre-existing user-owned workspace directory before asking questions. If it detects legacy loose files in `~/.forge614/` (`.env`, `engram.db`, journals, or lock), it migrates them automatically and atomically to `engram/`.
@@ -59,8 +61,8 @@ forge614-engram setup
    - Replying `sí` / `yes` stages Schema 7 immutable confirmations and reinforced ranking without embeddings.
 4. Displays plan summary and asks for pre-flight confirmation (`¿Confirmar? [si/NO]`).
 5. Upon confirmation, prepares `~/.forge614/engram/` to `0700` (creating or securing it), writes `.env` to `0600`, and initializes `engram.db` (also secured to `0600`).
-6. **Automatic Transition to Assistant Onboarding:** Following storage completion, `setup` cleanly closes the terminal reader and automatically launches the Assistant Selection TUI (`assistantTui`). It detects the 5 supported assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity), allowing selective enrollment, path previews, automatic private backups, and explicit confirmation (zero silent file modifications).
-7. **Safe Cancellation Semantics:** Cancelling during memory setup (`Ctrl+C` or `no`) exits with code **130** without launching the assistant TUI and without creating `.env` or `engram.db` (only securing `0700` permissions on an existing directory). Cancelling inside the assistant TUI after memory setup leaves the initialized memory store intact.
+6. **Automatic Transition to Assistant Onboarding:** Following storage completion, `init` cleanly closes the terminal reader and automatically launches the Assistant Selection TUI (`assistantTui`). It detects the 5 supported assistants (Claude Code, Codex, Cursor, OpenCode, Antigravity), allowing selective enrollment, path previews, automatic private backups, and explicit confirmation (zero silent file modifications).
+7. **Safe Cancellation Semantics:** Cancelling during memory configuration (`Ctrl+C` or `no`) exits with code **130** without launching the assistant TUI and without creating `.env` or `engram.db` (only securing `0700` permissions on an existing directory). Cancelling inside the assistant TUI after memory configuration leaves the initialized memory store intact.
 
 ---
 
@@ -77,7 +79,7 @@ forge614-engram tui
 
 #### 1. Read-Only by Default Principle:
 The Control Center launches strictly in **passive read-only mode**:
-- Does not create databases or `.env` files. If unconfigured, it explains that you should run `setup` or `init` and exits cleanly without creating storage.
+- Does not create databases or `.env` files. If unconfigured, it explains that you should run `init` and exits cleanly without creating storage.
 - Never creates ghost projects or mutates counters simply by navigating.
 - You can inspect all tabs without risking unintended modifications.
 

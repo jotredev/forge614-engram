@@ -1,8 +1,8 @@
 # 08. Límites de la Etapa y Hoja de Ruta Futura
 
-> **Etapa:** Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura y Atómica de Espacio Legado, Desinstalador Quirúrgico Coordinado (`uninstall`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 1.1.0 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) / 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Verificado (587 pruebas totales en 90 archivos: 572 superadas y 15 omitidas sin binarios aislados PG ni Windows nativo; 0 fallos en macOS ARM64 con Bun 1.3.8)
+> **Etapa:** Transición a Motor No Visual (Task 1: Inspección y Vista Previa, Task 2: Aplicación Atómica de Inicialización), Retiro de setup (`COMMAND_RETIRED`), Contrato de Ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura y Atómica de Espacio Legado, Desinstalador Quirúrgico Coordinado (`uninstall`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
+> **Versiones de esta entrega:** Programa 1.1.0-beta.2 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
+> **Estado:** Vigente y Verificado (597 pruebas totales en 92 archivos: 582 superadas y 15 omitidas sin binarios aislados PG ni Windows nativo; 0 fallos en macOS ARM64 con Bun 1.3.8)
 > **Traducción hermana:** [08 (EN). Stage Boundaries and Evolutionary Roadmap](../en/08-boundaries-and-roadmap.md)
 
 Este documento declara con total transparencia qué capacidades se encuentran implementadas y verificadas en la entrega actual, los límites técnicos y operativos vigentes, la distinción entre pruebas sintéticas y sesiones reales de clientes, y las fases de desarrollo pendientes en la hoja de ruta oficial.
@@ -88,6 +88,15 @@ Las siguientes fases de desarrollo se encuentran **100% implementadas y verifica
 - [x] **Limpieza Quirúrgica de PATH:** Eliminación limpia de los bloques delimitados `# >>> forge614-engram PATH >>>` en dotfiles Unix y saneamiento de entradas en Windows User PATH. Falla con `PATH_CONFLICT` si el bloque fue alterado manualmente.
 - [x] **Eliminación Confinada de Datos:** Destrucción estricta de `~/.forge614/engram/`. El directorio raíz `~/.forge614/` se preserva intacto si contiene otros productos (`shell/`, `atlas/`) u otros archivos de usuario.
 
+### Fase 4.5: Transición a Motor No Visual en el Ecosistema Forge614 — EN CURSO (Tareas 1, 2 y 3 Completadas)
+- [x] **Contrato Maestro de Ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`):** Definición clara de la jerarquía de productos (`forge614-ai`, `forge614-shell`, `forge614-engines`, `forge614-engram`, `forge614-atlas`). Engram asume formalmente su rol como motor de memoria no visual sin interfaces visuales humanas propietarias.
+- [x] **Tarea 1 — Inspección Pasiva y Vista Previa No Visual (`src/app/initialization.ts`):** Funciones `inspectMemoryInitialization()` y `previewMemoryInitialization()` exportadas en el SDK público de TypeScript con tipos estrictos (`MemoryInitializationStatus`, `MemoryInitializationRequest`, `MemoryInitializationPreview`).
+- [x] **Cero Efectos Secundarios en Inspección y Vista Previa:** Verificación de solo lectura sin creación de directorios, sin archivos `.env`, sin bases SQLite, sin llamadas de red a PostgreSQL y sin filtración de secretos o credenciales.
+- [x] **Tarea 2 — Aplicación Atómica de Inicialización (`applyMemoryInitialization`):** Ejecución atómica y segura con verificación de concurrencia optimista (`expectedRevision`), validación transitoria previa de PostgreSQL y refuerzo aditivo irreversible.
+- [x] **Tarea 3 — Adaptador CLI e Inicialización Unificada (`forge614-engram init [--json]`):** Retiro formal de `setup` (`COMMAND_RETIRED`), unificación en `forge614-engram init` (modo interactivo en terminal TTY) e introducción de `init --json` (modo desatendido que devuelve JSON sin abrir la TUI).
+- [ ] **Tarea 4 — Desacople de Detección de Asistentes e Integración con Engines:** (Planificada) Delegación de detección y configuración de asistentes hacia `forge614-engines`.
+- [ ] **Tarea 5 — Retirada Gradual de TUI y Redirección a Forge614 Shell:** (Planificada) Deprecación de interfaces visuales directas en Engram en favor de Shell.
+
 ---
 
 ## 2. Límites y Restricciones Vigentes
@@ -144,12 +153,20 @@ Para mantener expectativas estrictamente realistas, se declaran los siguientes l
     El comando `forge614-engram uninstall` destruye definitivamente el hogar `~/.forge614/engram/` (incluyendo la base local SQLite y variables `.env`). Si se requiere conservar la memoria histórica, el usuario debe realizar un respaldo manual previo de `engram.db` o haber ejecutado `sync` contra PostgreSQL.
 25. **Coexistencia con Atlas y orden de desinstalación:**
     Si Forge614 Atlas está instalado (`~/.forge614/atlas/`), Engram no puede desinstalarse de forma aislada sin desinstalar primero Atlas, debido a la dependencia operativa entre ambos productos de la suite. El desinstalador exige la frase extendida `"REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"` y coordina la ejecución de Atlas antes de proceder.
+26. **Retiro formal del comando `setup` y convergencia en `init` (`COMMAND_RETIRED`):**
+    El subcomando `forge614-engram setup` ha sido formalmente retirado del binario público (no opera como alias). Invocaciones devuelven el error estructurado `COMMAND_RETIRED` con código de salida 1 (`{"code": "COMMAND_RETIRED", "error": "El comando setup fue retirado. Usa forge614-engram init."}`). La inicialización se canaliza exclusivamente a través de `forge614-engram init` (modo interactivo guiado en terminal TTY que delega a `assistantTui`) y `forge614-engram init --json` (modo desatendido que devuelve JSON sin interacción).
+27. **Propiedad exclusiva del futuro comando global `forge614 init`:**
+    El comando global futuro `forge614 init` pertenecerá al orquestador central `forge614-ai` cuando sea publicado. Engram no implementa, no expone ni es dueño de `forge614 init`.
+28. **Aplicación atómica e invariantes de seguridad en Tarea 2 (`applyMemoryInitialization`):**
+    La función `applyMemoryInitialization` aplica los cambios planificados con control optimista de concurrencia (`expectedRevision` / `CONFIG_CHANGED`), validación transitoria previa de conectividad a PostgreSQL antes de alterar archivos locales, inicialización idempotente de permisos (`0700`/`0600`) y refuerzo aditivo permanente e irreversible (sin degradación si la preferencia es falsa).
+29. **Rol de Shell en tiempo de ejecución (Opcional en el día a día):**
+    Forge614 Shell es el entorno visual de incorporación y configuración guiada del ecosistema, pero **su ejecución no es requerida durante el trabajo diario**. Los asistentes de IA (ADE Orca, Claude Code, Codex, Antigravity) interactúan directamente con Engram a través de su servidor local MCP por stdio sin necesidad de que Shell permanezca abierto o ejecutándose en segundo plano.
 
 ---
 
 ## 3. Hoja de Ruta: Fases Pendientes Oficiales
 
-Habiéndose completado las Fases 1 a 4.4, el desarrollo futuro se concentra en las siguientes fases:
+Habiéndose completado las Fases 1 a 4.4, el desarrollo se encuentra actualmente en la Fase 4.5 (con las Tareas 1, 2 y 3 concluidas), tras la cual continuarán las fases pendientes:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -185,6 +202,15 @@ Habiéndose completado las Fases 1 a 4.4, el desarrollo futuro se concentra en l
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
+│ [/] Fase 4.5: Transición a Motor No Visual (Ecosistema)│ (En Curso - Tasks 1-3)
+│     - [x] Tarea 1: Inspección y vista previa en SDK    │
+│     - [x] Tarea 2: Aplicación atómica no visual        │
+│     - [x] Tarea 3: Adaptador CLI e init unificado      │
+│     - [ ] Tarea 4: Desacople hacia forge614-engines    │
+│     - [ ] Tarea 5: Retirada gradual de TUI hacia Shell │
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
 │ [ ] Fase 5: Búsqueda Semántica y Ponderación Avanzada  │ (Pendiente)
 │     - Generación local de embeddings vectoriales       │
 │     - Búsqueda híbrida (FTS5 BM25 + similitud coseno)   │
@@ -200,4 +226,4 @@ Habiéndose completado las Fases 1 a 4.4, el desarrollo futuro se concentra en l
 ```
 
 > [!NOTE]
-> Siguiendo las directrices de diseño honesto, las Fases 5 y 6 se documentan como hitos conceptuales aprobados pendientes de implementación, sin prometer fechas ni números de versión definitivos.
+> Siguiendo las directrices de diseño honesto, las fases pendientes se documentan como hitos técnicos aprobados según el contrato de ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), sin prometer fechas artificiales ni números de versión prematuros.

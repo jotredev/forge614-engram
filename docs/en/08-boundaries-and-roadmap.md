@@ -1,8 +1,8 @@
 # 08 (EN). Stage Boundaries and Evolutionary Roadmap
 
-> **Stage:** Product Home (`~/.forge614/engram/`), Safe & Atomic Legacy Workspace Migration, Guarded Coordinated Uninstaller (`uninstall`), TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
-> **Release Versions:** Program 1.1.0 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (con sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
-> **Status:** Current & Verified (587 total tests across 90 files: 572 passed and 15 skipped without isolated PostgreSQL test binaries or native Windows; 0 failures on macOS ARM64 with Bun 1.3.8)
+> **Stage:** Nonvisual Engine Transition (Task 1: Inspection & Preview), Ecosystem Contract (`FORGE614_ECOSYSTEM_CONTRACT.md`), Product Home (`~/.forge614/engram/`), Safe & Atomic Legacy Workspace Migration, Guarded Coordinated Uninstaller (`uninstall`), TUI Control Center, Reinforced FTS5 (No Embeddings), Feature-Oriented Modular Monolith, Progressive Memory Sessions, Ranked Context, Local MCP (10 Tools), Assistant TUI Menu & PostgreSQL Replica Formats 1, 2, and 3
+> **Release Versions:** Program 1.1.0-beta.2 | Configuration Formats 2 (local) / 3 (with sync) | SQLite Schemas 3 (local) / 4 (con sync) / 5 (assistants & local bindings) / 6 (progressive memory sessions & ranked context) / 7 (immutable confirmations & search reinforcement) | PostgreSQL Formats 1, 2, and 3
+> **Status:** Current & Verified (607 total tests across 92 files: 592 passed and 15 skipped without isolated PostgreSQL test binaries or native Windows; 0 failures on macOS ARM64 with Bun 1.3.8)
 > **Sister translation:** [08. Límites de la Etapa y Hoja de Ruta Futura](../es/08-limites-y-roadmap.md)
 
 This document transparently defines implemented and verified capabilities in the current delivery, operational boundaries, distinctions between synthetic tests and live assistant sessions, and official pending roadmap phases.
@@ -88,6 +88,15 @@ The following development phases are **100% implemented and verified**:
 - [x] **Surgical PATH Dotfile Cleanup:** Clean removal of `# >>> forge614-engram PATH >>>` blocks in Unix shell dotfiles and user environment cleanup on Windows. Halts with `PATH_CONFLICT` if manual edits occurred within managed markers.
 - [x] **Strictly Confined Data Deletion:** Deletes only `~/.forge614/engram/`. Preserves parent root `~/.forge614/` if sibling products (`shell/`, `atlas/`) or foreign user files remain.
 
+### Phase 4.5: Nonvisual Engine Transition in the Forge614 Ecosystem — IN PROGRESS (Tasks 1, 2, and 3 Complete)
+- [x] **Master Ecosystem Contract (`FORGE614_ECOSYSTEM_CONTRACT.md`):** Clear definition of product hierarchy (`forge614-ai`, `forge614-shell`, `forge614-engines`, `forge614-engram`, `forge614-atlas`). Engram formally embraces its role as a headless memory engine without proprietary human-facing visual interfaces.
+- [x] **Task 1 — Passive Inspection and Nonvisual Initialization Preview (`src/app/initialization.ts`):** Functions `inspectMemoryInitialization()` and `previewMemoryInitialization()` exported from the public TypeScript SDK with strict types (`MemoryInitializationStatus`, `MemoryInitializationRequest`, `MemoryInitializationPreview`).
+- [x] **Zero Side Effects in Inspection and Preview:** Strictly read-only verification without directory creation, `.env` file generation, SQLite database creation, remote PostgreSQL network calls, or credential leaks.
+- [x] **Task 2 — Atomic Initialization Execution (`applyMemoryInitialization`):** Atomic, safe execution with optimistic concurrency verification (`expectedRevision`), pre-flight transient PostgreSQL connectivity validation, and permanent additive reinforcement.
+- [x] **Task 3 — Unified CLI Initialization (`forge614-engram init [--json]`):** Formal retirement of `setup` (`COMMAND_RETIRED`), unification into `forge614-engram init` (interactive terminal mode), and introduction of `init --json` (headless mode returning JSON without opening TUI).
+- [ ] **Task 4 — Decouple Assistant Detection and Integrate with Engines:** (Planned) Delegate assistant discovery and configuration management to `forge614-engines`.
+- [ ] **Task 5 — Gradual TUI Retirement and Redirection to Forge614 Shell:** (Planned) Deprecation of direct terminal interfaces in Engram in favor of Shell.
+
 ---
 
 ## 2. Current Operational Boundaries
@@ -144,12 +153,20 @@ To maintain realistic expectations, the following boundaries are formally declar
     The `forge614-engram uninstall` command permanently destroys product home `~/.forge614/engram/` (including the local SQLite database and `.env` secrets). If historical memory preservation is desired, users must make a manual backup of `engram.db` or run `sync` against PostgreSQL prior to uninstalling.
 25. **Coexistence with Atlas and Removal Order:**
     If Forge614 Atlas is present (`~/.forge614/atlas/`), Engram cannot be uninstalled in isolation without first uninstalling Atlas due to suite dependencies. The uninstaller requires the extended confirmation phrase `"REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS"` and orchestrates Atlas removal prior to wiping Engram.
+26. **Formal Retirement of `setup` in Favor of `init` (`COMMAND_RETIRED`):**
+    The `forge614-engram setup` subcommand is permanently retired from the public CLI binary (it does not act as a silent alias). Invocations return the structured error `COMMAND_RETIRED` with exit code 1 (`{"code": "COMMAND_RETIRED", "error": "El comando setup fue retirado. Usa forge614-engram init."}`). Initialization is channeled exclusively through `forge614-engram init` (interactive guided mode in a terminal TTY delegating to `assistantTui`) and `forge614-engram init --json` (headless mode returning JSON without prompts).
+27. **Exclusive Ownership of Future Global Command `forge614 init`:**
+    The future global command `forge614 init` will belong exclusively to the central orchestrator `forge614-ai` once released. Engram does not implement, expose, or own `forge614 init`.
+28. **Atomic Initialization Execution and Safety Invariants in Task 2 (`applyMemoryInitialization`):**
+    The `applyMemoryInitialization` SDK function safely applies planned changes with optimistic concurrency verification (`expectedRevision` / `CONFIG_CHANGED`), transient pre-flight PostgreSQL connectivity checks prior to altering local disk, idempotent directory and file permission enforcement (`0700`/`0600`), and permanent additive search reinforcement (never degrading existing reinforcement if false).
+29. **Shell Runtime Role (Optional in Daily Work):**
+    Forge614 Shell is the official visual onboarding and guided setup environment, but **running Shell is strictly optional during daily work**. External AI clients (ADE Orca, Claude Code, Codex, Antigravity) interact directly with Engram via its local stdio MCP server without requiring Shell to remain open or running in the background.
 
 ---
 
 ## 3. Evolutionary Roadmap: Official Future Phases
 
-With Phases 1 through 4.4 completed, future development centers on the following roadmap:
+With Phases 1 through 4.4 completed, development is currently in Phase 4.5 (with Tasks 1, 2, and 3 completed), after which subsequent phases will continue:
 
 ```text
 ┌────────────────────────────────────────────────────────┐
@@ -185,6 +202,15 @@ With Phases 1 through 4.4 completed, future development centers on the following
 └──────────────────────────┬─────────────────────────────┘
                            ▼
 ┌────────────────────────────────────────────────────────┐
+│ [/] Phase 4.5: Nonvisual Engine Transition (Ecosystem) │ (In Progress - Tasks 1-3)
+│     - [x] Task 1: SDK inspection & safe preview        │
+│     - [x] Task 2: Atomic nonvisual execution           │
+│     - [x] Task 3: Unified CLI init & --json adapter    │
+│     - [ ] Task 4: Decouple to forge614-engines         │
+│     - [ ] Task 5: Gradual TUI retirement to Shell      │
+└──────────────────────────┬─────────────────────────────┘
+                           ▼
+┌────────────────────────────────────────────────────────┐
 │ [ ] Phase 5: Semantic Search & Vector Embeddings       │ (Pending)
 │     - Local vector embedding generation                │
 │     - Hybrid retrieval (FTS5 BM25 + cosine similarity) │
@@ -200,4 +226,4 @@ With Phases 1 through 4.4 completed, future development centers on the following
 ```
 
 > [!NOTE]
-> Consistent with honest engineering guidelines, Phases 5 and 6 are documented as approved conceptual milestones awaiting implementation, without speculative deadlines or promised release numbers.
+> Consistent with honest engineering guidelines, pending phases are documented as approved technical milestones governed by the ecosystem contract (`FORGE614_ECOSYSTEM_CONTRACT.md`), without artificial deadlines or premature version numbers.
