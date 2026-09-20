@@ -47,6 +47,7 @@ export class MemoryStore {
   saveSessionSummary(projectId: string, sessionId: string, fields: SummaryFields,
       request: {requestKey:string;expectedVersion?:number}): SessionSaveResult { return writes.saveSessionSummary(this.db, projectId, sessionId, fields, request); }
   get(projectId: string | null, id: string): Memory | null { return memory.get(this.db, projectId, id); }
+  getByTopic(projectId: string | null, topicKey: string): Memory | null { return memory.getByTopic(this.db, projectId, topicKey); }
   history(projectId: string | null, id: string): MemoryVersion[] { return memory.history(this.db, projectId, id); }
   search(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[] { return search.search(this.db, projectId, query, limit, scope); }
   searchPreviews(projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): PreviewResult[] { return search.searchPreviews(this.db, projectId, query, limit, scope); }

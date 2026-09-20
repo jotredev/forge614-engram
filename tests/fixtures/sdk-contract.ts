@@ -24,7 +24,7 @@ interface ExpectedStore {
   saveWithSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,input:Omit<SaveInput,"projectId"|"scope">,options?:SessionSaveOptions,bindingAvailable?:(directory:string)=>boolean):SessionSaveResult;
   save(input:SaveInput):MemoryVersion;saveWithSession(input:SaveInput,options?:SessionSaveOptions):SessionSaveResult;
   saveSessionSummary(projectId:string,sessionId:string,fields:SummaryFields,request:{requestKey:string;expectedVersion?:number}):SessionSaveResult;
-  get(projectId:string|null,id:string):Memory|null;history(projectId:string|null,id:string):MemoryVersion[];
+  get(projectId:string|null,id:string):Memory|null;getByTopic(projectId:string|null,topicKey:string):Memory|null;history(projectId:string|null,id:string):MemoryVersion[];
   search(projectId:string|null,query:string,limit?:number,scope?:SearchScope):SearchResult[];
   searchPreviews(projectId:string|null,query:string,limit?:number,scope?:SearchScope):PreviewResult[];
   getVersion(projectId:string|null,id:string,version?:number):VersionRead|null;timeline(projectId:string,input:TimelineInput):TimelineResult;

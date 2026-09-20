@@ -33,6 +33,16 @@ test("store facade explicitly reports and enables search reinforcement", () => {
   } finally { store.close(); }
 });
 
+test("store facade exposes owner-scoped topic lookups for resumable work", () => {
+  const store = new MemoryStore(":memory:");
+  try {
+    const project = store.createProject("Atlas");
+    const saved = store.save({ projectId: project.projectId, title: "Module", content: "completed", type: "procedure", topicKey: "atlas:module" });
+    expect(store.getByTopic(project.projectId, "atlas:module")).toMatchObject({ id: saved.id, content: "completed" });
+    expect(store.getByTopic(null, "atlas:module")).toBeNull();
+  } finally { store.close(); }
+});
+
 test("store facade returns control-center summaries from its SQLite connection", () => {
   const store = new MemoryStore(":memory:");
   try {

@@ -23,7 +23,7 @@ type AssistantDetectionSdkTypes = {
 
 const PUBLIC_STORE_METHODS = [
   "applySync", "archive", "bindProjectDirectory", "close", "context", "controlCenter", "createProject",
-  "enableAssistantIntegration", "enableSessions", "enableSync", "endSession", "get", "getProject",
+  "enableAssistantIntegration", "enableSessions", "enableSync", "endSession", "get", "getByTopic", "getProject",
   "enableSearchReinforcement", "getSession", "getVersion", "history", "listProjects", "reinforcementEnabled",
   "projectForDirectory", "renameProject", "resolveProjectDirectory", "restore", "save",
   "saveForProjectDirectory", "saveSessionSummary", "saveWithSession", "saveWithSessionForProjectDirectory",
