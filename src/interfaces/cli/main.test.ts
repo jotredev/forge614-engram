@@ -27,6 +27,7 @@ test("help, version and empty project list create no storage", () => {
   const help = run(dir,"help").stdout;
   for (const syntax of [
     "sync [--upgrade-format]",
+    "update          Descarga, verifica y activa la última versión estable de Engram.",
     "sessions-enable",
     "reinforcement-enable",
     "session-start --directory <carpeta> --session-id <id>",

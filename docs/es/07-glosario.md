@@ -1,194 +1,45 @@
-# 07. Glosario de Conceptos en Lenguaje Cotidiano
+# 07. Glosario
 
-> **Etapa:** Transición a Motor No Visual (Task 1: Inspección y Vista Previa, Task 2: Aplicación Atómica de Inicialización), Retiro de setup (`COMMAND_RETIRED`), Contrato de Ecosistema (`FORGE614_ECOSYSTEM_CONTRACT.md`), Centro de Control TUI, FTS5 Reforzado (sin embeddings), Monolito Modular por Funcionalidad, Sesiones Progresivas de Memoria, Contexto Clasificado, MCP Local (10 Herramientas), Hogar Propio de Producto (`~/.forge614/engram/`), Migración Segura, Desinstalador Coordinado, Menú TUI de Asistentes y Réplica PostgreSQL Formatos 1, 2 y 3
-> **Versiones de esta entrega:** Programa 1.1.0-beta.2 | Formatos de configuración 2 (local) / 3 (con sync) | Esquemas SQLite 3 (local) / 4 (con sync) | Esquemas SQLite 5 (asistentes y asociaciones locales) / 6 (sesiones progresivas y contexto clasificado) / 7 (confirmaciones inmutables y refuerzo de búsqueda) | Formatos PostgreSQL 1, 2 y 3
-> **Estado:** Vigente y Activo (582 pruebas superadas y 15 omitidas en 92 archivos en macOS ARM64 con Bun 1.3.8; pruebas nativas de Windows validadas en ejecutables compilados en GitHub Actions)
-> **Traducción hermana:** [07 (EN). Plain-Language Glossary](../en/07-glossary.md)
+## Hogar del producto Engram
 
-Este glosario explica cada concepto técnico utilizando analogías y metáforas de la vida cotidiana, seguidas inmediatamente de su término técnico formal entre paréntesis.
+El directorio privado `~/.forge614/engram/`. Contiene configuración, base local y binario instalado de Engram. Engram nunca elimina el directorio padre compartido `~/.forge614/`.
 
----
+## Identificador de proyecto (`projectId`)
 
-### Centro de Control TUI (TUI Control Center / `controlCenterTui` / `forge614-engram tui`)
-Como un panel de instrumentos de supervisión general en la sala de control de una central: una interfaz interactiva de consola a pantalla completa que centraliza la visualización de proyectos, carpetas vinculadas, memorias compartidas globales, estado de almacenamiento SQLite y PostgreSQL, y ejecución deliberada de acciones administrativas sin necesidad de recordar comandos CLI individuales.
+UUID que identifica los recuerdos de un proyecto. No es un nombre ni una ruta. Un proyecto puede vincularse a un directorio Git canónico con `project-bind`.
 
-### Lectura por Defecto (Read-Only by Default)
-Como un museo con vitrinas donde puedes observar y estudiar cada pieza sin peligro de alterarlas: una regla arquitectónica donde abrir el Centro de Control TUI, navegar entre pestañas, consultar proyectos o redimensionar la ventana opera en modo de estricta solo lectura, garantizando que ninguna consulta o exploración altere un solo byte de la base de datos o de los archivos de configuración.
+## Recuerdo compartido
 
-### Confirmación de Dos Pasos (Two-Step Action Confirmation / `confirm` + Enter)
-Como una caja de seguridad con llave protegida y botón de confirmación deliberada: un protocolo de seguridad interactivo donde ninguna acción de escritura (crear proyectos, vincular carpetas, aplicar migraciones o sincronizar) puede ejecutarse presionando simplemente `Enter`. Requiere que el operador visualice la previsualización del impacto, escriba deliberadamente la palabra `confirm` (o `CONFIRM`) en un cuadro de texto y presione `Enter`.
+Recuerdo con `scope` igual a `shared` y dueño `null`. Está disponible entre proyectos; un tema activo del proyecto puede sustituir al mismo tema compartido en una búsqueda combinada.
 
-### Saneamiento de Salida de Terminal (Terminal Output Sanitization / `sanitizeTerminalOutput`)
-Como un filtro purificador que retira impurezas del aire antes de entrar a un quirófano: una rutina de limpieza de cadenas que analiza nombres de proyectos, rutas y textos externos, suprimiendo secuencias de escape ANSI, caracteres de control no imprimibles, marcadores de anulación bidireccional (bidi overrides), caracteres de ancho cero y enlaces URL para blindar la terminal contra inyecciones maliciosas o distorsiones visuales.
+## Clave de tema (`topicKey`)
 
-### Subflujo Secuencial de Terminal (Sequential Terminal Subflow)
-Como pausar una llamada telefónica para atender brevemente otra línea y luego reanudar la llamada original exactamente donde se quedó: la técnica donde el Centro de Control pausa su propio bucle de eventos, restaura de forma limpia la terminal estándar, invoca el asistente de integración (`assistantTui`) en un subproceso secuencial y, al finalizar este, recarga una instantánea fresca del sistema y reactiva el Centro de Control sin anidar modos crudos (*raw mode*) concurrentes.
+Nombre estable de un tema, por ejemplo `architecture/database`. Actualizar un tema existente requiere su versión esperada. `MemoryStore.getByTopic(projectId, topicKey)` lo recupera de forma exacta para consumidores del SDK.
 
-### Ocultación Estricta de Secretos y Privacidad (Strict Secret Concealment)
-Como un informe financiero ejecutivo que resume cifras clave sin revelar las claves de acceso de las cuentas bancarias: el principio de privacidad por el cual el Centro de Control TUI jamás muestra contraseñas, URLs de conexión a PostgreSQL (`POSTGRES_URL`), contenidos íntegros de `.env`, ni el texto o títulos de los recuerdos de los proyectos, limitándose a métricas agregadas y metadatos estructurales.
+## SQLite y FTS5
 
----
+SQLite es la base local durable. FTS5 es su índice léxico de texto completo. Ambos siempre permanecen locales, incluso al habilitar sincronización PostgreSQL.
 
+## Réplica PostgreSQL
 
-### Confirmación Inmutable de Recuerdo (Immutable Memory Confirmation / `Confirmation` / `confirmations`)
-Como poner una muesca de lápiz en la portada de un manual cada vez que lo vuelves a consultar en el taller, sin arrancar hojas ni reimprimir el libro entero: un evento histórico fechado e inmutable que registra que un recuerdo activo existente fue observado nuevamente por el asistente, sin fabricar versiones 2 o 3 artificiales ni duplicar el contenido. Representa una nueva observación del dato; no certifica verdad absoluta ni verificación humana.
+Copia sincronizada opcional del estado local de Engram. No reemplaza SQLite ni FTS5. Se configura con `init --json --postgres-url <URL>` y se sincroniza explícitamente.
 
-### Refuerzo de Búsqueda FTS5 sin Embeddings (FTS5 Reinforced Search without Embeddings)
-Como un bibliotecario experto que organiza los libros en el mostrador dando preferencia a los que consulta con frecuencia y a los que se han revisado recientemente, sin necesidad de escanearlos con rayos X ni usar complejos modelos neuronales: un mecanismo de ordenación matemática que pondera las coincidencias léxicas de BM25 multiplicándolas por factores de notas fijadas (`pinned`), actualidad temporal en escala de 30 días (`recencyBoost`), y estabilidad acumulada (`stabilityBoost`). *(Para una explicación no técnica exhaustiva y comparativa con la búsqueda vectorial tradicional, consulta nuestra guía dedicada: [¿Qué son los Embeddings y por qué Forge614 Engram funciona SIN ellos?](conceptos/que-son-los-embeddings.md)).*
+## Refuerzo
 
-### Ventana Móvil de Deduplicación de 15 Minutos (15-Minute Sliding Deduplication Window)
-Como recordar lo que te dijeron hace diez minutos en la misma conversación sin confundirlo con lo que te contaron el mes pasado: una regla temporal estricta para notas generales sin tema (`topicKey: null`), donde solo se consideran duplicados los datos observados en los últimos 15 minutos exactos (`now - 900,000 ms` a `now`). Si transcurren más de 15 minutos, Engram crea un recuerdo independiente nuevo para no fusionar hechos distantes.
+Señal local opcional de orden basada en observaciones repetidas. Puede mejorar el orden de búsqueda; no prueba que un recuerdo sea verdadero.
 
-### Reintento Idempotente por Clave de Petición (Idempotent Request Key Replay / `requestKey` / `Replay`)
-Como presentar el mismo boleto sellado en la taquilla tras cortarse la luz: si una operación de guardado se interrumpe y se reintenta con la misma clave y el mismo contenido (mismo hash criptográfico SHA-256), el sistema devuelve inmediatamente la respuesta almacenada previamente sin alterar versiones ni añadir confirmaciones redundantes.
+## Sesión
 
-### Conflicto de Carga en Reintento (Request Payload Conflict / `REQUEST_CONFLICT`)
-Como intentar cobrar un cheque ya emitido pero con una cantidad o beneficiario cambiado con bolígrafo: un error de seguridad que aborta inmediatamente la operación cuando se detecta que una misma clave de petición (`requestKey`) se intenta reutilizar con un contenido, título o alcance diferente al original.
+Registro de trabajo en curso por proyecto. Las sesiones permiten resúmenes estructurados, timeline y contexto después de ejecutar `sessions-enable`.
 
-### Sesgo o Desfase de Reloj Local (System Clock Skew / `CLOCK_SKEW`)
-Como mirar un reloj de pared atrasado que pretende marcar las 2:00 de la tarde cuando ya sellaste un recibo a las 3:00: una salvaguarda de seguridad cronológica que rechaza una confirmación cuando el reloj del sistema local marca una fecha anterior a la fecha registrada en la versión del recuerdo que se pretende confirmar.
+## Servidor MCP
 
-### Saturación Asintótica de Estabilidad (Asymptotic Stability Saturation / $\frac{n}{n+4}$)
-Como un estudiante que adquiere confianza en un tema repasándolo: las primeras veces que repasa el impacto en su aprendizaje es muy notable, pero después de muchas repeticiones el beneficio adicional se estabiliza suavemente sin crecer descontroladamente hasta el infinito. En Engram, el impulso de estabilidad empieza en 0.00, llega a la mitad (0.02) con 4 observaciones acumuladas y converge a un tope máximo de 0.04.
+Servidor local Model Context Protocol iniciado con `forge614-engram mcp`. Usa entrada/salida estándar y expone herramientas de memoria. El modelo puede decidir no guardar; Engram no captura transcripciones automáticamente.
 
-### Promoción a Formato 3 de Réplica (PostgreSQL Replica Format 3 Promotion / `sync --upgrade-format`)
-Como habilitar una nueva sección de archivos en una bóveda bancaria compartida: un procedimiento deliberado mediante el comando `sync --upgrade-format` que actualiza la réplica remota para transferir confirmaciones inmutables y peticiones idempotentes, manteniendo la tabla física de PostgreSQL invariable (`state.format = 1`) y protegiendo a los clientes pares que aún no hayan habilitado el Esquema 7 (`REINFORCEMENT_REQUIRED`).
+## Forge614 Engines y Shell
 
----
+Engines es dueño de la detección y adaptadores de IA instalada. Shell es dueño de la experiencia visual de setup y ciclo de vida. Engram no posee TUI ni configuración de clientes.
 
-### Sesión Progresiva de Trabajo (Progressive Memory Session / `Session`)
-Como una jornada de trabajo en un taller artesanal: un período delimitado de concentración donde un desarrollador o un asistente de inteligencia artificial colaboran en una tarea específica dentro de un proyecto, registrando qué decisiones se tomaron en cada momento.
+## `forge614-engram update`
 
-### Sesión en Ejecución (Runtime Session / `kind: "runtime"`)
-Como encender y apagar el cronómetro de un proyecto: una sesión iniciada intencionadamente mediante `session-start` que registra la fecha y hora de inicio (`startedAt`), la carpeta de trabajo y permanece activa hasta que se concluye formalmente con `session-end` (`endedAt`).
-
-### Sesión Manual de Respaldo (Manual Fallback Session / `kind: "manual"` / `local_manual_sessions`)
-Como un bloc de notas comodín en el escritorio: una sesión local fija y permanente que existe en tu computadora para cada proyecto. Si guardas un recuerdo desde la terminal sin especificar ninguna sesión activa, Engram lo anota automáticamente en este bloc de respaldo para que jamás se pierda su contexto.
-
-### Línea Temporal de Sucesos (Session Timeline / `timeline` / `memory_timeline`)
-Como revisar las fotografías del carrete tomadas antes y después de una foto principal: una herramienta que te sitúa sobre un recuerdo particular (`focus`) y te muestra cronológicamente las notas que se registraron inmediatamente antes (`before`) y después (`after`) dentro de esa misma sesión de trabajo.
-
-### Contexto Clasificado por Secciones (Ranked Context / `context` / `memory_context`)
-Como una carpeta ejecutiva perfectamente tabulada para entrar a una junta importante: un informe sintetizado que agrupa tus recuerdos en tres compartimentos esenciales: notas fijadas imprescindibles (`pinned`), acuerdos recientes de trabajo (`recent`) y bitácoras de sesiones anteriores (`summaries`).
-
-### Previsualización Ligera o Ficha Abreviada (Memory Preview / `MemoryPreview`)
-Como leer el titular y el primer párrafo de una noticia antes de decidir si compras el periódico: una versión compacta de un recuerdo cuyo texto se recorta a un máximo de **300 puntos de código Unicode** (*code points*) con una etiqueta que indica si fue abreviado (`truncated: true`). Permite al modelo hojear decenas de notas sin saturar su memoria operativa.
-
-### Presupuesto Estricto de Serialización (`maxBytes`)
-Como el peso máximo autorizado para el equipaje de mano en un avión: un límite numérico estricto (entre 1024 y 65536 bytes) que mide **el peso exacto en bytes UTF-8 del mensaje JSON final que se transmite**. **No es un presupuesto de tokens de inteligencia artificial**, sino un límite físico de transporte de red y proceso.
-
-### Resumen Estructurado de Sesión (Structured Session Summary / `session-summary`)
-Como el acta oficial de cierre de una obra: un documento estandarizado que contiene exactamente seis apartados obligatorios: qué se quería lograr (`goal`), directrices clave (`instructions`), lecciones aprendidas (`discoveries`), logros completados (`accomplishments`), tareas pendientes (`nextSteps`) y los archivos modificados (`files`). Se almacena bajo el tema reservado inmutable `session/<id>/summary`.
-
-### Inferencia de Sesión (Session Inference)
-Como un asistente atento que sabe en qué asunto estás trabajando: cuando un modelo de IA guarda una nota sin indicar sesión, Engram revisa si existe exactamente una única sesión abierta en los últimos 7 días en esa carpeta. Si la encuentra, asocia la nota a ella de forma inteligente (`sessionSource: "inferred"`). Si hay dos o más abiertas, se detiene y te pregunta para no equivocarse (`AMBIGUOUS_SESSION`).
-
-### Conflicto de Plugin en OpenCode (`CONFLICT`)
-Como encontrarte con una cerradura cambiada que prefieres no forzar: una salvaguarda de seguridad mediante la cual Engram, al detectar que el archivo de plugin `plugins/forge614-engram.js` ya existe con modificaciones previas, se detiene en seco y no lo sobrescribe. Permite al usuario respaldar y conciliar su código manualmente.
-
-### Protocolo de Contexto de Modelo (Model Context Protocol / MCP)
-Estándar abierto de comunicación que permite a los modelos de IA interactuar uniformemente con herramientas de memoria. En Forge614 Engram expone 10 herramientas nativas locales a través de los canales estándar del sistema (`stdio`).
-
-### Menú Interactivo en Terminal (Terminal User Interface / TUI / `tui`)
-Panel visual interactivo a pantalla completa dentro de la consola de comandos donde una persona puede seleccionar opciones con las flechas del teclado y la barra espaciadora, previsualizar cambios, ejecutar autopruebas y confirmar configuraciones.
-
-### Autoprueba del Servidor MCP (MCP Server Self-Test)
-Prueba automatizada y asíncrona que el menú TUI ejecuta sobre el ejecutable binario instalado en tu máquina, comprobando que responda en menos de 5 segundos y exponga las 10 herramientas de memoria oficiales.
-
-### Vinculación o Asociación Local de Proyecto (Project Binding / `project_bindings`)
-Registro en la base de datos local que asocia una ruta física de carpeta en el disco de este equipo con un identificador de proyecto (`projectId`). Es exclusivo de cada computadora y jamás se sincroniza a través de la red hacia otras máquinas.
-
-### Directorio Raíz Común de Git (Git Common Directory / `--git-common-dir`)
-Ubicación canónica del repositorio Git principal que permite a múltiples subcarpetas y entornos de trabajo vinculados (*linked worktrees*) compartir exactamente la misma identidad y recuerdos sin duplicaciones.
-
----
-
-### Monolito Modular por Funcionalidad (Feature-Oriented Modular Monolith)
-Como una caja de herramientas profesional donde cada compartimento tiene una función clara y ordenada, pero todo viaja en un único maletín portátil: un diseño de software que compila un único programa ejecutable autónomo para tu sistema operativo, organizando su código interno por conceptos del mundo real (`memory`, `sessions`, `projects`, `search`) con fronteras claras y puertas de entrada explícitas (`index.ts`), sin dispersarse en servicios remotos de red.
-
-### Fachada Compatible (Compatible Facade Pattern / `MemoryStore`)
-Como el mostrador de recepción de un hotel elegante: una cara visible amigable y familiar que atiende a los clientes exactamente como siempre lo ha hecho, mientras detrás del mostrador un equipo de especialistas coordina las tareas sin que el cliente tenga que aprender un protocolo nuevo ni cambiar su forma de interactuar.
-
-### Consulta Exacta por Clave Temática (Exact Topic Lookup / `store.getByTopic`)
-Como buscar un expediente en el archivero por su código exacto de etiqueta en el lomo en lugar de leer todas las páginas buscando palabras parecidas: una consulta relacional determinista en SQLite que localiza un recuerdo específico a través de su `topicKey` exacto y su propietario (`projectId` o ámbito compartido `null`), garantizando aislamiento estricto sin cruzar datos entre proyectos y sin usar un motor de búsqueda de texto completo (FTS5). Es la función oficial empleada por Forge614 Atlas para verificar si un módulo ya fue analizado antes de reanudar tareas autónomas.
-
-### Auditor AST de Arquitectura (Abstract Syntax Tree Architecture Auditor / `import-rules`)
-Como un inspector aduanero infatigable que revisa el equipaje de cada paquete antes de permitirle la entrada: una herramienta automática de análisis de código fuente basada en el compilador de TypeScript que rastrea todos los `import` del proyecto, detecta si alguna capa intenta comunicarse con quien no debe y evita la formación de callejones sin salida o bucles infinitos (*cycles*).
-
-### Pruebas Colocadas Hermanas (Colocated Sibling Tests / `<archivo>.test.ts`)
-Como tener el extintor de incendios exactamente al lado de la máquina que podría calentarse, en lugar de guardarlo en una bodega lejana al final del pasillo: la práctica de colocar el archivo de pruebas unitarias directamente junto al archivo de código fuente que implementa esa lógica (ej. `memory.test.ts` junto a `memory.ts`), garantizando que cada pieza tenga un responsable inmediato de calidad.
-
-### Transacción Exterior Compuesta (Composite Outer Transaction / `writes.ts`)
-Como firmar una escritura notarial donde o se completan todos los sellos, firmas y pagos al mismo tiempo, o el trámite se cancela por completo sin dejar documentos a medias: una operación indivisible de base de datos (`BEGIN IMMEDIATE ... COMMIT`) donde se registran el proyecto, la nota, su versión inmutable, el evento histórico, el hash de solicitud idempotente y la entrada de sesión en un solo parpadeo seguro.
-
-### Bloqueo Optimista CAS (Compare-and-Swap / CAS)
-Como dos personas que intentan sellar el mismo documento numerado: cada una revisa primero qué número tiene el sello actual; la primera que llega estampa el nuevo sello avanzando la numeración, mientras que la segunda, al notar que el número ya no coincide con el que vio, se detiene amablemente sin arruinar el trabajo de la primera.
-
-### Antigravity (Asistente de Desarrollo Soportado / `antigravity`)
-Asistente de desarrollo compatible con Forge614 Engram que sustituye a Gemini CLI. Se conecta mediante el protocolo estándar MCP a través de `~/.gemini/config/mcp_config.json`, permitiendo al modelo consultar contexto (`memory_context`), buscar recuerdos (`memory_search`) y guardar decisiones (`memory_save`). Opera en modo *MCP only* y no instala hooks automáticos (*Hooks are unavailable for Antigravity until a compatible official durable-memory event is verified*).
-
-### Seguridad de Rutas en Windows (Windows Path Guard / Reparse Points)
-Mecanismo de seguridad específico para Windows que comprueba exhaustivamente que las rutas de configuración no apunten a enlaces simbólicos (*symbolic links*), uniones de directorios (*junctions*) ni puntos de reanálisis (*reparse points*) antes de escribir datos, neutralizando ataques de redirección maliciosa de archivos. (Estado: validación funcional en CI x64 superada en GitHub Actions Verify Run ID 35427426902 e incrustación en binarios standalone de release x64 y ARM64 superada en Release Run ID 35427429725 y corrida de referencia 35428406085; pendiente prueba en máquina limpia externa para v1.0.0).
-
-### Guardián Nativo de Reparse Points (Node-API C++ Addon / `windows_reparse_guard.node`)
-Como un inspector de aduanas bilingüe apostado en la frontera que examina directamente los documentos oficiales sin intermediarios ni traductores lentos: un módulo nativo ultraligero escrito en C++ que Bun carga directamente en memoria, consultando la función del núcleo de Windows `GetFileAttributesW` en microsegundos para comprobar si una carpeta o archivo es un desvío artificial.
-
-### Puntos de Reanálisis de NTFS (Reparse Points, Junctions y Mount Points)
-Como un letrero de desvío en una carretera que hace creer al conductor que sigue en la avenida principal cuando en realidad lo redirige a un callejón privado: objetos especiales del sistema de archivos NTFS en Windows (enlaces simbólicos, uniones de directorio *junctions* y puntos de montaje de volumen *volume mount points*) que desvían el acceso a otra ubicación física, los cuales Engram rechaza rigurosamente (`UNSAFE_PATH`) para impedir escrituras maliciosas.
-
-### Escritura Protegida Atómica (Guarded Write Protocol / `guardedWrite`)
-Como un cirujano que prepara cuidadosamente todo el instrumental estéril, toma una fotografía previa del área, realiza el procedimiento en un contenedor aislado, verifica que los signos vitales coincidan exactamente con lo planificado y solo entonces une los tejidos definitivamente: un protocolo atómico de 10 pasos que valida rutas, compara contra la vista previa (`write.before`), genera un respaldo fechado con UUID exclusivo (`flag: 'wx'`), escribe y sincroniza a disco un archivo temporal (`fsyncSync`), realiza un reemplazo atómico (`rename`) y verifica byte por byte el resultado final (`readSafeFile`), deteniéndose con `PUBLISHED_UNVERIFIED` si detecta cualquier alteración externa.
-
-### Modo Exclusivo de Creación en Disco (Exclusive File Mode / `"wx"`)
-Como intentar ocupar un casillero numerado con la condición de que si ya tiene un candado puesto la cerradura se bloquea al instante: una bandera de apertura de archivos en Windows que combina la orden de escribir (`"w"`) con la exigencia estricta de exclusividad (`"x"`), garantizando que si el archivo de respaldo o temporal ya existía previamente en el disco, la llamada falle inmediatamente arrojando `EEXIST` para no sobrescribir material ajeno.
-
-### Incrustación de Addon Nativo en Binario Autónomo (Standalone Node-API Bundling)
-Como empacar una herramienta especializada de precisión directamente dentro del maletín sellado del técnico: la capacidad del compilador de Bun (`bun build --compile`) de incrustar el archivo binario `.node` compilado dentro del ejecutable final autónomo cuando se utiliza una llamada literal directa `require()`, permitiendo que el usuario final reciba un único archivo `.exe` sin requerir archivos adyacentes ni instalar Node.js o compiladores.
-
-### Validación de Release sin Publicación (Manual Non-Publishing Release / `workflow_dispatch`)
-Como realizar un simulacro general a puertas cerradas antes del estreno oficial: una modalidad de ejecución manual en GitHub Actions que compila los seis instaladores oficiales, ejecuta pruebas aisladas empaquetadas, genera el archivo `SHA256SUMS` y reúne los artefactos sin publicar una versión en GitHub Releases ni crear etiquetas, reservando la publicación definitiva exclusivamente para eventos de push de tags oficiales `v*`.
-
-### Publicación Idempotente de PATH (Idempotent PATH Publishing)
-Como agregar de forma ordenada una nueva dirección en la libreta de contactos sin duplicar tarjetas ni rayar otras notas: el procedimiento automatizado mediante el cual los instaladores configuran el directorio de ejecutables en los archivos de inicio de Unix (`.zshrc`, `.bashrc`, `.bash_profile` cuando es seguro, o `forge614-engram.fish`) mediante bloques delimitados, o en la variable PATH de usuario en Windows mediante la API .NET sin `setx` ni privilegios de administrador. Repetir la instalación no crea entradas duplicadas. Los dotfiles administrados o enlaces simbólicos se dejan intactos y reciben instrucciones manuales. Requiere abrir una nueva ventana de terminal para que surta efecto.
-
-### Flujo de Incorporación Asistida (Guided Onboarding Flow / `init` -> `assistantTui`)
-Como terminar de acondicionar una oficina e invitar inmediatamente a los colaboradores a entrar: el flujo interactivo guiado donde `forge614-engram init` primero configura el espacio de almacenamiento SQLite y, al confirmar, transiciona de forma secuencial y limpia al menú TUI de selección de asistentes para conectar hasta 5 herramientas de IA (Claude Code, Codex, Cursor, OpenCode y Antigravity) con vista previa de rutas y confirmación explícita (cero cambios silenciosos).
-
-### Verificación Reforzada de Humo en Perfil Vacío (Strengthened Addon Release Smoke Test)
-Como encender un motor de prueba en un banco sin combustible residual para comprobar que todas las válvulas se mueven correctamente: una comprobación automatizada en CI donde los ejecutables compilados de Windows ejecutan `assistant-list` bajo un perfil temporal limpio (`RUNNER_TEMP`), exigiendo que los 5 asistentes reporten exactamente estado `absent` y fallando ante cualquier resultado `blocked`, lo que certifica que el complemento nativo C++ incrustado está genuinamente cargado y operando en memoria sin polución residual en disco.
-
-### Reparación Automática de Permisos de Espacio Privado (Automatic Private Workspace Permission Repair / `repairExistingRoot`)
-Como un cerrajero de confianza que asegura sólo su cuarto de archivo y no toda la casa compartida: el mecanismo automatizado mediante el cual `forge614-engram init` e `init --json` restringen a `0700` (`rwx------`) el directorio propio existente `~/.forge614/engram` si pertenece al usuario actual y tenía permisos abiertos. El contenedor compartido `~/.forge614` se valida pero Engram nunca le aplica `chmod`; enlaces simbólicos, archivos, directorios de otros usuarios o permisos compartidos de escritura inseguros se bloquean de forma estricta (*fail-closed*).
-
-### Detección e Inspección de Asistentes para el SDK (Assistant Detection & Inspection SDK)
-Como el conserje de un edificio corporativo que consulta el directorio de la recepción para indicarte qué oficinas están ocupadas y en qué piso se encuentran, sin abrir escritorios ajenos ni entrar a las salas: la superficie pública de solo lectura expuesta en la raíz de `forge614-engram` (`CLIENT_IDS`, `LABELS`, `isClientId`, `inspectAssistant`, `resolveAssistantPaths`, `coverageWarnings`) que permite a productos hermanos de orquestación (como Forge614 Atlas) auditar qué asistentes de inteligencia artificial están instalados en el equipo del usuario y cuáles son sus rutas esperadas de configuración, sin modificar archivos, sin alterar configuraciones de MCP ni abrir bases de datos locales.
-
-### Hogar Propio de Producto (Dedicated Product Home / `~/.forge614/engram/` / `engramHome`)
-Como tener tu propia habitación privada con llave dentro de una casa compartida con tus hermanos: la subcarpeta exclusiva `~/.forge614/engram/` donde residen los datos (`engram.db`), diarios WAL, configuración privada (`.env`) y binarios (`bin/`) de Forge614 Engram, dentro del contenedor familiar `~/.forge614/` que comparte con Forge614 Shell y Forge614 Atlas, garantizando que Engram jamás altere ni borre carpetas hermanas.
-
-### Migración Segura y Atómica de Espacio Legado (Safe Atomic Legacy Migration / `EngramProductHome.migrateLegacyWorkspace`)
-Como una empresa de mudanzas profesional que traslada con guantes blancos tus pertenencias exactas a tu nueva habitación, revisando que no falte nada y que, si una caja tropieza en la escalera, devuelve inmediatamente todas las cajas a su lugar original sin romper nada: el procedimiento automático e idempotente mediante el cual Engram traslada exclusivamente cinco archivos legados reconocidos (`.env`, `engram.db`, `engram.db-wal`, `engram.db-shm`, `.config-lock`) desde la raíz de `~/.forge614/` hacia `~/.forge614/engram/`, con reversión atómica ante cualquier fallo de E/S y rechazo estricto ante enlaces simbólicos o colisiones.
-
-### Desinstalador Quirúrgico Coordinado (Guarded Coordinated Uninstaller / `uninstallEngram` / `forge614-engram uninstall`)
-Como desmontar cuidadosamente un electrodoméstico empotrado desconectando primero los suministros compartidos, retirando las conexiones a medida y desatornillando solo la repisa propia sin dañar el resto de la cocina: el comando protegido de Engram que exige una frase exacta de confirmación en mayúsculas, coordina primero la desinstalación de Atlas si está presente (`~/.forge614/atlas`), retira limpiamente configuraciones de asistentes y bloques de PATH en dotfiles, y borra exclusivamente la subcarpeta `~/.forge614/engram/`, preservando intacto el contenedor raíz `~/.forge614/` y carpetas hermanas.
-
-### Limpieza Quirúrgica de PATH (Surgical PATH Cleanup / `path-publication.ts`)
-Como retirar una etiqueta adhesiva marcada de un archivador sin raspar las páginas ni tocar las otras etiquetas: el procedimiento inverso de publicación de PATH que localiza con precisión el bloque delimitado `# >>> forge614-engram PATH >>>` en los archivos de inicio de shell o la entrada del registro de Windows y lo suprime limpiamente, deteniéndose con `PATH_CONFLICT` si detecta que el usuario editó el bloque a mano.
-
-### Contrato No Visual de Inicialización (Nonvisual Initialization Contract / `inspectMemoryInitialization`)
-Como un mecánico experto que revisa el tablero del auto con una herramienta de diagnóstico digital sin abrir el capó ni cambiar una sola pieza: una interfaz de programación de solo lectura expuesta por el SDK de Engram que permite a productos hermanos (como Forge614 Shell o Forge614 AI) consultar el estado exacto de la memoria (si está configurada, motor SQLite local, réplica PostgreSQL y refuerzo Schema 7) sin abrir interfaces de terminal ni escribir un solo byte en disco.
-
-### Vista Previa de Inicialización de Memoria (Memory Initialization Preview / `previewMemoryInitialization`)
-Como un arquitecto que te entrega los planos renderizados en 3D de una remodelación para que veas exactamente qué paredes se moverán antes de que entre el primer albañil a tu casa: una función asíncrona y segura que recibe los parámetros deseados de configuración (URL de réplica y activación de refuerzo) y devuelve una proyección estructurada de las acciones que se ejecutarán si el usuario confirma, sin crear carpetas, sin conectarse a la red remota y sin almacenar credenciales.
-
-### Revisión de Configuración de Memoria (Configuration Revision / `expectedRevision`)
-Como un sello de cera lacrado sobre un sobre que certifica que nadie lo abrió ni cambió su contenido mientras pasaba de mano en mano: un identificador criptográfico o huella temporal que captura el estado del archivo `.env` al momento de generar la vista previa; si otro proceso modifica la configuración antes de que el usuario apruebe la acción, la revisión no coincide y la operación se detiene para evitar colisiones involuntarias.
-
-### Aplicación Atómica de Inicialización (Atomic Initialization Application / `applyMemoryInitialization`)
-Como un maestro constructor que valida minuciosamente que el terreno y los planos no hayan cambiado antes de vaciar los cimientos en un solo vertido continuo: la función del SDK que valida la revisión de configuración contra modificaciones concurrentes externas (`CONFIG_CHANGED`), prueba transitoriamente la conexión a PostgreSQL antes de alterar archivos, asegura el directorio y archivos con permisos restrictivos (`0700`/`0600`), aplica el refuerzo de búsqueda de forma irreversible y entrega el resultado final inspeccionado.
-
-### Rol de Shell en Tiempo de Ejecución (Shell Runtime Role / Independencia Operativa)
-Como una anfitriona que te entrega la llave de tu departamento nuevo y te muestra dónde está todo el primer día, pero no necesita quedarse a vivir contigo para que puedas usar tu hogar: el principio arquitectónico por el cual Forge614 Shell es el entorno visual de incorporación y configuración guiada, pero **su ejecución no es requerida durante el trabajo diario**. Los asistentes de IA (ADE Orca, Claude Code, Codex, Antigravity) interactúan directamente con Engram a través de su servidor local MCP por stdio sin que Shell necesite estar abierto ni en ejecución.
-
-### Comando Retirado (Retired Command / `COMMAND_RETIRED`)
-Como un letrero vial que clausura una vía antigua e indica claramente cuál es la autopista moderna: el error estructurado emitido cuando se invoca el comando histórico `setup`, bloqueando ejecuciones obsoletas e instruyendo de inmediato a utilizar `forge614-engram init` (modo interactivo guiado en terminal) o `forge614-engram init --json` (modo desatendido para automatizaciones y scripts).
+Descarga el instalador oficial estable más reciente, verifica el checksum del release y reemplaza solo el binario instalado de Engram. No cambia base de datos, configuración ni recuerdos.

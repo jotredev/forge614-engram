@@ -1,4 +1,4 @@
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, uninstallEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization } from "../../app";
+import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
@@ -9,6 +9,7 @@ import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
 
 export async function dispatch({command,values,need}:ParsedCommand):Promise<void> {
   if (command === "init" && !values.has("json")) { await initTerminal(); return; }
+  if (command === "update") { await updateEngram(); return; }
   if (command === "uninstall") {
     const result=await uninstallEngram({confirmation:need("confirm")},{executable:process.execPath});
     console.log(JSON.stringify(result,null,2));return;

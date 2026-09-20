@@ -11,3 +11,4 @@ export { inspectMemoryInitialization, previewMemoryInitialization, applyMemoryIn
 export type { MemoryInitializationStatus, MemoryInitializationRequest, MemoryInitializationPreview, MemoryInitializationResult } from "./initialization";
 export { uninstallEngram } from "./uninstall";
 export type { UninstallDependencies, UninstallInput, UninstallResult } from "./uninstall";
+export { updateEngram } from "./update";

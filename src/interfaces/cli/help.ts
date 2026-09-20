@@ -4,6 +4,7 @@ Uso: forge614-engram <comando> [opciones]
 
 init [--json] [--postgres-url <URL>]
                 Inicializa Engram; --json no pregunta. --postgres-url solo se acepta con --json.
+update          Descarga, verifica y activa la última versión estable de Engram.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
