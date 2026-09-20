@@ -84,14 +84,42 @@ test("CLI rejects valued boolean flags, malformed summaries, unknown summary key
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
 });
 
-test("init --json remains noninteractive and does not configure external clients", () => {
+test("init --json remains noninteractive, reports initialization status and does not configure external clients", () => {
   const dir = workspace();
   const result = run(dir, "init", "--json");
   expect(result.code).toBe(0);
-  expect(result.stdout).toBe('{\n  "initialized": true,\n  "storage": "sqlite"\n}\n');
+  expect(JSON.parse(result.stdout)).toEqual({
+    initialized: true,
+    storage: "sqlite",
+    postgresConfigured: false,
+    reinforcementEnabled: false,
+  });
   expect(result.stderr).toBe("");
   expect(existsSync(join(dir, "user", ".claude.json"))).toBe(false);
   expect(existsSync(join(dir, "user", ".codex", "config.toml"))).toBe(false);
+});
+
+test("init --json rejects an unavailable PostgreSQL URL without exposing it or creating storage", () => {
+  const dir = workspace();
+  const secret = "POSTGRES_SECRET_MARKER";
+  const result = run(dir, "init", "--json", "--postgres-url", `postgresql://user:${secret}@127.0.0.1:1/engram?sslmode=disable`);
+  expect(result.code).toBe(1);
+  expect(JSON.parse(result.stderr)).toMatchObject({code: "POSTGRES_UNAVAILABLE"});
+  expect(result.stdout).toBe("");
+  expect(result.stderr).not.toContain(secret);
+  expect(existsSync(join(dir, "user", ".forge614", "engram"))).toBe(false);
+});
+
+test("repeating init --json preserves an existing PostgreSQL configuration", () => {
+  const dir = workspace();
+  const config = new WorkspaceConfig(join(dir, "user", ".forge614", "engram"));
+  new MemoryWorkspace(config).init();
+  config.configurePostgres("postgresql://user:password@127.0.0.1:5432/engram?sslmode=disable", config.revision());
+
+  const result = run(dir, "init", "--json");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({initialized: true, storage: "sqlite", postgresConfigured: true});
+  expect(config.read().postgresUrl).toBe("postgresql://user:password@127.0.0.1:5432/engram?sslmode=disable");
 });
 
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", () => {

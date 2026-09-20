@@ -1,4 +1,4 @@
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, uninstallEngram } from "../../app";
+import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, uninstallEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
@@ -36,10 +36,17 @@ export async function dispatch({command,values,need}:ParsedCommand):Promise<void
     let result: unknown;
     switch (command) {
       case "init": {
-        workspace.init(); const store=workspace.open();
-        try { store.enableProjectBindings(); }
-        finally { store.close(); }
-        result = { initialized: true, storage: "sqlite" }; break;
+        if (values.has("postgres-url")) {
+          const request = { postgresUrl: need("postgres-url"), enableReinforcement: false };
+          const preview = await previewMemoryInitialization(request);
+          result = (await applyMemoryInitialization(request, preview.expectedRevision)).status;
+        } else {
+          workspace.init(); const store=workspace.open();
+          try { store.enableProjectBindings(); }
+          finally { store.close(); }
+          result = inspectMemoryInitialization();
+        }
+        break;
       }
       case "project-create": result = workspace.createProject(need("name")); break;
       case "project-list": result = workspace.listProjects(); break;

@@ -2,7 +2,8 @@ export const HELP = `Forge614 Engram — una base, recuerdos por proyecto y comp
 
 Uso: forge614-engram <comando> [opciones]
 
-init [--json]   Inicializa Engram; sin --json guía y confirma en terminal. --json no pregunta.
+init [--json] [--postgres-url <URL>]
+                Inicializa Engram; --json no pregunta. --postgres-url solo se acepta con --json.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).

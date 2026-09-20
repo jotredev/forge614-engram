@@ -14,8 +14,10 @@ test("parser accepts reinforcement enrollment only as an optionless explicit com
   expect(() => parseArguments(["reinforcement-enable", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
-test("parser accepts JSON only for noninteractive initialization", () => {
+test("parser accepts an optional PostgreSQL URL only for noninteractive initialization", () => {
   expect(parseArguments(["init", "--json"]).values.get("json")).toBe("true");
+  expect(parseArguments(["init", "--json", "--postgres-url", "postgresql://user:secret@host/db"]).values.get("postgres-url")).toBe("postgresql://user:secret@host/db");
+  expect(() => parseArguments(["init", "--postgres-url", "postgresql://user:secret@host/db"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
   expect(() => parseArguments(["project-list", "--json"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 

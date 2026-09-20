@@ -2,7 +2,7 @@ import { MemoryError } from "../../shared/errors";
 
 const MEMORY_OPTIONS = ["project-id", "scope"];
 const OPTIONS: Record<string, readonly string[]> = {
-  init: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], mcp: [],
+  init: ["json", "postgres-url"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], mcp: [],
   "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id"],
   save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned","session-id","session-project-id"],
   search: [...MEMORY_OPTIONS,"query","limit","preview"],
@@ -38,6 +38,9 @@ export function parseArguments(args:string[]) {
     if (!value?.trim() || value.startsWith("--") || value.includes("\0")) invalid("Cada opción necesita un valor no vacío.");
     values.set(key,value.trim());
     i+=2;
+  }
+  if (command === "init" && values.has("postgres-url") && !values.has("json")) {
+    invalid("--postgres-url requiere init --json.");
   }
   const need = (key: string): string => values.get(key) ?? invalid(`Falta --${key}.`);
   return { command, values, need };
