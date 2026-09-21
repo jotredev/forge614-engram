@@ -1,4 +1,5 @@
 import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization } from "../../app";
+import type { EngramUpdateResult } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { memoryProtocol } from "../../modules/memory-protocol";
@@ -8,10 +9,27 @@ import { watchSync } from "../terminal/sync-watch";
 import { startMcp } from "../mcp/server";
 import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
 
-export async function dispatch({command,values,need}:ParsedCommand):Promise<void> {
+export function updateResultJson(result: EngramUpdateResult): string {
+  return JSON.stringify(result);
+}
+
+export async function runUpdateCommand(
+  json: boolean,
+  currentVersion: string,
+  update: () => Promise<EngramUpdateResult> = () => updateEngram(currentVersion, { quiet: json }),
+  print: (value: string) => void = console.log,
+): Promise<void> {
+  const result = await update();
+  if (json) print(updateResultJson(result));
+}
+
+export async function dispatch({command,values,need}:ParsedCommand, currentVersion = "0.0.0"):Promise<void> {
   if (command === "init" && !values.has("json")) { await initTerminal(); return; }
   if (command === "memory-protocol") { console.log(JSON.stringify(memoryProtocol(), null, 2)); return; }
-  if (command === "update") { await updateEngram(); return; }
+  if (command === "update") {
+    await runUpdateCommand(values.has("json"), currentVersion);
+    return;
+  }
   if (command === "uninstall") {
     const result=await uninstallEngram({confirmation:need("confirm")},{executable:process.execPath});
     console.log(JSON.stringify(result,null,2));return;

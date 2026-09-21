@@ -12,3 +12,4 @@ export type { MemoryInitializationStatus, MemoryInitializationRequest, MemoryIni
 export { uninstallEngram } from "./uninstall";
 export type { UninstallDependencies, UninstallInput, UninstallResult } from "./uninstall";
 export { updateEngram } from "./update";
+export type { EngramUpdateResult } from "./update";

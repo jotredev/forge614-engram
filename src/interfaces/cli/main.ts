@@ -18,7 +18,7 @@ export async function main(args:string[]):Promise<void> {
       if (args.length > 1) invalid("help no acepta opciones.");
       console.log(HELP); return;
     }
-    await dispatch(parseArguments(args));
+    await dispatch(parseArguments(args), version);
   }
   catch (error) {
     console.error(JSON.stringify(error instanceof MemoryError

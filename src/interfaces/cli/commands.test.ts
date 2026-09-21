@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { WorkspaceConfig } from "../../infrastructure/filesystem/workspace-config";
 import { MemoryWorkspace } from "../../app/workspace";
 import { parseArguments } from "./arguments";
-import { dispatch } from "./commands";
+import { dispatch, runUpdateCommand, updateResultJson } from "./commands";
 
 const directories: string[] = [];
 function workspace() {
@@ -26,6 +26,22 @@ function create(dir: string, name = "demo"): string {
   return JSON.parse(result.stdout).projectId;
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
+
+test("update JSON output contains only the structured update result", () => {
+  expect(updateResultJson({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" })).toBe(
+    '{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}',
+  );
+});
+
+test("update --json prints structured output while plain update remains silent", async () => {
+  const output: string[] = [];
+  const update = async () => ({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" });
+
+  await runUpdateCommand(true, "1.3.0", update, value => output.push(value));
+  await runUpdateCommand(false, "1.3.0", update, value => output.push(value));
+
+  expect(output).toEqual(['{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}']);
+});
 test("CLI shared memories work without a project and require explicit scope for mutations", () => {
   const dir = workspace(); expect(run(dir,"init","--json").code).toBe(0);
   const result = run(dir,"save","--scope","shared","--title","Idioma","--content","Spanish","--type","preference","--topic","language");
