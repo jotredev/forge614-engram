@@ -1,4 +1,5 @@
 node_modules/
+.worktrees/
 .forge614/
 *.sqlite
 *.sqlite-shm
