@@ -6,7 +6,7 @@ All data commands write JSON to stdout. Errors write `{code,error}` JSON to stde
 
 ```text
 init [--json] [--postgres-url <URL>]    initialize local memory; URL requires --json
-update                                  verify and install latest stable release
+update [--json]                         install latest stable release; --json returns a structured result
 uninstall --confirm <exact phrase>      remove Engram only, or Engram and Atlas
 mcp                                     start local stdio MCP server
 sync [--upgrade-format]                 synchronize configured PostgreSQL replica
@@ -27,6 +27,17 @@ forge614-engram memory-protocol --json
 This non-interactive command publishes the versioned JSON contract that Forge614 Engines can use to prepare a safe installation in compatible AI clients. It requires `--json`; without it, or with unknown flags, it writes the standard `{code,error}` JSON error to stderr and exits with code `1`.
 
 It does not require a TTY, create or open `~/.forge614/engram/`, initialize SQLite, or query projects, PostgreSQL, or user data. The contract is available from release `v1.3.0`; that does not mean Engram configures AI clients directly. See [09. Public Memory Protocol](09-public-memory-protocol.md) for lifecycle, security, and boundaries.
+
+## Updating for people and tools
+
+```bash
+forge614-engram update
+forge614-engram update --json
+```
+
+Without options, `update` keeps the terminal experience and shows official-installer progress. With `--json`, it does not mix progress with output and writes only `{"updated":true,"previousVersion":"<previous version>","installedVersion":"<installed version>"}` to stdout. `previousVersion` is the version before the update; `installedVersion` is read from the installed executable at the end. If they match, `updated` is `false`.
+
+An `update --json` failure writes only `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` to stderr and exits with code `1`. It does not include raw diagnostics, URLs, credentials, or secrets. This interface is available from stable release `v1.4.0`.
 
 ## Projects
 

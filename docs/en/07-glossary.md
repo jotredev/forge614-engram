@@ -43,3 +43,5 @@ Engines owns installed-AI discovery and adapters. Shell owns Forge614's visual s
 ## `forge614-engram update`
 
 Downloads the latest stable official installer, verifies the release checksum, and replaces only Engram's installed binary. It does not change the database, configuration, or memories.
+
+Without options, it is the people-facing mode and shows installer progress. With `--json`, it is a non-interactive tool interface: it emits only `updated`, `previousVersion`, and `installedVersion` as compact JSON, or the safe `UPDATE_FAILED` error on stderr. This interface is available from stable release `v1.4.0`.

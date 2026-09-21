@@ -72,9 +72,16 @@ Start the local stdio server with `forge614-engram mcp`. AI-client detection and
 
 ## Update and uninstall
 
+The normal mode is for a person in a terminal and shows installer progress. `--json` is for another tool that needs to understand the result without interpreting text or progress.
+
 ```bash
 forge614-engram update
+forge614-engram update --json
 forge614-engram uninstall --confirm 'REMOVE FORGE614-ENGRAM'
 ```
 
-`update` downloads the latest stable installer, verifies the release checksum, and replaces only the Engram executable. It preserves `.env`, `engram.db`, and memories. If Atlas exists, uninstall requires `REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS` and removes only those two product directories.
+`update` downloads the latest stable installer, verifies the release, and replaces only the Engram executable while showing normal progress. `update --json` suppresses that progress and, on success, writes only compact JSON: `{"updated":true,"previousVersion":"<previous version>","installedVersion":"<installed version>"}`. If the installed version did not change, `updated` is `false`.
+
+Both modes preserve `.env`, `engram.db`, memories, and configuration. With `--json`, failure writes only `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` to stderr and exits with code `1`; it does not expose installer diagnostics, URLs, or secrets. This interface is available from stable release `v1.4.0`.
+
+If Atlas exists, uninstall requires `REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS` and removes only those two product directories.

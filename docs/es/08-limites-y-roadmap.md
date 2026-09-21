@@ -33,6 +33,8 @@ Todavía **no** instala MCP, instrucciones, hooks ni plugins en Claude Code, Cod
 
 PostgreSQL sigue siendo una réplica opcional, sincronizada explícitamente con `sync` o `sync-watch`; esta entrega no añade sincronización automática permanente ni una TUI.
 
+`update --json` es una interfaz de máquina de Engram, no una señal de que Forge614 Shell ya la consuma. Shell u otro consumidor deberá comprobar e integrar ese contrato por separado. Esta interfaz está disponible desde la release estable `v1.4.0`.
+
 ## Modelo operativo
 
 `forge614-engram init` permanece como un flujo pequeño de inicialización de memoria en terminal por compatibilidad. Solo pregunta sobre sincronización PostgreSQL y refuerzo de búsqueda; no configura clientes de IA. `forge614-engram init --json` es el contrato para automatización.

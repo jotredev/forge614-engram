@@ -4,6 +4,8 @@
 
 Usa una terminal macOS/Linux soportada con Bash, `curl` y una utilidad SHA-256. `forge614-engram update` usa el instalador oficial `latest` y conserva el binario anterior si falla validación o instalación. Reintenta después de recuperar conectividad; no reemplaces `engram.db` manualmente.
 
+Para automatización, usa `forge614-engram update --json`. Su éxito es un único JSON compacto en stdout; no debe contener progreso. Si falla, devuelve código `1` y únicamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` en stderr. Ese mensaje deliberadamente no revela diagnósticos del instalador, URLs, credenciales ni secretos.
+
 ## Inicialización
 
 `init` requiere terminal interactiva. Usa `init --json` en automatización. `--postgres-url` solo es válido con `init --json`; fallas de conexión devuelven JSON estructurado sin exponer la URL ni dejar configuración parcial.

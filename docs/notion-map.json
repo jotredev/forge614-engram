@@ -7,6 +7,76 @@
   },
   "documents": [
     {
+      "localPath": "docs/es/01-instalacion-y-primeros-pasos.md",
+      "language": "es",
+      "notionUrl": "https://app.notion.com/p/3dd21943d129813c86b5ffa723fa00a2?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:52b7209516d26688a5d58559074a55f3364fd456cb32c9d5e41c78dfac0c87e3"
+    },
+    {
+      "localPath": "docs/en/01-installation-and-getting-started.md",
+      "language": "en",
+      "notionUrl": "https://app.notion.com/p/3dd21943d12981b2a2dec3d88a0e7e20?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:36b16f3ede7fdef891e2aa9faae6f7e9d90a95fd559a75b9765bc802b2b3fcdd"
+    },
+    {
+      "localPath": "docs/es/03-referencia-cli.md",
+      "language": "es",
+      "notionUrl": "https://app.notion.com/p/3dd21943d12981ba8803e065eb0938cc?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:c0e104390e451dde3d8ed0c75c5120a79bcb0a13ac5e3f952725d8fd7a57ee59"
+    },
+    {
+      "localPath": "docs/en/03-cli-reference.md",
+      "language": "en",
+      "notionUrl": "https://app.notion.com/p/3dd21943d129817baeb1fd75514e1a21?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:62a8b2753f0c75dd4caaeed92d3ec1cdcc73b45a1508ce410f85d650d310671b"
+    },
+    {
+      "localPath": "docs/es/06-resolucion-de-errores.md",
+      "language": "es",
+      "notionUrl": "https://app.notion.com/p/3dd21943d12981e0ba2ceefd90a55ddf?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:61063b67234cbbffd16afbd37399b50b5ef8cb94fc3445004605b6097c85e3af"
+    },
+    {
+      "localPath": "docs/en/06-troubleshooting.md",
+      "language": "en",
+      "notionUrl": "https://app.notion.com/p/3dd21943d12981609c71c39a1fc6270c?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:d91b9eba6eb2a9ee78039dc25f860500e25f53b5b00f482794d3600fad063a4c"
+    },
+    {
+      "localPath": "docs/es/07-glosario.md",
+      "language": "es",
+      "notionUrl": "https://app.notion.com/p/3dd21943d129810783c4d478b59ce4a5?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:ff9702bd39e89298dfe43cdd0a15271a4292783c578a470dca03f8ad31a21edf"
+    },
+    {
+      "localPath": "docs/en/07-glossary.md",
+      "language": "en",
+      "notionUrl": "https://app.notion.com/p/3dd21943d129812ba49af4afc78870ec?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:6e4c35e3659315e306515724f82c28d4bcbed4ad53dac29f10c78f60a9af67f3"
+    },
+    {
+      "localPath": "docs/es/08-limites-y-roadmap.md",
+      "language": "es",
+      "notionUrl": "https://app.notion.com/p/3dd21943d1298129909de7484878bc99?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:5996b354dc83a790335b6ad896578564555388e290793a3087af76371df41702"
+    },
+    {
+      "localPath": "docs/en/08-boundaries-and-roadmap.md",
+      "language": "en",
+      "notionUrl": "https://app.notion.com/p/3dd21943d1298142befbe3486411bbf9?pvs=204",
+      "reviewedProductVersion": "1.4.0",
+      "contentFingerprint": "sha256:aa0cb5250b3420285f0efb89146d84f6ebada2ae086f97cc1be3da49ab469507"
+    },
+    {
       "localPath": "docs/es/09-protocolo-publico-de-memoria.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3e121943d12981f8a00de8930f868166?pvs=204",

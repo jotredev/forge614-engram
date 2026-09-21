@@ -72,9 +72,16 @@ Inicia el servidor local por `stdio` con `forge614-engram mcp`. La detección y 
 
 ## Actualizar y desinstalar
 
+El modo normal es para una persona en terminal y muestra el progreso del instalador. `--json` es para otra herramienta que necesita entender el resultado sin interpretar texto ni progreso.
+
 ```bash
 forge614-engram update
+forge614-engram update --json
 forge614-engram uninstall --confirm 'REMOVE FORGE614-ENGRAM'
 ```
 
-`update` descarga el instalador estable más reciente, verifica el checksum y reemplaza solo el ejecutable de Engram. Conserva `.env`, `engram.db` y recuerdos. Si existe Atlas, la desinstalación exige `REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS` y elimina solamente esos dos directorios.
+`update` descarga el instalador estable más reciente, verifica el release y reemplaza solo el ejecutable de Engram, mostrando el progreso habitual. `update --json` no muestra ese progreso y, si termina correctamente, escribe únicamente un JSON compacto: `{"updated":true,"previousVersion":"<versión anterior>","installedVersion":"<versión instalada>"}`. Si la versión instalada no cambió, `updated` es `false`.
+
+Ambos modos conservan `.env`, `engram.db`, recuerdos y configuración. En `--json`, un fallo devuelve solamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` por stderr y código `1`; no expone diagnósticos del instalador, URLs ni secretos. Esta interfaz está disponible desde la release estable `v1.4.0`.
+
+Si existe Atlas, la desinstalación exige `REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS` y elimina solamente esos dos directorios.

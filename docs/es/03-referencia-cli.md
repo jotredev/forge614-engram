@@ -6,7 +6,7 @@ Los comandos de datos escriben JSON en stdout. Los errores escriben JSON `{code,
 
 ```text
 init [--json] [--postgres-url <URL>]    inicializa memoria local; URL requiere --json
-update                                  verifica e instala el último release estable
+update [--json]                         instala el último release estable; --json devuelve resultado estructurado
 uninstall --confirm <frase exacta>      elimina solo Engram, o Engram y Atlas
 mcp                                     inicia servidor MCP local por stdio
 sync [--upgrade-format]                 sincroniza réplica PostgreSQL configurada
@@ -27,6 +27,17 @@ forge614-engram memory-protocol --json
 Este comando no interactivo publica el contrato JSON versionado para que Forge614 Engines pueda preparar una instalación segura en asistentes compatibles. Requiere `--json`; sin esa opción, o con flags desconocidos, devuelve el error JSON estándar `{code,error}` a stderr y sale con código `1`.
 
 No requiere TTY, no crea ni abre `~/.forge614/engram/`, no inicializa SQLite y no consulta proyectos, PostgreSQL ni datos de la persona. El contrato está disponible desde la release `v1.3.0`; eso no implica que Engram configure asistentes directamente. Consulta [09. Protocolo Público de Memoria](09-protocolo-publico-de-memoria.md) para el ciclo de vida, seguridad y límites.
+
+## Actualización para personas y herramientas
+
+```bash
+forge614-engram update
+forge614-engram update --json
+```
+
+Sin opciones, `update` conserva la experiencia de terminal y muestra el progreso del instalador oficial. Con `--json`, no mezcla progreso con la salida y escribe exclusivamente `{"updated":true,"previousVersion":"<versión anterior>","installedVersion":"<versión instalada>"}` en stdout. `previousVersion` es la versión antes de actualizar; `installedVersion` se lee del binario instalado al terminar. Si ambas coinciden, `updated` es `false`.
+
+Un fallo de `update --json` escribe exclusivamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` en stderr y sale con código `1`. No incluye diagnósticos crudos, URLs, credenciales ni secretos. Esta interfaz está disponible desde la release estable `v1.4.0`.
 
 ## Proyectos
 
