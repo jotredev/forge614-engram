@@ -2,7 +2,7 @@ import { MemoryError } from "../../shared/errors";
 
 const MEMORY_OPTIONS = ["project-id", "scope"];
 const OPTIONS: Record<string, readonly string[]> = {
-  init: ["json", "postgres-url"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "memory-protocol": ["json"], mcp: [],
+  init: ["json", "postgres-url"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
   "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id"],
   save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned","session-id","session-project-id"],
   search: [...MEMORY_OPTIONS,"query","limit","preview"],
@@ -12,6 +12,7 @@ const OPTIONS: Record<string, readonly string[]> = {
   "session-summary":["project-id","session-id","summary-json","request-key","expected-version"],
   timeline:["project-id","session-id","id","version","before","after"],
   context:["project-id","scope","compact","max-bytes"],
+  "startup-context":["directory","json"],
 };
 const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format","json"]);
 export function invalid(message: string): never { throw new MemoryError("INVALID_INPUT",message); }
@@ -44,6 +45,12 @@ export function parseArguments(args:string[]) {
   }
   if (command === "memory-protocol" && !values.has("json")) {
     invalid("memory-protocol requiere --json.");
+  }
+  if (command === "memory-protocol" && values.has("protocol-version") && !["1","2"].includes(values.get("protocol-version")!)) {
+    invalid("protocol-version debe ser 1 o 2.");
+  }
+  if (command === "startup-context" && !values.has("json")) {
+    invalid("startup-context requiere --json.");
   }
   const need = (key: string): string => values.get(key) ?? invalid(`Falta --${key}.`);
   return { command, values, need };

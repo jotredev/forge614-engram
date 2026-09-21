@@ -1,4 +1,4 @@
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization } from "../../app";
+import { MemoryWorkspace, syncWorkspace, bindProjectContext, startProjectSession, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readStartupContext } from "../../app";
 import type { EngramUpdateResult } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
@@ -25,7 +25,11 @@ export async function runUpdateCommand(
 
 export async function dispatch({command,values,need}:ParsedCommand, currentVersion = "0.0.0"):Promise<void> {
   if (command === "init" && !values.has("json")) { await initTerminal(); return; }
-  if (command === "memory-protocol") { console.log(JSON.stringify(memoryProtocol(), null, 2)); return; }
+  if (command === "memory-protocol") {
+    const requested = values.get("protocol-version");
+    console.log(JSON.stringify(memoryProtocol(requested === "2" ? 2 : 1), null, 2));
+    return;
+  }
   if (command === "update") {
     await runUpdateCommand(values.has("json"), currentVersion);
     return;
@@ -96,6 +100,10 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     if(scope==="shared"&&values.has("project-id"))invalid("scope shared no acepta --project-id.");
     const projectId=scope==="shared"?null:projectIdentity(need("project-id"));
     const store=workspace.open(true);try{console.log(JSON.stringify(store.context(projectId,{compact:values.has("compact"),...(values.has("max-bytes")?{maxBytes:integer(need("max-bytes"),"max-bytes",65536)}:{})}),null,2));}finally{store.close();}return;
+  }
+  if(command==="startup-context"){
+    const directory=need("directory");
+    const store=workspace.open(true);try{console.log(JSON.stringify(readStartupContext(store,directory),null,2));}finally{store.close();}return;
   }
   // Complete argument validation before reading config or opening any database.
   const scope = values.get("scope") ?? (command === "search" ? "all" : "project");

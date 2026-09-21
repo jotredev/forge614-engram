@@ -80,6 +80,16 @@ test("memory-protocol is public, JSON-only, and creates no product files", () =>
   expect(JSON.parse(unknownFlag.stderr).code).toBe("INVALID_INPUT");
   expect(unknownFlag.stdout).toBe("");
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+
+  const v2 = run(dir, "memory-protocol", "--json", "--protocol-version", "2");
+  expect(v2.code).toBe(0);
+  expect(JSON.parse(v2.stdout)).toMatchObject({ id: "forge614-engram-memory", version: 2 });
+  expect(JSON.parse(v2.stdout).startupContext.command).toContain("startup-context");
+
+  const invalidVersion = run(dir, "memory-protocol", "--json", "--protocol-version", "3");
+  expect(invalidVersion.code).toBe(1);
+  expect(JSON.parse(invalidVersion.stderr).code).toBe("INVALID_INPUT");
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
 });
 
 test("sync without PostgreSQL configuration never creates storage",()=>{

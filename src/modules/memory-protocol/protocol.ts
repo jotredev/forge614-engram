@@ -1,24 +1,39 @@
-export interface MemoryProtocol {
+interface MemoryProtocolLifecycle {
+  readonly start: readonly string[];
+  readonly save: readonly string[];
+  readonly compact: readonly string[];
+  readonly resume: readonly string[];
+  readonly end: readonly string[];
+}
+interface MemoryProtocolScopes {
+  readonly shared: string;
+  readonly project: string;
+}
+interface MemoryProtocolSecurity {
+  readonly neverSave: readonly string[];
+}
+
+export interface MemoryProtocolV1 {
   readonly id: "forge614-engram-memory";
   readonly version: 1;
   readonly instructions: string;
-  readonly lifecycle: {
-    readonly start: readonly string[];
-    readonly save: readonly string[];
-    readonly compact: readonly string[];
-    readonly resume: readonly string[];
-    readonly end: readonly string[];
-  };
-  readonly scopes: {
-    readonly shared: string;
-    readonly project: string;
-  };
-  readonly security: {
-    readonly neverSave: readonly string[];
+  readonly lifecycle: MemoryProtocolLifecycle;
+  readonly scopes: MemoryProtocolScopes;
+  readonly security: MemoryProtocolSecurity;
+}
+
+/** Announces the read-only host preload command without altering version 1's instructions. */
+export interface MemoryProtocolV2 extends Omit<MemoryProtocolV1,"version"> {
+  readonly version: 2;
+  readonly startupContext: {
+    readonly command: string;
+    readonly description: string;
   };
 }
 
-const protocol: MemoryProtocol = Object.freeze({
+export type MemoryProtocol = MemoryProtocolV1 | MemoryProtocolV2;
+
+const protocolV1: MemoryProtocolV1 = Object.freeze({
   id: "forge614-engram-memory",
   version: 1,
   instructions: [
@@ -71,6 +86,18 @@ const protocol: MemoryProtocol = Object.freeze({
   }),
 });
 
-export function memoryProtocol(): MemoryProtocol {
-  return protocol;
+const protocolV2: MemoryProtocolV2 = Object.freeze({
+  ...protocolV1,
+  version: 2,
+  startupContext: Object.freeze({
+    command: "forge614-engram startup-context --directory <absolute-directory> --json",
+    description: "Non-interactive, read-only command a host (Shell, Engines) can run before an agent session starts, to preload bounded shared and project context without depending on the model choosing to call memory_context. Never creates a project, binding, memory or session; an unbound directory is reported as project.status=\"unbound\", not an error.",
+  }),
+});
+
+export function memoryProtocol(version?: 1): MemoryProtocolV1;
+export function memoryProtocol(version: 2): MemoryProtocolV2;
+export function memoryProtocol(version: 1 | 2): MemoryProtocol;
+export function memoryProtocol(version: 1 | 2 = 1): MemoryProtocol {
+  return version === 2 ? protocolV2 : protocolV1;
 }

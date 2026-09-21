@@ -13,3 +13,5 @@ export { uninstallEngram } from "./uninstall";
 export type { UninstallDependencies, UninstallInput, UninstallResult } from "./uninstall";
 export { updateEngram } from "./update";
 export type { EngramUpdateResult } from "./update";
+export { readStartupContext } from "./startup-context";
+export type { StartupContextResult, StartupProjectContext } from "./startup-context";

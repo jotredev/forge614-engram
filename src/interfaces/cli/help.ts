@@ -5,8 +5,12 @@ Uso: forge614-engram <comando> [opciones]
 init [--json] [--postgres-url <URL>]
                 Inicializa Engram; --json no pregunta. --postgres-url solo se acepta con --json.
 update [--json] Descarga, verifica y activa la última versión estable de Engram; --json devuelve el resultado estructurado.
-memory-protocol --json
-                Publica las reglas versionadas que Engines instala en asistentes compatibles.
+memory-protocol --json [--protocol-version 1|2]
+                Publica las reglas versionadas que Engines instala en asistentes compatibles. Defecto 1.
+startup-context --directory <carpeta> --json
+                Interfaz pública, no interactiva y de solo lectura para precargar contexto al iniciar
+                una sesión de agente: shared y, si <carpeta> ya está vinculada, el proyecto correspondiente.
+                Nunca crea proyectos, vínculos, recuerdos ni bases. Una carpeta no vinculada no es un error.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
