@@ -14,6 +14,8 @@ forge614-engram memory-protocol --json
 
 La respuesta contiene un único objeto JSON con `id: "forge614-engram-memory"`, `version: 1`, instrucciones canónicas, ciclos `start`, `save`, `compact`, `resume` y `end`, reglas de `shared` y `project`, y `security.neverSave`.
 
+La versión 1 permanece idéntica para compatibilidad. Los consumidores que soliciten `forge614-engram memory-protocol --json --protocol-version 2` reciben además `startupContext`, que anuncia `forge614-engram startup-context --directory <ruta-absoluta> --json`. Es una adición para hosts: no altera las instrucciones ni el ciclo de vida existentes.
+
 El comando requiere obligatoriamente `--json`. No necesita TTY, no crea ni abre `~/.forge614/engram/`, no inicializa SQLite y no consulta proyectos, PostgreSQL ni datos de la persona. Sin `--json` o con flags desconocidos, escribe el error JSON estándar `{code,error}` a stderr y termina con código `1`.
 
 ## Ciclo de vida para asistentes compatibles

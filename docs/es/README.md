@@ -9,5 +9,6 @@
 7. [Glosario](07-glosario.md)
 8. [Límites Vigentes y Hoja de Ruta](08-limites-y-roadmap.md)
 9. [Protocolo Público de Memoria](09-protocolo-publico-de-memoria.md)
+10. [Contexto de Inicio para Hosts](10-contexto-de-inicio.md)
 
 Engram no tiene TUI ni detecta/configura clientes de IA. Shell es dueño del setup visual de Forge614 y Engines de detectar motores y adaptadores de IA. Los binarios oficiales actuales soportan macOS y Linux.

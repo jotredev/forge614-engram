@@ -13,7 +13,10 @@ sync [--upgrade-format]                 synchronize configured PostgreSQL replic
 sync-watch [--interval <1..3600>]       retry synchronization while the process remains open
 sessions-enable                         explicitly enable session lifecycle
 reinforcement-enable                    explicitly enable local repeated-memory ordering
-memory-protocol --json                  print the public memory contract without initializing storage
+memory-protocol --json [--protocol-version 1|2]
+                                        print the public memory contract; version 1 is the default
+startup-context --directory <path> --json
+                                        preload read-only context for a host before a session
 ```
 
 `setup` is retired and returns `COMMAND_RETIRED`. There is no `tui`, `assistant-list`, `integration-enable`, or `memory-hook` command.
@@ -74,3 +77,13 @@ context [--project-id <UUID> | --scope shared] [--compact] [--max-bytes <1024..6
 ```
 
 Run `forge614-engram help` for the executable's exact current syntax.
+
+## Startup context for a host
+
+```bash
+forge614-engram startup-context --directory /absolute/path/to/repository --json
+```
+
+This is the only public interface through which Forge614 Engines or Shell may read memory before starting an agent; they must never read SQLite directly. It is non-interactive, idempotent, and read-only. It returns one JSON object with `format: 1`, `shared` context, and `project`: `bound` includes a `projectId` and context; `unbound` uses `null` values and is not an error.
+
+Each section uses `context()`'s own ceiling (16,384 bytes by default) and includes bounded previews. It creates no projects, bindings, memories, sessions, databases, or migrations. Invalid input, a workspace without prior `init`, or another error returns `{code,error}` on stderr with exit code `1`, without secrets or raw paths. Available since version 1.5.0.

@@ -35,6 +35,8 @@ PostgreSQL remains an optional replica synchronized explicitly through `sync` or
 
 `update --json` is an Engram machine interface, not evidence that Forge614 Shell already consumes it. Shell or another consumer must verify and integrate that contract separately. This interface is available from stable release `v1.4.0`.
 
+Likewise, `startup-context` enables pre-session host reads, but this branch does not prove that Shell or Engines already consume it. Engram exposes the read-only public contract; it does not configure AI clients or give them direct SQLite access.
+
 ## Operational model
 
 `forge614-engram init` remains a small terminal-only memory initialization flow for compatibility. It asks only about PostgreSQL synchronization and search reinforcement; it does not configure AI clients. `forge614-engram init --json` is the automation contract.

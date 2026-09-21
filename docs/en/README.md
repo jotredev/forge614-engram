@@ -9,5 +9,6 @@
 7. [Glossary](07-glossary.md)
 8. [Current Boundaries and Roadmap](08-boundaries-and-roadmap.md)
 9. [Public Memory Protocol](09-public-memory-protocol.md)
+10. [Startup Context for Hosts](10-startup-context.md)
 
 Engram has no TUI and does not detect or configure AI clients. Shell owns Forge614's visual setup; Engines owns AI-engine detection and adapters. Official binaries currently support macOS and Linux.

@@ -13,7 +13,10 @@ sync [--upgrade-format]                 sincroniza réplica PostgreSQL configura
 sync-watch [--interval <1..3600>]       reintenta sync mientras el proceso permanece abierto
 sessions-enable                         habilita explícitamente sesiones
 reinforcement-enable                    habilita explícitamente orden local por repeticiones
-memory-protocol --json                  imprime el contrato público de memoria, sin inicializar almacenamiento
+memory-protocol --json [--protocol-version 1|2]
+                                        imprime el contrato público de memoria; versión 1 por defecto
+startup-context --directory <ruta> --json
+                                        precarga contexto de solo lectura para un host antes de una sesión
 ```
 
 `setup` está retirado y devuelve `COMMAND_RETIRED`. No existen los comandos `tui`, `assistant-list`, `integration-enable` ni `memory-hook`.
@@ -74,3 +77,13 @@ context [--project-id <UUID> | --scope shared] [--compact] [--max-bytes <1024..6
 ```
 
 Ejecuta `forge614-engram help` para la sintaxis exacta de la versión instalada.
+
+## Contexto de inicio para un host
+
+```bash
+forge614-engram startup-context --directory /ruta/absoluta/al-repositorio --json
+```
+
+Es la única interfaz pública para que Forge614 Engines o Shell lean memoria antes de iniciar un agente; nunca deben leer SQLite directamente. Es no interactiva, idempotente y de solo lectura. Devuelve un único JSON con `format: 1`, contexto `shared` y `project`: `bound` incluye `projectId` y contexto; `unbound` usa valores `null` y no es un error.
+
+Cada sección usa el límite propio de `context()` (16 384 bytes por defecto) e incluye previews acotados. No crea proyectos, vínculos, recuerdos, sesiones, bases ni migraciones. Entrada inválida, espacio sin `init` previo u otro error devuelve `{code,error}` por stderr y código `1`, sin secretos ni rutas crudas. Disponible desde la versión 1.5.0.
