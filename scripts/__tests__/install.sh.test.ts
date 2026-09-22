@@ -76,9 +76,10 @@ async function withFixtureEnvironment<T>(
     writeFileSync(enginesInstaller, [
       "#!/usr/bin/env bash",
       "set -euo pipefail",
-      "mkdir -p \"$HOME/.forge614/engines/bin\"",
-      "printf '#!/usr/bin/env sh\\nexit 0\\n' > \"$HOME/.forge614/engines/bin/forge614-engines\"",
-      "chmod 700 \"$HOME/.forge614/engines/bin/forge614-engines\"",
+      'forge_home="${FORGE614_HOME:-$HOME/.forge614}"',
+      'mkdir -p "$forge_home/engines/bin"',
+      "printf '#!/usr/bin/env sh\\nexit 0\\n' > \"$forge_home/engines/bin/forge614-engines\"",
+      'chmod 700 "$forge_home/engines/bin/forge614-engines"',
     ].join("\n"));
     process.env.FORGE614_ENGINES_INSTALLER_TEST_URL = `file://${enginesInstaller}`;
   }
@@ -394,6 +395,48 @@ test("default install uses the product bin and preserves Forge614 Shell", async 
       expect(statSync(join(fakeHome, ".forge614", "engram", "bin")).mode & 0o777).toBe(0o700);
     }
   } finally { server.stop(true); }
+});
+
+test("default install uses an absolute FORGE614_HOME and leaves the historic home untouched", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const fakeHome = join(root, "home");
+  const forgeHome = join(root, "forge614-root");
+  mkdirSync(fakeHome, { recursive: true });
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  const previous = process.env.FORGE614_HOME;
+  process.env.FORGE614_HOME = forgeHome;
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller([]), true, "/bin/unknown");
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(existsSync(join(forgeHome, "engram", "bin", "forge614-engram"))).toBe(true);
+    expect(existsSync(join(forgeHome, "engines", "bin", "forge614-engines"))).toBe(true);
+    expect(existsSync(join(fakeHome, ".forge614"))).toBe(false);
+  } finally {
+    if (previous === undefined) delete process.env.FORGE614_HOME;
+    else process.env.FORGE614_HOME = previous;
+    server.stop(true);
+  }
+});
+
+test("installer rejects empty and relative FORGE614_HOME before creating a destination", async () => {
+  const root = temporaryDirectory();
+  const fakeHome = join(root, "home");
+  mkdirSync(fakeHome);
+  const previous = process.env.FORGE614_HOME;
+  try {
+    for (const value of ["", "relative/forge614"]) {
+      process.env.FORGE614_HOME = value;
+      const result = await withFixtureEnvironment(fakeHome, "http://127.0.0.1:1", () => runInstaller([]));
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("INVALID_FORGE614_HOME");
+      expect(existsSync(join(fakeHome, ".forge614"))).toBe(false);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.FORGE614_HOME;
+    else process.env.FORGE614_HOME = previous;
+  }
 });
 
 test("refuses replacement without force", async () => {

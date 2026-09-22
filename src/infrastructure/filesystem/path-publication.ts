@@ -1,11 +1,13 @@
 import { join } from "node:path";
 import { PrivateFileError, fail, guardedWrite, readSafeFile, type PrivateWrite } from "./private-files";
+import { engramBinDirectory } from "./paths";
 
 const START = "# >>> forge614-engram PATH >>>";
 const END = "# <<< forge614-engram PATH <<<";
 
 export interface PathPublicationOptions {
   readonly home: string;
+  readonly binDirectory?: string;
 }
 
 function shellQuote(value: string): string {
@@ -39,8 +41,7 @@ function removeMarkedBlock(path: string, directory: string, fish: boolean): Priv
   return { path, before, after, kind: "config" };
 }
 
-function unixWrites(home: string): PrivateWrite[] {
-  const directory = join(home, ".forge614", "engram", "bin");
+function unixWrites(home: string, directory: string): PrivateWrite[] {
   const candidates: readonly [string, boolean][] = [
     [join(home, ".zshrc"), false],
     [join(home, ".bash_profile"), false],
@@ -59,7 +60,7 @@ function unixWrites(home: string): PrivateWrite[] {
 export async function removePathPublication(options: PathPublicationOptions): Promise<string[]> {
   try {
     if (process.platform !== "darwin" && process.platform !== "linux") return [];
-    const writes = unixWrites(options.home);
+    const writes = unixWrites(options.home, options.binDirectory ?? engramBinDirectory());
     const applied: string[] = [];
     for (const write of writes) {
       guardedWrite(write, () => {}, path => applied.push(path));

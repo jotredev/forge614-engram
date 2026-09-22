@@ -1,7 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { engramBinDirectory } from "./filesystem/paths";
 
 const latestInstaller = "https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh";
 
@@ -10,12 +11,12 @@ type Spawn = (command: string, args: string[], options?: SpawnOptions) => { stat
 type Download = (url: string) => Promise<{ installer: string; cleanup: () => void }>;
 type ReadInstalledVersion = () => string;
 
-function installedCommand(): string {
-  return join(homedir(), ".forge614", "engram", "bin", "forge614-engram");
+export function installedEngramCommand(): string {
+  return join(engramBinDirectory(), "forge614-engram");
 }
 
 function readInstalledVersion(): string {
-  const output = execFileSync(installedCommand(), ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  const output = execFileSync(installedEngramCommand(), ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   const match = /^forge614-engram\s+([0-9]+\.[0-9]+\.[0-9]+(?:[.-][0-9A-Za-z][0-9A-Za-z.-]*)?)$/.exec(output);
   if (!match) throw new Error("Installed Forge614 Engram did not report a valid version.");
   return match[1]!;

@@ -59,6 +59,15 @@ test("init rejects unknown flags without entering prompts or creating files", ()
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
 });
 
+test("help distinguishes read-only startup-context from project binding", () => {
+  const dir = workspace();
+  const result = run(dir, "help");
+  expect(result.code).toBe(0);
+  expect(result.stdout).toContain("Acepta cualquier carpeta existente y legible");
+  expect(result.stdout).toContain("startup-context no");
+  expect(result.stdout).not.toContain("requiere Git disponible, incluso para carpetas sin Git");
+});
+
 test("memory-protocol is public, JSON-only, and creates no product files", () => {
   const dir = workspace();
   const result = run(dir, "memory-protocol", "--json");

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join, parse, resolve } from "node:path";
 
 const directories: string[] = [];
 function temporary(prefix = "forge614-startup-context-"): string {
@@ -12,8 +12,11 @@ function temporary(prefix = "forge614-startup-context-"): string {
 const cli = resolve(import.meta.dir, "../../../cli.ts");
 const preload = resolve(import.meta.dir, "../../../../tests/fixtures/user-directory.ts");
 function runCli(cwd: string, userDirectory: string, ...args: string[]) {
+  return runCliWithEnvironment(cwd, userDirectory, {}, ...args);
+}
+function runCliWithEnvironment(cwd: string, userDirectory: string, environment: Record<string, string | undefined>, ...args: string[]) {
   const result = Bun.spawnSync([process.execPath, "--preload", preload, cli, ...args], {
-    cwd, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: userDirectory },
+    cwd, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: userDirectory, ...environment },
   });
   return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
 }
@@ -40,6 +43,34 @@ test("startup-context on a never-initialized workspace is a real error, not an u
   expect(JSON.parse(result.stderr).code).toBe("CONFIG_NOT_FOUND");
   expect(result.stdout).toBe("");
   expect(existsSync(join(root, "user", ".forge614"))).toBe(false);
+});
+
+test("FORGE614_HOME isolates init, save, and startup-context from the process home", () => {
+  const root = temporary(); const userDirectory = join(root, "user"); const forgeHome = join(root, "forge614");
+  const environment = { FORGE614_HOME: forgeHome };
+  expect(runCliWithEnvironment(root, userDirectory, environment, "init", "--json").code).toBe(0);
+  expect(runCliWithEnvironment(root, userDirectory, environment, "save", "--scope", "shared", "--title", "Favorite color", "--content", "black and purple", "--type", "preference", "--topic", "user/preference/favorite-color").code).toBe(0);
+  const directory = temporary();
+  const context = runCliWithEnvironment(root, userDirectory, environment, "startup-context", "--directory", directory, "--json");
+  expect(context.code).toBe(0);
+  expect(JSON.parse(context.stdout)).toMatchObject({ format: 1, project: { status: "unbound" } });
+  expect(JSON.parse(context.stdout).shared.recent).toEqual(expect.arrayContaining([
+    expect.objectContaining({ topicKey: "user/preference/favorite-color", title: "Favorite color" }),
+  ]));
+  expect(existsSync(join(forgeHome, "engram", ".env"))).toBe(true);
+  expect(existsSync(join(forgeHome, "engram", "engram.db"))).toBe(true);
+  expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
+});
+
+test("empty or relative FORGE614_HOME fails before creating the historic home", () => {
+  for (const value of ["", "relative/forge614"]) {
+    const root = temporary(); const userDirectory = join(root, "user");
+    const result = runCliWithEnvironment(root, userDirectory, { FORGE614_HOME: value }, "init", "--json");
+    expect(result.code).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr)).toMatchObject({ code: "INVALID_FORGE614_HOME" });
+    expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
+  }
 });
 
 test("startup-context returns the bound project's context alongside shared, previews included, and creates nothing new", () => {
@@ -81,6 +112,45 @@ test("startup-context reports an unbound directory without an error and without 
   expect(JSON.parse(runCli(root, userDirectory, "project-list").stdout)).toEqual([]);
 });
 
+test("startup-context returns shared favorite-color for home and filesystem root without binding either", () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
+  expect(runCli(root, userDirectory, "save", "--scope", "shared", "--title", "Favorite color", "--content", "black and purple", "--type", "preference", "--topic", "user/preference/favorite-color").code).toBe(0);
+
+  for (const directory of [homedir(), parse(realpathSync(homedir())).root]) {
+    const result = runCli(root, userDirectory, "startup-context", "--directory", directory, "--json");
+    expect(result.stderr).toBe("");
+    expect(result.code).toBe(0);
+    const body = JSON.parse(result.stdout);
+    expect(body).toMatchObject({ format: 1, project: { status: "unbound", projectId: null, context: null } });
+    expect(body.shared.recent).toEqual(expect.arrayContaining([
+      expect.objectContaining({ title: "Favorite color", topicKey: "user/preference/favorite-color" }),
+    ]));
+  }
+  expect(JSON.parse(runCli(root, userDirectory, "project-list").stdout)).toEqual([]);
+});
+
+test("startup-context distinguishes an unbound Git directory from a bound Git directory", () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  const unboundDirectory = temporary(); const boundDirectory = temporary();
+  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
+  expect(Bun.spawnSync(["git", "init", unboundDirectory], { stdout: "pipe", stderr: "pipe" }).exitCode).toBe(0);
+  expect(Bun.spawnSync(["git", "init", boundDirectory], { stdout: "pipe", stderr: "pipe" }).exitCode).toBe(0);
+  const projectId = JSON.parse(runCli(root, userDirectory, "project-create", "--name", "bound-git").stdout).projectId;
+  expect(runCli(root, userDirectory, "project-bind", "--directory", boundDirectory, "--project-id", projectId).code).toBe(0);
+  expect(runCli(root, userDirectory, "save", "--scope", "shared", "--title", "Shared", "--content", "Everywhere", "--type", "fact").code).toBe(0);
+  expect(runCli(root, userDirectory, "save", "--project-id", projectId, "--title", "Project", "--content", "Bound only", "--type", "fact").code).toBe(0);
+
+  const unbound = runCli(root, userDirectory, "startup-context", "--directory", unboundDirectory, "--json");
+  const bound = runCli(root, userDirectory, "startup-context", "--directory", boundDirectory, "--json");
+
+  expect(unbound.code).toBe(0);
+  expect(JSON.parse(unbound.stdout).project).toEqual({ status: "unbound", projectId: null, context: null });
+  expect(bound.code).toBe(0);
+  expect(JSON.parse(bound.stdout).project).toMatchObject({ status: "bound", projectId });
+  expect(JSON.parse(bound.stdout).project.context.recent.map((row: { title: string }) => row.title).sort()).toEqual(["Project", "Shared"]);
+});
+
 test("startup-context succeeds against a database file made read-only at the filesystem level", () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
@@ -106,6 +176,23 @@ test("startup-context never leaks the requested directory or other secrets on fa
   expect(typeof parsed.code).toBe("string");
   expect(result.stderr).not.toContain(marker);
   expect(result.stdout).toBe("");
+});
+
+test("startup-context rejects missing, regular-file, and unreadable paths with safe JSON", () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
+  const missing = join(root, "missing-STARTUP_PATH_SECRET");
+  const file = join(root, "file-STARTUP_PATH_SECRET"); writeFileSync(file, "not a directory");
+  const unreadable = temporary("forge614-startup-context-unreadable-"); chmodSync(unreadable, 0o000);
+  try {
+    for (const directory of [missing, file, unreadable]) {
+      const result = runCli(root, userDirectory, "startup-context", "--directory", directory, "--json");
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(JSON.parse(result.stderr)).toMatchObject({ code: "INVALID_DIRECTORY" });
+      expect(result.stderr).not.toContain("STARTUP_PATH_SECRET");
+    }
+  } finally { chmodSync(unreadable, 0o700); }
 });
 
 test("startup-context creates no files under the workspace root beyond what init already created", () => {

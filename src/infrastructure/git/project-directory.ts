@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, lstatSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { MemoryError } from "../../shared/errors";
@@ -11,13 +11,19 @@ function invalidDirectory(): never {
   throw new MemoryError("INVALID_DIRECTORY","La carpeta de proyecto no existe, no es válida o no puede usarse como proyecto.");
 }
 
-function realDirectory(directory: string): string {
+function readableDirectory(directory: string): string {
   if (typeof directory !== "string" || !directory.trim() || directory.includes("\0") || directory.length > 4096) invalidDirectory();
   let canonical: string;
   try {
     canonical = realpathSync(resolve(directory.trim()));
     if (!statSync(canonical).isDirectory()) invalidDirectory();
+    accessSync(canonical, constants.R_OK | constants.X_OK);
   } catch { invalidDirectory(); }
+  return canonical;
+}
+
+function bindableProjectDirectory(directory: string): string {
+  const canonical = readableDirectory(directory);
   if (canonical === parse(canonical).root || canonical === realpathSync(homedir())) invalidDirectory();
   return canonical;
 }
@@ -59,8 +65,7 @@ function hasGitMarker(directory: string): boolean {
   }
 }
 
-export function canonicalProject(directory: string): CanonicalProject {
-  const explicit = realDirectory(directory);
+function canonicalProjectFromDirectory(explicit: string): CanonicalProject {
   const marker = hasGitMarker(explicit);
   const executable = process.env.PATH === undefined ? Bun.which("git") : Bun.which("git",{ PATH:process.env.PATH });
   if (!executable) projectIdentityUnavailable();
@@ -75,7 +80,7 @@ export function canonicalProject(directory: string): CanonicalProject {
   if (result.exitCode !== 0) {
     const ordinaryNonGit = result.stderr.toString().includes("not a git repository");
     if (marker || !ordinaryNonGit) projectIdentityUnavailable();
-    return { directory:explicit,name:basename(explicit),git:false };
+    return { directory:explicit,name:basename(explicit) || explicit,git:false };
   }
   const output = result.stdout.toString().trim();
   if (!output || output.includes("\0") || !isAbsolute(output)) projectIdentityUnavailable();
@@ -86,8 +91,23 @@ export function canonicalProject(directory: string): CanonicalProject {
   return { directory:common, name, git:true };
 }
 
+export function canonicalProjectForRead(directory: string): CanonicalProject {
+  const explicit = readableDirectory(directory);
+  try { return canonicalProjectFromDirectory(explicit); }
+  catch (error) {
+    if (error instanceof MemoryError && error.code === "PROJECT_IDENTITY_UNAVAILABLE") {
+      return { directory:explicit, name:basename(explicit) || explicit, git:false };
+    }
+    throw error;
+  }
+}
+
+export function canonicalProject(directory: string): CanonicalProject {
+  return canonicalProjectFromDirectory(bindableProjectDirectory(directory));
+}
+
 export function runtimeProjectDirectory(directory: string, project: CanonicalProject): string {
-  const explicit = realDirectory(directory);
+  const explicit = bindableProjectDirectory(directory);
   if (!project.git) return explicit;
   const executable = process.env.PATH === undefined ? Bun.which("git") : Bun.which("git",{ PATH:process.env.PATH });
   if (!executable) projectIdentityUnavailable();

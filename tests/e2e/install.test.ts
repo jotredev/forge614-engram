@@ -9,7 +9,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 const installer = resolve(import.meta.dir,"../../scripts/install-from-source.sh");
 const dirs: string[] = [];
-const buildEnv = { ...process.env, PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin` };
+const buildEnv: NodeJS.ProcessEnv = { ...process.env, PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin` };
 function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-install-"));
   dirs.push(dir);
@@ -64,6 +64,20 @@ test("developer installer help and invalid options create no destination", () =>
   expect(install(dir,["--help"]).code).toBe(0);
   expect(install(dir,["--bin-dir",bin,"--unknown"]).code).not.toBe(0);
   expect(existsSync(bin)).toBe(false);
+});
+
+test("developer installer uses absolute FORGE614_HOME and rejects invalid values", () => {
+  const dir = workspace();
+  const forgeHome = join(dir, "forge614-root");
+  const installed = install(dir, [], { ...buildEnv, FORGE614_HOME: forgeHome });
+  expect(installed.code).toBe(0);
+  expect(existsSync(join(forgeHome, "engram", "bin", "forge614-engram"))).toBe(true);
+  expect(existsSync(join(dir, "isolated-home", ".forge614"))).toBe(false);
+  for (const value of ["", "relative/forge614"]) {
+    const invalid = install(dir, ["--bin-dir", join(dir, `invalid-${value.length}`)], { ...buildEnv, FORGE614_HOME: value });
+    expect(invalid.code).toBe(1);
+    expect(invalid.error).toContain("INVALID_FORGE614_HOME");
+  }
 });
 
 const nativeMac = process.platform === "darwin" ? test : test.skip;

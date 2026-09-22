@@ -8,19 +8,18 @@ usage() {
     'Usage: bash scripts/install-from-source.sh [--bin-dir PATH] [--force]' \
     'Requires Bun >=1.3.8, Git, and a prepared Bun checkout.' \
     'Prepare dependencies with: bun install --frozen-lockfile --ignore-scripts' \
-    'Default destination: $HOME/.forge614/engram/bin/forge614-engram' \
+    'Default destination: $FORGE614_HOME/engram/bin/forge614-engram when FORGE614_HOME is absolute; otherwise $HOME/.forge614/engram/bin/forge614-engram' \
     '--force explicitly replaces an existing installation.'
 }
 
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 prepare_bin_directory() {
-  local forge_home product_home
-  if [ "$bin_dir" != "$HOME/.forge614/engram/bin" ]; then
+  local product_home
+  if [ "$bin_dir" != "$default_bin_dir" ]; then
     mkdir -p -- "$bin_dir"
     [ -d "$bin_dir" ] && [ ! -L "$bin_dir" ] || return 1
     return 0
   fi
-  forge_home="$HOME/.forge614"
   product_home="$forge_home/engram"
   [ ! -L "$forge_home" ] && { [ ! -e "$forge_home" ] || [ -d "$forge_home" ]; } || return 1
   if [ ! -e "$forge_home" ]; then mkdir -- "$forge_home" || return 1; chmod 700 "$forge_home" || return 1; fi
@@ -29,7 +28,17 @@ prepare_bin_directory() {
   [ ! -L "$product_home" ] && [ ! -L "$bin_dir" ] || return 1
   chmod 700 "$product_home" "$bin_dir" || return 1
 }
-bin_dir="${HOME:?HOME must be set}/.forge614/engram/bin"
+home="${HOME:?HOME must be set}"
+if [ "${FORGE614_HOME+x}" = x ]; then
+  case "${FORGE614_HOME}" in
+    /*) forge_home="$FORGE614_HOME" ;;
+    *) fail 'INVALID_FORGE614_HOME: FORGE614_HOME must be a non-empty absolute path.' ;;
+  esac
+else
+  forge_home="$home/.forge614"
+fi
+default_bin_dir="$forge_home/engram/bin"
+bin_dir="$default_bin_dir"
 force=0
 seen_dir=0
 while [ "$#" -gt 0 ]; do

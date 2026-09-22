@@ -2,7 +2,7 @@ import { MemoryError } from "../shared/errors";
 import type { MemoryVersion, SaveInput } from "../modules/memory";
 import type { Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";
 import { MemoryStore } from "./memory-store";
-import { canonicalProject, runtimeProjectDirectory, bindingAvailable } from "../infrastructure/git/project-directory";
+import { canonicalProject, canonicalProjectForRead, runtimeProjectDirectory, bindingAvailable } from "../infrastructure/git/project-directory";
 export { assertGitProjectDirectory } from "../infrastructure/git/project-directory";
 
 export interface ProjectContext {
@@ -15,6 +15,14 @@ type ProjectMemoryInput = Omit<SaveInput,"projectId"|"scope">;
 export function resolveProjectContext(store: MemoryStore, directory: string, create: boolean): ProjectContext {
   if (typeof create !== "boolean") throw new MemoryError("INVALID_INPUT","create debe ser booleano.");
   const canonical = canonicalProject(directory);
+  return resolveCanonicalProjectContext(store, canonical, create);
+}
+
+export function resolveStartupProjectContext(store: MemoryStore, directory: string): ProjectContext {
+  return resolveCanonicalProjectContext(store, canonicalProjectForRead(directory), false);
+}
+
+function resolveCanonicalProjectContext(store: MemoryStore, canonical: ReturnType<typeof canonicalProject>, create: boolean): ProjectContext {
   const resolved = store.resolveProjectDirectory(canonical.directory,canonical.name,create,bindingAvailable);
   return { projectId:resolved.project?.projectId ?? null, directory:canonical.directory,
     source:resolved.created ? "created" : resolved.project ? "binding" : "unbound" };

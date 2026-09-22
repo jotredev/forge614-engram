@@ -1,5 +1,21 @@
 import { expect, test } from "bun:test";
-import { updateInstalledEngram } from "./updater";
+import { installedEngramCommand, updateInstalledEngram } from "./updater";
+
+function withForge614Home(value: string | undefined, run: () => void): void {
+  const previous = process.env.FORGE614_HOME;
+  try {
+    if (value === undefined) delete process.env.FORGE614_HOME;
+    else process.env.FORGE614_HOME = value;
+    run();
+  } finally {
+    if (previous === undefined) delete process.env.FORGE614_HOME;
+    else process.env.FORGE614_HOME = previous;
+  }
+}
+
+test("updater derives its installed command from FORGE614_HOME", () => withForge614Home("/tmp/forge614-update", () => {
+  expect(installedEngramCommand()).toBe("/tmp/forge614-update/engram/bin/forge614-engram");
+}));
 
 test("update downloads the stable installer and explicitly replaces only the installed command", async () => {
   const calls: string[] = [];

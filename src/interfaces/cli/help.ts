@@ -10,7 +10,8 @@ memory-protocol --json [--protocol-version 1|2]
 startup-context --directory <carpeta> --json
                 Interfaz pública, no interactiva y de solo lectura para precargar contexto al iniciar
                 una sesión de agente: shared y, si <carpeta> ya está vinculada, el proyecto correspondiente.
-                Nunca crea proyectos, vínculos, recuerdos ni bases. Una carpeta no vinculada no es un error.
+                Acepta cualquier carpeta existente y legible; sin vínculo devuelve unbound, no es un error
+                y nunca crea proyectos, vínculos, recuerdos ni bases.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
@@ -53,6 +54,7 @@ help      Muestra esta ayuda sin crear archivos.
 --version Muestra la versión instalada.
 
 Una configuración: ~/.forge614/engram/.env. Una base SQLite: ~/.forge614/engram/engram.db.
+FORGE614_HOME absoluta sustituye ~/.forge614 para toda ruta de Engram; vacía o relativa devuelve INVALID_FORGE614_HOME.
 No hay conexiones, carpetas .env ni bases diferentes por proyecto.
 --db, --project y --id-project no se admiten. El identificador se llama projectId.
 project-create inicializa el espacio si aún no existe configuración.
@@ -72,5 +74,5 @@ init sin --json muestra texto y requiere terminal; cancelar devuelve código 130
 Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
 MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
 uninstall requiere REMOVE FORGE614-ENGRAM; si Atlas existe requiere REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS.
-La resolución de directorios de proyecto requiere Git disponible, incluso para carpetas sin Git.
+La vinculación de directorios de proyecto requiere una identidad de proyecto apta para vínculo; startup-context no.
 `;

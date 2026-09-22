@@ -4,13 +4,15 @@ import { join } from "node:path";
 import { MemoryError } from "../shared/errors";
 import { removePathPublication } from "../infrastructure/filesystem/path-publication";
 import { assertSafePath } from "../infrastructure/filesystem/private-files";
+import { engramBinDirectory, engramHome, forge614Home } from "../infrastructure/filesystem/paths";
 
 export interface UninstallInput { confirmation: string; }
 export interface UninstallDependencies {
   home?: string;
+  forgeHome?: string;
   executable: string;
   runAtlasUninstall?: (command:string,args:string[]) => Promise<number>;
-  removePathPublication?: (home:string) => Promise<string[]>;
+  removePathPublication?: (home:string, binDirectory:string) => Promise<string[]>;
 }
 export interface UninstallResult { removed: boolean; atlasRemoved: boolean; pathPublications: string[]; }
 
@@ -27,7 +29,11 @@ async function defaultAtlasRunner(command:string,args:string[]):Promise<number>{
 }
 
 export async function uninstallEngram(input:UninstallInput, dependencies:UninstallDependencies):Promise<UninstallResult> {
-  const home=dependencies.home??homedir(),parent=join(home,'.forge614'),root=join(parent,'engram'),atlas=join(parent,'atlas');
+  const home=dependencies.home??homedir();
+  const parent=dependencies.forgeHome??forge614Home();
+  const root=dependencies.forgeHome===undefined?engramHome():join(parent,'engram');
+  const binDirectory=dependencies.forgeHome===undefined?engramBinDirectory():join(root,'bin');
+  const atlas=join(parent,'atlas');
   const hasAtlas=safeDirectory(atlas)!==null;
   const expected=hasAtlas?'REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS':'REMOVE FORGE614-ENGRAM';
   if(input.confirmation!==expected)throw new MemoryError('UNINSTALL_CONFIRMATION','Escribe exactamente: '+expected);
@@ -40,7 +46,7 @@ export async function uninstallEngram(input:UninstallInput, dependencies:Uninsta
   }
   const product=safeDirectory(root);
   let pathPublications:string[];
-  try { pathPublications=await (dependencies.removePathPublication??(async candidateHome=>removePathPublication({home:candidateHome})))(home); }
+  try { pathPublications=await (dependencies.removePathPublication??(async (candidateHome, candidateBinDirectory)=>removePathPublication({home:candidateHome,binDirectory:candidateBinDirectory})))(home,binDirectory); }
   catch { throw new MemoryError('PATH_REMOVE_FAILED','No se pudo retirar de forma segura el acceso de Forge614 Engram en PATH; los datos de Engram se conservaron.'); }
   if(product)rmSync(root,{recursive:true,force:false,maxRetries:0});
   return {removed:product!==null,atlasRemoved:hasAtlas,pathPublications};

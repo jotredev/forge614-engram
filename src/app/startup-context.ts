@@ -1,6 +1,6 @@
 import type { ContextResult } from "../modules/search";
 import { MemoryStore } from "./memory-store";
-import { resolveProjectContext } from "./project-context";
+import { resolveStartupProjectContext } from "./project-context";
 
 export interface StartupProjectContext {
   status: "bound" | "unbound";
@@ -22,7 +22,7 @@ export interface StartupContextResult {
  */
 export function readStartupContext(store: MemoryStore, directory: string): StartupContextResult {
   const shared = store.context(null);
-  const resolved = resolveProjectContext(store, directory, false);
+  const resolved = resolveStartupProjectContext(store, directory);
   const project: StartupProjectContext = resolved.projectId === null
     ? { status: "unbound", projectId: null, context: null }
     : { status: "bound", projectId: resolved.projectId, context: store.context(resolved.projectId) };

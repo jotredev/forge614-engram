@@ -8,7 +8,7 @@ It is intentionally **not** a visual workspace, assistant detector, assistant co
 
 ## Capabilities available in v1.2.1
 
-- A private product home at `~/.forge614/engram/` with `engram.db`, `.env`, and `bin/`.
+- A private product home at `~/.forge614/engram/` with `engram.db`, `.env`, and `bin/`; an absolute `FORGE614_HOME` replaces the `~/.forge614` root to isolate one complete installation. An empty or relative variable fails with `INVALID_FORGE614_HOME` and never silently falls back to the real home.
 - Local SQLite and FTS5 for every project and shared memory. Local search works without a network connection.
 - Optional PostgreSQL replica configured non-interactively with `init --json --postgres-url <URL>`.
 - Project-scoped and shared memories, exact topic lookup, history, archive/restore, FTS5 search, previews, context, sessions, and reinforcement.
@@ -24,6 +24,8 @@ It is intentionally **not** a visual workspace, assistant detector, assistant co
 - No Windows release or installer at this stage. Official release binaries currently target macOS and Linux.
 - No embeddings or cloud-only search. FTS5 and SQLite remain the primary local path.
 - No automatic creation or selection of projects during initialization.
+
+`FORGE614_HOME` is not a second database or a per-project configuration: it is one alternate root for a complete installation. SQLite, `.env`, binaries, update, and uninstall derive from it. Relative paths are rejected so the working directory cannot change where data is stored.
 
 ## Public memory protocol: integration status
 

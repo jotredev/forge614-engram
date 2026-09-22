@@ -28,6 +28,16 @@ Engram usa una única base para todos los proyectos:
 ~/.forge614/engram/engram.db
 ```
 
+## Raíz de almacenamiento alternativa
+
+`FORGE614_HOME` funciona como la dirección de un edificio: todo lo que pertenece a Engram —`.env`, SQLite, binario y archivos auxiliares— queda dentro de esa misma raíz. Si la variable no está definida, la dirección histórica sigue siendo exactamente `~/.forge614`; si está definida, debe ser una ruta absoluta.
+
+```bash
+FORGE614_HOME=/ruta/absoluta/forge614 forge614-engram init --json
+```
+
+Con ese ejemplo, la configuración y la base quedan en `/ruta/absoluta/forge614/engram/`. Una variable vacía o relativa falla antes de crear o leer almacenamiento: stdout queda vacío, stderr devuelve `{"code":"INVALID_FORGE614_HOME","error":"…"}` y el proceso termina con código `1`. No se sustituye silenciosamente por el hogar real.
+
 Para inicialización interactiva de memoria en terminal:
 
 ```bash
@@ -80,7 +90,7 @@ forge614-engram update --json
 forge614-engram uninstall --confirm 'REMOVE FORGE614-ENGRAM'
 ```
 
-`update` descarga el instalador estable más reciente, verifica el release y reemplaza solo el ejecutable de Engram, mostrando el progreso habitual. `update --json` no muestra ese progreso y, si termina correctamente, escribe únicamente un JSON compacto: `{"updated":true,"previousVersion":"<versión anterior>","installedVersion":"<versión instalada>"}`. Si la versión instalada no cambió, `updated` es `false`.
+`update` descarga el instalador estable más reciente, verifica el release y reemplaza solo el ejecutable de Engram, mostrando el progreso habitual. Usa la misma raíz efectiva que Engram e instala en `FORGE614_HOME/engram/bin/` cuando la variable está definida; sin ella conserva `~/.forge614/engram/bin/`. `update --json` no muestra ese progreso y, si termina correctamente, escribe únicamente un JSON compacto: `{"updated":true,"previousVersion":"<versión anterior>","installedVersion":"<versión instalada>"}`. Si la versión instalada no cambió, `updated` es `false`.
 
 Ambos modos conservan `.env`, `engram.db`, recuerdos y configuración. En `--json`, un fallo devuelve solamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` por stderr y código `1`; no expone diagnósticos del instalador, URLs ni secretos. Esta interfaz está disponible desde la release estable `v1.4.0`.
 

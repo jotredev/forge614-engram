@@ -10,29 +10,31 @@
       "localPath": "docs/es/01-instalacion-y-primeros-pasos.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d129813c86b5ffa723fa00a2?pvs=204",
-      "reviewedProductVersion": "1.4.0",
-      "contentFingerprint": "sha256:52b7209516d26688a5d58559074a55f3364fd456cb32c9d5e41c78dfac0c87e3"
+      "reviewedProductVersion": "1.5.1",
+      "contentFingerprint": "sha256:c980223f0a0ff0da10bb911c03378a9573e8f42617f232d9265c67c175563482",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/01-installation-and-getting-started.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981b2a2dec3d88a0e7e20?pvs=204",
-      "reviewedProductVersion": "1.4.0",
-      "contentFingerprint": "sha256:36b16f3ede7fdef891e2aa9faae6f7e9d90a95fd559a75b9765bc802b2b3fcdd"
+      "reviewedProductVersion": "1.5.1",
+      "contentFingerprint": "sha256:fe4f81e5cf8f04a775479628b139af2f06aa82707b3ff36566e0cb37f6acf144",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/es/03-referencia-cli.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981ba8803e065eb0938cc?pvs=204",
-      "reviewedProductVersion": "1.5.0",
-      "contentFingerprint": "sha256:ec5193691ff813b5b145dc7d5788e8ffb405e74514977c32ed73e252c4385664"
+      "reviewedProductVersion": "1.5.1",
+      "contentFingerprint": "sha256:755d254cdff909cafa288f1c4fb161063b52e2753cbb1385cfa3f79e884d787f"
     },
     {
       "localPath": "docs/en/03-cli-reference.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d129817baeb1fd75514e1a21?pvs=204",
-      "reviewedProductVersion": "1.5.0",
-      "contentFingerprint": "sha256:87c26510bebbf9f7af8c8d5522560ac72141960f9640c82cc37fb2dcd078e357"
+      "reviewedProductVersion": "1.5.1",
+      "contentFingerprint": "sha256:72c4e232f01e491a3d12f0fc49d64e7ded4f1a2f21c96416650cb6793d024ba9"
     },
     {
       "localPath": "docs/es/06-resolucion-de-errores.md",
@@ -66,15 +68,17 @@
       "localPath": "docs/es/08-limites-y-roadmap.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d1298129909de7484878bc99?pvs=204",
-      "reviewedProductVersion": "1.5.0",
-      "contentFingerprint": "sha256:e53f793c45f58212b1e1660673851c7503b4f6c26db3c3e4270675dc8a010cb0"
+      "reviewedProductVersion": "1.5.1",
+      "contentFingerprint": "sha256:f023eee2dd3c93ff9a90ef6869ce47499f1437c4597700166c94f37737bd6589",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/08-boundaries-and-roadmap.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d1298142befbe3486411bbf9?pvs=204",
-      "reviewedProductVersion": "1.5.0",
-      "contentFingerprint": "sha256:5b2fb50b0aca4320b3f2757d8f9cefd5feff8f66491c2dd1c4d304d3b6139a79"
+      "reviewedProductVersion": "1.5.1",
+      "contentFingerprint": "sha256:9c6416fa7bfdf9767a1db3be41cff9f88d3cfcdbd0b29350228a94e91dda3740",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/es/09-protocolo-publico-de-memoria.md",
@@ -94,15 +98,15 @@
       "localPath": "docs/es/10-contexto-de-inicio.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3e221943d12981f39262dd1bb0790298?pvs=204",
-      "reviewedProductVersion": "1.5.0",
-      "contentFingerprint": "sha256:ff3b161d1bfa0310c6e6c04fc67dfec948ade43e3479bdd3933243a3c12dad50"
+      "reviewedProductVersion": "1.5.1",
+      "contentFingerprint": "sha256:3b45c8bc6c12e85c59dbbad25618a229a0eeebcd80713d431ab3d03c286b01a1"
     },
     {
       "localPath": "docs/en/10-startup-context.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3e221943d12981698538c340d1dc7a85?pvs=204",
-      "reviewedProductVersion": "1.5.0",
-      "contentFingerprint": "sha256:d7725eee7e489f6b55d7ac864ba906c3c95ac02c5e72852e7b5c35d6a609292f"
+      "reviewedProductVersion": "1.5.1",
+      "contentFingerprint": "sha256:6b0fc2633a81d939a9a8de0c92d8734cf33cb230207f26d89b7076dfa211cff9"
     }
   ]
 }

@@ -10,7 +10,7 @@ Imagina que un host entrega al agente una carpeta de bienvenida antes de abrir l
 forge614-engram startup-context --directory /ruta/absoluta/al-repositorio --json
 ```
 
-Es la **única interfaz pública** por la que Forge614 Engines o Forge614 Shell pueden leer memoria de Engram antes de iniciar una sesión de agente. Nunca deben abrir ni leer SQLite directamente. No requiere TTY, es idempotente y es apta para automatización, CI y hosts.
+Es la **única interfaz pública** por la que Forge614 Engines o Forge614 Shell pueden leer memoria de Engram antes de iniciar una sesión de agente. Nunca deben abrir ni leer SQLite directamente. Es una consulta no interactiva, idempotente y de solo lectura; no requiere TTY y es apta para automatización, CI y hosts.
 
 ## Contrato de salida
 
@@ -28,17 +28,17 @@ En éxito escribe un único JSON en stdout:
 }
 ```
 
-`shared` y `project.context` usan la misma forma de `ContextResult` del comando `context` e incluyen vistas previas acotadas, no solo títulos. Si la ruta no está vinculada, no es un error: `project` es `{ "status": "unbound", "projectId": null, "context": null }` y se conserva el contexto compartido.
+`shared` y `project.context` usan la misma forma de `ContextResult` del comando `context` e incluyen vistas previas acotadas, no solo títulos. Un proyecto válido y vinculado conserva el comportamiento previo: `shared` más contexto de proyecto. Cuando no se pueda resolver o vincular como proyecto, no falla: devuelve JSON con `format: 1`, contexto `shared` normal y `project: { "status": "unbound", "projectId": null, "context": null }` con los demás valores nulos según el esquema. Cualquier directorio existente y legible es válido: `$HOME`, `/`, una carpeta sin Git, un repositorio Git sin vínculo y una carpeta vinculada.
 
 ## Lectura estricta y límites
 
-El comando usa SQLite en modo de solo lectura. Nunca crea proyectos, vínculos, recuerdos, sesiones, bases, archivos ni migraciones. Una memoria de proyecto con el mismo `topicKey` sustituye la compartida solo dentro de `project.context`; la sección superior `shared` no cambia.
+El comando usa SQLite en modo de solo lectura. No crea proyectos, vínculos, recuerdos, sesiones, bases de datos, archivos ni migraciones. Una memoria de proyecto con el mismo `topicKey` sustituye la compartida solo dentro de `project.context`; la sección superior `shared` no cambia.
 
 Cada sección usa el límite propio de `context()` —16 384 bytes por defecto—, por lo que el payload combinado queda acotado. La operación funciona aun cuando el archivo de base está en modo de solo lectura.
 
 ## Errores seguros
 
-`--directory` y `--json` son obligatorios, y la ruta debe ser válida. Una entrada inválida, un espacio no inicializado o cualquier fallo real escribe JSON `{ "code": "…", "error": "…" }` únicamente por stderr y termina con código `1`. No imprime secretos, tokens, credenciales ni la ruta solicitada en el mensaje de error.
+`--directory` y `--json` son obligatorios. Solo fallan una ruta inexistente, una ruta que no es directorio o una ruta ilegible; un espacio no inicializado o cualquier otro fallo real deja stdout vacío, escribe JSON `{ "code": "…", "error": "…" }` únicamente por stderr y termina con exit code 1. No imprime secretos, tokens, credenciales ni rutas crudas en el mensaje de error.
 
 ## Relación con memory protocol
 

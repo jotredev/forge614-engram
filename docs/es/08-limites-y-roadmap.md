@@ -8,7 +8,7 @@ Intencionalmente **no** es un espacio visual, detector de asistentes, configurad
 
 ## Capacidades disponibles en v1.2.1
 
-- Hogar privado en `~/.forge614/engram/` con `engram.db`, `.env` y `bin/`.
+- Hogar privado en `~/.forge614/engram/` con `engram.db`, `.env` y `bin/`; `FORGE614_HOME` absoluta sustituye la raíz `~/.forge614` para aislar una instalación completa. Una variable vacía o relativa falla con `INVALID_FORGE614_HOME`, sin volver en silencio al hogar real.
 - SQLite y FTS5 locales para todos los proyectos y recuerdos compartidos. La búsqueda local funciona sin red.
 - Réplica opcional PostgreSQL configurada de forma no interactiva con `init --json --postgres-url <URL>`.
 - Recuerdos por proyecto y compartidos, consulta exacta por tema, historial, archivo/restauración, búsqueda FTS5, vistas previas, contexto, sesiones y refuerzo.
@@ -24,6 +24,8 @@ Intencionalmente **no** es un espacio visual, detector de asistentes, configurad
 - Aún no hay release ni instalador de Windows. Los binarios oficiales actuales son para macOS y Linux.
 - No hay embeddings ni búsqueda exclusiva en nube. FTS5 y SQLite siguen siendo la ruta local primaria.
 - La inicialización no crea ni selecciona proyectos automáticamente.
+
+`FORGE614_HOME` no es una segunda base ni una configuración por proyecto: es una raíz única alternativa para una instalación completa. SQLite, `.env`, binarios, actualización y desinstalación derivan de ella. Las rutas relativas se rechazan para evitar que el directorio de trabajo cambie el destino de datos.
 
 ## Protocolo público de memoria: estado de integración
 

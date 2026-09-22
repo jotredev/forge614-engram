@@ -10,7 +10,7 @@ Think of a host handing an agent a welcome folder before the conversation opens.
 forge614-engram startup-context --directory /absolute/path/to/repository --json
 ```
 
-This is the **only public interface** through which Forge614 Engines or Forge614 Shell may read Engram memory before an agent session begins. They must never open or read SQLite directly. It does not require a TTY, is idempotent, and suits automation, CI, and hosts.
+This is the **only public interface** through which Forge614 Engines or Forge614 Shell may read Engram memory before an agent session begins. They must never open or read SQLite directly. It is a non-interactive, idempotent, and read-only query; it does not require a TTY and suits automation, CI, and hosts.
 
 ## Output contract
 
@@ -28,7 +28,7 @@ On success it writes one JSON object to stdout:
 }
 ```
 
-`shared` and `project.context` use the same `ContextResult` shape as the `context` command and include bounded previews, not titles alone. If the directory is not bound, that is not an error: `project` is `{ "status": "unbound", "projectId": null, "context": null }`, while shared context remains available.
+`shared` and `project.context` use the same `ContextResult` shape as the `context` command and include bounded previews, not titles alone. A valid and linked project retains previous behavior: `shared` plus project context. When it cannot be resolved or linked as a project, it does not fail: it returns JSON with `format: 1`, normal `shared` context, and `project: { "status": "unbound", "projectId": null, "context": null }` with remaining project fields set to null per schema. Any existing readable directory is valid: `$HOME`, `/`, an unversioned folder without Git, an unlinked Git repository, and a linked folder.
 
 ## Strict reads and limits
 
@@ -38,7 +38,7 @@ Each section uses `context()`'s own ceiling —16,384 bytes by default—so the 
 
 ## Safe errors
 
-`--directory` and `--json` are required, and the directory must be valid. Invalid input, an uninitialized workspace, or any real failure writes `{ "code": "…", "error": "…" }` JSON only to stderr and exits with code `1`. It does not print secrets, tokens, credentials, or the requested path in an error message.
+`--directory` and `--json` are required. Only a nonexistent path, a path that is not a directory, or an unreadable path fails; an uninitialized workspace or any other real failure leaves stdout empty, writes `{ "code": "…", "error": "…" }` JSON only to stderr, and exits with exit code 1. It does not print secrets, tokens, credentials, or raw paths in an error message.
 
 ## Relationship to the memory protocol
 
