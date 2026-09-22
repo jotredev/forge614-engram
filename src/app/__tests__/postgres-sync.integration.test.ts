@@ -1,6 +1,5 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { SQL } from "bun";
 import { MemoryStore } from "../../app/memory-store";
@@ -11,30 +10,19 @@ import { WorkspaceConfig } from "../../infrastructure/filesystem/workspace-confi
 import { MemoryWorkspace } from "../../app/workspace";
 import { syncWorkspace } from "../../app/synchronization";
 import { canonical, normalizeSnapshot, snapshotHash } from "../../modules/synchronization";
+import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../../infrastructure/__test-support__/postgres";
 
-// Explicit test-only local binaries. Never use DATABASE_URL or a user's database.
-const bin=process.env.FORGE614_TEST_POSTGRES_BIN;
-const integration=bin?test:test.skip;
-let directory="",url="",admin:SQL;
-function command(name:string,args:string[]) {
-  const result=Bun.spawnSync([join(bin!,name),...args],{stdout:"pipe",stderr:"pipe"});
-  if(result.exitCode!==0) throw new Error(result.stderr.toString());
-}
-beforeAll(async()=>{
-  if(!bin) return;
-  directory=mkdtempSync(join(tmpdir(),"forge614-pg-test-"));
-  command("initdb",["-D",join(directory,"data"),"-U","postgres","-A","trust","--no-locale","--encoding=UTF8"]);
-  // Ask the OS for a free loopback port; start immediately. A collision fails safely.
-  const listener=Bun.listen({hostname:"127.0.0.1",port:0,socket:{data(){}}}); const port=listener.port;listener.stop(true);
-  command("pg_ctl",["-D",join(directory,"data"),"-l",join(directory,"log"),"-o",`-h 127.0.0.1 -p ${port} -k ${directory}`,"-w","start"]);
-  url=`postgresql://postgres@127.0.0.1:${port}/postgres?sslmode=disable`;admin=new SQL(url);
-},30000);
+// Explicit disposable loopback fixture only: never use an ambient database.
+const cluster=startPostgresCluster();
+const integration=cluster.available?test:test.skip;
+let directory="",url="",admin!:SQL;
+if(cluster.available) { directory=cluster.directory;url=cluster.url;admin=new SQL(url); }
+else console.warn(`SKIP PostgreSQL integration: ${cluster.reason}`);
 afterAll(async()=>{
-  if(!bin||!directory) return;
-  if(admin) await admin.close();
-  try { command("pg_ctl",["-D",join(directory,"data"),"-m","fast","-w","stop"]); }
-  finally { rmSync(directory,{recursive:true,force:true}); }
-},30000);
+  if(!cluster.available) return;
+  try { await admin.close(); }
+  finally { stopPostgresCluster(cluster); }
+},postgresTestTimeoutMs);
 
 
 integration("format promotion requires explicit consent, preserves historical CAS hashes and rejects incapable clients before publication",async()=>{
@@ -76,7 +64,7 @@ integration("format promotion requires explicit consent, preserves historical CA
     await synchronize(a,replica);await synchronize(b,replica);
     expect(b.search(project.projectId,"retry")).toHaveLength(1);
   }finally{a.close();b.close();old.close();await replica.close();await inspect.close();}
-});
+},postgresTestTimeoutMs);
 
 
 integration("simultaneous format promotions have one CAS winner, leave loser unapplied and retain storage format1",async()=>{
@@ -99,7 +87,7 @@ integration("simultaneous format promotions have one CAS winner, leave loser una
     await synchronize(a,left);await synchronize(b,right);await synchronize(a,left);
     expect(a.listProjects()).toHaveLength(2);expect(b.listProjects()).toHaveLength(2);
   }finally{a.close();b.close();await left.close();await right.close();await inspect.close();}
-});
+},postgresTestTimeoutMs);
 
 
 integration("remote snapshot size is bounded before parsing and before publishing",async()=>{
@@ -127,7 +115,7 @@ integration("remote snapshot size is bounded before parsing and before publishin
     expect((await replica.read()).hash).toBe(published.hash);expect(local.syncSnapshot()).toEqual(before);
     expect(local.syncCheckpoint(replica.id).format).toBe(1);
   }finally{local.close();remote.close();await replica.close();await inspect.close();}
-});
+},postgresTestTimeoutMs);
 
 
 integration("format 3 confirmations survive PostgreSQL convergence, retries, conflicts, and offline failures",async()=>{
@@ -225,7 +213,7 @@ integration("format 3 confirmations survive PostgreSQL convergence, retries, con
     if(offlineBefore.format!==3) throw new Error("expected format 3");
     expect(offlineBefore.confirmations).toHaveLength(5);
   } finally {a.close();b.close();legacy.close();await replica.close();await inspect.close();}
-},30000);
+},postgresTestTimeoutMs);
 
 
 integration("two SQLite installations synchronize via real PostgreSQL, replays and conflicts preserve data",async()=>{
@@ -258,7 +246,7 @@ integration("two SQLite installations synchronize via real PostgreSQL, replays a
     expect(a.get(p.projectId,m.id)!.content).toBe("left");
     const again=await PostgresReplica.connect(url,false);await again.close();
   } finally {a.close();b.close();await replica.close();}
-});
+},postgresTestTimeoutMs);
 
 
 integration("PostgreSQL publishes only one winner for a concurrent head and rejects altered schema",async()=>{
@@ -277,7 +265,7 @@ integration("PostgreSQL publishes only one winner for a concurrent head and reje
     const rows=await admin.unsafe("SELECT count(*)::int AS n FROM forge614_sync.revisions");
     expect(rows[0].n).toBeGreaterThan(0);
   } finally {await replica.close();}
-});
+},postgresTestTimeoutMs);
 
 
 integration("setup refuses an incompatible PostgreSQL schema without publishing config or creating SQLite",async()=>{
@@ -285,4 +273,4 @@ integration("setup refuses an incompatible PostgreSQL schema without publishing 
   const answers=["si",url,"no","si"];
   await expect(runSetup({write(){},ask:async()=>answers.shift()??null},config)).rejects.toMatchObject({code:"POSTGRES_SCHEMA"});
   expect(existsSync(config.root)).toBe(false);
-});
+},postgresTestTimeoutMs);

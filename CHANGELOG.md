@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.2 — pendiente de revisión
+
+- Límites de tiempo para pruebas PostgreSQL y jobs de workflow; sin cambios funcionales.
+
 ## 1.5.1 — pendiente de revisión
 
 - `startup-context` ahora conserva el contexto `shared` y devuelve `project.status: "unbound"` para cualquier directorio existente y legible sin vínculo, incluidos el hogar, la raíz, carpetas sin Git y repositorios Git no vinculados.

@@ -1,6 +1,6 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { PostgresReplica, postgresOptions } from "./replica";
-import { withPostgres } from "../__test-support__/postgres";
+import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../__test-support__/postgres";
 
 test("PostgreSQL URL parsing rejects ambiguous URLs and insecure remote TLS without leaking input",()=>{
   for(const input of ["mysql://host/db","postgresql://host/db","postgresql://u:SECRET@remote/db?sslmode=disable","postgresql://u:SECRET@remote/db?options=bad"]) {
@@ -10,9 +10,14 @@ test("PostgreSQL URL parsing rejects ambiguous URLs and insecure remote TLS with
   expect(postgresOptions("postgresql://u:p@example.org/db").tls).toMatchObject({rejectUnauthorized:true});
 });
 
-const integration = process.env.FORGE614_TEST_POSTGRES_BIN ? test : test.skip;
-integration("replica publication persists history and refuses a stale compare-and-swap", async () => withPostgres(async url => {
-  const replica = await PostgresReplica.connect(url, true);
+const cluster = startPostgresCluster();
+const integration = cluster.available ? test : test.skip;
+if (!cluster.available) console.warn(`SKIP PostgreSQL integration: ${cluster.reason}`);
+afterAll(() => { stopPostgresCluster(cluster); }, postgresTestTimeoutMs);
+
+integration("replica publication persists history and refuses a stale compare-and-swap", async () => {
+  if (!cluster.available) return;
+  const replica = await PostgresReplica.connect(cluster.url, true);
   try {
     const initial = await replica.read();
     expect(initial.snapshot).toEqual({ format: 1, projects: [], memories: [] });
@@ -20,8 +25,8 @@ integration("replica publication persists history and refuses a stale compare-an
     const hash = await replica.publish(initial.hash, next);
     expect((await replica.read()).snapshot).toEqual(next);
     await expect(replica.publish(initial.hash, initial.snapshot)).rejects.toMatchObject({ code: "SYNC_REMOTE_CHANGED" });
-    const reader = await PostgresReplica.connect(url);
+    const reader = await PostgresReplica.connect(cluster.url);
     try { expect(await reader.read()).toMatchObject({ hash, snapshot: next }); }
     finally { await reader.close(); }
   } finally { await replica.close(); }
-}), 30000);
+}, postgresTestTimeoutMs);

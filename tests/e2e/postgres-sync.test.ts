@@ -1,36 +1,23 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { afterAll, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { SQL } from "bun";
 import { runSetup } from "../../src/app/setup";
 import { WorkspaceConfig } from "../../src/infrastructure/filesystem/workspace-config";
 import { MemoryWorkspace } from "../../src/app/workspace";
 import { syncWorkspace } from "../../src/app/synchronization";
+import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../../src/infrastructure/__test-support__/postgres";
 
-// Explicit test-only local binaries. Never use DATABASE_URL or a user's database.
-const bin=process.env.FORGE614_TEST_POSTGRES_BIN;
-const integration=bin?test:test.skip;
-let directory="",url="",admin:SQL;
-function command(name:string,args:string[]) {
-  const result=Bun.spawnSync([join(bin!,name),...args],{stdout:"pipe",stderr:"pipe"});
-  if(result.exitCode!==0) throw new Error(result.stderr.toString());
-}
-beforeAll(async()=>{
-  if(!bin) return;
-  directory=mkdtempSync(join(tmpdir(),"forge614-pg-test-"));
-  command("initdb",["-D",join(directory,"data"),"-U","postgres","-A","trust","--no-locale","--encoding=UTF8"]);
-  // Ask the OS for a free loopback port; start immediately. A collision fails safely.
-  const listener=Bun.listen({hostname:"127.0.0.1",port:0,socket:{data(){}}}); const port=listener.port;listener.stop(true);
-  command("pg_ctl",["-D",join(directory,"data"),"-l",join(directory,"log"),"-o",`-h 127.0.0.1 -p ${port} -k ${directory}`,"-w","start"]);
-  url=`postgresql://postgres@127.0.0.1:${port}/postgres?sslmode=disable`;admin=new SQL(url);
-},30000);
+const cluster=startPostgresCluster();
+const integration=cluster.available?test:test.skip;
+let directory="",url="",admin!:SQL;
+if(cluster.available) { directory=cluster.directory;url=cluster.url;admin=new SQL(url); }
+else console.warn(`SKIP PostgreSQL integration: ${cluster.reason}`);
 afterAll(async()=>{
-  if(!bin||!directory) return;
-  if(admin) await admin.close();
-  try { command("pg_ctl",["-D",join(directory,"data"),"-m","fast","-w","stop"]); }
-  finally { rmSync(directory,{recursive:true,force:true}); }
-},30000);
+  if(!cluster.available) return;
+  try { await admin.close(); }
+  finally { stopPostgresCluster(cluster); }
+},postgresTestTimeoutMs);
 
 
 integration("configured CLI stays local offline and sync failure preserves the same SQLite data",async()=>{
@@ -64,4 +51,4 @@ integration("configured CLI stays local offline and sync failure preserves the s
   expect(saved.exitCode).toBe(0);
   const failed=run("sync");expect(failed.exitCode).toBe(1);expect(failed.stderr.toString()).not.toContain("SECRET");
   expect(output.join("\n")).not.toContain(testUrl);
-});
+},postgresTestTimeoutMs);
