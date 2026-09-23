@@ -1,12 +1,14 @@
 import { closeDatabase,defaultDatabasePath,openDatabase } from "../infrastructure/sqlite/connection";
+import * as groups from "../infrastructure/sqlite/ecosystem-groups";
 import * as memory from "../infrastructure/sqlite/memory";
 import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
-import { enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
+import { enableEcosystem,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
 import * as writes from "../infrastructure/sqlite/writes";
+import type { Group,GroupSummary,IdentityEvent,MembershipSource,ProjectGroup } from "../modules/ecosystem";
 import { type Memory,type MemoryVersion,type SaveInput,type SearchResult,type SearchScope } from "../modules/memory";
 import { type Project } from "../modules/projects";
 import { type ContextInput,type ContextResult,type PreviewResult,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";
@@ -21,6 +23,12 @@ export class MemoryStore {
   }
   createProject(name: string): Project { return projects.createProject(this.db, name); }
   getProject(projectId: string): Project | null { return projects.getProject(this.db, projectId); }
+  projectDirectories(projectId: string): string[] { return projects.projectDirectories(this.db, projectId); }
+  moveMemoryToGroup(from: string | null, id: string, groupId: string): { memory: Memory; from: { scope: "project" | "shared"; projectId: string | null } } { return writes.moveMemoryToGroup(this.db, from, id, groupId); }
+  saveSessionSummaryInGroup(projectId: string, sessionId: string, groupId: string, fields: SummaryFields,
+      request: {requestKey:string;expectedVersion?:number}): SessionSaveResult { return writes.saveSessionSummary(this.db, projectId, sessionId, fields, request, groupId); }
+  registerProject(projectId: string, name: string): { project: Project; created: boolean } { return projects.registerProject(this.db, projectId, name); }
+  rebindProjectDirectory(directory: string, projectId: string): { previousProjectId: string | null } { return writes.rebindProjectDirectory(this.db, directory, projectId); }
   listProjects(): Project[] { return projects.listProjects(this.db); }
   renameProject(projectId: string, name: string): Project { return writes.renameProject(this.db, projectId, name); }
   sessionsEnabled(): boolean { return sessions.sessionsEnabled(this.db); }
@@ -59,4 +67,28 @@ export class MemoryStore {
   syncSnapshot(): SyncSnapshot { return exportSnapshot(this.db); }
   syncCheckpoint(replica: string): SyncSnapshot { return checkpoint(this.db, replica); }
   applySync(expected: SyncSnapshot, next: SyncSnapshot, replica: string): void { return applySnapshot(this.db, expected, next, replica); }
+
+  // Ecosystem scope: groups of related projects. Additive; every method above is unchanged.
+  ecosystemEnabled(): boolean { return groups.ecosystemEnabled(this.db); }
+  enableEcosystem(): void { return enableEcosystem(this.db); }
+  createGroup(name: string): Group { return groups.createGroup(this.db, name); }
+  ensureGroup(id: string, name: string): { group: Group; created: boolean } { return groups.ensureGroup(this.db, id, name); }
+  getGroup(id: string): Group | null { return groups.getGroup(this.db, id); }
+  findGroups(name: string): Group[] { return groups.findGroupsByName(this.db, name); }
+  resolveGroup(reference: string): Group { return groups.resolveGroup(this.db, reference); }
+  listGroups(): GroupSummary[] { return groups.listGroups(this.db); }
+  renameGroup(id: string, name: string): Group { return groups.renameGroup(this.db, id, name); }
+  bindProjectToGroup(projectId: string, groupId: string, source: MembershipSource = "command"): { group: Group; changed: boolean } { return groups.bindProjectToGroup(this.db, projectId, groupId, source); }
+  unbindProject(projectId: string): boolean { return groups.unbindProject(this.db, projectId); }
+  groupOfProject(projectId: string): ProjectGroup | null { return groups.groupOfProject(this.db, projectId); }
+  identityEvents(projectId?: string): IdentityEvent[] { return groups.identityEvents(this.db, projectId); }
+  getInGroup(groupId: string, id: string): Memory | null { return memory.get(this.db, { groupId }, id); }
+  getByTopicInGroup(groupId: string, topicKey: string): Memory | null { return memory.getByTopic(this.db, { groupId }, topicKey); }
+  historyInGroup(groupId: string, id: string): MemoryVersion[] { return memory.history(this.db, { groupId }, id); }
+  getVersionInGroup(groupId: string, id: string, version?: number): VersionRead | null { return search.getVersion(this.db, { groupId }, id, version); }
+  searchInGroup(groupId: string, query: string, limit = 10): SearchResult[] { return search.search(this.db, null, query, limit, "ecosystem", groupId); }
+  searchPreviewsInGroup(groupId: string, query: string, limit = 10): PreviewResult[] { return search.searchPreviews(this.db, null, query, limit, "ecosystem", groupId); }
+  contextForGroup(groupId: string, input?: ContextInput): ContextResult { return search.context(this.db, { groupId }, input); }
+  archiveInGroup(groupId: string, id: string): Memory { return writes.archive(this.db, { groupId }, id); }
+  restoreInGroup(groupId: string, id: string): Memory { return writes.restore(this.db, { groupId }, id); }
 }

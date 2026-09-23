@@ -25,6 +25,6 @@ test("directory resolution reuses its binding and refuses same-name ambiguity", 
 test("schema 7 retains project bindings without admitting future versions", () => withDatabase(db => {
   enableProjectBindings(db); db.exec("PRAGMA user_version=7");
   expect(resolveProjectDirectory(db,"/seven","Seven",true).project?.name).toBe("Seven");
-  db.exec("PRAGMA user_version=8");
+  db.exec("PRAGMA user_version=11");
   expect(()=>projectForDirectory(db,"/seven")).toThrow(expect.objectContaining({code:"MIGRATION_REQUIRED"}));
 }));

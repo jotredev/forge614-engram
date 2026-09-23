@@ -1,4 +1,4 @@
-import { accessSync, constants, lstatSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve } from "node:path";
 import { MemoryError } from "../../shared/errors";
@@ -134,4 +134,23 @@ export function assertGitProjectDirectory(directory: string): void {
 // Inspect only recorded bindings. The store remains usable with synthetic paths.
 export function bindingAvailable(directory:string):boolean {
   try{return statSync(directory).isDirectory();}catch{return false;}
+}
+
+/** Root of the checkout that carries .forge614/project.json; null when there is no safe, ordinary root. */
+export function identityRoot(directory: string, canonical?: CanonicalProject): string | null {
+  try { return runtimeProjectDirectory(directory, canonical ?? canonicalProjectForRead(directory)); }
+  catch { return null; }
+}
+
+/**
+ * A recorded binding key is the Git common directory for repositories (its parent is the checkout)
+ * or the folder itself otherwise. Bare repositories have no checkout, hence no identity file.
+ */
+export function rootOfBinding(key: string): string | null {
+  try {
+    if (!statSync(key).isDirectory()) return null;
+    if (basename(key) === ".git") return dirname(key);
+    if (existsSync(join(key, "HEAD")) && existsSync(join(key, "objects")) && existsSync(join(key, "refs"))) return null;
+    return key;
+  } catch { return null; }
 }

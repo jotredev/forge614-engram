@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { type Memory,type MemoryVersion,type SearchResult,type SearchScope } from "../../modules/memory";
+import { type Memory,type MemoryOwner,type MemoryVersion,type SearchResult,type SearchScope } from "../../modules/memory";
 import {
   rankingFactors,MILLISECONDS_PER_DAY,RANKING_CONTENT_WEIGHT,RANKING_PINNED_WEIGHT,
   RANKING_RECENCY_DAYS,RANKING_RECENCY_WEIGHT,RANKING_STABILITY_BASE,RANKING_STABILITY_WEIGHT,
@@ -10,12 +10,13 @@ import type { ContextRow,MemoryPreview,TimelineRow } from "../../modules/search"
 import { searchTerms,validateSearchLimit,type ContextInput,type ContextResult,type PreviewResult,type TimelineInput,type TimelineResult,type VersionRead } from "../../modules/search";
 import { MemoryError } from "../../shared/errors";
 import { reinforcementEnabled } from "./confirmations";
-import { memory,owner,required,type Row } from "./memory";
+import { ecosystemEnabled,getGroup,groupOfProject } from "./ecosystem-groups";
+import { memory,ownerClause,required,type Row } from "./memory";
 import { sessionsEnabled } from "./sessions";
 
 type Selection = { sql: string; args: string[] };
 type PreviewRow = {
-  id: string; projectId: string | null; scope: Memory["scope"]; topic_key: string | null;
+  id: string; projectId: string | null; groupId?: string | null; scope: Memory["scope"]; topic_key: string | null;
   type: Memory["type"]; title: string; preview: string; truncated: number; pinned: number;
   version: number; created_at: string; updated_at: string;
 };
@@ -26,23 +27,48 @@ function integer(value: unknown, field: string, min: number, max: number): numbe
   }
   return value as number;
 }
-export function searchSelection(db: Database, projectId: string | null, scope: SearchScope): Selection {
-  if (!["all", "project", "shared"].includes(scope)) throw new MemoryError("INVALID_INPUT", "Búsqueda: scope debe ser all, project o shared.");
+// The group a search runs against: the explicit one, else the group the project belongs to.
+function searchGroup(db: Database, projectId: string | null, groupId: string | null | undefined): string | null {
+  if (groupId) return groupId;
+  return projectId === null ? null : groupOfProject(db, projectId)?.group.id ?? null;
+}
+export function searchSelection(db: Database, projectId: string | null, scope: SearchScope, groupId?: string | null): Selection {
+  if (!["all", "project", "shared", "ecosystem"].includes(scope)) throw new MemoryError("INVALID_INPUT", "Búsqueda: scope debe ser all, project, shared o ecosystem.");
   if (projectId !== null && !db.query("SELECT 1 FROM projects WHERE projectId=?").get(projectId)) throw new MemoryError("PROJECT_NOT_FOUND", "Proyecto no encontrado.");
   if (scope === "shared") return { sql: "m.scope='shared'", args: [] };
+  if (scope === "ecosystem") {
+    const group = searchGroup(db, projectId, groupId);
+    if (group === null) throw new MemoryError("GROUP_REQUIRED", "El proyecto no pertenece a un grupo: indica el grupo o vincula el proyecto a uno.");
+    if (!getGroup(db, group)) throw new MemoryError("GROUP_NOT_FOUND", "Grupo no encontrado en esta base.");
+    return { sql: "m.scope='ecosystem' AND m.groupId=?", args: [group] };
+  }
   if (projectId === null) throw new MemoryError("INVALID_INPUT", "Sin projectId debes buscar explícitamente en scope shared.");
   if (scope === "project") return { sql: "m.scope='project' AND m.projectId=?", args: [projectId] };
-  return { sql: `(m.projectId=? OR (m.scope='shared' AND NOT EXISTS (
+  const group = searchGroup(db, projectId, groupId);
+  if (group === null) return { sql: `(m.projectId=? OR (m.scope='shared' AND NOT EXISTS (
     SELECT 1 FROM memories p WHERE p.projectId=? AND p.scope='project'
     AND p.state='active' AND p.topic_key=m.topic_key)))`, args: [projectId, projectId] };
+  // project > ecosystem > shared when a topic key repeats across scopes.
+  return { sql: `(m.projectId=?
+    OR (m.scope='ecosystem' AND m.groupId=? AND NOT EXISTS (
+      SELECT 1 FROM memories p WHERE p.projectId=? AND p.scope='project' AND p.state='active' AND p.topic_key=m.topic_key))
+    OR (m.scope='shared' AND NOT EXISTS (
+      SELECT 1 FROM memories p WHERE p.projectId=? AND p.scope='project' AND p.state='active' AND p.topic_key=m.topic_key)
+      AND NOT EXISTS (
+      SELECT 1 FROM memories e WHERE e.scope='ecosystem' AND e.groupId=? AND e.state='active' AND e.topic_key=m.topic_key)))`,
+    args: [projectId, group, projectId, projectId, group] };
 }
 function preview(row: PreviewRow): MemoryPreview {
   return { id: row.id, projectId: row.projectId, scope: row.scope, topicKey: row.topic_key,
     type: row.type, title: row.title, preview: row.preview, truncated: row.truncated === 1,
-    pinned: row.pinned === 1, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at };
+    pinned: row.pinned === 1, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at,
+    ...(row.scope === "ecosystem" && row.groupId ? { groupId: row.groupId } : {}) };
 }
-const PREVIEW_COLUMNS = `m.id,m.projectId,m.scope,m.topic_key,m.type,m.title,
+// Databases below the ecosystem level have no groupId column.
+function previewColumns(db: Database): string {
+  return `m.id,m.projectId,${ecosystemEnabled(db) ? "m.groupId," : ""}m.scope,m.topic_key,m.type,m.title,
   substr(m.content,1,300) AS preview,length(m.content)>300 AS truncated,m.pinned,m.version,m.created_at,m.updated_at`;
+}
 
 // Both projections use identical visibility, scoring and tie breakers. Keep the
 // preview projection bounded in SQL and the literal scan streaming.
@@ -90,8 +116,9 @@ function reinforcedExplanation(row: ReinforcedSearchRow, now: string): SearchRes
   return {mode:"fts5",bm25:row.bm25,multiplier:row.multiplier,orderScore:row.bm25*row.multiplier,reinforcement};
 }
 
-function readSearchPreviews(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): PreviewResult[] {
-  const selection = searchSelection(db, projectId, scope); const parsed = searchTerms(query); validateSearchLimit(limit);
+function readSearchPreviews(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all", groupId?: string | null): PreviewResult[] {
+  const PREVIEW_COLUMNS = previewColumns(db);
+  const selection = searchSelection(db, projectId, scope, groupId); const parsed = searchTerms(query); validateSearchLimit(limit);
   if (parsed.literal) {
     const folded = parsed.terms.map(term => term.toLowerCase()); const result: PreviewResult[] = [];
     const statement = db.prepare(literalQuery(`${PREVIEW_COLUMNS},m.content`, selection));
@@ -115,9 +142,10 @@ function readSearchPreviews(db: Database, projectId: string | null, query: strin
     multiplier: row.multiplier, orderScore: row.bm25 * row.multiplier } }));
 }
 
-function readGetVersion(db: Database, projectId: string | null, id: string, version?: number): VersionRead | null {
+function readGetVersion(db: Database, owner: MemoryOwner, id: string, version?: number): VersionRead | null {
   const memoryId = required(id, "id");
-  const current = db.query("SELECT version,state FROM memories WHERE projectId IS ? AND id=?").get(projectId, memoryId) as {version:number;state:Memory["state"]}|null;
+  const clause = ownerClause(db, owner);
+  const current = db.query(`SELECT m.version,m.state FROM memories m WHERE ${clause.sql} AND m.id=?`).get(...clause.args, memoryId) as {version:number;state:Memory["state"]}|null;
   if (!current) return null;
   const selected = version === undefined ? current.version : integer(version, "version", 1, Number.MAX_SAFE_INTEGER);
   const row = db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(memoryId, selected) as {snapshot:string}|null;
@@ -129,7 +157,7 @@ function timelinePreview(row: TimelineSqlRow): TimelineRow {
   return { memory: preview(row), recordedAt: row.recordedAt };
 }
 function snapshotColumns(limit: 150 | 500): string {
-  return `json_extract(v.snapshot,'$.id') AS id,json_extract(v.snapshot,'$.projectId') AS projectId,
+  return `json_extract(v.snapshot,'$.id') AS id,json_extract(v.snapshot,'$.projectId') AS projectId,json_extract(v.snapshot,'$.groupId') AS groupId,
     json_extract(v.snapshot,'$.scope') AS scope,json_extract(v.snapshot,'$.topicKey') AS topic_key,
     json_extract(v.snapshot,'$.type') AS type,json_extract(v.snapshot,'$.title') AS title,
     substr(json_extract(v.snapshot,'$.content'),1,${limit}) AS preview,
@@ -169,21 +197,24 @@ function contextRow(row: PreviewRow, compact: boolean): ContextRow {
   const value = preview(row); if (!compact) return value;
   const { preview: _preview, ...rest } = value; return rest;
 }
-function contextSelection(projectId: string | null): Selection {
-  return projectId === null ? {sql:"m.scope='shared'",args:[]} : { sql: `(m.projectId=? OR (m.scope='shared' AND NOT EXISTS (
-    SELECT 1 FROM memories p WHERE p.projectId=? AND p.scope='project' AND p.state='active' AND p.topic_key=m.topic_key)))`, args:[projectId,projectId] };
+function contextSelection(db: Database, owner: MemoryOwner): Selection {
+  if (owner !== null && typeof owner === "object") return ownerClause(db, owner);
+  return owner === null ? {sql:"m.scope='shared'",args:[]} : { sql: `(m.projectId=? OR (m.scope='shared' AND NOT EXISTS (
+    SELECT 1 FROM memories p WHERE p.projectId=? AND p.scope='project' AND p.state='active' AND p.topic_key=m.topic_key)))`, args:[owner,owner] };
 }
 function excludeKeys(rows: ContextRow[], id = "m.id", version = "m.version"): {sql:string;args:(string|number)[]} {
   if (rows.length === 0) return {sql:"",args:[]};
   return { sql: ` AND NOT (${rows.map(() => `(${id}=? AND ${version}=?)`).join(" OR ")})`,
     args: rows.flatMap(row => [row.id,row.version]) };
 }
-function readContext(db: Database, sessionsEnabled: boolean, projectId: string | null, input: ContextInput = {}): ContextResult {
+function readContext(db: Database, sessionsEnabled: boolean, owner: MemoryOwner, input: ContextInput = {}): ContextResult {
+  const PREVIEW_COLUMNS = previewColumns(db);
+  const projectId = typeof owner === "string" ? owner : null;
   if (input.compact !== undefined && typeof input.compact !== "boolean") throw new MemoryError("INVALID_INPUT", "compact debe ser booleano.");
   const maxBytes = integer(input.maxBytes ?? 16384, "maxBytes", 1024, 65536), compact = input.compact ?? false;
   if (projectId !== null && !db.query("SELECT 1 FROM projects WHERE projectId=?").get(projectId)) throw new MemoryError("PROJECT_NOT_FOUND", "Proyecto no encontrado.");
   return db.transaction(() => {
-    const selection = contextSelection(projectId);
+    const selection = contextSelection(db, owner);
     const pinnedAll = db.query(`SELECT ${PREVIEW_COLUMNS} FROM memories m WHERE ${selection.sql} AND m.state='active' AND m.pinned=1
       ORDER BY m.updated_at DESC,m.id ASC LIMIT 21`).all(...selection.args) as PreviewRow[];
     const pinnedCount = (db.query(`SELECT count(*) AS n FROM memories m WHERE ${selection.sql} AND m.state='active' AND m.pinned=1`).get(...selection.args) as {n:number}).n;
@@ -196,7 +227,7 @@ function readContext(db: Database, sessionsEnabled: boolean, projectId: string |
     let summariesAll: PreviewRow[] = [], summariesCount = 0;
     if (projectId !== null && sessionsEnabled) {
       const withoutEarlier=excludeKeys([...pinned,...recent],"ss.memoryId","ss.version");
-      summariesAll = db.query(`SELECT m.id,m.projectId,m.scope,m.topic_key,m.type,m.title,
+      summariesAll = db.query(`SELECT m.id,m.projectId,json_extract(v.snapshot,'$.groupId') AS groupId,m.scope,m.topic_key,m.type,m.title,
         substr(json_extract(v.snapshot,'$.content'),1,300) AS preview,
         length(json_extract(v.snapshot,'$.content'))>300 AS truncated,
         json_extract(v.snapshot,'$.pinned') AS pinned,ss.version,
@@ -221,9 +252,9 @@ function readContext(db: Database, sessionsEnabled: boolean, projectId: string |
   }).deferred();
 }
 
-export function search(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): SearchResult[] {
+export function search(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all", groupId?: string | null): SearchResult[] {
     const identity = projectId === null ? null : projectIdentity(projectId);
-    const selection = searchSelection(db, identity, scope);
+    const selection = searchSelection(db, identity, scope, groupId);
     const parsed = searchTerms(query); validateSearchLimit(limit);
     if (parsed.literal) {
       // SQLite LIKE folds ASCII only. Scan scoped rows with Unicode lowercase
@@ -254,18 +285,18 @@ export function search(db: Database, projectId: string | null, query: string, li
       multiplier: row.multiplier, orderScore: row.bm25 * row.multiplier } }));
   }
 
-export function searchPreviews(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all"): PreviewResult[] {
-    return readSearchPreviews(db, projectId === null ? null : projectIdentity(projectId), query, limit, scope);
+export function searchPreviews(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all", groupId?: string | null): PreviewResult[] {
+    return readSearchPreviews(db, projectId === null ? null : projectIdentity(projectId), query, limit, scope, groupId);
   }
 
-export function getVersion(db: Database, projectId: string | null, id: string, version?: number): VersionRead | null {
-    return readGetVersion(db, owner(projectId), id, version);
+export function getVersion(db: Database, owner: MemoryOwner, id: string, version?: number): VersionRead | null {
+    return readGetVersion(db, owner, id, version);
   }
 
 export function timeline(db: Database, projectId: string, input: TimelineInput): TimelineResult {
     return readTimeline(db, sessionsEnabled(db), projectIdentity(projectId), input);
   }
 
-export function context(db: Database, projectId: string | null, input?: ContextInput): ContextResult {
-    return readContext(db, sessionsEnabled(db), projectId === null ? null : projectIdentity(projectId), input);
+export function context(db: Database, owner: MemoryOwner, input?: ContextInput): ContextResult {
+    return readContext(db, sessionsEnabled(db), owner !== null && typeof owner === "object" ? owner : owner === null ? null : projectIdentity(owner), input);
   }

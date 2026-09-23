@@ -1,7 +1,9 @@
 import type { Database } from "bun:sqlite";
 import { projectIdentity,type Project } from "../../modules/projects";
 import { MemoryError } from "../../shared/errors";
+import { ecosystemEnabled,recordIdentityEvent } from "./ecosystem-groups";
 import { required } from "./memory";
+import { schemaFeatures } from "./schema";
 
 export function createProject(db: Database, name: string): Project {
     const displayName = required(name, "name");
@@ -20,9 +22,14 @@ export function listProjects(db: Database): Project[] {
     return db.query("SELECT * FROM projects ORDER BY name,projectId").all() as Project[];
   }
 
+/** Every folder key bound to a project on this machine. */
+export function projectDirectories(db: Database, projectId: string): string[] {
+    if ((schemaFeatures(db)?.base ?? 0) < 5) return [];
+    return (db.query("SELECT directory FROM project_bindings WHERE projectId=? ORDER BY directory").all(projectIdentity(projectId)) as { directory: string }[]).map(row => row.directory);
+  }
+
 export function requireProjectBindings(db: Database): void {
-    const version = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
-    if (version !== 5 && version !== 6 && version !== 7) {
+    if ((schemaFeatures(db)?.base ?? 0) < 5) {
       throw new MemoryError("MIGRATION_REQUIRED", "Inicializa Engram para habilitar los vínculos de proyecto.");
     }
   }
@@ -61,4 +68,15 @@ export function resolveProjectDirectory(db: Database, directory: string, name: s
       return { project, created: true };
     };
     return operation();
+  }
+
+/** Registers a project that arrives with its own identity (a clone of a repository that carries its identity file). */
+export function registerProject(db: Database, projectId: string, name: string): { project: Project; created: boolean } {
+    const identity = projectIdentity(projectId); const displayName = required(name, "name");
+    const existing = getProject(db, identity);
+    if (existing) return { project: existing, created: false };
+    const now = new Date().toISOString();
+    db.query("INSERT INTO projects(projectId,name,createdAt,updatedAt) VALUES(?,?,?,?)").run(identity, displayName, now, now);
+    if (ecosystemEnabled(db)) recordIdentityEvent(db, { action: "PROJECT_REGISTERED_FROM_FILE", projectId: identity });
+    return { project: { projectId: identity, name: displayName, createdAt: now, updatedAt: now }, created: true };
   }

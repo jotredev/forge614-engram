@@ -127,3 +127,56 @@ test("new workspace database is created with private file permissions", () => {
   const f = fixture(); f.workspace.init();
   expect(statSync(f.db).mode & 0o777).toBe(0o600);
 });
+
+test("groups are created, listed and bound through the workspace without exposing SQLite", () => {
+  const f = fixture();
+  expect(f.workspace.listGroups()).toEqual([]);
+  const project = f.workspace.createProject("Frontend");
+  const group = f.workspace.createGroup("tienda");
+  expect(group.name).toBe("tienda");
+  expect(group.id).toMatch(/^[0-9a-f-]{36}$/);
+  expect(f.workspace.createGroup("otra").name).toBe("otra");
+  expect(() => f.workspace.createGroup("tienda")).toThrow(expect.objectContaining({ code: "GROUP_EXISTS" }));
+  expect(() => f.workspace.createGroup("Mal Nombre")).toThrow(expect.objectContaining({ code: "GROUP_NAME_INVALID" }));
+  expect(f.workspace.bindProjectToGroup(project.projectId, "tienda")).toEqual({ group, changed: true, identityFiles: { updated: 0, skipped: 0 } });
+  expect(f.workspace.bindProjectToGroup(project.projectId, group.id).changed).toBe(false);
+  expect(f.workspace.listGroups()).toEqual([
+    { ...f.workspace.listGroups()[0]!, name: "otra", projects: [] },
+    { ...group, projects: [{ projectId: project.projectId, name: "Frontend" }] },
+  ]);
+  expect(f.workspace.renameGroup("tienda", "mi-tienda").group).toEqual({ ...group, name: "mi-tienda" });
+  expect(f.workspace.unbindProject(project.projectId).unbound).toBe(true);
+  expect(f.workspace.unbindProject(project.projectId).unbound).toBe(false);
+});
+
+test("group operations fail cleanly and never migrate a database only to report a missing group", () => {
+  const f = fixture();
+  const project = f.workspace.createProject("Frontend");
+  const before = readFileSync(f.db);
+  expect(() => f.workspace.bindProjectToGroup(project.projectId, "no-existe")).toThrow(expect.objectContaining({ code: "GROUP_NOT_FOUND" }));
+  expect(f.workspace.unbindProject(project.projectId)).toEqual({ unbound: false, identityFiles: { updated: 0, skipped: 0 } });
+  expect(() => f.workspace.renameGroup("no-existe", "otra")).toThrow(expect.objectContaining({ code: "GROUP_NOT_FOUND" }));
+  expect(readFileSync(f.db)).toEqual(before);
+  f.workspace.createGroup("tienda");
+  expect(() => f.workspace.bindProjectToGroup(crypto.randomUUID(), "tienda")).toThrow(expect.objectContaining({ code: "PROJECT_NOT_FOUND" }));
+});
+
+test("enrolling the ecosystem level backs up a database that holds data and skips an empty one", () => {
+  const empty = fixture();
+  empty.workspace.init(); empty.workspace.createGroup("primero");
+  expect(readdirSync(empty.root).filter(name => name.includes("pre-ecosystem"))).toEqual([]);
+  const used = fixture();
+  used.workspace.createProject("Con datos"); used.workspace.createGroup("primero");
+  expect(readdirSync(used.root).filter(name => name.includes("pre-ecosystem"))).toHaveLength(1);
+});
+
+test("renaming a project keeps every bound identity file in step", () => {
+  const f = fixture(); const folder = mkdtempSync(join(tmpdir(), "forge614-ws-id-")); dirs.push(folder);
+  const project = f.workspace.createProject("Antes");
+  const store = f.workspace.open();
+  try { store.enableProjectBindings(); store.bindProjectDirectory(folder, project.projectId); } finally { store.close(); }
+  mkdirSync(join(folder, ".forge614"));
+  writeFileSync(join(folder, ".forge614", "project.json"), JSON.stringify({ schemaVersion: 1, project: { id: project.projectId, name: "Antes" }, ecosystem: null }));
+  f.workspace.renameProject(project.projectId, "Despues");
+  expect(JSON.parse(readFileSync(join(folder, ".forge614", "project.json"), "utf8")).project).toEqual({ id: project.projectId, name: "Despues" });
+});

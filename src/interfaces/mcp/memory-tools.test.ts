@@ -49,3 +49,61 @@ test("enrolled MCP duplicate saves reinforce one project memory without creating
     });
   } finally {await h.close();}
 });
+
+async function grouped(h: Awaited<ReturnType<typeof sdkHarness>>, name = "tienda") {
+  const first = (await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" })).data;
+  h.store.enableEcosystem();
+  const group = h.store.createGroup(name);
+  h.store.bindProjectToGroup(first.projectId, group.id);
+  return { projectId: first.projectId as string, group };
+}
+
+test("ecosystem saves need a truthful groupIntent and a project that belongs to a group", async () => {
+  const h = await sdkHarness(registerMemoryTools);
+  try {
+    const save = { title: "Rule", content: "Group wide rule", type: "decision", scope: "ecosystem", topicKey: "rule" };
+    expect((await h.call("memory_save", save)).data.code).toBe("GROUP_INTENT_REQUIRED");
+    expect((await h.call("memory_save", { ...save, groupIntent: "Applies to every repo" })).data.code).toBe("PROJECT_NOT_BOUND");
+    const { projectId, group } = await grouped(h);
+    expect((await h.call("memory_save", { ...save, groupIntent: "Applies to every repo", globalIntent: "wrong" })).data.code).toBe("INVALID_INPUT");
+    expect((await h.call("memory_save", { ...save, groupIntent: "Applies to every repo", sessionProjectId: projectId })).data.code).toBe("INVALID_INPUT");
+    expect((await h.call("memory_save", { title: "P", content: "c", type: "fact", groupIntent: "wrong scope" })).data.code).toBe("INVALID_INPUT");
+    expect((await h.call("memory_save", { title: "S", content: "c", type: "fact", scope: "shared", globalIntent: "g", groupIntent: "also" })).data.code).toBe("INVALID_INPUT");
+    const saved = (await h.call("memory_save", { ...save, groupIntent: "Applies to every repo" })).data;
+    expect(saved).toMatchObject({ scope: "ecosystem", projectId: null, groupId: group.id, version: 1 });
+    expect(h.store.getInGroup(group.id, saved.id)?.content).toBe("Group wide rule");
+    const updated = (await h.call("memory_save", { ...save, content: "Revised rule", groupIntent: "Applies to every repo", expectedVersion: 1 })).data;
+    expect(updated).toMatchObject({ id: saved.id, version: 2 });
+    const loose = h.store.createProject("Loose");
+    expect(h.store.groupOfProject(loose.projectId)).toBeNull();
+  } finally { await h.close(); }
+});
+
+test("a project outside any group cannot save, search or read the ecosystem scope", async () => {
+  const h = await sdkHarness(registerMemoryTools);
+  try {
+    await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" });
+    const intent = { groupIntent: "Applies to every repo" };
+    expect((await h.call("memory_save", { title: "R", content: "c", type: "fact", scope: "ecosystem", ...intent })).data.code).toBe("GROUP_REQUIRED");
+    expect((await h.call("memory_search", { query: "anything", scope: "ecosystem" })).data.code).toBe("GROUP_REQUIRED");
+    expect((await h.call("memory_get", { id: "x", scope: "ecosystem" })).data.code).toBe("GROUP_REQUIRED");
+    expect((await h.call("memory_history", { id: "x", scope: "ecosystem" })).data.code).toBe("GROUP_REQUIRED");
+  } finally { await h.close(); }
+});
+
+test("ecosystem memories are searched, read and listed through the group of the current project", async () => {
+  const h = await sdkHarness(registerMemoryTools);
+  try {
+    const { group } = await grouped(h);
+    const intent = { groupIntent: "Applies to every repo" };
+    const saved = (await h.call("memory_save", { title: "Deploy", content: "grupo despliegue", type: "procedure", scope: "ecosystem", topicKey: "deploy", ...intent })).data;
+    h.store.save({ scope: "shared", projectId: null, title: "Deploy", content: "compartida despliegue", type: "procedure", topicKey: "deploy" });
+    const eco = (await h.call("memory_search", { query: "despliegue", scope: "ecosystem" })).data;
+    expect(eco).toMatchObject({ format: 2, results: [{ memory: { id: saved.id, scope: "ecosystem", groupId: group.id } }] });
+    expect((await h.call("memory_search", { query: "despliegue" })).data.results.map((r: any) => r.memory.scope)).toEqual(["ecosystem"]);
+    expect((await h.call("memory_get", { id: saved.id, scope: "ecosystem" })).data.memory).toMatchObject({ id: saved.id, groupId: group.id });
+    expect((await h.call("memory_get", { id: saved.id })).data.code).toBe("NOT_FOUND");
+    expect((await h.call("memory_history", { id: saved.id, scope: "ecosystem" })).data.map((x: any) => x.version)).toEqual([1]);
+    expect((await h.call("memory_current_project")).data).toMatchObject({ source: "file", group: { id: group.id, name: "tienda" } });
+  } finally { await h.close(); }
+});

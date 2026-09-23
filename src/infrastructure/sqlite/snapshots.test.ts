@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { applySnapshot, checkpoint, exportSnapshot } from "./snapshots";
 import { createProject } from "./projects";
-import { enableProjectBindings, enableSearchReinforcement, enableSessionLifecycle, enableSynchronization } from "./schema";
+import { bindProjectToGroup, createGroup } from "./ecosystem-groups";
+import { enableEcosystem, enableProjectBindings, enableSearchReinforcement, enableSessionLifecycle, enableSynchronization } from "./schema";
 import { save, saveWithSession, startSession } from "./writes";
 import { withDatabase } from "../__test-support__/fixtures";
 
@@ -124,3 +125,22 @@ test("format 3 apply is enrolled-only, transactional, and idempotent", () => {
     expect(checkpoint(target,"remote")).toEqual(next);
   });
 });
+
+test("synchronization keeps working below and at the ecosystem level, and stops explicitly once ecosystem memories exist", () => withDatabase(db => {
+  enableSynchronization(db); enableProjectBindings(db);
+  const project = createProject(db, "Frontend");
+  save(db, { scope: "project", projectId: project.projectId, title: "Nota", content: "local", type: "fact" });
+  const before = exportSnapshot(db);
+  enableEcosystem(db);
+  const group = createGroup(db, "tienda");
+  bindProjectToGroup(db, project.projectId, group.id, "command");
+  expect(exportSnapshot(db)).toEqual(before);
+  const shared = save(db, { scope: "shared", projectId: null, title: "Global", content: "todos", type: "fact" });
+  expect(exportSnapshot(db).memories.map(bundle => bundle.memory.id)).toContain(shared.id);
+  save(db, { scope: "ecosystem", projectId: null, groupId: group.id, title: "Grupo", content: "regla", type: "decision" });
+  expect(() => exportSnapshot(db)).toThrow(expect.objectContaining({ code: "SYNC_ECOSYSTEM_UNSUPPORTED" }));
+  const empty = { format: 1 as const, projects: [], memories: [] };
+  expect(() => applySnapshot(db, empty, empty, "remote")).toThrow(expect.objectContaining({ code: "SYNC_ECOSYSTEM_UNSUPPORTED" }));
+  // Nothing was written by the refused attempt.
+  expect(db.query("SELECT count(*) AS n FROM sync_checkpoints").get()).toEqual({ n: 0 });
+}));

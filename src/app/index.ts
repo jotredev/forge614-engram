@@ -1,8 +1,9 @@
 export { MemoryStore } from "./memory-store";
 export { MemoryWorkspace } from "./workspace";
+export type { GroupBinding, GroupRename, GroupUnbinding, IdentityFilesResult, MemoryMove } from "./workspace";
 export { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 export { defaultDatabasePath, userStorageDirectory } from "../infrastructure/filesystem/paths";
-export { resolveProjectContext, bindProjectContext, saveProjectMemory, saveProjectMemoryWithSession, startProjectSession, assertGitProjectDirectory } from "./project-context";
+export { resolveProjectContext, bindProjectContext, saveProjectMemory, saveProjectMemoryWithSession, startProjectSession, startProjectSessionWithNotices, assertGitProjectDirectory } from "./project-context";
 export type { ProjectContext } from "./project-context";
 export { synchronize, syncWorkspace } from "./synchronization";
 export { runSetup } from "./setup";
@@ -13,5 +14,5 @@ export { uninstallEngram } from "./uninstall";
 export type { UninstallDependencies, UninstallInput, UninstallResult } from "./uninstall";
 export { updateEngram } from "./update";
 export type { EngramUpdateResult } from "./update";
-export { readStartupContext } from "./startup-context";
-export type { StartupContextResult, StartupProjectContext } from "./startup-context";
+export { readProjectContext, readStartupContext } from "./startup-context";
+export type { ProjectContextResult, StartupContextResult, StartupEcosystemContext, StartupProjectContext } from "./startup-context";

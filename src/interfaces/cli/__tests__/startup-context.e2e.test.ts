@@ -125,7 +125,7 @@ test("startup-context reports an unbound directory without an error and without 
   expect(first.code).toBe(0); expect(second.code).toBe(0);
   expect(first.stdout).toBe(second.stdout);
   const body = JSON.parse(first.stdout);
-  expect(body.project).toEqual({ status: "unbound", projectId: null, context: null });
+  expect(body.project).toEqual({ status: "unbound", projectId: null, context: null, source: "unbound" });
   expect(body.shared.recent.map((row: { title: string }) => row.title)).toContain("Shared");
   expect(JSON.parse((await runCli(root, userDirectory, "project-list")).stdout)).toEqual([]);
 }, 40000);
@@ -163,7 +163,7 @@ test("startup-context distinguishes an unbound Git directory from a bound Git di
   const bound = (await runCli(root, userDirectory, "startup-context", "--directory", boundDirectory, "--json"));
 
   expect(unbound.code).toBe(0);
-  expect(JSON.parse(unbound.stdout).project).toEqual({ status: "unbound", projectId: null, context: null });
+  expect(JSON.parse(unbound.stdout).project).toEqual({ status: "unbound", projectId: null, context: null, source: "unbound" });
   expect(bound.code).toBe(0);
   expect(JSON.parse(bound.stdout).project).toMatchObject({ status: "bound", projectId });
   expect(JSON.parse(bound.stdout).project.context.recent.map((row: { title: string }) => row.title).sort()).toEqual(["Project", "Shared"]);

@@ -1,9 +1,11 @@
-import { resolveProjectContext, startProjectSession } from "../../app";
+import { readProjectContext, resolveProjectContext, startProjectSession } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { toolSchemas } from "./schemas";
 import type { ToolContext } from "./context";
+import { ecosystemTarget } from "./memory-tools";
 
-export function registerSessionTools({register,safely,memoryStore,projectDirectory}:ToolContext):void {
+export function registerSessionTools(tools:ToolContext):void {
+  const {register,safely,memoryStore,projectDirectory}=tools;
   register("memory_session_start", {
     description:"Start or replay an explicit conversation session for the atomically resolved project directory.",
     inputSchema:toolSchemas.memory_session_start,
@@ -21,7 +23,13 @@ export function registerSessionTools({register,safely,memoryStore,projectDirecto
   register("memory_session_summary", {
     description:"Save a structured durable session summary before closing the explicit session.",
     inputSchema:toolSchemas.memory_session_summary,
-  }, safely(async ({directory,sessionId,summary,requestKey,expectedVersion}) => {
+  }, safely(async ({directory,sessionId,summary,requestKey,expectedVersion,scope,groupIntent}) => {
+    if(scope==="ecosystem") {
+      if(!groupIntent) throw new MemoryError("GROUP_INTENT_REQUIRED","scope ecosystem requiere explicar por qué aplica a todo el ecosistema (groupIntent).");
+      const target=await ecosystemTarget(tools,directory);
+      return memoryStore().saveSessionSummaryInGroup(target.projectId,sessionId,target.group.id,summary,{requestKey,...(expectedVersion?{expectedVersion}:{})});
+    }
+    if(groupIntent!==undefined) throw new MemoryError("INVALID_INPUT","groupIntent solo se acepta con scope ecosystem.");
     const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
     if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
     return memoryStore().saveSessionSummary(context.projectId,sessionId,summary,{requestKey,...(expectedVersion?{expectedVersion}:{})});
@@ -37,15 +45,14 @@ export function registerSessionTools({register,safely,memoryStore,projectDirecto
   }));
 
   register("memory_context", {
-    description:"Return bounded project or shared orientation without a query.",
+    description:"Return bounded project, ecosystem or shared orientation without a query. A project in a group also gets its ecosystem block.",
     inputSchema:toolSchemas.memory_context,
   }, safely(async ({directory,scope,compact,maxBytes}) => {
-    let projectId:string|null=null;
-    if(scope!=="shared") {
-      const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
-      if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
-      projectId=context.projectId;
-    }
-    return memoryStore().context(projectId,{...(compact===undefined?{}:{compact}),...(maxBytes===undefined?{}:{maxBytes})});
+    const options={...(compact===undefined?{}:{compact}),...(maxBytes===undefined?{}:{maxBytes})};
+    if(scope==="shared") return memoryStore().context(null,options);
+    if(scope==="ecosystem") return memoryStore().contextForGroup((await ecosystemTarget(tools,directory)).group.id,options);
+    const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
+    if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
+    return readProjectContext(memoryStore(),context.projectId,options);
   }));
 }

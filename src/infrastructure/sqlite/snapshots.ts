@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { ConfirmationRequest, Memory } from "../../modules/memory";
+import { ecosystemEnabled } from "./ecosystem-groups";
+import { schemaState } from "./schema";
 import type { Session,SessionEntry,SessionSummary } from "../../modules/sessions";
 import { assertExtension,confirmationRequestIdentity,emptySnapshot,requestOwnerKey,sessionEntryIdentity,snapshotHash,syncError,validateSnapshot,type SyncSnapshot } from "../../modules/synchronization";
 
@@ -7,6 +9,9 @@ function compare(left:string,right:string):number { return left<right?-1:left>ri
 
 export function exportSnapshot(db: Database): SyncSnapshot {
   return db.transaction(() => {
+    // Replication formats 1-3 cannot describe a group scope. Refuse visibly instead of dropping or
+    // mangling ecosystem memories; local data is untouched.
+    if (ecosystemEnabled(db) && db.query("SELECT 1 FROM memories WHERE scope='ecosystem' LIMIT 1").get()) syncError("SYNC_ECOSYSTEM_UNSUPPORTED");
     const projects = db.query("SELECT * FROM projects ORDER BY projectId").all() as SyncSnapshot["projects"];
     const rows = db.query(`SELECT id,projectId,scope,topic_key AS topicKey,type,title,content,pinned,version,state,
       created_at AS createdAt,updated_at AS updatedAt FROM memories ORDER BY id`).all() as (Omit<Memory,"pinned"> & {pinned:number})[];
@@ -16,7 +21,7 @@ export function exportSnapshot(db: Database): SyncSnapshot {
       requests:db.query("SELECT request_key,payload_hash,version FROM requests WHERE memory_id=? ORDER BY request_key").all(row.id),
       events:db.query("SELECT action,version,created_at FROM events WHERE memory_id=? ORDER BY id").all(row.id),
     }));
-    const version=(db.query("PRAGMA user_version").get() as {user_version:number}).user_version;
+    const version=schemaState(db).base;
     const sessions = version>=6 ? {
       sessions:db.query("SELECT sessionId,projectId,kind,startedAt,endedAt FROM sessions ORDER BY sessionId").all() as Session[],
       sessionEntries:db.query("SELECT sessionId,memoryId,version,recordedAt FROM session_entries ORDER BY memoryId,version").all() as SessionEntry[],

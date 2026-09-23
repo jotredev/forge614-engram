@@ -1,10 +1,12 @@
 export const memoryTypes = ["fact", "decision", "procedure", "warning", "preference"] as const;
 export type MemoryType = (typeof memoryTypes)[number];
-export type MemoryScope = "project" | "shared";
+export type MemoryScope = "project" | "shared" | "ecosystem";
 export type SearchScope = MemoryScope | "all";
 export type SaveInput = { title:string;content:string;type:MemoryType;topicKey?:string;pinned?:boolean;expectedVersion?:number;requestKey?:string }
-  & ({scope?:"project";projectId:string}|{scope:"shared";projectId:null});
-export interface MemoryVersion { id:string;projectId:string|null;scope:MemoryScope;topicKey:string|null;title:string;content:string;type:MemoryType;pinned:boolean;version:number;createdAt:string;updatedAt:string }
+  & ({scope?:"project";projectId:string}|{scope:"shared";projectId:null}|{scope:"ecosystem";projectId:null;groupId:string});
+/** A project id, null for shared, or a group for the ecosystem scope. */
+export type MemoryOwner = string | null | { readonly groupId: string };
+export interface MemoryVersion { id:string;projectId:string|null;scope:MemoryScope;topicKey:string|null;title:string;content:string;type:MemoryType;pinned:boolean;version:number;createdAt:string;updatedAt:string;groupId?:string }
 export interface Memory extends MemoryVersion { state:"active"|"archived" }
 export interface ReinforcementExplanation {
   revisionCount:number;duplicateCount:number;lastSeenAt:string;ageDays:number;

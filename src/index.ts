@@ -3,6 +3,7 @@ export type { MemoryType,MemoryScope,SearchScope,SaveInput,MemoryVersion,Memory,
 export { memoryProtocol } from "./modules/memory-protocol";
 export type { MemoryProtocol } from "./modules/memory-protocol";
 export type { Project } from "./modules/projects";
+export type { Group,GroupSummary,GroupMembership,IdentityEvent,MembershipSource,ProjectGroup } from "./modules/ecosystem";
 export { MemoryError } from "./shared/errors";
 export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields } from "./modules/sessions";
 export type { MemoryPreview,PreviewResult,VersionRead,TimelineInput,TimelineRow,TimelineResult,ContextInput,ContextRow,ContextResult } from "./modules/search";
@@ -12,5 +13,6 @@ export { saveProjectMemoryWithSession, startProjectSession } from "./app/project
 export { WorkspaceConfig } from "./infrastructure/filesystem/workspace-config";
 export type { WorkspaceSettings } from "./modules/workspace";
 export { MemoryWorkspace } from "./app/workspace";
+export type { GroupBinding, GroupRename, GroupUnbinding, IdentityFilesResult, MemoryMove } from "./app/workspace";
 export { inspectMemoryInitialization, previewMemoryInitialization, applyMemoryInitialization } from "./app/initialization";
 export type { MemoryInitializationStatus, MemoryInitializationRequest, MemoryInitializationPreview, MemoryInitializationResult } from "./app/initialization";

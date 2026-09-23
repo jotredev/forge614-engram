@@ -135,7 +135,7 @@ test("memory-protocol is public, JSON-only, and creates no product files", async
   expect(JSON.parse(v2.stdout)).toMatchObject({ id: "forge614-engram-memory", version: 2 });
   expect(JSON.parse(v2.stdout).startupContext.command).toContain("startup-context");
 
-  const invalidVersion = (await run(dir, "memory-protocol", "--json", "--protocol-version", "3"));
+  const invalidVersion = (await run(dir, "memory-protocol", "--json", "--protocol-version", "4"));
   expect(invalidVersion.code).toBe(1);
   expect(JSON.parse(invalidVersion.stderr).code).toBe("INVALID_INPUT");
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);

@@ -7,7 +7,7 @@ const PURE_BUILTINS = new Set(["node:crypto", "node:util"]);
 const MODULE_EDGES: Record<string, readonly string[]> = {
   memory: ["projects"], projects: [], sessions: ["memory", "projects"],
   search: ["memory", "sessions", "projects"], synchronization: ["memory", "sessions", "projects"],
-  workspace: [], mcp: [],
+  workspace: [], mcp: [], ecosystem: [],
 };
 
 function component(file: string): Component {

@@ -3,6 +3,7 @@ import { type Memory } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
 import { sessionIdentity,type Session } from "../../modules/sessions";
 import { MemoryError } from "../../shared/errors";
+import { schemaFeatures } from "./schema";
 
 export function sessionRow(db: Database, sessionId: string): Session | null {
   return db.query("SELECT sessionId,projectId,kind,startedAt,endedAt FROM sessions WHERE sessionId=?")
@@ -44,8 +45,7 @@ export function endRuntimeSession(db: Database, projectId: string, sessionId: st
 }
 
 export function sessionsEnabled(db: Database): boolean {
-    const version=(db.query("PRAGMA user_version").get() as {user_version:number}).user_version;
-    return version===6 || version===7;
+    return (schemaFeatures(db)?.base ?? 0)>=6;
   }
 
 export function requireSessions(db: Database): void {
@@ -62,7 +62,7 @@ export function validateSelectedSession(db: Database, sessionId: string, scope: 
     const row = sessionRow(db,sessionId);
     if (!row) throw new MemoryError("SESSION_NOT_FOUND","Sesión no encontrada.");
     const expectedOwner = scope === "project" ? projectId : optionProject;
-    if (scope === "shared" && optionProject === null) throw new MemoryError("INVALID_INPUT","projectId es obligatorio para asociar shared.");
+    if (scope !== "project" && optionProject === null) throw new MemoryError("INVALID_INPUT","projectId es obligatorio para asociar shared.");
     if (row.projectId !== expectedOwner) throw new MemoryError("SESSION_NOT_FOUND","Sesión no encontrada para este proyecto.");
     if (row.kind !== "runtime") throw new MemoryError("SESSION_KIND","Una sesión manual no admite asociación explícita.");
     if (requireOpen && row.endedAt !== null) throw new MemoryError("SESSION_CLOSED","La sesión está cerrada.");

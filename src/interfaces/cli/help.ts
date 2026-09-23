@@ -4,14 +4,20 @@ Uso: forge614-engram <comando> [opciones]
 
 init [--json] [--postgres-url <URL>]
                 Inicializa Engram; --json no pregunta. --postgres-url solo se acepta con --json.
+                Con --json también acepta --directory <carpeta>: vincula esa carpeta como proyecto y escribe
+                .forge614/project.json en silencio (identidad portátil; repetirlo no cambia nada).
 update [--json] Descarga, verifica y activa la última versión estable de Engram; --json devuelve el resultado estructurado.
 memory-protocol --json [--protocol-version 1|2]
                 Publica las reglas versionadas que Engines instala en asistentes compatibles. Defecto 1.
+                La versión 3 anuncia el ámbito ecosystem y exige groupIntent al guardar en él.
 startup-context --directory <carpeta> --json
                 Interfaz pública, no interactiva y de solo lectura para precargar contexto al iniciar
                 una sesión de agente: shared y, si <carpeta> ya está vinculada, el proyecto correspondiente.
                 Acepta cualquier carpeta existente y legible; sin vínculo devuelve unbound, no es un error
                 y nunca crea proyectos, vínculos, recuerdos ni bases.
+                Devuelve además el bloque ecosystem (si el proyecto pertenece a un grupo) y project.source
+                (file, path o unbound). Mantiene al día la identidad del repositorio: registra por id un clon
+                que trae su .forge614/project.json y escribe ese archivo a un proyecto vinculado solo por ruta.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
@@ -24,8 +30,16 @@ project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
 project-bind    --directory <carpeta> --project-id <UUID>
+group-create    --name <nombre>   (minúsculas, dígitos y guiones: mi-tienda)
+group-list      Lista los grupos y los proyectos de cada uno.
+group-bind      --project-id <UUID> --group <nombre|id>   (un proyecto pertenece como máximo a un grupo)
+group-unbind    --project-id <UUID>
+group-rename    --group <nombre|id> --name <nombre>
+memory-move     --id <recuerdo> --to-scope ecosystem --group <nombre|id> [--project-id <UUID> | --scope shared]
+                Mueve un recuerdo a un grupo conservando su historial; queda registrado y nunca copia ni borra en silencio.
 
 Recuerdos: --project-id <UUID> (scope project por defecto) O --scope shared.
+Grupos: --scope ecosystem --group <nombre|id> en save, get, history, archive, restore y context; search acepta también --project-id.
 save     --title <título> --content <texto> [--type fact|decision|procedure|warning|preference]
          [--topic <tema>] [--expected-version <versión>] [--request-key <clave>]
          [--pinned true|false] [--session-id <id>] [--session-project-id <UUID>]
@@ -49,6 +63,7 @@ timeline --project-id <UUID> --session-id <id> --id <recuerdo> --version <n>
          [--before <0..20>] [--after <0..20>] (ambos por defecto 5)
 context [--project-id <UUID> | --scope shared] [--compact] [--max-bytes <1024..65536>]
         compact=false y max-bytes=16384 por defecto.
+context --scope ecosystem --group <nombre|id> [--compact] [--max-bytes <1024..65536>]
 
 help      Muestra esta ayuda sin crear archivos.
 --version Muestra la versión instalada.
@@ -68,10 +83,13 @@ init ofrece el refuerzo explícitamente; registrar repeticiones mejora el orden,
 La habilitación local no promueve la réplica: ejecuta sync --upgrade-format por separado.
 Las consultas son literales; todas las palabras deben coincidir.
 En búsqueda all, un tema activo del proyecto sustituye al mismo tema shared.
+Si el proyecto pertenece a un grupo, all incluye su ecosystem y la precedencia es proyecto, grupo, shared.
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
 Actualizar un tema requiere --expected-version. Archivar conserva el historial.
 init sin --json muestra texto y requiere terminal; cancelar devuelve código 130.
 Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
+Los comandos group-* y memory-move llevan schemaVersion en su salida y en sus errores ({schemaVersion, code, error}).
+Crear el primer grupo actualiza la base con un respaldo automático previo; Engram 1.5.3 no abre una base ya actualizada.
 MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
 uninstall requiere REMOVE FORGE614-ENGRAM; si Atlas existe requiere REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS.
 La vinculación de directorios de proyecto requiere una identidad de proyecto apta para vínculo; startup-context no.

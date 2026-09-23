@@ -186,11 +186,13 @@ test("same-name existing projects require an explicit binding instead of identit
 });
 
 
-test.each([false,true])("renaming a %s Git directory requires explicit binding and preserves memory identity", (withGit) => {
+test.each([false,true])("renaming a %s Git directory without an identity file requires explicit binding and preserves memory identity", (withGit) => {
   const value=store();value.enableProjectBindings();
   const root=temporary(),old=join(root,"old-name"),moved=join(root,"new-name");mkdirSync(old);
   if(withGit)git(old,"init","--quiet");
   const saved=saveProjectMemory(value,old,{title:"Before",content:"Keep identity",type:"fact"});
+  // A folder that predates the portable identity file (or lost it) still needs an explicit binding.
+  rmSync(join(old,".forge614"),{recursive:true});
   renameSync(old,moved);
   expect(resolveProjectContext(value,moved,false).projectId).toBeNull();
   expect(()=>saveProjectMemory(value,moved,{title:"After",content:"Do not split",type:"fact"})).toThrow("vinculación explícita");
@@ -203,6 +205,18 @@ test.each([false,true])("renaming a %s Git directory requires explicit binding a
   expect(value.get(saved.projectId,saved.id)?.content).toBe("Keep identity");
   expect(saveProjectMemory(value,unrelated,{title:"New",content:"New project",type:"fact"}).projectId).not.toBe(saved.projectId);
   expect(JSON.stringify(value.syncSnapshot())).not.toContain(root);
+});
+
+
+test.each([false,true])("renaming a %s Git directory that carries its identity file keeps the project with no action", (withGit) => {
+  const value=store();value.enableProjectBindings();
+  const root=temporary(),old=join(root,"old-name"),moved=join(root,"new-name");mkdirSync(old);
+  if(withGit)git(old,"init","--quiet");
+  const saved=saveProjectMemory(value,old,{title:"Before",content:"Keep identity",type:"fact"});
+  renameSync(old,moved);
+  expect(resolveProjectContext(value,moved,false)).toMatchObject({projectId:saved.projectId,source:"file"});
+  expect(saveProjectMemory(value,moved,{title:"After",content:"Same identity",type:"fact"}).projectId).toBe(saved.projectId);
+  expect(value.listProjects()).toHaveLength(1);
 });
 
 

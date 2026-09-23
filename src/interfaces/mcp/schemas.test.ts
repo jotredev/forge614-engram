@@ -25,3 +25,25 @@ test("schemas reject unknown fields, nul bytes and incomplete structured summari
   expect(toolSchemas.memory_session_summary.safeParse({sessionId:"chat",requestKey:"key",summary:{goal:"Keep"}}).success).toBe(false);
   expect(toolSchemas.memory_session_summary.safeParse({sessionId:"chat",requestKey:"key",summary:{...summary,secret:"hidden"}}).success).toBe(false);
 });
+
+test("the ecosystem scope is accepted by the memory tools with strict shapes", () => {
+  const save = { title: "Rule", content: "Body", type: "decision" as const };
+  expect(toolSchemas.memory_save.parse({ ...save, scope: "ecosystem", groupIntent: "  Applies to every repo of the group  " }))
+    .toEqual({ ...save, scope: "ecosystem", groupIntent: "Applies to every repo of the group" });
+  expect(toolSchemas.memory_save.safeParse({ ...save, scope: "ecosystem", groupIntent: "" }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, scope: "ecosystem", groupIntent: "x".repeat(1001) }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, scope: "ecosystem", groupIntent: "a\0b" }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, scope: "galaxy" }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, scope: "ecosystem", groupId: "x" }).success).toBe(false);
+  for (const scope of ["all", "project", "shared", "ecosystem"]) expect(toolSchemas.memory_search.safeParse({ query: "x", scope }).success).toBe(true);
+  for (const tool of ["memory_get", "memory_history"] as const) {
+    for (const scope of ["project", "shared", "ecosystem"]) expect(toolSchemas[tool].safeParse({ id: "m", scope }).success).toBe(true);
+    expect(toolSchemas[tool].safeParse({ id: "m", scope: "all" }).success).toBe(false);
+  }
+  for (const scope of ["shared", "ecosystem"]) expect(toolSchemas.memory_context.safeParse({ scope }).success).toBe(true);
+  expect(toolSchemas.memory_context.safeParse({ scope: "project" }).success).toBe(false);
+  const summary = { goal: "Keep", instructions: "", discoveries: "", accomplishments: "", nextSteps: "", files: [] };
+  expect(toolSchemas.memory_session_summary.safeParse({ sessionId: "chat", requestKey: "k", summary, scope: "ecosystem", groupIntent: "Group wide" }).success).toBe(true);
+  expect(toolSchemas.memory_session_summary.safeParse({ sessionId: "chat", requestKey: "k", summary, scope: "shared" }).success).toBe(false);
+  expect(toolSchemas.memory_session_summary.safeParse({ sessionId: "chat", requestKey: "k", summary, groupIntent: "x".repeat(1001) }).success).toBe(false);
+});

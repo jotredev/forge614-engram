@@ -1,8 +1,10 @@
 import { MemoryError } from "../../shared/errors";
 
-const MEMORY_OPTIONS = ["project-id", "scope"];
+const MEMORY_OPTIONS = ["project-id", "scope", "group"];
 const OPTIONS: Record<string, readonly string[]> = {
-  init: ["json", "postgres-url"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
+  init: ["json", "postgres-url", "directory"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
+  "group-create": ["name"], "group-list": [], "group-bind": ["project-id","group"], "group-unbind": ["project-id"], "group-rename": ["group","name"],
+  "memory-move": ["id","project-id","scope","to-scope","group"],
   "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id"],
   save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned","session-id","session-project-id"],
   search: [...MEMORY_OPTIONS,"query","limit","preview"],
@@ -11,7 +13,7 @@ const OPTIONS: Record<string, readonly string[]> = {
   "session-start":["directory","session-id"], "session-end":["project-id","session-id"],
   "session-summary":["project-id","session-id","summary-json","request-key","expected-version"],
   timeline:["project-id","session-id","id","version","before","after"],
-  context:["project-id","scope","compact","max-bytes"],
+  context:["project-id","scope","group","compact","max-bytes"],
   "startup-context":["directory","json"],
 };
 const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format","json"]);
@@ -46,8 +48,14 @@ export function parseArguments(args:string[]) {
   if (command === "memory-protocol" && !values.has("json")) {
     invalid("memory-protocol requiere --json.");
   }
-  if (command === "memory-protocol" && values.has("protocol-version") && !["1","2"].includes(values.get("protocol-version")!)) {
-    invalid("protocol-version debe ser 1 o 2.");
+  if (command === "memory-protocol" && values.has("protocol-version") && !["1","2","3"].includes(values.get("protocol-version")!)) {
+    invalid("protocol-version debe ser 1, 2 o 3.");
+  }
+  if (command === "init" && values.has("directory") && !values.has("json")) {
+    invalid("--directory requiere init --json.");
+  }
+  if (command === "init" && values.has("directory") && values.has("postgres-url")) {
+    invalid("--directory no se combina con --postgres-url.");
   }
   if (command === "startup-context" && !values.has("json")) {
     invalid("startup-context requiere --json.");

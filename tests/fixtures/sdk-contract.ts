@@ -2,13 +2,13 @@ import type {
   ContextInput, ContextResult, Memory, MemoryScope, MemoryType, MemoryVersion, PreviewResult,
   Project, SaveInput, SearchResult, SearchScope, Session, SessionEntry, SessionSaveOptions,
   SessionSaveResult, SessionSummary, SummaryFields, TimelineInput, TimelineResult, VersionRead,
-  WorkspaceSettings, MemoryStore,
+  WorkspaceSettings, MemoryStore, Group, GroupSummary, IdentityEvent, MembershipSource, ProjectGroup,
 } from "../../src/index";
 import type { SyncSnapshot } from "../../src/modules/synchronization";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
-type _MemoryScope = Assert<Equal<MemoryScope, "project" | "shared">>;
+type _MemoryScope = Assert<Equal<MemoryScope, "project" | "shared" | "ecosystem">>;
 type _SearchScope = Assert<Equal<SearchScope, MemoryScope | "all">>;
 type _MemoryType = Assert<Equal<MemoryType, "fact" | "decision" | "procedure" | "warning" | "preference">>;
 type _WorkspaceSettings = Assert<Equal<WorkspaceSettings, {storage:"sqlite";postgresUrl?:string}>>;
@@ -29,6 +29,18 @@ interface ExpectedStore {
   context(projectId:string|null,input?:ContextInput):ContextResult;archive(projectId:string|null,id:string):Memory;restore(projectId:string|null,id:string):Memory;
   close():void;enableSync():void;enableProjectBindings():void;syncSnapshot():SyncSnapshot;syncCheckpoint(replica:string):SyncSnapshot;
   applySync(expected:SyncSnapshot,next:SyncSnapshot,replica:string):void;
+  // Added in 1.6.0 (ecosystem scope). Purely additive: nothing above changed.
+  ecosystemEnabled():boolean;enableEcosystem():void;createGroup(name:string):Group;ensureGroup(id:string,name:string):{group:Group;created:boolean};
+  getGroup(id:string):Group|null;findGroups(name:string):Group[];resolveGroup(reference:string):Group;listGroups():GroupSummary[];renameGroup(id:string,name:string):Group;
+  bindProjectToGroup(projectId:string,groupId:string,source?:MembershipSource):{group:Group;changed:boolean};unbindProject(projectId:string):boolean;
+  groupOfProject(projectId:string):ProjectGroup|null;identityEvents(projectId?:string):IdentityEvent[];
+  getInGroup(groupId:string,id:string):Memory|null;getByTopicInGroup(groupId:string,topicKey:string):Memory|null;historyInGroup(groupId:string,id:string):MemoryVersion[];
+  getVersionInGroup(groupId:string,id:string,version?:number):VersionRead|null;searchInGroup(groupId:string,query:string,limit?:number):SearchResult[];
+  searchPreviewsInGroup(groupId:string,query:string,limit?:number):PreviewResult[];contextForGroup(groupId:string,input?:ContextInput):ContextResult;
+  archiveInGroup(groupId:string,id:string):Memory;restoreInGroup(groupId:string,id:string):Memory;
+  projectDirectories(projectId:string):string[];moveMemoryToGroup(from:string|null,id:string,groupId:string):{memory:Memory;from:{scope:"project"|"shared";projectId:string|null}};
+  saveSessionSummaryInGroup(projectId:string,sessionId:string,groupId:string,fields:SummaryFields,request:{requestKey:string;expectedVersion?:number}):SessionSaveResult;
+  registerProject(projectId:string,name:string):{project:Project;created:boolean};rebindProjectDirectory(directory:string,projectId:string):{previousProjectId:string|null};
 }
 type ActualStore = InstanceType<typeof MemoryStore>;
 type _StoreMethodNames = Assert<Equal<keyof ActualStore, keyof ExpectedStore>>;

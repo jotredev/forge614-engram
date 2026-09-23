@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Confirmation, ConfirmationRequest, Memory, MemoryVersion } from "../memory";
+import type { Confirmation, ConfirmationRequest, Memory, MemoryScope, MemoryVersion } from "../memory";
 import type { Session } from "../sessions";
 
 interface ConfirmationBundle {
@@ -31,7 +31,7 @@ function canonicalDate(value:unknown, invalid:()=>never):asserts value is string
   if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value).toISOString()!==value) invalid();
 }
 
-export function requestOwnerKey(scope:"project"|"shared", projectId:string|null, requestKey:string):string {
+export function requestOwnerKey(scope:MemoryScope, projectId:string|null, requestKey:string):string {
   return JSON.stringify([scope,projectId,requestKey]);
 }
 

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { registerMemoryTools } from "./memory-tools";
 import { registerSessionTools } from "./sessions-tools";
 import { sdkHarness } from "./__tests__/sdk-harness";
 
@@ -36,4 +37,61 @@ test("timeline uses the exact owner/version and context supports shared scope wi
     expect(timeline.data).toMatchObject({sessionId:"chat",focus:{memory:{id:memory.id,version:1}},before:[],after:[]});
     expect((await h.call("memory_timeline",{sessionId:"chat",id:memory.id,version:2})).result.isError).toBe(true);
   } finally {await h.close();}
+});
+
+const both = (context: Parameters<typeof registerMemoryTools>[0]) => { registerMemoryTools(context); registerSessionTools(context); };
+async function member(h: Awaited<ReturnType<typeof sdkHarness>>) {
+  const seed = (await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" })).data;
+  h.store.enableEcosystem();
+  const group = h.store.createGroup("tienda");
+  h.store.bindProjectToGroup(seed.projectId, group.id);
+  return { projectId: seed.projectId as string, group };
+}
+
+test("memory_context on the ecosystem scope needs a group and returns only its block", async () => {
+  const h = await sdkHarness(both);
+  try {
+    await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" });
+    expect((await h.call("memory_context", { scope: "ecosystem" })).data.code).toBe("GROUP_REQUIRED");
+    const { group } = await member(h);
+    h.store.save({ scope: "ecosystem", projectId: null, groupId: group.id, title: "Grupo", content: "regla", type: "decision", pinned: true });
+    const block = (await h.call("memory_context", { scope: "ecosystem" })).data;
+    expect(block).toMatchObject({ format: 1, pinned: [{ title: "Grupo", scope: "ecosystem", groupId: group.id }] });
+    expect(block).not.toHaveProperty("ecosystem");
+  } finally { await h.close(); }
+});
+
+test("memory_context for a project in a group adds the ecosystem block; for anyone else the result is unchanged", async () => {
+  const h = await sdkHarness(both);
+  try {
+    await h.call("memory_save", { title: "Seed", content: "solo proyecto", type: "fact" });
+    const before = (await h.call("memory_context")).data;
+    expect(Object.keys(before)).not.toContain("ecosystem");
+    const { group } = await member(h);
+    h.store.save({ scope: "ecosystem", projectId: null, groupId: group.id, title: "Grupo", content: "regla", type: "decision" });
+    const after = (await h.call("memory_context")).data;
+    expect(after.ecosystem).toMatchObject({ status: "member", group: { id: group.id, name: "tienda" } });
+    expect(after.ecosystem.context.recent.map((row: any) => row.title)).toEqual(["Grupo"]);
+    expect(after.recent.map((row: any) => row.scope)).not.toContain("ecosystem");
+    expect((await h.call("memory_context", { scope: "shared" })).data).not.toHaveProperty("ecosystem");
+    expect((await h.call("memory_current_project")).data).toMatchObject({ source: "file", group: { id: group.id, name: "tienda" } });
+  } finally { await h.close(); }
+});
+
+test("a session summary can be written to the ecosystem scope, with a groupIntent and only for a member", async () => {
+  const h = await sdkHarness(both);
+  try {
+    const summary = { goal: "Share decision", instructions: "", discoveries: "", accomplishments: "Done", nextSteps: "", files: [] };
+    await h.call("memory_session_start", { sessionId: "chat" });
+    expect((await h.call("memory_session_summary", { sessionId: "chat", summary, requestKey: "s1", scope: "ecosystem", groupIntent: "For the whole group" })).data.code).toBe("GROUP_REQUIRED");
+    const { projectId, group } = await member(h);
+    expect((await h.call("memory_session_summary", { sessionId: "chat", summary, requestKey: "s1", scope: "ecosystem" })).data.code).toBe("GROUP_INTENT_REQUIRED");
+    expect((await h.call("memory_session_summary", { sessionId: "chat", summary, requestKey: "s1", groupIntent: "wrong scope" })).data.code).toBe("INVALID_INPUT");
+    const saved = (await h.call("memory_session_summary", { sessionId: "chat", summary, requestKey: "s1", scope: "ecosystem", groupIntent: "For the whole group" })).data;
+    expect(saved.memory).toMatchObject({ scope: "ecosystem", groupId: group.id, projectId: null, topicKey: "session/chat/summary" });
+    expect(saved.sessionId).toBe("chat");
+    expect((await h.call("memory_session_summary", { sessionId: "chat", summary, requestKey: "s1", scope: "ecosystem", groupIntent: "For the whole group" })).data).toEqual(saved);
+    expect(h.store.getByTopicInGroup(group.id, "session/chat/summary")?.id).toBe(saved.memory.id);
+    expect(h.store.getSession(projectId, "chat")).not.toBeNull();
+  } finally { await h.close(); }
 });

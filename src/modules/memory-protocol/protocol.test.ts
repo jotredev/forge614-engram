@@ -36,3 +36,38 @@ test("version 2 keeps version 1's instructions and lifecycle unchanged while ann
   expect(v2.startupContext.description).toContain("memory_context");
   expect(v2.startupContext.description.toLowerCase()).not.toMatch(/password|token|credential|connection string/);
 });
+
+// Published protocol versions are immutable: these digests were taken from v1.5.3's own output.
+test("versions 1 and 2 are byte-identical to what v1.5.3 published", () => {
+  const digest = (version: 1 | 2) => new Bun.CryptoHasher("sha256").update(JSON.stringify(memoryProtocol(version), null, 2)).digest("hex");
+  expect(digest(1)).toBe("f3817767979b2e7df397c53a139d0b90cb6bf5afe7f6773b7d7513f8d58c821b");
+  expect(digest(2)).toBe("d531af56e00424aea2fccc5304a2dd3a8c7455ca3f118a360e22c59f38b7387e");
+  expect(Object.isFrozen(memoryProtocol(1))).toBe(true);
+  expect(Object.isFrozen(memoryProtocol(2))).toBe(true);
+});
+
+test("version 3 announces the ecosystem scope, requires groupIntent and updates the lifecycle", () => {
+  const v3 = memoryProtocol(3);
+  expect(v3).toMatchObject({ id: "forge614-engram-memory", version: 3 });
+  expect(v3.scopes.ecosystem).toContain("groupIntent");
+  expect(v3.scopes.shared).toBe(memoryProtocol(1).scopes.shared);
+  expect(v3.scopes.project).toBe(memoryProtocol(1).scopes.project);
+  expect(v3.instructions).toContain("scope ecosystem");
+  expect(v3.instructions).toContain("groupIntent");
+  expect(v3.instructions).toContain("globalIntent");
+  expect(v3.instructions).toMatch(/project takes precedence over ecosystem, and ecosystem over shared/);
+  expect(v3.lifecycle.start.join(" ")).toContain("ecosystem");
+  expect(v3.lifecycle.save.join(" ")).toContain("groupIntent");
+  expect(v3.startupContext.command).toBe(memoryProtocol(2).startupContext.command);
+  expect(v3.startupContext.description).toContain("ecosystem");
+  expect(v3.security).toEqual(memoryProtocol(1).security);
+  expect(Object.isFrozen(v3)).toBe(true);
+  expect(Object.isFrozen(v3.scopes)).toBe(true);
+  expect(JSON.stringify(v3).toLowerCase()).not.toMatch(/password":|secret|claude|openai|anthropic/);
+});
+
+test("the default and explicit selections never change: 1 stays the default", () => {
+  expect(memoryProtocol().version).toBe(1);
+  expect(memoryProtocol(2).version).toBe(2);
+  expect(memoryProtocol(3).version).toBe(3);
+});

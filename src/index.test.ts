@@ -21,13 +21,20 @@ const PUBLIC_STORE_METHODS = [
   "search", "searchPreviews", "sessionsEnabled", "startSession",
   "startSessionForProjectDirectory", "syncCheckpoint", "syncSnapshot", "timeline",
 ];
+// Added in 1.6.0 with the ecosystem scope. The list above only ever grows.
+const ECOSYSTEM_STORE_METHODS = [
+  "archiveInGroup", "bindProjectToGroup", "contextForGroup", "createGroup", "ecosystemEnabled", "enableEcosystem",
+  "ensureGroup", "findGroups", "getByTopicInGroup", "getGroup", "getInGroup", "getVersionInGroup", "groupOfProject",
+  "historyInGroup", "identityEvents", "listGroups", "renameGroup", "resolveGroup", "restoreInGroup",
+  "searchInGroup", "searchPreviewsInGroup", "unbindProject", "registerProject", "rebindProjectDirectory", "projectDirectories", "moveMemoryToGroup", "saveSessionSummaryInGroup",
+];
 
 describe("public SDK contract", () => {
   test("keeps literal runtime exports and public store methods", () => {
     expect(Object.keys(sdk).sort()).toEqual(RUNTIME_EXPORTS.sort());
     expect(Object.getOwnPropertyNames(sdk.MemoryStore.prototype)
       .filter(name => name !== "constructor").sort())
-      .toEqual(PUBLIC_STORE_METHODS.sort());
+      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS].sort());
   });
 
   test("exports the nonvisual initialization API needed by Forge614 Shell", () => {
