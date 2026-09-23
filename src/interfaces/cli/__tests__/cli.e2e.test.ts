@@ -263,11 +263,21 @@ async function parallel(dir: string, args: string[]) {
     return {code,stdout,stderr};
   }));
 }
+// Per forge614-ai review: a concurrent-race failure with only "Expected: 0, Received: 1"
+// gives no error envelope to diagnose. Print every non-zero/non-empty result's full
+// stdout+stderr before asserting, so a real CI failure captures the actual error code.
+function assertAllSucceeded(results: {code:number|null;stdout:string;stderr:string}[], label: string): void {
+  const bad = results.filter(result => result.code !== 0 || result.stderr !== "");
+  if (bad.length > 0) {
+    console.error(JSON.stringify({ diag: "concurrent-child-failed", label, results }));
+  }
+  for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
+}
 test("concurrent project and shared request replays create one memory per namespace", async () => {
   const dir = workspace(); const id = (await create(dir));
   for (const target of [["--project-id",id],["--scope","shared"]]) {
     const results = await parallel(dir,["save",...target,"--title","parallel","--content","One operation","--request-key","same-request"]);
-    for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
+    assertAllSucceeded(results, "save replay");
     expect(new Set(results.map(result => JSON.parse(result.stdout).id)).size).toBe(1);
   }
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","parallel")).stdout)).toHaveLength(2);
@@ -275,7 +285,7 @@ test("concurrent project and shared request replays create one memory per namesp
 
 test("concurrent initializers keep a single config and preserve all projects", async () => {
   const dir = workspace(); const results = await parallel(dir,["project-create","--name","parallel"]);
-  for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
+  assertAllSucceeded(results, "concurrent project-create");
   expect(new Set(results.map(result => JSON.parse(result.stdout).projectId)).size).toBe(4);
   expect(JSON.parse((await run(dir,"project-list")).stdout)).toHaveLength(4);
   expect(existsSync(join(dir,"user",".forge614","projects"))).toBe(false);
@@ -286,7 +296,7 @@ test("concurrent init of existing workspace leaves existing memories and configu
   expect((await run(dir,"save","--project-id",id,"--title","Keep","--content","SQLite")).code).toBe(0);
   const path = join(dir,"user",".forge614","engram",".env"); const before = readFileSync(path);
   const results = await parallel(dir,["init","--json"]);
-  for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
+  assertAllSucceeded(results, "concurrent init");
   expect(readFileSync(path)).toEqual(before);
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","SQLite")).stdout)).toHaveLength(1);
 }, 40000);
