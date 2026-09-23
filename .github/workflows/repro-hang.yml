@@ -143,3 +143,45 @@ jobs:
           done
           kill "$holder_pid" 2>/dev/null
           echo "3c (experiment 5b): $timeouts/$n timed out."
+
+  bun-version-matrix:
+    # Experiment 3 (hypothesis 3), opened only because the lazy MCP-import fix reduced but
+    # did not eliminate the hang: Verify run 5/5 after that fix still caught one, this time
+    # stuck loading an ordinary project file (src/modules/sessions/rules.ts, not zod) --
+    # same signature (state sleeping, wchan ep_poll, syscall epoll_pwait2, zero bytes out).
+    # That points at a general per-file-load race in Bun's own module loader on Linux, not
+    # anything specific to zod. Compares the current pinned version against an older 1.3.x
+    # and the latest release.
+    name: "hang rate by Bun version (${{ matrix.bun-version }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        bun-version: ["1.3.0", "1.3.8", "1.4.2"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun-version }}
+      - run: bun install --ignore-scripts
+      - name: "init + project-list loop, 500 iterations"
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          set +e
+          n=500
+          timeouts=0
+          for i in $(seq 1 "$n"); do
+            dir=$(mktemp -d)
+            export FORGE614_HOME="$dir/.forge614"
+            bun src/cli.ts init --json >/dev/null 2>&1
+            timeout 5 bun src/cli.ts project-list >"$dir/out.json" 2>"$dir/err.txt"
+            ec=$?
+            if [ "$ec" -eq 124 ]; then
+              timeouts=$((timeouts+1))
+              echo "  [bun-${{ matrix.bun-version }} #$i] TIMED OUT"
+            fi
+            rm -rf "$dir"
+          done
+          echo "BUN ${{ matrix.bun-version }}: $timeouts/$n timed out (init+project-list, 500 iterations)."
