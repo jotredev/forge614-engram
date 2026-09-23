@@ -2,9 +2,10 @@
 
 ## 1.5.3 — pendiente de revisión
 
-- Corrección del cuelgue intermitente de la CLI en Linux: causa raíz confirmada en Bun 1.3.8 (bug del runtime, no de Engram); se fija Bun 1.3.9 en verificación y publicación.
+- Corrección del cuelgue intermitente de la CLI en Linux: causa raíz confirmada en Bun 1.3.8 (bug del runtime, no de Engram); CI y binarios fijados a Bun 1.4.2.
 - Timeout explícito por prueba en todos los e2e de CLI, por encima del timeout del lanzador.
 - El SDK de MCP y `zod` ahora se cargan de forma perezosa, solo para el comando `mcp`, en vez de en cada invocación de la CLI.
+- Prueba de idempotencia de `init` corregida: compara contenido lógico, no bytes.
 
 ## 1.5.2 — pendiente de revisión
 
