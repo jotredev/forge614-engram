@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, parse, resolve } from "node:path";
+import { procSnapshot } from "../../../../tests/fixtures/proc-snapshot";
 
 const directories: string[] = [];
 function temporary(prefix = "forge614-startup-context-"): string {
@@ -20,7 +21,8 @@ async function runCliWithEnvironment(cwd: string, userDirectory: string, environ
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614"), ...environment }, stdout:"pipe", stderr:"pipe",
   });
   let killedByWatchdog = false;
-  const timer = setTimeout(() => { killedByWatchdog = true; child.kill(); }, 20_000);
+  let procSnapshotResult: Record<string, unknown> | undefined;
+  const timer = setTimeout(() => { killedByWatchdog = true; procSnapshotResult = procSnapshot(child.pid); child.kill(); }, 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     if (killedByWatchdog) {
@@ -30,6 +32,7 @@ async function runCliWithEnvironment(cwd: string, userDirectory: string, environ
         diag: "watchdog-killed", args, code,
         stdoutBytes: stdout.length, stderrBytes: stderr.length, completeJson,
         stdoutTail: stdout.slice(-300), stderrTail: stderr.slice(-300),
+        procSnapshot: procSnapshotResult,
       }));
     }
     return { code, stdout, stderr };

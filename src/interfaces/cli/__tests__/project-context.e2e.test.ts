@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { MemoryStore } from "../../../app/memory-store";
 import { bindProjectContext, resolveProjectContext, saveProjectMemory, startProjectSession } from "../../../app/project-context";
+import { procSnapshot } from "../../../../tests/fixtures/proc-snapshot";
 
 const directories: string[] = [];
 const stores: MemoryStore[] = [];
@@ -40,7 +41,8 @@ async function runCli(cwd:string,userDirectory:string,...args:string[]) {
     cwd,env:{...process.env,FORGE614_HOME:join(userDirectory,".forge614")},stdout:"pipe",stderr:"pipe",
   });
   let killedByWatchdog = false;
-  const timer = setTimeout(() => { killedByWatchdog = true; child.kill(); }, 20_000);
+  let procSnapshotResult: Record<string, unknown> | undefined;
+  const timer = setTimeout(() => { killedByWatchdog = true; procSnapshotResult = procSnapshot(child.pid); child.kill(); }, 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     if (killedByWatchdog) {
@@ -50,6 +52,7 @@ async function runCli(cwd:string,userDirectory:string,...args:string[]) {
         diag: "watchdog-killed", args, code,
         stdoutBytes: stdout.length, stderrBytes: stderr.length, completeJson,
         stdoutTail: stdout.slice(-300), stderrTail: stderr.slice(-300),
+        procSnapshot: procSnapshotResult,
       }));
     }
     return { code, stdout, stderr };

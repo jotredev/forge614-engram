@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ListRootsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { procSnapshot } from "../../../tests/fixtures/proc-snapshot";
 
 const temporaryDirectories: string[] = [];
 const clients: Client[] = [];
@@ -24,7 +25,8 @@ async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
     cwd, env: environment(userDirectory), stdout:"pipe", stderr:"pipe",
   });
   let killedByWatchdog = false;
-  const timer = setTimeout(() => { killedByWatchdog = true; child.kill(); }, 20_000);
+  let procSnapshotResult: Record<string, unknown> | undefined;
+  const timer = setTimeout(() => { killedByWatchdog = true; procSnapshotResult = procSnapshot(child.pid); child.kill(); }, 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     if (killedByWatchdog) {
@@ -34,6 +36,7 @@ async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
         diag: "watchdog-killed", args, code,
         stdoutBytes: stdout.length, stderrBytes: stderr.length, completeJson,
         stdoutTail: stdout.slice(-300), stderrTail: stderr.slice(-300),
+        procSnapshot: procSnapshotResult,
       }));
     }
     return { code, stdout, stderr };

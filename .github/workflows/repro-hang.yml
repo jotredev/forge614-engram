@@ -66,3 +66,67 @@ jobs:
             rm -rf "$dir"
           done
           echo "WITH FIX: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
+      - name: "Experiment 5a: inherited stdin that never sends EOF (baseline)"
+        shell: bash
+        run: |
+          set +e
+          n=${{ env.ITERATIONS }}
+          timeouts=0
+          for i in $(seq 1 "$n"); do
+            dir=$(mktemp -d)
+            sleep 600 | timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} >"$dir/out.json" 2>"$dir/err.txt"
+            ec=$?
+            if [ "$ec" -eq 124 ]; then
+              timeouts=$((timeouts+1))
+              echo "  [5a-baseline #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json")"
+            fi
+            rm -rf "$dir"
+          done
+          echo "5a BASELINE (stdin inherited from a never-closing pipe): $timeouts/$n timed out."
+      - name: "Experiment 5a: same, with stdin explicitly closed (candidate fix)"
+        shell: bash
+        run: |
+          set +e
+          n=${{ env.ITERATIONS }}
+          timeouts=0
+          for i in $(seq 1 "$n"); do
+            dir=$(mktemp -d)
+            sleep 600 | timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} </dev/null >"$dir/out.json" 2>"$dir/err.txt"
+            ec=$?
+            if [ "$ec" -eq 124 ]; then
+              timeouts=$((timeouts+1))
+              echo "  [5a-fixed #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json")"
+            fi
+            rm -rf "$dir"
+          done
+          echo "5a WITH FIX (stdin explicitly redirected from /dev/null, same as Bun.spawn's stdin:\"ignore\"): $timeouts/$n timed out."
+      - name: "Experiment 5b: a concurrent writer holds BEGIN IMMEDIATE on the same database"
+        shell: bash
+        run: |
+          set +e
+          n=${{ env.ITERATIONS }}
+          timeouts=0
+          lockdir=$(mktemp -d)
+          export FORGE614_HOME="$lockdir/.forge614"
+          bun src/cli.ts init --json >/dev/null 2>&1
+          validdir=$(mktemp -d)
+          bun -e '
+            import { Database } from "bun:sqlite";
+            const db = new Database(process.env.FORGE614_HOME + "/engram/engram.db");
+            db.exec("BEGIN IMMEDIATE;");
+            console.error("HOLDER: write lock acquired, never committing");
+            setInterval(() => {}, 3600_000);
+          ' &
+          holder_pid=$!
+          sleep 1
+          for i in $(seq 1 "$n"); do
+            timeout 5 env FORGE614_HOME="$lockdir/.forge614" bun src/cli.ts startup-context --directory "$validdir" --json >"$lockdir/out-$i.json" 2>"$lockdir/err-$i.txt"
+            ec=$?
+            if [ "$ec" -eq 124 ]; then
+              timeouts=$((timeouts+1))
+              echo "  [5b #$i] TIMED OUT; stderr=$(cat "$lockdir/err-$i.txt")"
+            fi
+            rm -f "$lockdir/out-$i.json" "$lockdir/err-$i.txt"
+          done
+          kill "$holder_pid" 2>/dev/null
+          echo "5b (concurrent BEGIN IMMEDIATE held on the same db, reading via startup-context): $timeouts/$n timed out."
