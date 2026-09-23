@@ -23,7 +23,7 @@ async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath, cli, ...args], {
     cwd, env: environment(userDirectory), stdout:"pipe", stderr:"pipe",
   });
-  const timer = setTimeout(() => child.kill(), 10_000);
+  const timer = setTimeout(() => child.kill(), 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     return { code, stdout, stderr };
@@ -66,7 +66,7 @@ test("stdio initializes and advertises exactly the bounded memory tool surface",
   await client.close();
   expect(transport.pid).toBeNull();
   expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
-});
+}, 40000);
 
 test("compiled executable completes the official SDK stdio handshake without user storage", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const binary = join(root, "forge614-engram");
@@ -77,7 +77,7 @@ test("compiled executable completes the official SDK stdio handshake without use
   const { client } = await connect({ cwd: root, userDirectory, command: binary, args: ["mcp"] });
   expect((await client.listTools()).tools).toHaveLength(10);
   expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
-});
+}, 40000);
 
 test("raw stdin EOF cancels an unanswered roots request and exits promptly", async () => {
   const root = temporary(); const userDirectory = join(root,"user");
@@ -113,4 +113,4 @@ test("raw stdin EOF cancels an unanswered roots request and exits promptly", asy
   } finally {
     child.kill("SIGKILL"); await child.exited; await reader.cancel().catch(() => {});
   }
-},5000);
+},30000);

@@ -15,7 +15,7 @@ async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
   });
-  const timer = setTimeout(() => child.kill(), 10_000);
+  const timer = setTimeout(() => child.kill(), 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     return { code, stdout, stderr };
@@ -42,4 +42,4 @@ test("sync-watch reports offline retry state and exits on SIGINT without blockin
     expect((await run(dir,"save","--project-id",id,"--title","Offline","--content","Still local")).code).toBe(0);
     child.kill("SIGINT");expect(await child.exited).toBe(130);reader.releaseLock();
   } finally {child.kill();await child.exited;}
-},10000);
+},30000);

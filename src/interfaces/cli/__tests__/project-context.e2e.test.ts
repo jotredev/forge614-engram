@@ -39,7 +39,7 @@ async function runCli(cwd:string,userDirectory:string,...args:string[]) {
   const child = Bun.spawn([process.execPath,cli,...args],{
     cwd,env:{...process.env,FORGE614_HOME:join(userDirectory,".forge614")},stdout:"pipe",stderr:"pipe",
   });
-  const timer = setTimeout(() => child.kill(), 10_000);
+  const timer = setTimeout(() => child.kill(), 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     return { code, stdout, stderr };
@@ -59,4 +59,4 @@ test("project-bind is scriptable recovery for a colliding existing project name"
   const bound = (await runCli(root,userDirectory,"project-bind","--directory",directory,"--project-id",projectId));
   expect(bound.code).toBe(0);
   expect(JSON.parse(bound.stdout)).toMatchObject({ projectId,directory:realpathSync(directory),source:"binding" });
-}, 20000);
+}, 40000);

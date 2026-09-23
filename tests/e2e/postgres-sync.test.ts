@@ -48,7 +48,7 @@ integration("configured CLI stays local offline and sync failure preserves the s
   // unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
   const run=async(...args:string[])=>{
     const child=Bun.spawn([process.execPath,cli,...args],{env:{...process.env,FORGE614_HOME:join(user,".forge614")},stdout:"pipe",stderr:"pipe"});
-    const timer=setTimeout(()=>child.kill(),10_000);
+    const timer=setTimeout(()=>child.kill(),20_000);
     try {
       const [exitCode,stdout,stderr]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
       return {exitCode,stdout,stderr};

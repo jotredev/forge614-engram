@@ -32,19 +32,6 @@ function repository(): string {
   git(directory, "commit", "--quiet", "-m", "fixture");
   return directory;
 }
-const cli = resolve(import.meta.dir,"../../cli.ts");
-// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
-// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
-async function runCli(cwd:string,userDirectory:string,...args:string[]) {
-  const child = Bun.spawn([process.execPath,cli,...args],{
-    cwd,env:{...process.env,FORGE614_HOME:join(userDirectory,".forge614")},stdout:"pipe",stderr:"pipe",
-  });
-  const timer = setTimeout(() => child.kill(), 10_000);
-  try {
-    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
-    return { code, stdout, stderr };
-  } finally { clearTimeout(timer); }
-}
 afterEach(() => {
   for (const value of stores.splice(0)) value.close();
   for (const directory of directories.splice(0).reverse()) rmSync(directory, { recursive: true, force: true });

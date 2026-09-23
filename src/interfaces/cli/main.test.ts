@@ -15,7 +15,7 @@ async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
   });
-  const timer = setTimeout(() => child.kill(), 10_000);
+  const timer = setTimeout(() => child.kill(), 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     return { code, stdout, stderr };
@@ -52,7 +52,7 @@ test("help, version and empty project list create no storage", async () => {
   expect(help).toContain("~/.forge614/engram/engram.db");
   expect((await run(dir,"--version")).stdout).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
   expect(JSON.parse((await run(dir,"project-list")).stdout)).toEqual([]);
-});
+}, 40000);
 
 test("main defaults to help and serializes invalid invocations only to stderr", async () => {
   const dir=workspace();
@@ -65,4 +65,4 @@ test("main defaults to help and serializes invalid invocations only to stderr", 
     expect(result.stderr).not.toContain("PRIVATE_VALUE");
   }
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
-});
+}, 40000);

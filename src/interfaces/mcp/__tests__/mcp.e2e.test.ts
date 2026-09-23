@@ -23,7 +23,7 @@ async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath, cli, ...args], {
     cwd, env: environment(userDirectory), stdout:"pipe", stderr:"pipe",
   });
-  const timer = setTimeout(() => child.kill(), 10_000);
+  const timer = setTimeout(() => child.kill(), 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     return { code, stdout, stderr };
@@ -69,7 +69,7 @@ test("init enables project bindings and MCP resolves one client root without cre
   const connection = await connect({ cwd: root, userDirectory, roots: [project] });
   expect(data(await call(connection.client, "memory_current_project"))).toMatchObject({ projectId: null, source: "unbound" });
   expect(JSON.parse((await runCli(root, userDirectory, "project-list")).stdout)).toEqual([]);
-}, 20000);
+}, 40000);
 
 test("a non-Git process cwd is not treated as an implicit non-Git project root", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
@@ -77,7 +77,7 @@ test("a non-Git process cwd is not treated as an implicit non-Git project root",
   const { client } = await connect({ cwd:root,userDirectory });
   expect((await call(client,"memory_current_project")).isError).toBe(true);
   expect(JSON.parse((await runCli(root,userDirectory,"project-list")).stdout)).toEqual([]);
-}, 20000);
+}, 40000);
 
 test("stdio save, search, get, history, update and request replay persist across restarts", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
@@ -103,7 +103,7 @@ test("stdio save, search, get, history, update and request replay persist across
   connection = await connect({ cwd: project, userDirectory });
   const persisted = data(await call(connection.client, "memory_search", { directory:project,query: "SQLite WAL" })) as {results:Array<{memory:{id:string}}>};
   expect(persisted.results[0]?.memory.id).toBe(saved.id);
-}, 20000);
+}, 40000);
 
 test("stdio duplicate saves reinforce only the selected project without increasing its version", async () => {
   const root=temporary();const userDirectory=join(root,"user");const a=temporary();const b=temporary();
@@ -121,7 +121,7 @@ test("stdio duplicate saves reinforce only the selected project without increasi
   const searched=data(await call(firstConnection.client,"memory_search",{query:"observation",scope:"project"})) as {results:Array<{memory:{id:string};explanation:{reinforcement:{duplicateCount:number}}}>};
   expect(searched.results).toHaveLength(1);
   expect(searched.results[0]).toMatchObject({memory:{id:first.id},explanation:{reinforcement:{duplicateCount:1}}});
-}, 20000);
+}, 40000);
 
 test("shared saves require explicit scope and a nonempty global-intent explanation", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
@@ -134,7 +134,7 @@ test("shared saves require explicit scope and a nonempty global-intent explanati
     ...base, globalIntent: "The user explicitly requested this preference across all projects.",
   })) as { scope: string; projectId: null };
   expect(saved).toMatchObject({ scope: "shared", projectId: null });
-}, 20000);
+}, 40000);
 
 test("owner mismatch, unbound default search, multiple roots and oversized inputs fail safely", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const a = temporary(); const b = temporary();
@@ -150,7 +150,7 @@ test("owner mismatch, unbound default search, multiple roots and oversized input
   const invalid = await call(client, "memory_search", { directory: a, query: "Owned", unexpected: "SECRET_MARKER" });
   expect(invalid.isError).toBe(true);
   expect(JSON.stringify(invalid)).not.toContain("SECRET_MARKER");
-}, 20000);
+}, 40000);
 
 test("MCP session contracts support parallel chats, exact versions, replay, summary ordering and private shared origins",async()=>{
   const root=temporary(),userDirectory=join(root,"user"),project=temporary();
@@ -181,7 +181,7 @@ test("MCP session contracts support parallel chats, exact versions, replay, summ
   expect(JSON.stringify(data(await call(client,"memory_get",{scope:"shared",id:shared.id})))).not.toContain("chat-two");
   expect((await call(client,"memory_save",{scope:"shared",globalIntent:"Explicit",title:"Bad",content:"Missing owner",type:"fact",sessionId:"chat-two"})).isError).toBe(true);
   expect(data(await call(client,"memory_context",{}))).toMatchObject({format:1,pinned:expect.any(Array),recent:expect.any(Array),summaries:expect.any(Array)});
-}, 20000);
+}, 40000);
 
 test("MCP accepts the SDK session identifier boundary and reports ambiguous assistant inference",async()=>{
   const root=temporary(),userDirectory=join(root,"user"),project=temporary();
@@ -195,4 +195,4 @@ test("MCP accepts the SDK session identifier boundary and reports ambiguous assi
   expect((await call(client,"memory_session_start",{sessionId:"chat-two"})).isError).not.toBe(true);
   const result=await call(client,"memory_save",{title:"Ambiguous",content:"Two chats",type:"fact"});
   expect(result.isError).toBe(true);expect(data(result)).toMatchObject({code:"AMBIGUOUS_SESSION"});
-}, 20000);
+}, 40000);

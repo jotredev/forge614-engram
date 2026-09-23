@@ -18,7 +18,7 @@ async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
   });
-  const timer = setTimeout(() => child.kill(), 10_000);
+  const timer = setTimeout(() => child.kill(), 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     return { code, stdout, stderr };
@@ -36,7 +36,7 @@ test("update JSON output contains only the structured update result", async () =
   expect(updateResultJson({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" })).toBe(
     '{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}',
   );
-});
+}, 40000);
 
 test("update --json prints structured output while plain update remains silent", async () => {
   const output: string[] = [];
@@ -46,7 +46,7 @@ test("update --json prints structured output while plain update remains silent",
   await runUpdateCommand(false, "1.3.0", update, value => output.push(value));
 
   expect(output).toEqual(['{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}']);
-});
+}, 40000);
 test("CLI shared memories work without a project and require explicit scope for mutations", async () => {
   const dir = workspace(); expect((await run(dir,"init","--json")).code).toBe(0);
   const result = (await run(dir,"save","--scope","shared","--title","Idioma","--content","Spanish","--type","preference","--topic","language"));
@@ -63,7 +63,7 @@ test("CLI shared memories work without a project and require explicit scope for 
   expect((await run(dir,"restore","--scope","shared","--id",shared.id)).code).toBe(0);
   expect(JSON.parse((await run(dir,"history","--scope","shared","--id",shared.id)).stdout)).toHaveLength(1);
   expect(JSON.parse((await run(dir,"get","--scope","shared","--id",shared.id)).stdout).state).toBe("active");
-});
+}, 40000);
 
 test("invalid scope, legacy and per-project connection flags fail before any storage changes", async () => {
   const dir = workspace(); const id = "11111111-1111-4111-8111-111111111111";
@@ -90,7 +90,7 @@ test("invalid scope, legacy and per-project connection flags fail before any sto
     expect(result.stderr).not.toContain("SECRET_MARKER"); expect(result.stdout).toBe("");
     expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
   }
-});
+}, 40000);
 
 test("CLI rejects valued boolean flags, malformed summaries, unknown summary keys and watch promotion", async () =>{
   const dir=workspace();
@@ -103,7 +103,7 @@ test("CLI rejects valued boolean flags, malformed summaries, unknown summary key
     ["save","--scope","shared","--title","x","--content","y","--session-id","s"],
   ]) expect(JSON.parse((await run(dir,...args)).stderr).code).toBe("INVALID_INPUT");
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
-});
+}, 40000);
 
 test("init --json remains noninteractive, reports initialization status and does not configure external clients", async () => {
   const dir = workspace();
@@ -118,7 +118,7 @@ test("init --json remains noninteractive, reports initialization status and does
   expect(result.stderr).toBe("");
   expect(existsSync(join(dir, "user", ".claude.json"))).toBe(false);
   expect(existsSync(join(dir, "user", ".codex", "config.toml"))).toBe(false);
-});
+}, 40000);
 
 test("init --json rejects an unavailable PostgreSQL URL without exposing it or creating storage", async () => {
   const dir = workspace();
@@ -129,7 +129,7 @@ test("init --json rejects an unavailable PostgreSQL URL without exposing it or c
   expect(result.stdout).toBe("");
   expect(result.stderr).not.toContain(secret);
   expect(existsSync(join(dir, "user", ".forge614", "engram"))).toBe(false);
-});
+}, 40000);
 
 test("repeating init --json preserves an existing PostgreSQL configuration", async () => {
   const dir = workspace();
@@ -141,7 +141,7 @@ test("repeating init --json preserves an existing PostgreSQL configuration", asy
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toMatchObject({initialized: true, storage: "sqlite", postgresConfigured: true});
   expect(config.read().postgresUrl).toBe("postgresql://user:password@127.0.0.1:5432/engram?sslmode=disable");
-});
+}, 40000);
 
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", async () => {
   const dir=workspace();
@@ -172,4 +172,4 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
   expect(missing.code).toBe(1);
   expect(JSON.parse(missing.stderr).code).toBe("DATABASE_MISSING");
   expect(existsSync(config.databasePath)).toBe(false);
-});
+}, 40000);

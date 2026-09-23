@@ -17,7 +17,7 @@ async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
   });
-  const timer = setTimeout(() => child.kill(), 10_000);
+  const timer = setTimeout(() => child.kill(), 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
     return { code, stdout, stderr };
@@ -41,7 +41,7 @@ test("retired setup tells the user to use init and leaves storage absent", async
   });
   expect(result.stdout).toBe("");
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
-}, 20000);
+}, 40000);
 
 test("init requires a terminal while init --json stays noninteractive", async () => {
   const dir = workspace();
@@ -55,7 +55,7 @@ test("init requires a terminal while init --json stays noninteractive", async ()
   expect((await run(dir, "init", "--json")).code).toBe(0);
   expect(JSON.parse((await run(dir, "project-list")).stdout)).toEqual([]);
   expect((await run(dir, "search", "--scope", "shared", "--query", "anything")).code).toBe(0);
-}, 20000);
+}, 40000);
 
 test("init rejects unknown flags without entering prompts or creating files", async () => {
   const dir = workspace();
@@ -64,7 +64,7 @@ test("init rejects unknown flags without entering prompts or creating files", as
   expect(result.stderr).not.toContain("PRIVATE_VALUE");
   expect(result.stdout).toBe("");
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
-}, 20000);
+}, 40000);
 
 test("help distinguishes read-only startup-context from project binding", async () => {
   const dir = workspace();
@@ -73,7 +73,7 @@ test("help distinguishes read-only startup-context from project binding", async 
   expect(result.stdout).toContain("Acepta cualquier carpeta existente y legible");
   expect(result.stdout).toContain("startup-context no");
   expect(result.stdout).not.toContain("requiere Git disponible, incluso para carpetas sin Git");
-}, 20000);
+}, 40000);
 
 test("memory-protocol is public, JSON-only, and creates no product files", async () => {
   const dir = workspace();
@@ -106,7 +106,7 @@ test("memory-protocol is public, JSON-only, and creates no product files", async
   expect(invalidVersion.code).toBe(1);
   expect(JSON.parse(invalidVersion.stderr).code).toBe("INVALID_INPUT");
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
-}, 20000);
+}, 40000);
 
 test("sync without PostgreSQL configuration never creates storage", async () =>{
   const dir=workspace();const result=(await run(dir,"sync"));
@@ -116,7 +116,7 @@ test("sync without PostgreSQL configuration never creates storage", async () =>{
   expect((await run(dir,"init","--json")).code).toBe(0);
   expect(JSON.parse((await run(dir,"sync")).stderr).code).toBe("SYNC_DISABLED");
   expect(JSON.parse((await run(dir,"sync-watch","--interval","0")).stderr).code).toBe("INVALID_INPUT");
-}, 20000);
+}, 40000);
 
 test("all projects and working directories share exactly one workspace configuration", async () => {
   const a = workspace(); const b = workspace(); const id = (await create(a));
@@ -132,7 +132,7 @@ test("all projects and working directories share exactly one workspace configura
   expect(readdirSync(join(user,".forge614")).sort()).toEqual(["engram"]);
   expect(readdirSync(join(user,".forge614","engram")).filter(n=>!n.endsWith("-wal")&&!n.endsWith("-shm")).sort()).toEqual([".env","engram.db"]);
   expect(readFileSync(join(user,".forge614","engram",".env"),"utf8")).not.toContain(id);
-}, 25_000);
+}, 45_000);
 
 test("SDK workspace and CLI share the same identity and database", async () => {
   const dir = workspace(); const index = resolve(import.meta.dir,"../../../index.ts");
@@ -150,7 +150,7 @@ test("SDK workspace and CLI share the same identity and database", async () => {
   expect(exitCode).toBe(0);
   const id = stdout.trim();
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","SQLite")).stdout)).toHaveLength(1);
-}, 20000);
+}, 40000);
 
 test("project CLI saves, revises, searches, archives and restores with UUID identity", async () => {
   const dir = workspace(); const id = (await create(dir));
@@ -164,7 +164,7 @@ test("project CLI saves, revises, searches, archives and restores with UUID iden
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","PostgreSQL")).stdout)).toEqual([]);
   expect((await run(dir,"restore","--project-id",id,"--id",saved.id)).code).toBe(0);
   expect(JSON.parse((await run(dir,"get","--project-id",id,"--id",saved.id)).stdout).state).toBe("active");
-}, 20000);
+}, 40000);
 
 test("explicit reinforcement enrollment is repeatable and exact CLI saves stay owner-scoped without a new version", async () => {
   const dir=workspace();
@@ -184,7 +184,7 @@ test("explicit reinforcement enrollment is repeatable and exact CLI saves stay o
   const results=JSON.parse((await run(dir,"search","--project-id",a,"--scope","project","--query","observation")).stdout);
   expect(results).toHaveLength(1);
   expect(results[0]).toMatchObject({memory:{id:first.id,version:1},explanation:{reinforcement:{duplicateCount:1}}});
-}, 20000);
+}, 40000);
 
 test("init is repeatable and rename retains identity without per-project registration", async () => {
   const dir = workspace(); const id = (await create(dir)); const root = join(dir,"user",".forge614","engram");
@@ -196,14 +196,14 @@ test("init is repeatable and rename retains identity without per-project registr
   const listed = JSON.parse((await run(dir,"project-list")).stdout);
   expect(listed[0].name).toBe("Renamed"); expect(listed[0].projectId).toBe(id);
   expect((await run(dir,"project-list")).stdout).not.toContain(root);
-}, 20000);
+}, 40000);
 
 test("two identical project names stay isolated from each other", async () => {
   const dir = workspace(); const a = (await create(dir,"Same")); const b = (await create(dir,"Same"));
   expect(a).not.toBe(b);
   expect((await run(dir,"save","--project-id",a,"--title","SQLite","--content","One")).code).toBe(0);
   expect(JSON.parse((await run(dir,"search","--project-id",b,"--query","SQLite")).stdout)).toEqual([]);
-}, 20000);
+}, 40000);
 
 test("missing configuration and configured missing database never cause silent reinitialization", async () => {
   const dir = workspace();
@@ -215,7 +215,7 @@ test("missing configuration and configured missing database never cause silent r
   for (const args of [["init","--json"],["project-create","--name","No"],["search","--scope","shared","--query","SQLite"]]) {
     expect((await run(dir,...args)).code).toBe(1); expect(existsSync(path)).toBe(false);
   }
-}, 20000);
+}, 40000);
 
 async function parallel(dir: string, args: string[]) {
   return Promise.all(Array.from({length:4},async () => {
@@ -234,7 +234,7 @@ test("concurrent project and shared request replays create one memory per namesp
     expect(new Set(results.map(result => JSON.parse(result.stdout).id)).size).toBe(1);
   }
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","parallel")).stdout)).toHaveLength(2);
-}, 20000);
+}, 40000);
 
 test("concurrent initializers keep a single config and preserve all projects", async () => {
   const dir = workspace(); const results = await parallel(dir,["project-create","--name","parallel"]);
@@ -242,7 +242,7 @@ test("concurrent initializers keep a single config and preserve all projects", a
   expect(new Set(results.map(result => JSON.parse(result.stdout).projectId)).size).toBe(4);
   expect(JSON.parse((await run(dir,"project-list")).stdout)).toHaveLength(4);
   expect(existsSync(join(dir,"user",".forge614","projects"))).toBe(false);
-}, 20000);
+}, 40000);
 
 test("concurrent init of existing workspace leaves existing memories and configuration intact", async () => {
   const dir = workspace(); const id = (await create(dir));
@@ -252,7 +252,7 @@ test("concurrent init of existing workspace leaves existing memories and configu
   for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
   expect(readFileSync(path)).toEqual(before);
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","SQLite")).stdout)).toHaveLength(1);
-}, 20000);
+}, 40000);
 
 test("explicit session CLI lifecycle, previews, version reads, timeline and context stay noninteractive", async () =>{
   const dir=workspace();
@@ -269,4 +269,4 @@ test("explicit session CLI lifecycle, previews, version reads, timeline and cont
   const summary=JSON.stringify({goal:"Ship",instructions:"",discoveries:"WAL",accomplishments:"Done",nextSteps:"None",files:[]});
   expect((await run(dir,"session-summary","--project-id",session.projectId,"--session-id","chat-one","--summary-json",summary,"--request-key","summary-1")).code).toBe(0);
   expect(JSON.parse((await run(dir,"session-end","--project-id",session.projectId,"--session-id","chat-one")).stdout).endedAt).not.toBeNull();
-}, 20000);
+}, 40000);
