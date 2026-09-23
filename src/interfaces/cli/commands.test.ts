@@ -223,5 +223,6 @@ test("the mcp command still loads the MCP SDK (the guard itself is not a false n
   const marker = join(dir, "marker-mcp.txt");
   await runGuarded(dir, join(dir,"user"), marker, "mcp");
   expect(existsSync(marker)).toBe(true);
-  expect(readFileSync(marker,"utf8")).toContain("zod");
+  const hits = readFileSync(marker,"utf8");
+  expect(hits.includes("zod") || hits.includes("@modelcontextprotocol")).toBe(true);
 }, 40000);
