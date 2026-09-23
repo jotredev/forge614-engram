@@ -1,9 +1,29 @@
 import { afterEach, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { WorkspaceConfig } from "../../../infrastructure/filesystem/workspace-config";
 import { procSnapshot } from "../../../../tests/fixtures/proc-snapshot";
+
+// Raw bytes of a SQLite file are not a safe idempotency check: a newer SQLite build
+// inside Bun can touch header fields (change counter, WAL checkpoint bookkeeping) on an
+// otherwise no-op open, without changing any actual data. Compare logical content
+// instead: the schema plus every row of every table, deterministically ordered.
+function logicalDump(path: string): unknown {
+  const db = new Database(path, { readonly: true });
+  try {
+    const schema = db.query("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name").all();
+    const tables = (db.query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]);
+    const rows: Record<string, unknown[]> = {};
+    for (const { name } of tables) {
+      const columns = (db.query(`PRAGMA table_info(${JSON.stringify(name)})`).all() as { name: string }[]).map(c => c.name);
+      const orderBy = columns.map(c => `"${c}"`).join(",");
+      rows[name] = db.query(`SELECT * FROM ${JSON.stringify(name)} ORDER BY ${orderBy}`).all();
+    }
+    return { schema, rows };
+  } finally { db.close(); }
+}
 
 const directories: string[] = [];
 function workspace() {
@@ -201,9 +221,13 @@ test("explicit reinforcement enrollment is repeatable and exact CLI saves stay o
 
 test("init is repeatable and rename retains identity without per-project registration", async () => {
   const dir = workspace(); const id = (await create(dir)); const root = join(dir,"user",".forge614","engram");
-  const before = readFileSync(join(root,"engram.db")); const config = readFileSync(join(root,".env"));
+  // The very first "init" command call (as opposed to project-create) legitimately
+  // upgrades the schema (enables project bindings), so it is not itself a no-op. Only a
+  // *second* call, once the schema is already at its steady-state version, must be.
   expect((await run(dir,"init","--json")).code).toBe(0);
-  expect(readFileSync(join(root,"engram.db"))).toEqual(before);
+  const before = logicalDump(join(root,"engram.db")); const config = readFileSync(join(root,".env"));
+  expect((await run(dir,"init","--json")).code).toBe(0);
+  expect(logicalDump(join(root,"engram.db"))).toEqual(before);
   expect(readFileSync(join(root,".env"))).toEqual(config);
   expect((await run(dir,"project-rename","--project-id",id,"--name","Renamed")).code).toBe(0);
   const listed = JSON.parse((await run(dir,"project-list")).stdout);

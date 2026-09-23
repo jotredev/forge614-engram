@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.3 — pendiente de revisión
+
+- Corrección del cuelgue intermitente de la CLI en Linux: causa raíz confirmada en Bun 1.3.8 (bug del runtime, no de Engram); se fija Bun 1.3.9 en verificación y publicación.
+- Timeout explícito por prueba en todos los e2e de CLI, por encima del timeout del lanzador.
+- El SDK de MCP y `zod` ahora se cargan de forma perezosa, solo para el comando `mcp`, en vez de en cada invocación de la CLI.
+
 ## 1.5.2 — pendiente de revisión
 
 - Límites de tiempo para pruebas PostgreSQL y jobs de workflow; sin cambios funcionales.
