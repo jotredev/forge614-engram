@@ -1,14 +1,16 @@
 name: Repro CLI hang (diagnostic only)
 
 on:
-  workflow_dispatch:
-    inputs:
-      iterations:
-        description: "Invocations per arm"
-        default: "200"
-      command:
-        description: "CLI command to loop"
-        default: "memory-protocol --json"
+  # workflow_dispatch can't be invoked on a non-default branch until the workflow file
+  # exists on the default branch, so this diagnostic-only workflow instead triggers on
+  # push, but only for this investigation's own branch -- it never runs on main or on
+  # any push elsewhere.
+  push:
+    branches: [work/v1.5.3-cli-hang-diagnosis]
+
+env:
+  ITERATIONS: "200"
+  REPRO_COMMAND: "memory-protocol --json"
 
 permissions:
   contents: read
@@ -28,12 +30,12 @@ jobs:
         shell: bash
         run: |
           set +e
-          n=${{ inputs.iterations }}
+          n=${{ env.ITERATIONS }}
           timeouts=0
           complete_but_killed=0
           for i in $(seq 1 "$n"); do
             dir=$(mktemp -d)
-            timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ inputs.command }} >"$dir/out.json" 2>"$dir/err.txt"
+            timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} >"$dir/out.json" 2>"$dir/err.txt"
             ec=$?
             if [ "$ec" -eq 124 ]; then
               timeouts=$((timeouts+1))
@@ -49,12 +51,12 @@ jobs:
           FORGE614_EXPERIMENT_EXIT: "1"
         run: |
           set +e
-          n=${{ inputs.iterations }}
+          n=${{ env.ITERATIONS }}
           timeouts=0
           complete_but_killed=0
           for i in $(seq 1 "$n"); do
             dir=$(mktemp -d)
-            timeout 5 env FORGE614_HOME="$dir/.forge614" FORGE614_EXPERIMENT_EXIT=1 bun src/cli.ts ${{ inputs.command }} >"$dir/out.json" 2>"$dir/err.txt"
+            timeout 5 env FORGE614_HOME="$dir/.forge614" FORGE614_EXPERIMENT_EXIT=1 bun src/cli.ts ${{ env.REPRO_COMMAND }} >"$dir/out.json" 2>"$dir/err.txt"
             ec=$?
             if [ "$ec" -eq 124 ]; then
               timeouts=$((timeouts+1))
