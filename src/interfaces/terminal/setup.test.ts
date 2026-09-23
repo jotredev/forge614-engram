@@ -12,11 +12,11 @@ function terminal(input: string) {
   const rawMode = join(dir, "raw-terminal.ts");
   writeFileSync(rawMode, "Object.defineProperty(process.stdin, 'setRawMode', { value: () => process.stdin });");
   const result = Bun.spawnSync([
-    process.execPath, "--preload", resolve(import.meta.dir, "../../../tests/fixtures/user-directory.ts"),
+    process.execPath,
     "--preload", resolve(import.meta.dir, "../../../tests/fixtures/interactive-terminal.ts"),
     "--preload", rawMode,
     resolve(import.meta.dir, "../../cli.ts"), "init",
-  ], { cwd: dir, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: dir }, stdin: Buffer.from(input), timeout: 5000 });
+  ], { cwd: dir, env: { ...process.env, FORGE614_HOME: join(dir,".forge614") }, stdin: Buffer.from(input), timeout: 5000 });
   return { result, config: new WorkspaceConfig(join(dir, ".forge614", "engram")) };
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }); });

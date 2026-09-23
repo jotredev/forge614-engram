@@ -9,10 +9,9 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
 }
 const cli = resolve(import.meta.dir,"../../cli.ts");
-const preload = resolve(import.meta.dir,"../../../tests/fixtures/user-directory.ts");
 function runAs(cwd: string, userDirectory: string, ...args: string[]) {
-  const result = Bun.spawnSync([process.execPath,"--preload",preload,cli,...args], {
-    cwd, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: userDirectory },
+  const result = Bun.spawnSync([process.execPath,cli,...args], {
+    cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") },
   });
   return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
 }
@@ -27,8 +26,8 @@ test("sync-watch reports offline retry state and exits on SIGINT without blockin
   const dir=workspace();const id=create(dir);
   const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
   config.configurePostgres("postgresql://u:SECRET@127.0.0.1:1/db?sslmode=disable",config.revision());
-  const child=Bun.spawn([process.execPath,"--preload",preload,cli,"sync-watch","--interval","1"],{
-    cwd:dir,env:{...process.env,FORGE614_TEST_USER_DIRECTORY:join(dir,"user")},stdout:"pipe",stderr:"pipe",
+  const child=Bun.spawn([process.execPath,cli,"sync-watch","--interval","1"],{
+    cwd:dir,env:{...process.env,FORGE614_HOME:join(dir,"user",".forge614")},stdout:"pipe",stderr:"pipe",
   });
   try {
     const reader=child.stderr.getReader();const first=await reader.read();

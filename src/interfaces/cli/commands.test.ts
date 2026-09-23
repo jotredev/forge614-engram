@@ -12,10 +12,9 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
 }
 const cli = resolve(import.meta.dir,"../../cli.ts");
-const preload = resolve(import.meta.dir,"../../../tests/fixtures/user-directory.ts");
 function runAs(cwd: string, userDirectory: string, ...args: string[]) {
-  const result = Bun.spawnSync([process.execPath,"--preload",preload,cli,...args], {
-    cwd, env: { ...process.env, FORGE614_TEST_USER_DIRECTORY: userDirectory },
+  const result = Bun.spawnSync([process.execPath,cli,...args], {
+    cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, timeout: 10_000,
   });
   return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
 }

@@ -43,8 +43,8 @@ integration("configured CLI stays local offline and sync failure preserves the s
   const before=readFileSync(config.databasePath);
   await expect(syncWorkspace(config)).rejects.toMatchObject({code:"POSTGRES_UNAVAILABLE"});
   expect(readFileSync(config.databasePath)).toEqual(before);
-  const cli=resolve(import.meta.dir,"../../src/cli.ts"),preload=resolve(import.meta.dir,"../fixtures/user-directory.ts");
-  const run=(...args:string[])=>Bun.spawnSync([process.execPath,"--preload",preload,cli,...args],{env:{...process.env,FORGE614_TEST_USER_DIRECTORY:user}});
+  const cli=resolve(import.meta.dir,"../../src/cli.ts");
+  const run=(...args:string[])=>Bun.spawnSync([process.execPath,cli,...args],{env:{...process.env,FORGE614_HOME:join(user,".forge614")},timeout:10_000});
   const read=run("search","--project-id",p.projectId,"--query","persistent");
   expect(read.exitCode).toBe(0);expect(JSON.parse(read.stdout.toString())).toHaveLength(1);
   const saved=run("save","--project-id",p.projectId,"--title","Later","--content","offline writes");

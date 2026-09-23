@@ -13,13 +13,12 @@ function temporary(prefix = "forge614-mcp-"): string {
   const directory = mkdtempSync(join(tmpdir(), prefix)); temporaryDirectories.push(directory); return directory;
 }
 const cli = resolve(import.meta.dir, "../../cli.ts");
-const preload = resolve(import.meta.dir, "../../../tests/fixtures/user-directory.ts");
 function environment(userDirectory: string): Record<string, string> {
-  return Object.fromEntries(Object.entries({ ...process.env, FORGE614_TEST_USER_DIRECTORY: userDirectory })
+  return Object.fromEntries(Object.entries({ ...process.env, FORGE614_HOME: join(userDirectory,".forge614") })
     .filter((entry): entry is [string, string] => entry[1] !== undefined));
 }
 function runCli(cwd: string, userDirectory: string, ...args: string[]) {
-  const result = Bun.spawnSync([process.execPath, "--preload", preload, cli, ...args], {
+  const result = Bun.spawnSync([process.execPath, cli, ...args], {
     cwd, env: environment(userDirectory),
   });
   return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
@@ -37,7 +36,7 @@ async function connect(options: {
   }
   const transport = new StdioClientTransport({
     command: options.command ?? process.execPath,
-    args: options.args ?? ["--preload", preload, cli, "mcp"],
+    args: options.args ?? [cli, "mcp"],
     cwd: options.cwd,
     env: environment(options.userDirectory),
     stderr: "pipe",
@@ -77,7 +76,7 @@ test("compiled executable completes the official SDK stdio handshake without use
 test("raw stdin EOF cancels an unanswered roots request and exits promptly", async () => {
   const root = temporary(); const userDirectory = join(root,"user");
   expect(runCli(root,userDirectory,"init","--json").code).toBe(0);
-  const child = Bun.spawn([process.execPath,"--preload",preload,cli,"mcp"],{
+  const child = Bun.spawn([process.execPath,cli,"mcp"],{
     cwd:root,env:environment(userDirectory),stdin:"pipe",stdout:"pipe",stderr:"pipe",
   });
   const reader = child.stdout.getReader(); let output = "";
