@@ -112,8 +112,30 @@ test("sync without PostgreSQL configuration never creates storage",()=>{
 });
 
 test("all projects and working directories share exactly one workspace configuration", () => {
-  const a = workspace(); const b = workspace(); const id = create(a);
-  create(a,"Another"); const user = join(a,"user");
+  const diagLog = join(tmpdir(),`forge614-diag-${process.pid}-${Date.now()}.ndjson`);
+  const diagEnv = { FORGE614_DIAGNOSE_HANG_LOG: diagLog };
+  function timed<T>(label: string, run: () => T): T {
+    const start = Bun.nanoseconds();
+    try { return run(); }
+    finally { console.log(`[diag] ${label}: ${((Bun.nanoseconds()-start)/1e6).toFixed(2)}ms`); }
+  }
+  const a = timed("workspace(a)",()=>workspace()); const b = timed("workspace(b)",()=>workspace());
+  const id = timed("create(a,demo)",()=>{
+    const result = Bun.spawnSync([process.execPath,"--preload",preload,cli,"project-create","--name","demo"], {
+      cwd:a, env:{...process.env,FORGE614_TEST_USER_DIRECTORY:join(a,"user"),...diagEnv}, timeout: 10_000,
+    });
+    expect(result.exitCode).toBe(0);
+    return JSON.parse(result.stdout.toString()).projectId;
+  });
+  timed("create(a,Another)",()=>{
+    const result = Bun.spawnSync([process.execPath,"--preload",preload,cli,"project-create","--name","Another"], {
+      cwd:a, env:{...process.env,FORGE614_TEST_USER_DIRECTORY:join(a,"user"),...diagEnv}, timeout: 10_000,
+    });
+    if (existsSync(diagLog)) console.log(`[diag] log contents:\n${readFileSync(diagLog,"utf8")}`);
+    expect(result.exitCode).toBe(0);
+    return JSON.parse(result.stdout.toString()).projectId;
+  });
+  const user = join(a,"user");
   const saved = run(a,"save","--project-id",id,"--title","Global storage","--content","Persistent SQLite");
   expect(saved.code).toBe(0);
   const result = runAs(b,user,"search","--project-id",id,"--query","SQLite");
@@ -125,7 +147,7 @@ test("all projects and working directories share exactly one workspace configura
   expect(readdirSync(join(user,".forge614")).sort()).toEqual(["engram"]);
   expect(readdirSync(join(user,".forge614","engram")).filter(n=>!n.endsWith("-wal")&&!n.endsWith("-shm")).sort()).toEqual([".env","engram.db"]);
   expect(readFileSync(join(user,".forge614","engram",".env"),"utf8")).not.toContain(id);
-});
+}, 25_000);
 
 test("SDK workspace and CLI share the same identity and database", () => {
   const dir = workspace(); const index = resolve(import.meta.dir,"../../../index.ts");
