@@ -17,11 +17,17 @@ function environment(userDirectory: string): Record<string, string> {
   return Object.fromEntries(Object.entries({ ...process.env, FORGE614_HOME: join(userDirectory,".forge614") })
     .filter((entry): entry is [string, string] => entry[1] !== undefined));
 }
-function runCli(cwd: string, userDirectory: string, ...args: string[]) {
-  const result = Bun.spawnSync([process.execPath, cli, ...args], {
-    cwd, env: environment(userDirectory), timeout: 10_000,
+// See cli.e2e.test.ts: Bun.spawnSync has a confirmed, unfixed upstream hang bug
+// (oven-sh/bun#34069), so the CLI launcher uses the async Bun.spawn path instead.
+async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
+  const child = Bun.spawn([process.execPath, cli, ...args], {
+    cwd, env: environment(userDirectory), stdout:"pipe", stderr:"pipe",
   });
-  return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  const timer = setTimeout(() => child.kill(), 10_000);
+  try {
+    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    return { code, stdout, stderr };
+  } finally { clearTimeout(timer); }
 }
 async function connect(options: {
   cwd: string; userDirectory: string; roots?: string[]; command?: string; args?: string[];
@@ -59,23 +65,23 @@ afterEach(async () => {
 
 test("init enables project bindings and MCP resolves one client root without creating a project", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
-  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   const connection = await connect({ cwd: root, userDirectory, roots: [project] });
   expect(data(await call(connection.client, "memory_current_project"))).toMatchObject({ projectId: null, source: "unbound" });
-  expect(JSON.parse(runCli(root, userDirectory, "project-list").stdout)).toEqual([]);
+  expect(JSON.parse((await runCli(root, userDirectory, "project-list")).stdout)).toEqual([]);
 }, 20000);
 
 test("a non-Git process cwd is not treated as an implicit non-Git project root", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
-  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   const { client } = await connect({ cwd:root,userDirectory });
   expect((await call(client,"memory_current_project")).isError).toBe(true);
-  expect(JSON.parse(runCli(root,userDirectory,"project-list").stdout)).toEqual([]);
+  expect(JSON.parse((await runCli(root,userDirectory,"project-list")).stdout)).toEqual([]);
 }, 20000);
 
 test("stdio save, search, get, history, update and request replay persist across restarts", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
-  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   let connection = await connect({ cwd: project, userDirectory });
   const input = {
     directory: project, title: "Database decision", content: "Use SQLite locally", type: "decision",
@@ -101,7 +107,7 @@ test("stdio save, search, get, history, update and request replay persist across
 
 test("stdio duplicate saves reinforce only the selected project without increasing its version", async () => {
   const root=temporary();const userDirectory=join(root,"user");const a=temporary();const b=temporary();
-  expect(runCli(root,userDirectory,"reinforcement-enable").code).toBe(0);
+  expect((await runCli(root,userDirectory,"reinforcement-enable")).code).toBe(0);
   const firstConnection=await connect({cwd:root,userDirectory,roots:[a]});
   const input={title:"Runtime owner",content:"Project-local observation",type:"decision",topicKey:"runtime-owner"};
   const first=data(await call(firstConnection.client,"memory_save",{...input,requestKey:"a-create"})) as {id:string;projectId:string;version:number};
@@ -119,7 +125,7 @@ test("stdio duplicate saves reinforce only the selected project without increasi
 
 test("shared saves require explicit scope and a nonempty global-intent explanation", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
-  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   const { client } = await connect({ cwd: root, userDirectory });
   const base = { scope: "shared", title: "Global preference", content: "Use Spanish", type: "preference" };
   expect((await call(client, "memory_save", base)).isError).toBe(true);
@@ -132,7 +138,7 @@ test("shared saves require explicit scope and a nonempty global-intent explanati
 
 test("owner mismatch, unbound default search, multiple roots and oversized inputs fail safely", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const a = temporary(); const b = temporary();
-  expect(runCli(root, userDirectory, "init", "--json").code).toBe(0);
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   const { client } = await connect({ cwd: root, userDirectory, roots: [a, b] });
   expect((await call(client, "memory_current_project")).isError).toBe(true);
   const saved = data(await call(client, "memory_save", {
@@ -148,7 +154,7 @@ test("owner mismatch, unbound default search, multiple roots and oversized input
 
 test("MCP session contracts support parallel chats, exact versions, replay, summary ordering and private shared origins",async()=>{
   const root=temporary(),userDirectory=join(root,"user"),project=temporary();
-  expect(runCli(root,userDirectory,"sessions-enable").code).toBe(0);
+  expect((await runCli(root,userDirectory,"sessions-enable")).code).toBe(0);
   const {client}=await connect({cwd:root,userDirectory,roots:[project]});
   const one=data(await call(client,"memory_session_start",{sessionId:"chat-one"})) as {projectId:string};
   expect((await call(client,"memory_session_start",{sessionId:"chat-two"})).isError).not.toBe(true);
@@ -179,7 +185,7 @@ test("MCP session contracts support parallel chats, exact versions, replay, summ
 
 test("MCP accepts the SDK session identifier boundary and reports ambiguous assistant inference",async()=>{
   const root=temporary(),userDirectory=join(root,"user"),project=temporary();
-  expect(runCli(root,userDirectory,"sessions-enable").code).toBe(0);
+  expect((await runCli(root,userDirectory,"sessions-enable")).code).toBe(0);
   const {client}=await connect({cwd:root,userDirectory,roots:[project]});
   expect(data(await call(client,"memory_save",{title:"Manual",content:"No runtime yet",type:"fact"}))).toMatchObject({sessionId:expect.any(String),sessionSource:"manual"});
   const longId="🧠".repeat(200);

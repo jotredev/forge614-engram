@@ -44,11 +44,20 @@ integration("configured CLI stays local offline and sync failure preserves the s
   await expect(syncWorkspace(config)).rejects.toMatchObject({code:"POSTGRES_UNAVAILABLE"});
   expect(readFileSync(config.databasePath)).toEqual(before);
   const cli=resolve(import.meta.dir,"../../src/cli.ts");
-  const run=(...args:string[])=>Bun.spawnSync([process.execPath,cli,...args],{env:{...process.env,FORGE614_HOME:join(user,".forge614")},timeout:10_000});
-  const read=run("search","--project-id",p.projectId,"--query","persistent");
-  expect(read.exitCode).toBe(0);expect(JSON.parse(read.stdout.toString())).toHaveLength(1);
-  const saved=run("save","--project-id",p.projectId,"--title","Later","--content","offline writes");
+  // See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
+  // unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+  const run=async(...args:string[])=>{
+    const child=Bun.spawn([process.execPath,cli,...args],{env:{...process.env,FORGE614_HOME:join(user,".forge614")},stdout:"pipe",stderr:"pipe"});
+    const timer=setTimeout(()=>child.kill(),10_000);
+    try {
+      const [exitCode,stdout,stderr]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+      return {exitCode,stdout,stderr};
+    } finally {clearTimeout(timer);}
+  };
+  const read=await run("search","--project-id",p.projectId,"--query","persistent");
+  expect(read.exitCode).toBe(0);expect(JSON.parse(read.stdout)).toHaveLength(1);
+  const saved=await run("save","--project-id",p.projectId,"--title","Later","--content","offline writes");
   expect(saved.exitCode).toBe(0);
-  const failed=run("sync");expect(failed.exitCode).toBe(1);expect(failed.stderr.toString()).not.toContain("SECRET");
+  const failed=await run("sync");expect(failed.exitCode).toBe(1);expect(failed.stderr).not.toContain("SECRET");
   expect(output.join("\n")).not.toContain(testUrl);
 },postgresTestTimeoutMs);

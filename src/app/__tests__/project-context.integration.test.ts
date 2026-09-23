@@ -33,11 +33,17 @@ function repository(): string {
   return directory;
 }
 const cli = resolve(import.meta.dir,"../../cli.ts");
-function runCli(cwd:string,userDirectory:string,...args:string[]) {
-  const result = Bun.spawnSync([process.execPath,cli,...args],{
-    cwd,env:{...process.env,FORGE614_HOME:join(userDirectory,".forge614")},timeout:10_000,
+// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
+// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+async function runCli(cwd:string,userDirectory:string,...args:string[]) {
+  const child = Bun.spawn([process.execPath,cli,...args],{
+    cwd,env:{...process.env,FORGE614_HOME:join(userDirectory,".forge614")},stdout:"pipe",stderr:"pipe",
   });
-  return { code:result.exitCode,stdout:result.stdout.toString(),stderr:result.stderr.toString() };
+  const timer = setTimeout(() => child.kill(), 10_000);
+  try {
+    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    return { code, stdout, stderr };
+  } finally { clearTimeout(timer); }
 }
 afterEach(() => {
   for (const value of stores.splice(0)) value.close();
@@ -45,7 +51,7 @@ afterEach(() => {
 });
 
 
-test("project-binding enrollment explicitly upgrades schema 3 or 4 to exact schema 5", () => {
+test("project-binding enrollment explicitly upgrades schema 3 or 4 to exact schema 5", async () => {
   for (const enableSync of [false, true]) {
     const path = join(temporary(), "engram.db");
     const value = store(path);
@@ -61,7 +67,7 @@ test("project-binding enrollment explicitly upgrades schema 3 or 4 to exact sche
 });
 
 
-test("read-only resolution never creates a project or binding", () => {
+test("read-only resolution never creates a project or binding", async () => {
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
   expect(resolveProjectContext(value, directory, false)).toEqual({
@@ -71,7 +77,7 @@ test("read-only resolution never creates a project or binding", () => {
 });
 
 
-test("nested Git directories and linked worktrees share the Git common-directory binding", () => {
+test("nested Git directories and linked worktrees share the Git common-directory binding", async () => {
   const value = store(); value.enableProjectBindings();
   const repo = repository(); const child = join(repo, "src", "nested"); mkdirSync(child, { recursive: true });
   const linked = temporary("forge614-worktree-"); rmSync(linked, { recursive: true });
@@ -85,7 +91,7 @@ test("nested Git directories and linked worktrees share the Git common-directory
 });
 
 
-test("sessions share project identity across worktrees but retain distinct runtime roots", () => {
+test("sessions share project identity across worktrees but retain distinct runtime roots", async () => {
   const path = join(temporary(),"sessions.db"); const value = store(path); value.enableSessions();
   const repo = repository(); const child = join(repo,"src"); mkdirSync(child);
   const linked = temporary("forge614-session-worktree-"); rmSync(linked,{recursive:true});
@@ -105,7 +111,7 @@ test("sessions share project identity across worktrees but retain distinct runti
 });
 
 
-test("non-Git session roots are explicit and a failed start rolls back project and binding", () => {
+test("non-Git session roots are explicit and a failed start rolls back project and binding", async () => {
   const value = store(); value.enableSessions();
   const owner = value.createProject("Owner"); value.startSession(owner.projectId,"occupied");
   const directory = temporary("forge614-nongit-session-");
@@ -117,7 +123,7 @@ test("non-Git session roots are explicit and a failed start rolls back project a
 });
 
 
-test("inherited Git redirection variables cannot replace the explicit repository", () => {
+test("inherited Git redirection variables cannot replace the explicit repository", async () => {
   const value = store(); value.enableProjectBindings();
   const expected = repository(); const redirected = repository();
   const previous = { dir:process.env.GIT_DIR,tree:process.env.GIT_WORK_TREE,common:process.env.GIT_COMMON_DIR };
@@ -131,7 +137,7 @@ test("inherited Git redirection variables cannot replace the explicit repository
 });
 
 
-test("a broken enclosing Git repository fails closed without creating a second identity", () => {
+test("a broken enclosing Git repository fails closed without creating a second identity", async () => {
   const value = store(); value.enableProjectBindings();
   const repo = repository(); const child = join(repo,"src"); mkdirSync(child);
   const first = saveProjectMemory(value,repo,{ title:"Root",content:"Original identity",type:"fact" });
@@ -143,7 +149,7 @@ test("a broken enclosing Git repository fails closed without creating a second i
 });
 
 
-test("an unavailable Git executable is not mistaken for a non-Git project", () => {
+test("an unavailable Git executable is not mistaken for a non-Git project", async () => {
   const value = store(); value.enableProjectBindings(); const directory = temporary();
   const original = process.env.PATH; process.env.PATH = "";
   try { expect(() => resolveProjectContext(value,directory,true)).toThrow("identidad Git"); }
@@ -182,7 +188,7 @@ test("Git discovery has a finite timeout and leaves storage unchanged when confi
 },4000);
 
 
-test("same-name existing projects require an explicit binding instead of identity guessing", () => {
+test("same-name existing projects require an explicit binding instead of identity guessing", async () => {
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
   const existing = value.createProject(basename(directory));
@@ -213,7 +219,7 @@ test.each([false,true])("renaming a %s Git directory requires explicit binding a
 });
 
 
-test("an inaccessible recorded binding fails closed but synthetic store bindings remain usable",()=>{
+test("an inaccessible recorded binding fails closed but synthetic store bindings remain usable", async () =>{
   const value=store();value.enableProjectBindings();const root=temporary();
   const notDirectory=join(root,"file");writeFileSync(notDirectory,"fixture");
   value.resolveProjectDirectory(join(notDirectory,"child"),"Synthetic",true);
@@ -223,7 +229,7 @@ test("an inaccessible recorded binding fails closed but synthetic store bindings
 });
 
 
-test("missing, home and filesystem-root directories are rejected without writes", () => {
+test("missing, home and filesystem-root directories are rejected without writes", async () => {
   const value = store(); value.enableProjectBindings();
   for (const directory of [join(temporary(), "missing"), homedir(), realpathSync("/")]) {
     expect(() => resolveProjectContext(value, directory, true)).toThrow();
@@ -232,7 +238,7 @@ test("missing, home and filesystem-root directories are rejected without writes"
 });
 
 
-test("first project save creates identity, binding and memory atomically", () => {
+test("first project save creates identity, binding and memory atomically", async () => {
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
   expect(() => saveProjectMemory(value, directory, {
@@ -251,7 +257,7 @@ test("first project save creates identity, binding and memory atomically", () =>
 });
 
 
-test("sync snapshots preserve project UUIDs but exclude machine-local path bindings", () => {
+test("sync snapshots preserve project UUIDs but exclude machine-local path bindings", async () => {
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
   const saved = saveProjectMemory(value, directory, { title: "Local", content: "Bound", type: "fact" });

@@ -33,11 +33,17 @@ function repository(): string {
   return directory;
 }
 const cli = resolve(import.meta.dir,"../../../cli.ts");
-function runCli(cwd:string,userDirectory:string,...args:string[]) {
-  const result = Bun.spawnSync([process.execPath,cli,...args],{
-    cwd,env:{...process.env,FORGE614_HOME:join(userDirectory,".forge614")},timeout:10_000,
+// See cli.e2e.test.ts: Bun.spawnSync has a confirmed, unfixed upstream hang bug
+// (oven-sh/bun#34069), so the CLI launcher uses the async Bun.spawn path instead.
+async function runCli(cwd:string,userDirectory:string,...args:string[]) {
+  const child = Bun.spawn([process.execPath,cli,...args],{
+    cwd,env:{...process.env,FORGE614_HOME:join(userDirectory,".forge614")},stdout:"pipe",stderr:"pipe",
   });
-  return { code:result.exitCode,stdout:result.stdout.toString(),stderr:result.stderr.toString() };
+  const timer = setTimeout(() => child.kill(), 10_000);
+  try {
+    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    return { code, stdout, stderr };
+  } finally { clearTimeout(timer); }
 }
 afterEach(() => {
   for (const value of stores.splice(0)) value.close();
@@ -45,12 +51,12 @@ afterEach(() => {
 });
 
 
-test("project-bind is scriptable recovery for a colliding existing project name", () => {
+test("project-bind is scriptable recovery for a colliding existing project name", async () => {
   const root = temporary(); const userDirectory = join(root,"user"); const directory = temporary();
-  expect(runCli(root,userDirectory,"init","--json").code).toBe(0);
-  const created = runCli(root,userDirectory,"project-create","--name",basename(directory));
+  expect((await runCli(root,userDirectory,"init","--json")).code).toBe(0);
+  const created = (await runCli(root,userDirectory,"project-create","--name",basename(directory)));
   expect(created.code).toBe(0); const projectId = JSON.parse(created.stdout).projectId;
-  const bound = runCli(root,userDirectory,"project-bind","--directory",directory,"--project-id",projectId);
+  const bound = (await runCli(root,userDirectory,"project-bind","--directory",directory,"--project-id",projectId));
   expect(bound.code).toBe(0);
   expect(JSON.parse(bound.stdout)).toMatchObject({ projectId,directory:realpathSync(directory),source:"binding" });
 }, 20000);

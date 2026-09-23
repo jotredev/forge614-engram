@@ -17,11 +17,17 @@ function environment(userDirectory: string): Record<string, string> {
   return Object.fromEntries(Object.entries({ ...process.env, FORGE614_HOME: join(userDirectory,".forge614") })
     .filter((entry): entry is [string, string] => entry[1] !== undefined));
 }
-function runCli(cwd: string, userDirectory: string, ...args: string[]) {
-  const result = Bun.spawnSync([process.execPath, cli, ...args], {
-    cwd, env: environment(userDirectory),
+// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
+// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
+  const child = Bun.spawn([process.execPath, cli, ...args], {
+    cwd, env: environment(userDirectory), stdout:"pipe", stderr:"pipe",
   });
-  return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  const timer = setTimeout(() => child.kill(), 10_000);
+  try {
+    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    return { code, stdout, stderr };
+  } finally { clearTimeout(timer); }
 }
 async function connect(options: {
   cwd: string; userDirectory: string; roots?: string[]; command?: string; args?: string[];
@@ -64,10 +70,10 @@ test("stdio initializes and advertises exactly the bounded memory tool surface",
 
 test("compiled executable completes the official SDK stdio handshake without user storage", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const binary = join(root, "forge614-engram");
-  const built = Bun.spawnSync([
+  const buildChild = Bun.spawn([
     process.execPath, "build", "--compile", cli, "--outfile", binary,
-  ], { cwd: root, env: environment(userDirectory), stderr: "pipe" });
-  expect(built.exitCode).toBe(0);
+  ], { cwd: root, env: environment(userDirectory), stdout: "pipe", stderr: "pipe" });
+  expect(await buildChild.exited).toBe(0);
   const { client } = await connect({ cwd: root, userDirectory, command: binary, args: ["mcp"] });
   expect((await client.listTools()).tools).toHaveLength(10);
   expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
@@ -75,7 +81,7 @@ test("compiled executable completes the official SDK stdio handshake without use
 
 test("raw stdin EOF cancels an unanswered roots request and exits promptly", async () => {
   const root = temporary(); const userDirectory = join(root,"user");
-  expect(runCli(root,userDirectory,"init","--json").code).toBe(0);
+  expect((await runCli(root,userDirectory,"init","--json")).code).toBe(0);
   const child = Bun.spawn([process.execPath,cli,"mcp"],{
     cwd:root,env:environment(userDirectory),stdin:"pipe",stdout:"pipe",stderr:"pipe",
   });

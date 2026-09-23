@@ -9,21 +9,27 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
 }
 const cli = resolve(import.meta.dir,"../../cli.ts");
-function runAs(cwd: string, userDirectory: string, ...args: string[]) {
-  const result = Bun.spawnSync([process.execPath,cli,...args], {
-    cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, timeout: 10_000,
+// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
+// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
+  const child = Bun.spawn([process.execPath,cli,...args], {
+    cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
   });
-  return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  const timer = setTimeout(() => child.kill(), 10_000);
+  try {
+    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    return { code, stdout, stderr };
+  } finally { clearTimeout(timer); }
 }
-function run(cwd: string, ...args: string[]) { return runAs(cwd,join(cwd,"user"),...args); }
+async function run(cwd: string, ...args: string[]) { return (await runAs(cwd,join(cwd,"user"),...args)); }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
-test("help, version and empty project list create no storage", () => {
+test("help, version and empty project list create no storage", async () => {
   const dir = workspace();
   for (const args of [["help"],["--version"],["project-list"]]) {
-    const result = run(dir,...args); expect(result.code).toBe(0);
+    const result = (await run(dir,...args)); expect(result.code).toBe(0);
     expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
   }
-  const help = run(dir,"help").stdout;
+  const help = (await run(dir,"help")).stdout;
   for (const syntax of [
     "sync [--upgrade-format]",
     "update [--json] Descarga, verifica y activa la última versión estable de Engram; --json devuelve el resultado estructurado.",
@@ -44,15 +50,15 @@ test("help, version and empty project list create no storage", () => {
   expect(help).not.toContain("Asistentes con vista previa y confirmación");
   expect(help).toContain("~/.forge614/engram/.env");
   expect(help).toContain("~/.forge614/engram/engram.db");
-  expect(run(dir,"--version").stdout).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
-  expect(JSON.parse(run(dir,"project-list").stdout)).toEqual([]);
+  expect((await run(dir,"--version")).stdout).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
+  expect(JSON.parse((await run(dir,"project-list")).stdout)).toEqual([]);
 });
 
-test("main defaults to help and serializes invalid invocations only to stderr", () => {
+test("main defaults to help and serializes invalid invocations only to stderr", async () => {
   const dir=workspace();
-  expect(run(dir).stdout).toBe(run(dir,"--help").stdout);
+  expect((await run(dir)).stdout).toBe((await run(dir,"--help")).stdout);
   for(const args of [["help","PRIVATE_VALUE"],["--version","PRIVATE_VALUE"],["unknown-command"]]) {
-    const result=run(dir,...args);
+    const result=(await run(dir,...args));
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
     expect(JSON.parse(result.stderr)).toMatchObject({code:"INVALID_INPUT"});

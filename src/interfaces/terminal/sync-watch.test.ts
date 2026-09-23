@@ -9,21 +9,27 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
 }
 const cli = resolve(import.meta.dir,"../../cli.ts");
-function runAs(cwd: string, userDirectory: string, ...args: string[]) {
-  const result = Bun.spawnSync([process.execPath,cli,...args], {
-    cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") },
+// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
+// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
+  const child = Bun.spawn([process.execPath,cli,...args], {
+    cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
   });
-  return { code: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
+  const timer = setTimeout(() => child.kill(), 10_000);
+  try {
+    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    return { code, stdout, stderr };
+  } finally { clearTimeout(timer); }
 }
-function run(cwd: string, ...args: string[]) { return runAs(cwd,join(cwd,"user"),...args); }
-function create(dir: string, name = "demo"): string {
-  const result = run(dir,"project-create","--name",name);
+async function run(cwd: string, ...args: string[]) { return (await runAs(cwd,join(cwd,"user"),...args)); }
+async function create(dir: string, name = "demo"): Promise<string> {
+  const result = await run(dir,"project-create","--name",name);
   expect(result.code).toBe(0);
   return JSON.parse(result.stdout).projectId;
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
 test("sync-watch reports offline retry state and exits on SIGINT without blocking local writes",async()=>{
-  const dir=workspace();const id=create(dir);
+  const dir=workspace();const id=(await create(dir));
   const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
   config.configurePostgres("postgresql://u:SECRET@127.0.0.1:1/db?sslmode=disable",config.revision());
   const child=Bun.spawn([process.execPath,cli,"sync-watch","--interval","1"],{
@@ -33,7 +39,7 @@ test("sync-watch reports offline retry state and exits on SIGINT without blockin
     const reader=child.stderr.getReader();const first=await reader.read();
     expect(new TextDecoder().decode(first.value)).toContain("POSTGRES_UNAVAILABLE");
     expect(new TextDecoder().decode(first.value)).not.toContain("SECRET");
-    expect(run(dir,"save","--project-id",id,"--title","Offline","--content","Still local").code).toBe(0);
+    expect((await run(dir,"save","--project-id",id,"--title","Offline","--content","Still local")).code).toBe(0);
     child.kill("SIGINT");expect(await child.exited).toBe(130);reader.releaseLock();
   } finally {child.kill();await child.exited;}
 },10000);
