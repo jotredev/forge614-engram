@@ -28,6 +28,7 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Loop without the candidate fix (baseline)
         shell: bash
+        timeout-minutes: 8
         run: |
           set +e
           n=${{ env.ITERATIONS }}
@@ -47,6 +48,7 @@ jobs:
           echo "BASELINE: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
       - name: Loop with the candidate fix (FORGE614_EXPERIMENT_EXIT=1)
         shell: bash
+        timeout-minutes: 8
         env:
           FORGE614_EXPERIMENT_EXIT: "1"
         run: |
@@ -68,14 +70,23 @@ jobs:
           echo "WITH FIX: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
       - name: "Experiment 5a: inherited stdin that never sends EOF (baseline)"
         shell: bash
+        timeout-minutes: 8
         run: |
           set +e
           n=${{ env.ITERATIONS }}
           timeouts=0
           for i in $(seq 1 "$n"); do
             dir=$(mktemp -d)
-            sleep 600 | timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} >"$dir/out.json" 2>"$dir/err.txt"
+            fifo="$dir/stdin.fifo"
+            mkfifo "$fifo"
+            # A literal `sleep 600 | cmd` pipeline makes bash wait for sleep too (600s per
+            # iteration) even after `timeout` kills cmd -- a FIFO plus an explicit background
+            # writer avoids that, so each iteration only costs what the CLI actually takes.
+            sleep 600 > "$fifo" &
+            writer_pid=$!
+            timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} < "$fifo" >"$dir/out.json" 2>"$dir/err.txt"
             ec=$?
+            kill "$writer_pid" 2>/dev/null; wait "$writer_pid" 2>/dev/null
             if [ "$ec" -eq 124 ]; then
               timeouts=$((timeouts+1))
               echo "  [5a-baseline #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json")"
@@ -85,13 +96,14 @@ jobs:
           echo "5a BASELINE (stdin inherited from a never-closing pipe): $timeouts/$n timed out."
       - name: "Experiment 5a: same, with stdin explicitly closed (candidate fix)"
         shell: bash
+        timeout-minutes: 8
         run: |
           set +e
           n=${{ env.ITERATIONS }}
           timeouts=0
           for i in $(seq 1 "$n"); do
             dir=$(mktemp -d)
-            sleep 600 | timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} </dev/null >"$dir/out.json" 2>"$dir/err.txt"
+            timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} </dev/null >"$dir/out.json" 2>"$dir/err.txt"
             ec=$?
             if [ "$ec" -eq 124 ]; then
               timeouts=$((timeouts+1))
@@ -102,6 +114,7 @@ jobs:
           echo "5a WITH FIX (stdin explicitly redirected from /dev/null, same as Bun.spawn's stdin:\"ignore\"): $timeouts/$n timed out."
       - name: "Experiment 5b: a concurrent writer holds BEGIN IMMEDIATE on the same database"
         shell: bash
+        timeout-minutes: 8
         run: |
           set +e
           n=${{ env.ITERATIONS }}
