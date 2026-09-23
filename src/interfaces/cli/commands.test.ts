@@ -186,3 +186,42 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
   expect(JSON.parse(missing.stderr).code).toBe("DATABASE_MISSING");
   expect(existsSync(config.databasePath)).toBe(false);
 }, 40000);
+
+// Regression guard for the v1.5.3 hang investigation (experiment 4): commands.ts must
+// keep loading the MCP SDK and zod lazily, only for the "mcp" command. The preload
+// plugin throws if anything under node_modules/zod or node_modules/@modelcontextprotocol
+// is loaded, so a command that must not need them fails loudly on any regression, while
+// "mcp" (which does need them) is expected to fail specifically because of that throw.
+const mcpImportGuard = resolve(import.meta.dir,"../../../tests/fixtures/fail-on-mcp-import.ts");
+async function runGuarded(cwd: string, userDirectory: string, marker: string, ...args: string[]) {
+  const child = Bun.spawn([process.execPath,"--preload",mcpImportGuard,cli,...args], {
+    cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614"), FORGE614_MCP_IMPORT_MARKER: marker },
+    stdout:"pipe", stderr:"pipe",
+  });
+  const timer = setTimeout(() => child.kill(), 20_000);
+  try {
+    const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    return { code, stdout, stderr };
+  } finally { clearTimeout(timer); }
+}
+test("memory-protocol, sync and project-list never load the MCP SDK or zod", async () => {
+  const dir = workspace();
+  const cases: [string[], number][] = [
+    [["memory-protocol","--json"], 0],
+    [["sync"], 1], // CONFIG_NOT_FOUND, unrelated to the guard
+    [["project-list"], 0],
+  ];
+  for (const [args, expectedCode] of cases) {
+    const marker = join(dir, `marker-${args[0]}.txt`);
+    const result = await runGuarded(dir, join(dir,"user"), marker, ...args);
+    expect(existsSync(marker)).toBe(false);
+    expect(result.code).toBe(expectedCode);
+  }
+}, 40000);
+test("the mcp command still loads the MCP SDK (the guard itself is not a false negative)", async () => {
+  const dir = workspace();
+  const marker = join(dir, "marker-mcp.txt");
+  await runGuarded(dir, join(dir,"user"), marker, "mcp");
+  expect(existsSync(marker)).toBe(true);
+  expect(readFileSync(marker,"utf8")).toContain("zod");
+}, 40000);

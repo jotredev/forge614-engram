@@ -26,7 +26,7 @@ jobs:
         with:
           bun-version: 1.3.8
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Loop without the candidate fix (baseline)
+      - name: "3a: baseline memory-protocol loop, run 1/3 (lazy MCP import applied)"
         shell: bash
         timeout-minutes: 8
         run: |
@@ -41,16 +41,14 @@ jobs:
             if [ "$ec" -eq 124 ]; then
               timeouts=$((timeouts+1))
               if jq empty "$dir/out.json" >/dev/null 2>&1; then complete_but_killed=$((complete_but_killed+1)); fi
-              echo "  [baseline #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json"); valid complete JSON already present: $(jq empty "$dir/out.json" >/dev/null 2>&1 && echo yes || echo no)"
+              echo "  [run1 #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json"); valid complete JSON already present: $(jq empty "$dir/out.json" >/dev/null 2>&1 && echo yes || echo no)"
             fi
             rm -rf "$dir"
           done
-          echo "BASELINE: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
-      - name: Loop with the candidate fix (FORGE614_EXPERIMENT_EXIT=1)
+          echo "3a RUN 1/3: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
+      - name: "3a: baseline memory-protocol loop, run 2/3"
         shell: bash
         timeout-minutes: 8
-        env:
-          FORGE614_EXPERIMENT_EXIT: "1"
         run: |
           set +e
           n=${{ env.ITERATIONS }}
@@ -58,17 +56,37 @@ jobs:
           complete_but_killed=0
           for i in $(seq 1 "$n"); do
             dir=$(mktemp -d)
-            timeout 5 env FORGE614_HOME="$dir/.forge614" FORGE614_EXPERIMENT_EXIT=1 bun src/cli.ts ${{ env.REPRO_COMMAND }} >"$dir/out.json" 2>"$dir/err.txt"
+            timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} >"$dir/out.json" 2>"$dir/err.txt"
             ec=$?
             if [ "$ec" -eq 124 ]; then
               timeouts=$((timeouts+1))
               if jq empty "$dir/out.json" >/dev/null 2>&1; then complete_but_killed=$((complete_but_killed+1)); fi
-              echo "  [fixed #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json"); valid complete JSON already present: $(jq empty "$dir/out.json" >/dev/null 2>&1 && echo yes || echo no)"
+              echo "  [run2 #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json"); valid complete JSON already present: $(jq empty "$dir/out.json" >/dev/null 2>&1 && echo yes || echo no)"
             fi
             rm -rf "$dir"
           done
-          echo "WITH FIX: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
-      - name: "Experiment 5a: inherited stdin that never sends EOF (baseline)"
+          echo "3a RUN 2/3: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
+      - name: "3a: baseline memory-protocol loop, run 3/3"
+        shell: bash
+        timeout-minutes: 8
+        run: |
+          set +e
+          n=${{ env.ITERATIONS }}
+          timeouts=0
+          complete_but_killed=0
+          for i in $(seq 1 "$n"); do
+            dir=$(mktemp -d)
+            timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} >"$dir/out.json" 2>"$dir/err.txt"
+            ec=$?
+            if [ "$ec" -eq 124 ]; then
+              timeouts=$((timeouts+1))
+              if jq empty "$dir/out.json" >/dev/null 2>&1; then complete_but_killed=$((complete_but_killed+1)); fi
+              echo "  [run3 #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json"); valid complete JSON already present: $(jq empty "$dir/out.json" >/dev/null 2>&1 && echo yes || echo no)"
+            fi
+            rm -rf "$dir"
+          done
+          echo "3a RUN 3/3: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
+      - name: "3b: experiment 5a corrected (FIFO), stdin inherited from a never-closing pipe"
         shell: bash
         timeout-minutes: 8
         run: |
@@ -89,30 +107,12 @@ jobs:
             kill "$writer_pid" 2>/dev/null; wait "$writer_pid" 2>/dev/null
             if [ "$ec" -eq 124 ]; then
               timeouts=$((timeouts+1))
-              echo "  [5a-baseline #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json")"
+              echo "  [5a #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json")"
             fi
             rm -rf "$dir"
           done
-          echo "5a BASELINE (stdin inherited from a never-closing pipe): $timeouts/$n timed out."
-      - name: "Experiment 5a: same, with stdin explicitly closed (candidate fix)"
-        shell: bash
-        timeout-minutes: 8
-        run: |
-          set +e
-          n=${{ env.ITERATIONS }}
-          timeouts=0
-          for i in $(seq 1 "$n"); do
-            dir=$(mktemp -d)
-            timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ env.REPRO_COMMAND }} </dev/null >"$dir/out.json" 2>"$dir/err.txt"
-            ec=$?
-            if [ "$ec" -eq 124 ]; then
-              timeouts=$((timeouts+1))
-              echo "  [5a-fixed #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json")"
-            fi
-            rm -rf "$dir"
-          done
-          echo "5a WITH FIX (stdin explicitly redirected from /dev/null, same as Bun.spawn's stdin:\"ignore\"): $timeouts/$n timed out."
-      - name: "Experiment 5b: a concurrent writer holds BEGIN IMMEDIATE on the same database"
+          echo "3b (experiment 5a, corrected): $timeouts/$n timed out."
+      - name: "3c: experiment 5b, a concurrent writer holds BEGIN IMMEDIATE on the same database"
         shell: bash
         timeout-minutes: 8
         run: |
@@ -142,4 +142,4 @@ jobs:
             rm -f "$lockdir/out-$i.json" "$lockdir/err-$i.txt"
           done
           kill "$holder_pid" 2>/dev/null
-          echo "5b (concurrent BEGIN IMMEDIATE held on the same db, reading via startup-context): $timeouts/$n timed out."
+          echo "3c (experiment 5b): $timeouts/$n timed out."

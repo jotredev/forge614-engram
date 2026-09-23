@@ -6,7 +6,6 @@ import { memoryProtocol } from "../../modules/memory-protocol";
 import { projectIdentity } from "../../modules/projects";
 import { initTerminal } from "../terminal/setup";
 import { watchSync } from "../terminal/sync-watch";
-import { startMcp } from "../mcp/server";
 import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
 
 export function updateResultJson(result: EngramUpdateResult): string {
@@ -41,7 +40,11 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
   if (command === "sync") {console.log(JSON.stringify(await syncWorkspace(undefined,{upgradeFormat:values.has("upgrade-format")}),null,2));return;}
   if(command==="sync-watch"&&values.has("upgrade-format"))invalid("sync-watch no acepta --upgrade-format.");
   if (command === "sync-watch") {await watchSync(values.has("interval")?integer(need("interval"),"interval",3600):30);return;}
-  if (command === "mcp") { await startMcp(); return; }
+  // Loaded lazily: the MCP SDK (and zod, including its 64-file locale barrel) has no
+  // reason to be parsed for any command other than "mcp" -- see forge614-ai review of
+  // the v1.5.3 CLI hang investigation, experiment 4 (a hung child was caught mid-load
+  // of a zod locale file for a command that never uses MCP at all).
+  if (command === "mcp") { const { startMcp } = await import("../mcp/server"); await startMcp(); return; }
   const workspace = new MemoryWorkspace();
   if(command==="sessions-enable"){
     workspace.init();const store=workspace.open();try{store.enableSessions();}finally{store.close();}
