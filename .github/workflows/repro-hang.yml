@@ -1,0 +1,66 @@
+name: Repro CLI hang (diagnostic only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "Invocations per arm"
+        default: "200"
+      command:
+        description: "CLI command to loop"
+        default: "memory-protocol --json"
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: memory-protocol loop (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Loop without the candidate fix (baseline)
+        shell: bash
+        run: |
+          set +e
+          n=${{ inputs.iterations }}
+          timeouts=0
+          complete_but_killed=0
+          for i in $(seq 1 "$n"); do
+            dir=$(mktemp -d)
+            timeout 5 env FORGE614_HOME="$dir/.forge614" bun src/cli.ts ${{ inputs.command }} >"$dir/out.json" 2>"$dir/err.txt"
+            ec=$?
+            if [ "$ec" -eq 124 ]; then
+              timeouts=$((timeouts+1))
+              if jq empty "$dir/out.json" >/dev/null 2>&1; then complete_but_killed=$((complete_but_killed+1)); fi
+              echo "  [baseline #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json"); valid complete JSON already present: $(jq empty "$dir/out.json" >/dev/null 2>&1 && echo yes || echo no)"
+            fi
+            rm -rf "$dir"
+          done
+          echo "BASELINE: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."
+      - name: Loop with the candidate fix (FORGE614_EXPERIMENT_EXIT=1)
+        shell: bash
+        env:
+          FORGE614_EXPERIMENT_EXIT: "1"
+        run: |
+          set +e
+          n=${{ inputs.iterations }}
+          timeouts=0
+          complete_but_killed=0
+          for i in $(seq 1 "$n"); do
+            dir=$(mktemp -d)
+            timeout 5 env FORGE614_HOME="$dir/.forge614" FORGE614_EXPERIMENT_EXIT=1 bun src/cli.ts ${{ inputs.command }} >"$dir/out.json" 2>"$dir/err.txt"
+            ec=$?
+            if [ "$ec" -eq 124 ]; then
+              timeouts=$((timeouts+1))
+              if jq empty "$dir/out.json" >/dev/null 2>&1; then complete_but_killed=$((complete_but_killed+1)); fi
+              echo "  [fixed #$i] TIMED OUT; stdout bytes=$(wc -c <"$dir/out.json"); valid complete JSON already present: $(jq empty "$dir/out.json" >/dev/null 2>&1 && echo yes || echo no)"
+            fi
+            rm -rf "$dir"
+          done
+          echo "WITH FIX: $timeouts/$n timed out; of those, $complete_but_killed already had complete valid JSON in stdout when killed."

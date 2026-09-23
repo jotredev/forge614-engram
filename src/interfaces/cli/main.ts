@@ -26,4 +26,14 @@ export async function main(args:string[]):Promise<void> {
       : { code: "STORAGE_ERROR", error: "No se pudo completar la operación. Comprueba permisos, configuración y disponibilidad de la base. No se creó una base de reemplazo." }));
     process.exitCode = 1;
   }
+  finally {
+    // Experiment (forge614-ai coordinator, v1.5.3 hang investigation): test whether the
+    // process finishes its work but never drains the event loop on its own on Linux.
+    // Gated so it never changes behavior unless explicitly requested by the reproduction.
+    if (process.env.FORGE614_EXPERIMENT_EXIT === "1") {
+      await new Promise(resolve => process.stdout.write("", resolve));
+      await new Promise(resolve => process.stderr.write("", resolve));
+      process.exit(process.exitCode ?? 0);
+    }
+  }
 }
