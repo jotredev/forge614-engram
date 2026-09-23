@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { WorkspaceConfig } from "../../infrastructure/filesystem/workspace-config";
@@ -225,4 +225,23 @@ test("the mcp command still loads the MCP SDK (the guard itself is not a false n
   expect(existsSync(marker)).toBe(true);
   const hits = readFileSync(marker,"utf8");
   expect(hits.includes("zod") || hits.includes("@modelcontextprotocol")).toBe(true);
+}, 40000);
+
+// The identity file boundary is validated with a strict zod schema, loaded on demand: only a repository that
+// actually carries a .forge614/project.json pays for it, and never the common startup path without one.
+test("startup-context loads zod only when the repository carries an identity file", async () => {
+  const dir = workspace();
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const plain = join(dir, "plain"); mkdirSync(plain);
+  const carrying = join(dir, "carrying"); mkdirSync(join(carrying, ".forge614"), { recursive: true });
+  writeFileSync(join(carrying, ".forge614", "project.json"), JSON.stringify({ schemaVersion: 1, project: { id: crypto.randomUUID(), name: "c" }, ecosystem: null }));
+  const without = join(dir, "marker-without.txt");
+  const free = await runGuarded(dir, join(dir, "user"), without, "startup-context", "--directory", plain, "--json");
+  expect(existsSync(without)).toBe(false);
+  expect(free.code).toBe(0);
+  // Positive control: with a file the schema is needed, so the guard must see the load (proves it is not a false negative).
+  const withFile = join(dir, "marker-with.txt");
+  await runGuarded(dir, join(dir, "user"), withFile, "startup-context", "--directory", carrying, "--json");
+  expect(existsSync(withFile)).toBe(true);
+  expect(readFileSync(withFile, "utf8")).toContain("zod");
 }, 40000);

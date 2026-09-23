@@ -6,34 +6,27 @@ import { MemoryError } from "../../shared/errors";
 
 const MAX_BYTES = 64 * 1024;
 
-// A strict, hand-written schema: unknown fields and unknown schema versions are rejected. It avoids
-// loading zod on the startup path of every session (see the v1.5.3 loader investigation).
-function record(value: unknown, keys: readonly string[], optional: readonly string[] = []): Record<string, unknown> | null {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
-  const found = Object.keys(value);
-  if (found.some(key => !keys.includes(key) && !optional.includes(key))) return null;
-  if (keys.some(key => !found.includes(key))) return null;
-  return value as Record<string, unknown>;
-}
 function accepts(check: (value: unknown) => unknown, value: unknown): boolean {
   try { check(value); return true; } catch { return false; }
 }
-function parseGroup(value: unknown): ProjectFileGroup | null {
-  const data = record(value, ["id", "name"]);
-  return data && accepts(uuidV4, data.id) && accepts(groupName, data.name) ? { id: data.id as string, name: data.name as string } : null;
-}
-function parseProjectFile(value: unknown): ProjectFile | null {
-  const data = record(value, ["schemaVersion", "project"], ["ecosystem"]);
-  if (!data || data.schemaVersion !== 1) return null;
-  const project = record(data.project, ["id", "name"]);
-  if (!project || !accepts(uuidV4, project.id) || typeof project.name !== "string"
-    || project.name.length > 300 || project.name.trim().length === 0 || project.name.includes("\0")) return null;
-  const file: ProjectFile = { schemaVersion: 1, project: { id: project.id as string, name: project.name } };
+
+// The boundary schema is zod `.strict()` (unknown fields and unknown schema versions are rejected), but zod is
+// loaded on first use: only a repository that carries this file pays for it, never the common startup path.
+// `require` keeps the read path synchronous; a top-level import would load zod (and its locales) on every command.
+let schema: { safeParse(value: unknown): { success: boolean; data?: unknown } } | null = null;
+function projectFileSchema(): NonNullable<typeof schema> {
+  if (schema) return schema;
+  const { z } = require("zod") as typeof import("zod");
+  const uuid = z.string().refine(value => accepts(uuidV4, value));
+  const label = z.string().max(300).refine(value => value.trim().length > 0 && !value.includes("\0"));
+  const group = z.object({ id: uuid, name: z.string().refine(value => accepts(groupName, value)) }).strict();
   // `ecosystem` may be absent in a file written before the group was known; Engram completes it.
-  if (!("ecosystem" in data) || data.ecosystem === undefined) return file;
-  if (data.ecosystem === null) return { ...file, ecosystem: null };
-  const group = parseGroup(data.ecosystem);
-  return group ? { ...file, ecosystem: group } : null;
+  schema = z.object({
+    schemaVersion: z.literal(1),
+    project: z.object({ id: uuid, name: label }).strict(),
+    ecosystem: group.nullable().optional(),
+  }).strict();
+  return schema;
 }
 
 export interface ProjectFileGroup { id: string; name: string }
@@ -65,7 +58,9 @@ export function readProjectFile(root: string): ProjectFile | null {
   if (file.isSymbolicLink() || !file.isFile() || file.size > MAX_BYTES) invalid();
   let value: unknown;
   try { value = JSON.parse(readFileSync(path, "utf8")); } catch { return invalid(); }
-  return parseProjectFile(value) ?? invalid();
+  const parsed = projectFileSchema().safeParse(value);
+  if (!parsed.success) invalid();
+  return parsed.data as ProjectFile;
 }
 
 function temporary(root: string, content: string): string {
