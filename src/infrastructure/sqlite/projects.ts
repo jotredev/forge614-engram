@@ -73,7 +73,10 @@ export function resolveProjectDirectory(db: Database, directory: string, name: s
 /** Registers a project that arrives with its own identity (a clone of a repository that carries its identity file). */
 export function registerProject(db: Database, projectId: string, name: string): { project: Project; created: boolean } {
     const identity = projectIdentity(projectId); const displayName = required(name, "name");
-    // One atomic statement: several hosts can start in the same fresh clone at the same moment.
+    // Steady state writes nothing (a read-only connection must work), and the insert itself is one atomic
+    // statement because several hosts can start in the same fresh clone at the same moment.
+    const existing = getProject(db, identity);
+    if (existing) return { project: existing, created: false };
     const now = new Date().toISOString();
     const inserted = db.query("INSERT OR IGNORE INTO projects(projectId,name,createdAt,updatedAt) VALUES(?,?,?,?)").run(identity, displayName, now, now);
     if (inserted.changes === 1 && ecosystemEnabled(db)) recordIdentityEvent(db, { action: "PROJECT_REGISTERED_FROM_FILE", projectId: identity });
