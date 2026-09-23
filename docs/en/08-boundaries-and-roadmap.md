@@ -16,6 +16,15 @@ It is intentionally **not** a visual workspace, assistant detector, assistant co
 - A public SDK for consumers such as Forge614 Atlas, including `MemoryWorkspace`, `MemoryStore`, initialization APIs, and `MemoryStore.getByTopic()`.
 - Safe installation, update, and uninstall operations. `forge614-engram update` installs the latest stable release after checksum verification.
 
+## Capabilities added in v1.6.0
+
+- `ecosystem` scope: memory shared across the repositories of a **group**, with the same topics, versions, archive/restore, and reinforcement; precedence project, ecosystem, `shared`. See [11. Scopes and Ecosystems](11-scopes-and-ecosystems.md).
+- Portable project identity in `.forge614/project.json`, owned by Engram; it resolves by `id`, not by path.
+- `group-*` and `memory-move` commands; `--scope ecosystem --group` in the CLI; `scope: "ecosystem"` with `groupIntent` in MCP; public protocol version 3; an `ecosystem` block in `startup-context` and `context`.
+- Additive database upgrade with automatic backup and verification (levels 8, 9, and 10).
+
+Limits of this delivery: the PostgreSQL replica refuses (`SYNC_ECOSYSTEM_UNSUPPORTED`) while group memories exist; replicating them requires a new synchronization format that is not decided yet. Engram only reads `forge614.node.json` and never infers a group. Asking which group a project without a declaration belongs to is Shell's visual flow. Having Engines and Shell inject the `ecosystem` block is those products' work: Engram publishes the contract and does not prove they already consume it.
+
 ## Explicit non-goals
 
 - No Engram TUI or full-screen terminal control center.

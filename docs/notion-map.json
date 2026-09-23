@@ -24,85 +24,111 @@
       "localPath": "docs/es/03-referencia-cli.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981ba8803e065eb0938cc?pvs=204",
-      "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:755d254cdff909cafa288f1c4fb161063b52e2753cbb1385cfa3f79e884d787f"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:7c41034afa1edc063265fea256e16e7879dbc6ec65cacb97cce9efe4be367baf",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/03-cli-reference.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d129817baeb1fd75514e1a21?pvs=204",
-      "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:72c4e232f01e491a3d12f0fc49d64e7ded4f1a2f21c96416650cb6793d024ba9"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:dc185e9e44077b40347e8c31cd64d2bf678b19c7c21a323595eb5b0a6e41ad99",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/es/06-resolucion-de-errores.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981e0ba2ceefd90a55ddf?pvs=204",
-      "reviewedProductVersion": "1.4.0",
-      "contentFingerprint": "sha256:61063b67234cbbffd16afbd37399b50b5ef8cb94fc3445004605b6097c85e3af"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:78fe5fcbc3df0e70b44f35df0a27ead599552dd4f9f86410360113ef344588ab",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/06-troubleshooting.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981609c71c39a1fc6270c?pvs=204",
-      "reviewedProductVersion": "1.4.0",
-      "contentFingerprint": "sha256:d91b9eba6eb2a9ee78039dc25f860500e25f53b5b00f482794d3600fad063a4c"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:1efa7f727ca0e3964055f4061bd0da0fa2529732ca408f5c4e1e1bbacc3d6b0a",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/es/07-glosario.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d129810783c4d478b59ce4a5?pvs=204",
-      "reviewedProductVersion": "1.4.0",
-      "contentFingerprint": "sha256:ff9702bd39e89298dfe43cdd0a15271a4292783c578a470dca03f8ad31a21edf"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:e0113d99ae7edcc85ca30c568c68f3844961333d27b77d6ecede89a627e4ace0",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/07-glossary.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d129812ba49af4afc78870ec?pvs=204",
-      "reviewedProductVersion": "1.4.0",
-      "contentFingerprint": "sha256:6e4c35e3659315e306515724f82c28d4bcbed4ad53dac29f10c78f60a9af67f3"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:cbe673ae9d8d2737ce48e75d2102ae2d7dbdf19699539758cb4c79482453b108",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/es/08-limites-y-roadmap.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d1298129909de7484878bc99?pvs=204",
-      "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:f023eee2dd3c93ff9a90ef6869ce47499f1437c4597700166c94f37737bd6589"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:b3e95ebaf68d7bbfed71ad358efc70efb4f329e209f7a2d252364162eceb5bf3",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/08-boundaries-and-roadmap.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d1298142befbe3486411bbf9?pvs=204",
-      "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:9c6416fa7bfdf9767a1db3be41cff9f88d3cfcdbd0b29350228a94e91dda3740"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:d00e46f15517c4d3f0add3f33ad056b79e43fd8f605d97c996e57544a03de6b1",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/es/09-protocolo-publico-de-memoria.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3e121943d12981f8a00de8930f868166?pvs=204",
-      "reviewedProductVersion": "1.5.0",
-      "contentFingerprint": "sha256:91716cc5a9e00ce65a15abfae403c405a72725ab9734adcd5a49fc32de09a630"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:63bc5ef4ce0ef0c8a8ef3c73efdb77f0d39c6babf7662708aa3d6652605585bd",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/09-public-memory-protocol.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3e121943d12981b99bdbc45a7f724b75?pvs=204",
-      "reviewedProductVersion": "1.5.0",
-      "contentFingerprint": "sha256:6938de45dd12d9994ab5a8654f3c2080ef7ca14ad15d90701db3bed6d9969c99"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:2f07b642adf4e6c020bb3498e10e5b3c0f97833fde13f3832fe8a74dc049611e",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/es/10-contexto-de-inicio.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3e221943d12981f39262dd1bb0790298?pvs=204",
-      "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:3b45c8bc6c12e85c59dbbad25618a229a0eeebcd80713d431ab3d03c286b01a1"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:8bc7d6b6f3e4193fc663a2d3606dee06208bb4edf4252239cd4f7cb435db6e04",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/10-startup-context.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3e221943d12981698538c340d1dc7a85?pvs=204",
-      "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:6b0fc2633a81d939a9a8de0c92d8734cf33cb230207f26d89b7076dfa211cff9"
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:335c8a5d86f17755c59835d2bdab6a12c9f6c25678a4cd0754ace38f7ebfb7d6",
+      "notionSyncPending": true
+    },
+    {
+      "localPath": "docs/es/11-ambitos-y-ecosistemas.md",
+      "language": "es",
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:216c336e1da56586c3e6d9d598d3c32b8702f5a8fbb3f2c74cc00d091748a6e2",
+      "notionSyncPending": true
+    },
+    {
+      "localPath": "docs/en/11-scopes-and-ecosystems.md",
+      "language": "en",
+      "reviewedProductVersion": "1.6.0",
+      "contentFingerprint": "sha256:003b5b3aebe44575b9f5acd764b028cda3780f826cfb8a5c871a706c863305f1",
+      "notionSyncPending": true
     }
   ]
 }

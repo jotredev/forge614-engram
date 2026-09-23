@@ -1,6 +1,6 @@
 # Forge614 Engram Documentation
 
-Forge614 Engram is Forge614's persistent-memory engine: local SQLite/FTS5, optional PostgreSQL replica, project and shared memories, sessions, MCP, and a public TypeScript SDK.
+Forge614 Engram is Forge614's persistent-memory engine: local SQLite/FTS5, optional PostgreSQL replica, project, ecosystem (group) and shared memories, portable project identity, sessions, MCP, and a public TypeScript SDK.
 
 - [English](en/README.md)
 - [Español](es/README.md)

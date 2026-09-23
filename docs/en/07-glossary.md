@@ -12,6 +12,18 @@ A UUID that identifies one project's memories. It is not a project name or a pat
 
 A memory whose `scope` is `shared` and whose owner is `null`. It is available across projects; an active project topic can override the same shared topic in combined search.
 
+## Scope (`scope`)
+
+The "shelf" where a memory lives: `project` (one repository), `ecosystem` (a group of related repositories), or `shared` (the person, across all their projects). With a repeated `topicKey`, the combined search prefers `project`, then `ecosystem`, and finally `shared`.
+
+## Group and ecosystem
+
+A **group** is a named set of related projects (microservices, microfrontends, a split monorepo, the Forge614 ecosystem) that share the `ecosystem` scope. A project belongs to at most one group. Its identity is its `id` (UUID); the name (`^[a-z0-9]+(?:-[a-z0-9]+)*$`) is for people. It is managed with `group-create`, `group-list`, `group-bind`, `group-unbind`, and `group-rename`.
+
+## Portable project identity
+
+The `.forge614/project.json` file at the root of a repository, versioned in Git and owned exclusively by Engram: it stores the project's `id` and name and, if it belongs to one, its group's `id` and name. It lets moving, renaming, or cloning the repository keep its memory: the identity travels with the repository, not with the path.
+
 ## Topic key (`topicKey`)
 
 A stable name for a memory topic, such as `architecture/database`. Saving an existing topic requires its expected version. `MemoryStore.getByTopic(projectId, topicKey)` retrieves it exactly for SDK consumers.

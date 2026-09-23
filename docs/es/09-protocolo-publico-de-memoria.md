@@ -1,6 +1,6 @@
 # 09. Protocolo Público de Memoria
 
-> **Estado:** disponible desde la release estable `v1.3.0`.
+> **Estado:** disponible desde la release estable `v1.3.0`. La versión 3 del protocolo está disponible desde la versión 1.6.0.
 
 Imagina una tarjeta de instrucciones que cualquier asistente compatible puede leer antes de trabajar: no guarda una conversación completa, sino las reglas para usar el archivador común de forma consistente. Ese es el protocolo público de memoria de Forge614 Engram.
 
@@ -16,13 +16,24 @@ La respuesta contiene un único objeto JSON con `id: "forge614-engram-memory"`, 
 
 La versión 1 permanece idéntica para compatibilidad. Los consumidores que soliciten `forge614-engram memory-protocol --json --protocol-version 2` reciben además `startupContext`, que anuncia `forge614-engram startup-context --directory <ruta-absoluta> --json`. Es una adición para hosts: no altera las instrucciones ni el ciclo de vida existentes.
 
+## Versión 3: ámbito `ecosystem`
+
+`forge614-engram memory-protocol --json --protocol-version 3` publica `version: 3` con las mismas claves que la versión 2 y estos cambios, siempre por adición:
+
+- `scopes.ecosystem` anuncia el ámbito del **grupo de repositorios relacionados** (consulta [11. Ámbitos y Ecosistemas](11-ambitos-y-ecosistemas.md)): guardar allí exige `scope: "ecosystem"` y un `groupIntent` verdadero, simétrico al `globalIntent` de `shared`. El grupo es siempre el del proyecto actual.
+- Las instrucciones añaden que un `topicKey` repetido entre ámbitos se resuelve con precedencia proyecto, luego ecosistema y por último `shared`.
+- El ciclo de vida actualizado: `start` consulta también la memoria de ecosistema cuando el proyecto pertenece a un grupo; `save` distingue `shared` (`globalIntent`), `ecosystem` (`groupIntent`) y proyecto. `compact`, `resume` y `end` no cambian.
+- `startupContext.description` describe el bloque de grupo y que el comando mantiene la identidad del repositorio.
+
+Las versiones 1 y 2 **quedan byte-idénticas** a las publicadas por 1.5.3: una prueba de inmutabilidad fija sus huellas SHA-256. La versión predeterminada sigue siendo la 1. Las herramientas MCP `memory_save` y `memory_session_summary` aceptan el ámbito nuevo (`groupIntent` es obligatorio y solo se acepta con `scope: "ecosystem"`); si el proyecto no pertenece a un grupo devuelven `GROUP_REQUIRED`.
+
 El comando requiere obligatoriamente `--json`. No necesita TTY, no crea ni abre `~/.forge614/engram/`, no inicializa SQLite y no consulta proyectos, PostgreSQL ni datos de la persona. Sin `--json` o con flags desconocidos, escribe el error JSON estándar `{code,error}` a stderr y termina con código `1`.
 
 ## Ciclo de vida para asistentes compatibles
 
-1. **Inicio.** Consultar memoria de proyecto y preferencias compartidas con `memory_context`. Si Engram no devuelve resultados, nunca inventar un recuerdo.
+1. **Inicio.** Consultar memoria de proyecto y preferencias compartidas con `memory_context` (en la versión 3, también la de ecosistema cuando el proyecto pertenece a un grupo). Si Engram no devuelve resultados, nunca inventar un recuerdo.
 2. **Guardado.** Si la persona dice claramente “recuerda”, “guarda”, “ten presente”, “keep in mind” o un equivalente, guardar con `memory_save` sin pedir una segunda confirmación. También se guardan preferencias personales, de colaboración o documentación, decisiones, reglas, descubrimientos y resultados que sean durables; no cada mensaje ni transcripciones completas.
-3. **Alcances.** Una preferencia entre asistentes usa `scope: "shared"` y un `globalIntent` verdadero (la explicación real de la intención global). El conocimiento de un repositorio usa alcance de proyecto. Un `topicKey` estable actualiza un tema existente en vez de duplicarlo; por ejemplo, `user/preference/favorite-color`.
+3. **Alcances.** Una preferencia entre asistentes usa `scope: "shared"` y un `globalIntent` verdadero (la explicación real de la intención global). El conocimiento de un repositorio usa alcance de proyecto. Desde la versión 3, el conocimiento que comparten los repositorios relacionados de un grupo usa `scope: "ecosystem"` y un `groupIntent` verdadero. Un `topicKey` estable actualiza un tema existente en vez de duplicarlo; por ejemplo, `user/preference/favorite-color`.
 4. **Compactación y reanudación.** Antes de compactar o descartar contexto, usar `memory_session_summary` con trabajo completado, decisiones, pendientes, riesgos y siguiente paso. Después, recuperar contexto con `memory_context` antes de continuar.
 5. **Cierre.** Al acabar una sesión normal, guardar un resumen útil cuando hubo aprendizaje o trabajo durable y llamar a `memory_session_end`.
 

@@ -16,6 +16,15 @@ Intencionalmente **no** es un espacio visual, detector de asistentes, configurad
 - SDK público para consumidores como Forge614 Atlas, incluyendo `MemoryWorkspace`, `MemoryStore`, APIs de inicialización y `MemoryStore.getByTopic()`.
 - Instalación, actualización y desinstalación seguras. `forge614-engram update` instala el último release estable después de verificar su checksum.
 
+## Capacidades incorporadas en v1.6.0
+
+- Ámbito `ecosystem`: memoria compartida entre los repositorios de un **grupo**, con los mismos temas, versiones, archivo/restauración y refuerzo; precedencia proyecto, ecosistema, `shared`. Consulta [11. Ámbitos y Ecosistemas](11-ambitos-y-ecosistemas.md).
+- Identidad portátil del proyecto en `.forge614/project.json`, propiedad de Engram; se resuelve por `id`, no por ruta.
+- Comandos `group-*` y `memory-move`; `--scope ecosystem --group` en la CLI; `scope: "ecosystem"` con `groupIntent` en MCP; protocolo público versión 3; bloque `ecosystem` en `startup-context` y `context`.
+- Actualización aditiva de la base con respaldo automático y verificación (niveles 8, 9 y 10).
+
+Límites de esta entrega: la réplica PostgreSQL rechaza (`SYNC_ECOSYSTEM_UNSUPPORTED`) mientras existan recuerdos de grupo; replicarlos requiere un formato de sincronización nuevo aún sin decidir. Engram solo lee `forge614.node.json` y nunca infiere un grupo. La pregunta de a qué grupo pertenece un proyecto sin declaración es del flujo visual de Shell. Que Engines y Shell inyecten el bloque `ecosystem` es un trabajo de esos productos: Engram publica el contrato, no demuestra que ya lo consuman.
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.

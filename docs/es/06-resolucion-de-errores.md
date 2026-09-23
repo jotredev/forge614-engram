@@ -24,6 +24,23 @@ SQLite/FTS5 permanece local aun después de configurar PostgreSQL. Ejecuta `sync
 
 La URL de PostgreSQL es un secreto. Engram nunca la devuelve en resultados, errores de CLI ni respuestas MCP. Si un error de dominio llegara a contener una URL `postgres://` o `postgresql://`, la reemplaza por `[URL de PostgreSQL oculta]`; no expone usuario, contraseña, host, puerto, base de datos ni parámetros. Los errores inesperados usan un mensaje genérico sin detalles internos.
 
+## Grupos, identidad del proyecto y actualización de la base
+
+Desde 1.6.0. Los comandos `group-*`, `memory-move` y los códigos de esta sección devuelven `{schemaVersion,code,error}` por stderr (consulta [11. Ámbitos y Ecosistemas](11-ambitos-y-ecosistemas.md)).
+
+- `GROUP_NAME_INVALID`: el nombre del grupo debe usar minúsculas, dígitos y guiones simples (`mi-tienda`), de 1 a 64 caracteres.
+- `GROUP_EXISTS`: ya existe un grupo con ese nombre; usa `group-list`.
+- `GROUP_NOT_FOUND`: el grupo no existe en esta base (también cuando la base aún no conoce grupos). Créalo con `group-create`.
+- `GROUP_AMBIGUOUS`: varios grupos tienen ese nombre; usa el `id` que muestra `group-list`.
+- `GROUP_REQUIRED`: el ámbito `ecosystem` necesita un grupo: indica `--group` o usa un proyecto que pertenezca a uno (`group-bind`).
+- `GROUP_INTENT_REQUIRED`: guardar en `ecosystem` con MCP exige un `groupIntent` verdadero.
+- `TOPIC_CONFLICT`: `memory-move` no sobrescribe; el grupo ya tiene un recuerdo con ese tema. Archívalo o cambia el tema.
+- `PROJECT_FILE_INVALID`: el `.forge614/project.json` no es válido (JSON corrupto, esquema o campos desconocidos, enlace simbólico, demasiado grande). Engram no lo modifica: corrígelo o bórralo para que se regenere.
+- `PROJECT_FILE_CONFLICT`: `project-bind` intentó vincular una carpeta cuyo archivo declara otro proyecto; usa esa identidad o borra el archivo.
+- `MIGRATION_VERIFY_FAILED`: la verificación de la migración falló y se revirtió todo. La base no cambió y el respaldo `.bak` junto a `engram.db` se conserva; no lo borres y reporta el caso.
+- `SYNC_ECOSYSTEM_UNSUPPORTED`: `sync` se detiene mientras existan recuerdos de grupo; la réplica PostgreSQL aún no los describe. Los datos locales y remotos no se tocan.
+- `DATABASE_VERSION` ("Base incompatible: no se puede abrir con esta versión") al abrir con Engram 1.5.x una base actualizada por 1.6.0: actualiza Engram. La base no se modifica; el respaldo previo `.bak` sigue siendo legible por 1.5.x. Un proceso 1.5.x ya iniciado (por ejemplo un servidor MCP) debe reiniciarse tras actualizar.
+
 ## Integraciones de IA
 
 Engram no detecta ni configura clientes de IA. Si un cliente MCP no está disponible, usa la ruta pública de setup de Forge614 Engines/Shell; no busques una TUI o comando de asistentes en Engram.

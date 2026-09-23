@@ -12,6 +12,18 @@ UUID que identifica los recuerdos de un proyecto. No es un nombre ni una ruta. U
 
 Recuerdo con `scope` igual a `shared` y dueño `null`. Está disponible entre proyectos; un tema activo del proyecto puede sustituir al mismo tema compartido en una búsqueda combinada.
 
+## Ámbito (`scope`)
+
+El "estante" donde vive un recuerdo: `project` (un repositorio), `ecosystem` (un grupo de repositorios relacionados) o `shared` (la persona, en todos sus proyectos). Con un `topicKey` repetido, la búsqueda combinada prefiere `project`, luego `ecosystem` y por último `shared`.
+
+## Grupo y ecosistema
+
+Un **grupo** es un conjunto con nombre de proyectos relacionados (microservicios, microfrontends, un monorepo partido, el ecosistema Forge614) que comparten el ámbito `ecosystem`. Un proyecto pertenece como máximo a un grupo. Su identidad es su `id` (UUID); el nombre (`^[a-z0-9]+(?:-[a-z0-9]+)*$`) es para personas. Se administra con `group-create`, `group-list`, `group-bind`, `group-unbind` y `group-rename`.
+
+## Identidad portátil del proyecto
+
+El archivo `.forge614/project.json` en la raíz de un repositorio, versionado en Git y propiedad exclusiva de Engram: guarda el `id` y el nombre del proyecto y, si pertenece a uno, el `id` y el nombre de su grupo. Permite que mover, renombrar o clonar el repositorio conserve la memoria: la identidad viaja con el repositorio, no con la ruta.
+
 ## Clave de tema (`topicKey`)
 
 Nombre estable de un tema, por ejemplo `architecture/database`. Actualizar un tema existente requiere su versión esperada. `MemoryStore.getByTopic(projectId, topicKey)` lo recupera de forma exacta para consumidores del SDK.
