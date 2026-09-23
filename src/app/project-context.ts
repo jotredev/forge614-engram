@@ -68,16 +68,22 @@ export function saveProjectMemory(store: MemoryStore, directory: string, input: 
   return saved;
 }
 
-export function saveProjectMemoryWithSession(store: MemoryStore, directory: string,
-    input: ProjectMemoryInput, options: SessionSaveOptions = {}): SessionSaveResult {
+/** Like saveProjectMemoryWithSession, also reporting the identity notices (for example a base upgrade). */
+export function saveProjectMemoryWithSessionAndNotices(store: MemoryStore, directory: string,
+    input: ProjectMemoryInput, options: SessionSaveOptions = {}): { saved: SessionSaveResult; notices: IdentityNotice[] } {
   const canonical = canonicalProject(directory);
   const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
   const root = identityRoot(directory, canonical);
-  applyIdentityFile(store, canonical.directory, root);
+  const notices = [...applyIdentityFile(store, canonical.directory, root).notices];
   const saved = store.saveWithSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,input,options,bindingAvailable);
   const project = saved.memory.projectId === null ? null : store.getProject(saved.memory.projectId);
-  if (project) publishIdentity(store, project, root, false);
-  return saved;
+  if (project) notices.push(...publishIdentity(store, project, root, false));
+  return { saved, notices };
+}
+
+export function saveProjectMemoryWithSession(store: MemoryStore, directory: string,
+    input: ProjectMemoryInput, options: SessionSaveOptions = {}): SessionSaveResult {
+  return saveProjectMemoryWithSessionAndNotices(store, directory, input, options).saved;
 }
 
 /** Like startProjectSession, also reporting the identity notices (for example the file just written). */

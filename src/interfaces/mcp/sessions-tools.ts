@@ -1,4 +1,4 @@
-import { readProjectContext, resolveProjectContext, startProjectSession } from "../../app";
+import { readProjectContext, resolveProjectContext, startProjectSessionWithNotices } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { toolSchemas } from "./schemas";
 import type { ToolContext } from "./context";
@@ -9,7 +9,10 @@ export function registerSessionTools(tools:ToolContext):void {
   register("memory_session_start", {
     description:"Start or replay an explicit conversation session for the atomically resolved project directory.",
     inputSchema:toolSchemas.memory_session_start,
-  }, safely(async ({directory,sessionId}) => startProjectSession(memoryStore(),await projectDirectory(directory),sessionId)));
+  }, safely(async ({directory,sessionId}) => {
+    const started=startProjectSessionWithNotices(memoryStore(),await projectDirectory(directory),sessionId);
+    return started.notices.length ? {...started.session,notices:started.notices} : started.session;
+  }));
 
   register("memory_session_end", {
     description:"Close an explicit session after its summary has been saved.",
@@ -53,6 +56,7 @@ export function registerSessionTools(tools:ToolContext):void {
     if(scope==="ecosystem") return memoryStore().contextForGroup((await ecosystemTarget(tools,directory)).group.id,options);
     const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
     if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
-    return readProjectContext(memoryStore(),context.projectId,options);
+    const result=readProjectContext(memoryStore(),context.projectId,options);
+    return context.notices ? {...result,notices:context.notices} : result;
   }));
 }

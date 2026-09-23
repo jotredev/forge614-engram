@@ -332,24 +332,27 @@ function verificationFailed(): never {
 }
 
 // VACUUM INTO writes a complete, consistent copy even while the database is in WAL mode.
-function backupBeforeMigration(db: Database, version: number): void {
+function backupBeforeMigration(db: Database, version: number): string | null {
   const main = (db.query("PRAGMA database_list").all() as { name: string; file: string }[]).find(entry => entry.name === "main");
-  if (!main?.file) return;
+  if (!main?.file) return null;
   // Nothing to lose in a database that holds no projects and no memories yet.
   const held = db.query("SELECT (SELECT count(*) FROM projects)+(SELECT count(*) FROM memories) AS n").get() as { n: number };
-  if (held.n === 0) return;
+  if (held.n === 0) return null;
   const stamp = new Date().toISOString().replace(/[-:.]/g, "");
   const target = `${main.file}.v${version}-pre-ecosystem-${stamp}-${randomUUID().slice(0, 8)}.bak`;
   db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
   chmodSync(target, 0o600);
+  return target;
 }
+
+export interface EcosystemEnrolment { readonly migrated: boolean; readonly backup: string | null }
 
 /**
  * Explicit, additive enrollment for the ecosystem scope: new group tables plus a widened scope
  * check on memories and requests. Backs up first, verifies row counts and content checksums
  * inside the same transaction and rolls back on any difference.
  */
-export function enableEcosystem(db: Database): void {
+export function enableEcosystem(db: Database): EcosystemEnrolment {
   // Version and structure are read in one snapshot: another process may commit the migration at any moment,
   // and reading them separately could pair the old version with the new structure.
   const seen = db.transaction(() => {
@@ -360,13 +363,14 @@ export function enableEcosystem(db: Database): void {
   }).deferred();
   let version = seen.current;
   let state = seen.decoded;
-  if (state.ecosystem) return;
+  if (state.ecosystem) return { migrated: false, backup: null };
   if (state.base < 5) { enableProjectBindings(db); version = currentVersion(db); state = decode(version)!; }
   // A connection that cannot write must fail before it leaves a useless backup behind.
   // Separate statements on purpose: a multi-statement exec does not surface a read-only error.
   db.exec("BEGIN IMMEDIATE");
   try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
-  backupBeforeMigration(db, version);
+  const backup = backupBeforeMigration(db, version);
+  let migrated = false;
   const foreignKeys = (db.query("PRAGMA foreign_keys").get() as { foreign_keys: number }).foreign_keys;
   db.exec("PRAGMA foreign_keys=OFF");
   try {
@@ -386,10 +390,12 @@ export function enableEcosystem(db: Database): void {
         || foreignKeyViolations(db) > violationsBefore) verificationFailed();
       try { db.exec("INSERT INTO memories_fts(memories_fts) VALUES('integrity-check')"); } catch { verificationFailed(); }
       db.exec(`PRAGMA user_version=${encode({ base: insideState.base, ecosystem: true })}`);
+      migrated = true;
     }).immediate();
   } finally {
     db.exec(`PRAGMA foreign_keys=${foreignKeys ? "ON" : "OFF"}`);
   }
+  return { migrated, backup: migrated ? backup : null };
 }
 
 export function initialize(db: Database, allowCreate = true, readonly = false): void {

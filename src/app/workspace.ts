@@ -6,7 +6,7 @@ import { projectIdentity } from "../modules/projects";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 import { MemoryStore } from "./memory-store";
 import { openWorkspaceDatabase } from "../infrastructure/sqlite/workspace-database";
-import { updateIdentityFiles } from "./project-identity";
+import { enrollEcosystem, updateIdentityFiles, type IdentityNotice } from "./project-identity";
 
 export interface IdentityFilesResult { updated: number; skipped: number }
 export interface GroupBinding { group: Group; changed: boolean; identityFiles: IdentityFilesResult }
@@ -66,11 +66,18 @@ export class MemoryWorkspace {
   }
 
   /** Ecosystem groups: related repositories that share memory. Creating the first one enrols the base. */
-  createGroup(name: string): Group {
+  createGroup(name: string): Group { return this.createGroupWithNotices(name).group; }
+
+  /** Like createGroup; the notices say when creating the first group upgraded the base, and where its backup is. */
+  createGroupWithNotices(name: string): { group: Group; notices: IdentityNotice[] } {
     const label = groupName(name);
     this.init();
     const store = this.open();
-    try { store.enableEcosystem(); return store.createGroup(label); } finally { store.close(); }
+    try {
+      const notices: IdentityNotice[] = [];
+      enrollEcosystem(store, notices);
+      return { group: store.createGroup(label), notices };
+    } finally { store.close(); }
   }
 
   listGroups(): GroupSummary[] {

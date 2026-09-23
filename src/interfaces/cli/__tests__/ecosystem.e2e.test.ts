@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { memoryProtocol } from "../../../modules/memory-protocol";
 
 const roots: string[] = [];
@@ -44,7 +44,8 @@ const T = 60_000;
 test("group-create, group-list and group-rename speak the machine contract with schemaVersion", async () => {
   const engram = await machine();
   const created = await engram.ok("group-create", "--name", "mi-tienda");
-  expect(created).toEqual({ schemaVersion: 1, group: { id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "mi-tienda", createdAt: expect.any(String) } });
+  // Creating the first group upgrades the (still empty) base, and the result says so.
+  expect(created).toEqual({ schemaVersion: 1, group: { id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "mi-tienda", createdAt: expect.any(String) }, notices: [expect.objectContaining({ code: "DATABASE_MIGRATED" })] });
   expect(await engram.ok("group-list")).toEqual({ schemaVersion: 1, groups: [{ ...created.group, projects: [] }] });
   const renamed = await engram.ok("group-rename", "--group", "mi-tienda", "--name", "tienda-2");
   expect(renamed).toMatchObject({ schemaVersion: 1, group: { id: created.group.id, name: "tienda-2" } });
@@ -205,7 +206,8 @@ test("when the local binding and the file disagree the file wins, the event is r
   writeIdentity(repository, { schemaVersion: 1, project: { id: declared, name: "del-archivo" }, ecosystem: null });
   const digest = sha(identityPath(repository));
   const context = await engram.ok("startup-context", "--directory", repository, "--json");
-  expect(context.project).toMatchObject({ projectId: declared, source: "file", notices: [expect.objectContaining({ code: "PROJECT_REBOUND_FROM_FILE" })] });
+  expect(context.project).toMatchObject({ projectId: declared, source: "file" });
+  expect(context.project.notices.map((item: any) => item.code)).toEqual(["DATABASE_MIGRATED", "PROJECT_REBOUND_FROM_FILE"]);
   expect(sha(identityPath(repository))).toBe(digest);
   const db = new Database(engram.database, { readonly: true });
   try { expect(db.query("SELECT previousProjectId FROM identity_events WHERE action='PROJECT_REBOUND_FROM_FILE'").all()).toEqual([{ previousProjectId: local.projectId }]); }
@@ -363,6 +365,33 @@ test("a database created by v1.5.3 opens and reads completely with the new versi
   expect(readdirSync(join(engram.home, "engram")).filter(name => name.includes("pre-ecosystem"))).toHaveLength(1);
   expect((await engram.ok("search", "--project-id", alpha.projectId, "--query", "canción")).map((result: any) => result.memory.id)).toEqual(found.map((result: any) => result.memory.id));
   } finally { holder.close(); }
+}, T);
+
+test("the command that first upgrades a base with data says so and names the backup; later ones stay quiet", async () => {
+  const engram = await machine();
+  const fixture = resolve(import.meta.dir, "../../../../tests/fixtures/v1.5.3/schema-7.db");
+  for (const suffix of ["", "-wal", "-shm"]) rmSync(engram.database + suffix, { force: true });
+  copyFileSync(fixture, engram.database);
+  const holder = new Database(engram.database); holder.query("SELECT count(*) FROM memories").get();
+  try {
+    const repository = folder(); const project = crypto.randomUUID(), group = { id: crypto.randomUUID(), name: "mi-tienda" };
+    writeIdentity(repository, { schemaVersion: 1, project: { id: project, name: "clon" }, ecosystem: group });
+    const first = await engram.ok("startup-context", "--directory", repository, "--json");
+    const notice = first.project.notices.find((item: any) => item.code === "DATABASE_MIGRATED");
+    expect(notice).toBeDefined();
+    expect(readdirSync(join(engram.home, "engram"))).toContain(basename(notice.backup));
+    expect(notice.message).toContain(notice.backup);
+    expect((await engram.ok("startup-context", "--directory", repository, "--json")).project.notices).toBeUndefined();
+    expect((await engram.ok("group-create", "--name", "otro")).notices).toBeUndefined();
+  } finally { holder.close(); }
+  const other = await machine();
+  for (const suffix of ["", "-wal", "-shm"]) rmSync(other.database + suffix, { force: true });
+  copyFileSync(resolve(import.meta.dir, "../../../../tests/fixtures/v1.5.3/schema-5.db"), other.database);
+  const holder2 = new Database(other.database); holder2.query("SELECT count(*) FROM memories").get();
+  try {
+    const created = await other.ok("group-create", "--name", "primero");
+    expect(created.notices).toEqual([expect.objectContaining({ code: "DATABASE_MIGRATED", backup: expect.stringContaining("pre-ecosystem") })]);
+  } finally { holder2.close(); }
 }, T);
 
 test("existing commands keep their exact JSON shape for someone who never uses the ecosystem scope", async () => {

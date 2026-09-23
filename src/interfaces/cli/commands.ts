@@ -63,7 +63,10 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
   if (command.startsWith("group-")) {
     let result: Record<string, unknown>;
     switch (command) {
-      case "group-create": result = { group: workspace.createGroup(need("name")) }; break;
+      case "group-create": {
+        const created = workspace.createGroupWithNotices(need("name"));
+        result = { group: created.group, ...(created.notices.length ? { notices: created.notices } : {}) }; break;
+      }
       case "group-list": result = { groups: workspace.listGroups() }; break;
       case "group-bind": {
         const projectId = projectIdentity(need("project-id"));

@@ -1,4 +1,4 @@
-import { resolveProjectContext, saveProjectMemoryWithSession } from "../../app";
+import { resolveProjectContext, saveProjectMemoryWithSessionAndNotices } from "../../app";
 import type { ToolContext } from "./context";
 import { MemoryError } from "../../shared/errors";
 import type { MemoryType, SearchScope } from "../../modules/memory";
@@ -31,7 +31,7 @@ export function registerMemoryTools(tools:ToolContext):void {
     const directoryPath = await projectDirectory(directory);
     const context = resolveProjectContext(memoryStore(),directoryPath,false);
     if (!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta todavía no está vinculada; guardar puede crearla o project-bind puede recuperarla.");
-    return {format:2,results:memoryStore().searchPreviews(context.projectId,query,limit ?? 10,selected as SearchScope)};
+    return {format:2,results:memoryStore().searchPreviews(context.projectId,query,limit ?? 10,selected as SearchScope),...(context.notices?{notices:context.notices}:{})};
   }));
 
   register("memory_get", {
@@ -45,14 +45,16 @@ export function registerMemoryTools(tools:ToolContext):void {
       return found;
     }
     let projectId: string | null = null;
+    let notices: unknown[] | undefined;
     if (scope !== "shared") {
       const directoryPath = await projectDirectory(directory);
-      projectId = resolveProjectContext(memoryStore(),directoryPath,false).projectId;
+      const context = resolveProjectContext(memoryStore(),directoryPath,false);
+      projectId = context.projectId; notices = context.notices;
     }
     if (scope !== "shared" && !projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
     const memory = memoryStore().getVersion(projectId,id,version);
     if (!memory) throw new MemoryError("NOT_FOUND","Recuerdo no encontrado en el alcance seleccionado.");
-    return memory;
+    return notices ? {...memory,notices} : memory;
   }));
 
   register("memory_save", {
@@ -83,8 +85,8 @@ export function registerMemoryTools(tools:ToolContext):void {
     if (globalIntent !== undefined) throw new MemoryError("INVALID_INPUT","globalIntent solo se acepta con scope shared explícito.");
     if (sessionProjectId !== undefined) throw new MemoryError("INVALID_INPUT","sessionProjectId solo se acepta con scope shared.");
     const directoryPath = await projectDirectory(directory);
-    const saved=saveProjectMemoryWithSession(memoryStore(),directoryPath,saveInput,{mode:"assistant",...(sessionId?{sessionId}:{})});
-    return {...saved.memory,sessionId:saved.sessionId,sessionSource:saved.sessionSource};
+    const {saved,notices}=saveProjectMemoryWithSessionAndNotices(memoryStore(),directoryPath,saveInput,{mode:"assistant",...(sessionId?{sessionId}:{})});
+    return {...saved.memory,sessionId:saved.sessionId,sessionSource:saved.sessionSource,...(notices.length?{notices}:{})};
   }));
 
   register("memory_history", {

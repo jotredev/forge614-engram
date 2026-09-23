@@ -6,21 +6,30 @@ import { ensureProjectFile,readProjectFile,updateProjectFile,type ProjectFile,ty
 import { rootOfBinding } from "../infrastructure/git/project-directory";
 import type { MemoryStore } from "./memory-store";
 
-export interface IdentityNotice { code: string; message: string }
+export interface IdentityNotice { code: string; message: string; backup?: string }
 
 function notice(code: string, message: string): IdentityNotice { return { code, message }; }
 
 /** Group declared for a repository, in the acta's order: the node file first, then the identity file. Never inferred. */
-function declaredGroup(store: MemoryStore, projectId: string, root: string, file: ProjectFile | null): ProjectFileGroup | null {
+/** Enrols the ecosystem level; when that upgrades the base, the result of the command says so and names the backup. */
+export function enrollEcosystem(store: MemoryStore, notices: IdentityNotice[]): void {
+  const enrolment = store.enableEcosystem();
+  if (!enrolment.migrated) return;
+  notices.push(enrolment.backup === null
+    ? notice("DATABASE_MIGRATED", "La base se actualizó al nivel con ámbito de ecosistema (no había datos que respaldar).")
+    : { ...notice("DATABASE_MIGRATED", `La base se actualizó al nivel con ámbito de ecosistema; el respaldo previo quedó en ${enrolment.backup}.`), backup: enrolment.backup });
+}
+
+function declaredGroup(store: MemoryStore, projectId: string, root: string, file: ProjectFile | null, notices: IdentityNotice[]): ProjectFileGroup | null {
   const named = readNodeEcosystem(root);
   if (named !== null) {
-    store.enableEcosystem();
+    enrollEcosystem(store, notices);
     const group = store.ensureGroup(declaredGroupId(named), named).group;
     store.bindProjectToGroup(projectId, group.id, "node-file");
     return { id: group.id, name: group.name };
   }
   if (file?.ecosystem) {
-    store.enableEcosystem();
+    enrollEcosystem(store, notices);
     const group = store.ensureGroup(file.ecosystem.id, file.ecosystem.name).group;
     store.bindProjectToGroup(projectId, group.id, "project-file");
     return { id: group.id, name: group.name };
@@ -44,11 +53,11 @@ export function applyIdentityFile(store: MemoryStore, key: string, root: string 
   store.registerProject(id, file.project.name);
   if (!bound) store.bindProjectDirectory(key, id);
   else if (bound.projectId !== id) {
-    store.enableEcosystem();
+    enrollEcosystem(store, notices);
     store.rebindProjectDirectory(key, id);
     notices.push(notice("PROJECT_REBOUND_FROM_FILE", "La carpeta se vinculó al proyecto que declara .forge614/project.json; el archivo no se modificó."));
   }
-  const group = declaredGroup(store, id, root, file);
+  const group = declaredGroup(store, id, root, file, notices);
   // Only a missing section, or a null one that a node file now fills, is ever completed.
   if (file.ecosystem === undefined || (file.ecosystem === null && group !== null)) writeIdentity({ projectId: id, name: file.project.name }, root, group, notices, false);
   return { projectId: id, notices };
@@ -69,7 +78,7 @@ export function publishIdentity(store: MemoryStore, project: Project, root: stri
   if (root === null) return [];
   const notices: IdentityNotice[] = [];
   const file = readProjectFile(root);
-  const group = declaredGroup(store, project.projectId, root, file) ?? (() => {
+  const group = declaredGroup(store, project.projectId, root, file, notices) ?? (() => {
     const member = store.groupOfProject(project.projectId);
     return member ? { id: member.group.id, name: member.group.name } : null;
   })();

@@ -3,7 +3,7 @@ import * as groups from "../infrastructure/sqlite/ecosystem-groups";
 import * as memory from "../infrastructure/sqlite/memory";
 import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
-import { enableEcosystem,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
+import { enableEcosystem,type EcosystemEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
@@ -70,7 +70,7 @@ export class MemoryStore {
 
   // Ecosystem scope: groups of related projects. Additive; every method above is unchanged.
   ecosystemEnabled(): boolean { return groups.ecosystemEnabled(this.db); }
-  enableEcosystem(): void { return enableEcosystem(this.db); }
+  enableEcosystem(): EcosystemEnrolment { return enableEcosystem(this.db); }
   createGroup(name: string): Group { return groups.createGroup(this.db, name); }
   ensureGroup(id: string, name: string): { group: Group; created: boolean } { return groups.ensureGroup(this.db, id, name); }
   getGroup(id: string): Group | null { return groups.getGroup(this.db, id); }

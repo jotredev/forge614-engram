@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { registerMemoryTools } from "./memory-tools";
 import { sdkHarness } from "./__tests__/sdk-harness";
 
@@ -105,5 +107,18 @@ test("ecosystem memories are searched, read and listed through the group of the 
     expect((await h.call("memory_get", { id: saved.id })).data.code).toBe("NOT_FOUND");
     expect((await h.call("memory_history", { id: saved.id, scope: "ecosystem" })).data.map((x: any) => x.version)).toEqual([1]);
     expect((await h.call("memory_current_project")).data).toMatchObject({ source: "file", group: { id: group.id, name: "tienda" } });
+  } finally { await h.close(); }
+});
+
+test("the first tool call that upgrades the base carries the notice, and only that one", async () => {
+  const h = await sdkHarness(registerMemoryTools);
+  try {
+    mkdirSync(join(h.directory, ".forge614"), { recursive: true });
+    writeFileSync(join(h.directory, ".forge614", "project.json"), JSON.stringify({ schemaVersion: 1, project: { id: crypto.randomUUID(), name: "clon" }, ecosystem: { id: crypto.randomUUID(), name: "tienda" } }));
+    const saved = (await h.call("memory_save", { title: "Primera", content: "en un clon con grupo", type: "fact" })).data;
+    expect(saved.notices).toEqual([expect.objectContaining({ code: "DATABASE_MIGRATED" })]);
+    const again = (await h.call("memory_save", { title: "Segunda", content: "ya migrada", type: "fact" })).data;
+    expect(again.notices).toBeUndefined();
+    expect((await h.call("memory_current_project")).data.notices).toBeUndefined();
   } finally { await h.close(); }
 });

@@ -113,7 +113,7 @@ test("when the local binding disagrees with the file, the file wins, the event i
   const digest = sha(filePath(root));
   const context = resolveProjectContext(db, root, false);
   expect(context).toMatchObject({ projectId: foreign, source: "file" });
-  expect(context.notices).toEqual([expect.objectContaining({ code: "PROJECT_REBOUND_FROM_FILE" })]);
+  expect(context.notices?.map(item => item.code)).toEqual(["DATABASE_MIGRATED", "PROJECT_REBOUND_FROM_FILE"]);
   expect(sha(filePath(root))).toBe(digest);
   expect(db.projectForDirectory(context.directory)?.projectId).toBe(foreign);
   expect(db.getProject(local.projectId!)).not.toBeNull();
@@ -165,4 +165,19 @@ test("a base without folder bindings refuses before registering anything from th
   writeIdentity(root, { schemaVersion: 1, project: { id: crypto.randomUUID(), name: "clon" }, ecosystem: null });
   expect(() => resolveStartupProjectContext(value, root)).toThrow(expect.objectContaining({ code: "MIGRATION_REQUIRED" }));
   expect(value.listProjects()).toEqual([]);
+});
+
+test("the first read that has to upgrade the base says so, once, and names the backup", () => {
+  const dbPath = join(temporary("engram-id-db-"), "engram.db");
+  const value = new MemoryStore(dbPath); stores.push(value); value.enableProjectBindings();
+  const other = repository(); saveProjectMemory(value, other, { title: "Existing", content: "data worth a backup", type: "fact" });
+  const root = repository();
+  writeFileSync(join(root, "forge614.node.json"), JSON.stringify({ ecosystem: "forge614" }));
+  const first = resolveProjectContext(value, root, true);
+  const notice = first.notices?.find(item => item.code === "DATABASE_MIGRATED");
+  expect(notice).toBeDefined();
+  expect(notice!.backup).toMatch(/pre-ecosystem/);
+  expect(existsSync(notice!.backup!)).toBe(true);
+  expect(notice!.message).toContain(notice!.backup!);
+  expect(resolveProjectContext(value, root, true).notices?.some(item => item.code === "DATABASE_MIGRATED") ?? false).toBe(false);
 });

@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { reinforcementEnabled } from "./confirmations";
 import { requireProjectBindings } from "./projects";
 import { sessionsEnabled } from "./sessions";
@@ -269,4 +269,19 @@ test("a read-only connection is refused before any backup is taken", () => {
     expect(readdirSync(directory).filter(name => name.includes("pre-ecosystem"))).toEqual([]);
     expect(version(readonly)).toBe(7);
   } finally { readonly.close(); }
+});
+
+test("enrolment reports whether it migrated and where the backup went", () => {
+  const { db, directory } = fixture("schema-7.db");
+  try {
+    const first = enableEcosystem(db);
+    expect(first.migrated).toBe(true);
+    expect(basename(first.backup!)).toBe(readdirSync(directory).find(name => name.includes("pre-ecosystem"))!);
+    expect(enableEcosystem(db)).toEqual({ migrated: false, backup: null });
+  } finally { db.close(); }
+  const empty = new Database(":memory:", { strict: true });
+  try {
+    initialize(empty);
+    expect(enableEcosystem(empty)).toEqual({ migrated: true, backup: null });
+  } finally { empty.close(); }
 });

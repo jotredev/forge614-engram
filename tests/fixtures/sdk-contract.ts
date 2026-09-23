@@ -30,7 +30,7 @@ interface ExpectedStore {
   close():void;enableSync():void;enableProjectBindings():void;syncSnapshot():SyncSnapshot;syncCheckpoint(replica:string):SyncSnapshot;
   applySync(expected:SyncSnapshot,next:SyncSnapshot,replica:string):void;
   // Added in 1.6.0 (ecosystem scope). Purely additive: nothing above changed.
-  ecosystemEnabled():boolean;enableEcosystem():void;createGroup(name:string):Group;ensureGroup(id:string,name:string):{group:Group;created:boolean};
+  ecosystemEnabled():boolean;enableEcosystem():{readonly migrated:boolean;readonly backup:string|null};createGroup(name:string):Group;ensureGroup(id:string,name:string):{group:Group;created:boolean};
   getGroup(id:string):Group|null;findGroups(name:string):Group[];resolveGroup(reference:string):Group;listGroups():GroupSummary[];renameGroup(id:string,name:string):Group;
   bindProjectToGroup(projectId:string,groupId:string,source?:MembershipSource):{group:Group;changed:boolean};unbindProject(projectId:string):boolean;
   groupOfProject(projectId:string):ProjectGroup|null;identityEvents(projectId?:string):IdentityEvent[];
