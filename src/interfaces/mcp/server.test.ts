@@ -23,9 +23,19 @@ async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath, cli, ...args], {
     cwd, env: environment(userDirectory), stdout:"pipe", stderr:"pipe",
   });
-  const timer = setTimeout(() => child.kill(), 20_000);
+  let killedByWatchdog = false;
+  const timer = setTimeout(() => { killedByWatchdog = true; child.kill(); }, 20_000);
   try {
     const [code,stdout,stderr] = await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+    if (killedByWatchdog) {
+      let completeJson = false;
+      try { JSON.parse(stdout); completeJson = true; } catch {}
+      console.error(JSON.stringify({
+        diag: "watchdog-killed", args, code,
+        stdoutBytes: stdout.length, stderrBytes: stderr.length, completeJson,
+        stdoutTail: stdout.slice(-300), stderrTail: stderr.slice(-300),
+      }));
+    }
     return { code, stdout, stderr };
   } finally { clearTimeout(timer); }
 }
