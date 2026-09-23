@@ -175,12 +175,15 @@ jobs:
           for i in $(seq 1 "$n"); do
             dir=$(mktemp -d)
             export FORGE614_HOME="$dir/.forge614"
-            bun src/cli.ts init --json >/dev/null 2>&1
+            # Both calls must be bounded: an unwrapped init that hangs would stall the
+            # whole loop silently, exactly what happened while measuring Bun 1.3.8 here.
+            timeout 5 bun src/cli.ts init --json >/dev/null 2>&1
+            init_ec=$?
             timeout 5 bun src/cli.ts project-list >"$dir/out.json" 2>"$dir/err.txt"
             ec=$?
-            if [ "$ec" -eq 124 ]; then
+            if [ "$init_ec" -eq 124 ] || [ "$ec" -eq 124 ]; then
               timeouts=$((timeouts+1))
-              echo "  [bun-${{ matrix.bun-version }} #$i] TIMED OUT"
+              echo "  [bun-${{ matrix.bun-version }} #$i] TIMED OUT (init_ec=$init_ec project-list_ec=$ec)"
             fi
             rm -rf "$dir"
           done
