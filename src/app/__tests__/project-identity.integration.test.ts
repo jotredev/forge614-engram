@@ -158,3 +158,11 @@ test("an explicit binding writes the identity and refuses a folder that already 
   expect(() => bindProjectContext(db, root, other.projectId)).toThrow(expect.objectContaining({ code: "PROJECT_FILE_CONFLICT" }));
   expect(read(root).project.id).toBe(project.projectId);
 });
+
+test("a base without folder bindings refuses before registering anything from the identity file", () => {
+  const value = new MemoryStore(join(temporary("engram-id-db-"), "engram.db")); stores.push(value);
+  const root = repository();
+  writeIdentity(root, { schemaVersion: 1, project: { id: crypto.randomUUID(), name: "clon" }, ecosystem: null });
+  expect(() => resolveStartupProjectContext(value, root)).toThrow(expect.objectContaining({ code: "MIGRATION_REQUIRED" }));
+  expect(value.listProjects()).toEqual([]);
+});

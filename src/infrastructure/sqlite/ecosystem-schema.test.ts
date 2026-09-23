@@ -259,3 +259,14 @@ test("feature gates follow the feature level, not the raw version number", () =>
     expect(exportSnapshot(db).format).toBe(3);
   } finally { db.close(); }
 });
+
+test("a read-only connection is refused before any backup is taken", () => {
+  const { file, directory, db } = fixture("schema-7.db");
+  db.close();
+  const readonly = new Database(file, { readonly: true, strict: true });
+  try {
+    expect(() => enableEcosystem(readonly)).toThrow();
+    expect(readdirSync(directory).filter(name => name.includes("pre-ecosystem"))).toEqual([]);
+    expect(version(readonly)).toBe(7);
+  } finally { readonly.close(); }
+});

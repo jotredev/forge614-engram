@@ -350,12 +350,22 @@ function backupBeforeMigration(db: Database, version: number): void {
  * inside the same transaction and rolls back on any difference.
  */
 export function enableEcosystem(db: Database): void {
-  let version = currentVersion(db);
-  let state = decode(version);
-  if (!state) throw new MemoryError("MIGRATION_REQUIRED", "No se puede habilitar el ámbito ecosystem en este formato.");
-  if (state.ecosystem) { validate(db, version); return; }
+  // Version and structure are read in one snapshot: another process may commit the migration at any moment,
+  // and reading them separately could pair the old version with the new structure.
+  const seen = db.transaction(() => {
+    const current = currentVersion(db), decoded = decode(current);
+    if (!decoded) throw new MemoryError("MIGRATION_REQUIRED", "No se puede habilitar el ámbito ecosystem en este formato.");
+    validate(db, current);
+    return { current, decoded };
+  }).deferred();
+  let version = seen.current;
+  let state = seen.decoded;
+  if (state.ecosystem) return;
   if (state.base < 5) { enableProjectBindings(db); version = currentVersion(db); state = decode(version)!; }
-  validate(db, version);
+  // A connection that cannot write must fail before it leaves a useless backup behind.
+  // Separate statements on purpose: a multi-statement exec does not surface a read-only error.
+  db.exec("BEGIN IMMEDIATE");
+  try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
   backupBeforeMigration(db, version);
   const foreignKeys = (db.query("PRAGMA foreign_keys").get() as { foreign_keys: number }).foreign_keys;
   db.exec("PRAGMA foreign_keys=OFF");

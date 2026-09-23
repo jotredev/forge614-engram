@@ -222,3 +222,22 @@ test("startup-context creates no files under the workspace root beyond what init
   const after = readdirSync(engramDirectory).sort();
   expect(after).toEqual(before);
 }, 40000);
+
+test("startup-context opens the base read-only when nothing has to be written, so an existing WAL footprint is left exactly as found", async () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  // Leave real WAL sidecars behind, as a crashed or still-running client would (Linux always keeps them).
+  const holder = Bun.spawn([process.execPath, "-e",
+    'const {Database}=require("bun:sqlite");const d=new Database(process.argv[1]);d.query("select count(*) from projects").get();console.log("ready");setInterval(()=>{},1000)',
+    join(engramDirectory, "engram.db")], { stdout: "pipe", stderr: "pipe" });
+  try {
+    const reader = holder.stdout.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("ready");
+    holder.kill(9); await holder.exited;
+    const before = readdirSync(engramDirectory).sort();
+    expect(before).toContain("engram.db-wal");
+    expect((await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json")).code).toBe(0);
+    expect(readdirSync(engramDirectory).sort()).toEqual(before);
+  } finally { holder.kill(9); }
+}, 40000);

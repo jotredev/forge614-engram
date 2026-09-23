@@ -39,8 +39,9 @@ export function applyIdentityFile(store: MemoryStore, key: string, root: string 
   const file = readProjectFile(root);
   if (file === null) return { projectId: null, notices: [] };
   const id = file.project.id, notices: IdentityNotice[] = [];
-  store.registerProject(id, file.project.name);
+  // Read the folder binding first: a base that cannot bind folders must refuse before registering anything.
   const bound = store.projectForDirectory(key);
+  store.registerProject(id, file.project.name);
   if (!bound) store.bindProjectDirectory(key, id);
   else if (bound.projectId !== id) {
     store.enableEcosystem();

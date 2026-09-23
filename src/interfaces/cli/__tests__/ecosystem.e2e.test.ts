@@ -122,6 +122,28 @@ test("a clone carrying .forge614/project.json is registered by id without asking
   expect(sha(identityPath(repository))).toBe(digest);
 }, T);
 
+test("many hosts starting at once in a fresh clone all succeed and register the project exactly once", async () => {
+  const engram = await machine(); const repository = folder(); const project = crypto.randomUUID();
+  writeIdentity(repository, { schemaVersion: 1, project: { id: project, name: "frontend" }, ecosystem: null });
+  const results = await Promise.all(Array.from({ length: 10 }, () => engram.run("startup-context", "--directory", repository, "--json")));
+  expect(results.map(result => result.code)).toEqual(Array(10).fill(0));
+  expect(await engram.ok("project-list")).toEqual([expect.objectContaining({ projectId: project })]);
+}, T);
+
+test("upgrading a v1.5.3 database from many processes at once never reports a false schema error", async () => {
+  const engram = await machine();
+  const fixture = resolve(import.meta.dir, "../../../../tests/fixtures/v1.5.3/schema-7.db");
+  for (const suffix of ["", "-wal", "-shm"]) rmSync(engram.database + suffix, { force: true });
+  copyFileSync(fixture, engram.database);
+  const holder = new Database(engram.database); holder.query("SELECT count(*) FROM memories").get();
+  try {
+    const results = await Promise.all(Array.from({ length: 12 }, (_, index) => engram.run("group-create", "--name", `grupo-${index}`)));
+    expect(results.map(result => result.stderr)).toEqual(Array(12).fill(""));
+    expect((await engram.ok("group-list")).groups).toHaveLength(12);
+    expect(holder.query("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+  } finally { holder.close(); }
+}, T);
+
 test("startup-context without a group reports ecosystem none and an unbound folder writes nothing", async () => {
   const engram = await machine(); const loose = folder(), unbound = folder();
   const created = await engram.ok("init", "--json", "--directory", loose);

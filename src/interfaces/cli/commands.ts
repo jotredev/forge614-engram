@@ -147,7 +147,13 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
   }
   if(command==="startup-context"){
     const directory=need("directory");
-    // Writable on purpose: a clone registers its project by identity, and a legacy project receives its file.
+    // Read-only first: the common case writes nothing to the base, and an untouched base keeps its exact
+    // on-disk footprint. Only when the identity flow must register something (a clone, a group) is it repeated
+    // writable; that flow is idempotent, so running it again is safe.
+    const readonlyStore=workspace.open(true);
+    try{console.log(JSON.stringify(readStartupContext(readonlyStore,directory),null,2));return;}
+    catch(error){if((error as {code?:unknown})?.code!=="SQLITE_READONLY")throw error;}
+    finally{readonlyStore.close();}
     const store=workspace.open();try{console.log(JSON.stringify(readStartupContext(store,directory),null,2));}finally{store.close();}return;
   }
   // Complete argument validation before reading config or opening any database.
