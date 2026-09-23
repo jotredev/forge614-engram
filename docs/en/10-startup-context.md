@@ -38,7 +38,7 @@ On success it writes one JSON object to stdout, with keys in this order:
 
 - **`ecosystem`** is `{ "status": "member", "group": { "id", "name" }, "context": … }` when the project belongs to a group (see [11. Scopes and Ecosystems](11-scopes-and-ecosystems.md)) and `{ "status": "none" }` otherwise: a loose project, an unlinked folder, or a database created by an earlier version.
 - **`project.source`** says how the project was identified: `"file"` (by the `id` in its `.forge614/project.json`), `"path"` (by the folder binding recorded in the database), or `"unbound"` (no project).
-- **`project.notices`** appears only when there is something to report, as a list of `{ "code", "message" }`: `PROJECT_FILE_CREATED` (a project that was already bound by path received its file), `PROJECT_REBOUND_FROM_FILE` (the folder was re-bound to the project its file declares), or `PROJECT_FILE_NOT_WRITTEN` (the file could not be written; the operation continues).
+- **`project.notices`** appears only when there is something to report, as a list of `{ "code", "message" }`: `PROJECT_FILE_CREATED` (a project that was already bound by path received its file), `PROJECT_REBOUND_FROM_FILE` (the folder was re-bound to the project its file declares), `PROJECT_FILE_NOT_WRITTEN` (the file could not be written; the operation continues), or `DATABASE_MIGRATED` (this command upgraded the database for the first time because the repository declares a group; `backup` says where the previous backup went, if there was data, and later calls do not notify again).
 
 When it cannot be resolved or linked as a project, it does not fail: it returns `"project": { "status": "unbound", "projectId": null, "context": null, "source": "unbound" }` and `"ecosystem": { "status": "none" }`. Any existing readable directory is valid: `$HOME`, `/`, an unversioned folder without Git, an unlinked Git repository, and a linked folder.
 
@@ -48,7 +48,7 @@ When it cannot be resolved or linked as a project, it does not fail: it returns 
 
 ## What it keeps in step and what it never does
 
-The command opens the database for **writing** because it keeps the repository identity and the local database in step:
+The command opens the database **read-only** first and reopens it for writing only when it has to register something, because it keeps the repository identity and the local database in step:
 
 - If the repository carries `.forge614/project.json` and its `id` does not exist in the local database (for example, a clone on another machine), it registers the project —and its group— with that `id`, without asking.
 - If the database had that folder bound to another project, **the file wins**: it re-binds, records the `PROJECT_REBOUND_FROM_FILE` event, and does not touch the file.
@@ -62,6 +62,8 @@ Each block uses `context()`'s own ceiling —16,384 bytes by default— so the c
 ## Safe errors
 
 `--directory` and `--json` are required. A nonexistent path, a path that is not a directory, an unreadable path, an uninitialized workspace, or any other real failure fails, and so does an invalid `.forge614/project.json` (`PROJECT_FILE_INVALID`: corrupt JSON, an unknown schema version, or unknown fields), which Engram never overwrites. The failure leaves stdout empty, writes JSON only to stderr, and exits with exit code 1: `{ "code": "…", "error": "…" }`, or `{ "schemaVersion": 1, "code": "…", "error": "…" }` for the codes introduced in 1.6.0. It does not print secrets, tokens, credentials, or raw paths in an error message.
+
+**For hosts:** an invalid `.forge614/project.json` is a visible error, not an empty context: `startup-context` exits with code 1 and returns no block at all (not even `shared`). It is repaired by fixing the file or deleting it; if it is deleted, Engram regenerates it on the next run when the project is already bound by path, and a folder with no binding stays `unbound`.
 
 ## Relationship to the memory protocol
 

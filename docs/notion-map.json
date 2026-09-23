@@ -25,7 +25,7 @@
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981ba8803e065eb0938cc?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:7c41034afa1edc063265fea256e16e7879dbc6ec65cacb97cce9efe4be367baf",
+      "contentFingerprint": "sha256:bc503f30ae35c5e91daa531af38c78d0f6c12369196bc4d021e973470e044e4e",
       "notionSyncPending": true
     },
     {
@@ -33,7 +33,7 @@
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d129817baeb1fd75514e1a21?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:dc185e9e44077b40347e8c31cd64d2bf678b19c7c21a323595eb5b0a6e41ad99",
+      "contentFingerprint": "sha256:9dec59bee242bc20a26efc751602b31b7f38f90723df160337450bfa8a1a4234",
       "notionSyncPending": true
     },
     {
@@ -41,7 +41,7 @@
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981e0ba2ceefd90a55ddf?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:78fe5fcbc3df0e70b44f35df0a27ead599552dd4f9f86410360113ef344588ab",
+      "contentFingerprint": "sha256:6e3d7f2c6790f49d14361233c1227d4fb9250e5415273f1dc38162a6e68ada17",
       "notionSyncPending": true
     },
     {
@@ -49,7 +49,7 @@
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981609c71c39a1fc6270c?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:1efa7f727ca0e3964055f4061bd0da0fa2529732ca408f5c4e1e1bbacc3d6b0a",
+      "contentFingerprint": "sha256:360fd1201f4222bf71be832e31790184687f4e2cd85588f6385c68bf35a9bfe1",
       "notionSyncPending": true
     },
     {
@@ -57,7 +57,7 @@
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d129810783c4d478b59ce4a5?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:e0113d99ae7edcc85ca30c568c68f3844961333d27b77d6ecede89a627e4ace0",
+      "contentFingerprint": "sha256:a02d4368b821a760ec0cfd008c24ac484858239c6dac1dd1718bad9de33dd044",
       "notionSyncPending": true
     },
     {
@@ -65,7 +65,7 @@
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d129812ba49af4afc78870ec?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:cbe673ae9d8d2737ce48e75d2102ae2d7dbdf19699539758cb4c79482453b108",
+      "contentFingerprint": "sha256:92631ed9cc9c6835f2737f7f5f78800330fe57201d60824a9812b9bd3df5fdae",
       "notionSyncPending": true
     },
     {
@@ -73,7 +73,7 @@
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d1298129909de7484878bc99?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:b3e95ebaf68d7bbfed71ad358efc70efb4f329e209f7a2d252364162eceb5bf3",
+      "contentFingerprint": "sha256:79ca8fa720179503165d92d061842c1fa21bfca01096e6dad169de4a7980431d",
       "notionSyncPending": true
     },
     {
@@ -81,7 +81,7 @@
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d1298142befbe3486411bbf9?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:d00e46f15517c4d3f0add3f33ad056b79e43fd8f605d97c996e57544a03de6b1",
+      "contentFingerprint": "sha256:d428b8f36c8aea640a5cc2c795e7a835cff0a60d8761acfd914bdf39cecb6271",
       "notionSyncPending": true
     },
     {
@@ -105,7 +105,7 @@
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3e221943d12981f39262dd1bb0790298?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:8bc7d6b6f3e4193fc663a2d3606dee06208bb4edf4252239cd4f7cb435db6e04",
+      "contentFingerprint": "sha256:9329a056f05e7cc5b1f2269b34fcdcde2fd43bed7b90a1c21924e5e64045c0a0",
       "notionSyncPending": true
     },
     {
@@ -113,21 +113,21 @@
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3e221943d12981698538c340d1dc7a85?pvs=204",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:335c8a5d86f17755c59835d2bdab6a12c9f6c25678a4cd0754ace38f7ebfb7d6",
+      "contentFingerprint": "sha256:2c252fc79e099ee3fc42179608789f13a4c19836830bb149ce85919636d9da3d",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/es/11-ambitos-y-ecosistemas.md",
       "language": "es",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:216c336e1da56586c3e6d9d598d3c32b8702f5a8fbb3f2c74cc00d091748a6e2",
+      "contentFingerprint": "sha256:1f844bcd0691bac8c5311b192595a5ba0fc469e01050b2b08edc21556d5fa9f1",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/en/11-scopes-and-ecosystems.md",
       "language": "en",
       "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:003b5b3aebe44575b9f5acd764b028cda3780f826cfb8a5c871a706c863305f1",
+      "contentFingerprint": "sha256:13a4801ec429d2a2e30b76c6958e91940c4423328ffa45036b7c8e02f2fcbaa9",
       "notionSyncPending": true
     }
   ]

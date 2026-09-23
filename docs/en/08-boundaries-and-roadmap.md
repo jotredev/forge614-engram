@@ -23,7 +23,7 @@ It is intentionally **not** a visual workspace, assistant detector, assistant co
 - `group-*` and `memory-move` commands; `--scope ecosystem --group` in the CLI; `scope: "ecosystem"` with `groupIntent` in MCP; public protocol version 3; an `ecosystem` block in `startup-context` and `context`.
 - Additive database upgrade with automatic backup and verification (levels 8, 9, and 10).
 
-Limits of this delivery: the PostgreSQL replica refuses (`SYNC_ECOSYSTEM_UNSUPPORTED`) while group memories exist; replicating them requires a new synchronization format that is not decided yet. Engram only reads `forge614.node.json` and never infers a group. Asking which group a project without a declaration belongs to is Shell's visual flow. Having Engines and Shell inject the `ecosystem` block is those products' work: Engram publishes the contract and does not prove they already consume it.
+Limits of this delivery: `ecosystem` memories are not replicated yet: the PostgreSQL replica refuses (`SYNC_ECOSYSTEM_UNSUPPORTED`) while they exist; group replication will arrive in its own plan (1.7.0, "format 4"). Engram only reads `forge614.node.json` and never infers a group. Asking which group a project without a declaration belongs to is Shell's visual flow. Having Engines and Shell inject the `ecosystem` block is those products' work: Engram publishes the contract and does not prove they already consume it.
 
 ## Explicit non-goals
 

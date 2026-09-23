@@ -38,7 +38,7 @@ En éxito escribe un único JSON en stdout, con las claves en este orden:
 
 - **`ecosystem`** es `{ "status": "member", "group": { "id", "name" }, "context": … }` cuando el proyecto pertenece a un grupo (consulta [11. Ámbitos y Ecosistemas](11-ambitos-y-ecosistemas.md)) y `{ "status": "none" }` en cualquier otro caso: proyecto suelto, carpeta sin vínculo o base creada por una versión anterior.
 - **`project.source`** indica cómo se identificó el proyecto: `"file"` (por el `id` de su `.forge614/project.json`), `"path"` (por el vínculo de carpeta registrado en la base) o `"unbound"` (sin proyecto).
-- **`project.notices`** aparece solo cuando hay algo que informar, como una lista de `{ "code", "message" }`: `PROJECT_FILE_CREATED` (un proyecto que ya estaba vinculado por ruta recibió su archivo), `PROJECT_REBOUND_FROM_FILE` (la carpeta se re-vinculó al proyecto que declara su archivo) o `PROJECT_FILE_NOT_WRITTEN` (no se pudo escribir el archivo; la operación continúa).
+- **`project.notices`** aparece solo cuando hay algo que informar, como una lista de `{ "code", "message" }`: `PROJECT_FILE_CREATED` (un proyecto que ya estaba vinculado por ruta recibió su archivo), `PROJECT_REBOUND_FROM_FILE` (la carpeta se re-vinculó al proyecto que declara su archivo) `PROJECT_FILE_NOT_WRITTEN` (no se pudo escribir el archivo; la operación continúa) o `DATABASE_MIGRATED` (este comando actualizó la base por primera vez, porque el repositorio declara un grupo; `backup` indica dónde quedó el respaldo previo, si había datos, y las llamadas siguientes ya no avisan).
 
 Cuando no se pueda resolver o vincular como proyecto, no falla: devuelve `"project": { "status": "unbound", "projectId": null, "context": null, "source": "unbound" }` y `"ecosystem": { "status": "none" }`. Cualquier directorio existente y legible es válido: `$HOME`, `/`, una carpeta sin Git, un repositorio Git sin vínculo y una carpeta vinculada.
 
@@ -48,7 +48,7 @@ Cuando no se pueda resolver o vincular como proyecto, no falla: devuelve `"proje
 
 ## Qué mantiene al día y qué nunca hace
 
-El comando abre la base en modo **escritura** porque mantiene sincronizadas la identidad del repositorio y la base local:
+El comando abre la base primero en modo de **solo lectura** y solo la reabre para escritura cuando tiene que registrar algo, porque mantiene sincronizadas la identidad del repositorio y la base local:
 
 - Si el repositorio trae `.forge614/project.json` y su `id` no existe en la base local (por ejemplo, un clon en otra máquina), registra el proyecto —y su grupo— con ese `id`, sin preguntar.
 - Si la base tenía esa carpeta vinculada a otro proyecto, **gana el archivo**: re-vincula, registra el evento `PROJECT_REBOUND_FROM_FILE` y no toca el archivo.
@@ -62,6 +62,8 @@ Cada bloque usa el límite propio de `context()` —16 384 bytes por defecto—,
 ## Errores seguros
 
 `--directory` y `--json` son obligatorios. Fallan una ruta inexistente, una ruta que no es directorio o una ruta ilegible, un espacio no inicializado o cualquier otro fallo real, y también un `.forge614/project.json` inválido (`PROJECT_FILE_INVALID`: JSON corrupto, versión de esquema desconocida o campos desconocidos), que Engram nunca sobrescribe. El fallo deja stdout vacío, escribe JSON únicamente por stderr y termina con exit code 1: `{ "code": "…", "error": "…" }`, o `{ "schemaVersion": 1, "code": "…", "error": "…" }` para los códigos incorporados en 1.6.0. No imprime secretos, tokens, credenciales ni rutas crudas en el mensaje de error.
+
+**Para los hosts:** un `.forge614/project.json` inválido es un error visible, no un contexto vacío: `startup-context` sale con código 1 y no devuelve ningún bloque (ni siquiera `shared`). Se repara corrigiendo el archivo o borrándolo; si se borra, Engram lo regenera en la siguiente ejecución cuando el proyecto ya está vinculado por ruta, y una carpeta sin vínculo queda `unbound`.
 
 ## Relación con memory protocol
 

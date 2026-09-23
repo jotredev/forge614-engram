@@ -23,7 +23,7 @@ Intencionalmente **no** es un espacio visual, detector de asistentes, configurad
 - Comandos `group-*` y `memory-move`; `--scope ecosystem --group` en la CLI; `scope: "ecosystem"` con `groupIntent` en MCP; protocolo público versión 3; bloque `ecosystem` en `startup-context` y `context`.
 - Actualización aditiva de la base con respaldo automático y verificación (niveles 8, 9 y 10).
 
-Límites de esta entrega: la réplica PostgreSQL rechaza (`SYNC_ECOSYSTEM_UNSUPPORTED`) mientras existan recuerdos de grupo; replicarlos requiere un formato de sincronización nuevo aún sin decidir. Engram solo lee `forge614.node.json` y nunca infiere un grupo. La pregunta de a qué grupo pertenece un proyecto sin declaración es del flujo visual de Shell. Que Engines y Shell inyecten el bloque `ecosystem` es un trabajo de esos productos: Engram publica el contrato, no demuestra que ya lo consuman.
+Límites de esta entrega: las memorias de ámbito `ecosystem` no se replican todavía: la réplica PostgreSQL rechaza (`SYNC_ECOSYSTEM_UNSUPPORTED`) mientras existan; la replicación de grupos llegará en un plan propio (1.7.0, «formato 4»). Engram solo lee `forge614.node.json` y nunca infiere un grupo. La pregunta de a qué grupo pertenece un proyecto sin declaración es del flujo visual de Shell. Que Engines y Shell inyecten el bloque `ecosystem` es un trabajo de esos productos: Engram publica el contrato, no demuestra que ya lo consuman.
 
 ## No objetivos explícitos
 

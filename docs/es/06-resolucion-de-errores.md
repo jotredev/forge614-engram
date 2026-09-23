@@ -38,7 +38,7 @@ Desde 1.6.0. Los comandos `group-*`, `memory-move` y los códigos de esta secci�
 - `PROJECT_FILE_INVALID`: el `.forge614/project.json` no es válido (JSON corrupto, esquema o campos desconocidos, enlace simbólico, demasiado grande). Engram no lo modifica: corrígelo o bórralo para que se regenere.
 - `PROJECT_FILE_CONFLICT`: `project-bind` intentó vincular una carpeta cuyo archivo declara otro proyecto; usa esa identidad o borra el archivo.
 - `MIGRATION_VERIFY_FAILED`: la verificación de la migración falló y se revirtió todo. La base no cambió y el respaldo `.bak` junto a `engram.db` se conserva; no lo borres y reporta el caso.
-- `SYNC_ECOSYSTEM_UNSUPPORTED`: `sync` se detiene mientras existan recuerdos de grupo; la réplica PostgreSQL aún no los describe. Los datos locales y remotos no se tocan.
+- `SYNC_ECOSYSTEM_UNSUPPORTED`: `sync` se detiene mientras existan recuerdos de grupo: las memorias `ecosystem` no se replican todavía (llegará en 1.7.0, «formato 4»). Los datos locales y remotos no se tocan.
 - `DATABASE_VERSION` ("Base incompatible: no se puede abrir con esta versión") al abrir con Engram 1.5.x una base actualizada por 1.6.0: actualiza Engram. La base no se modifica; el respaldo previo `.bak` sigue siendo legible por 1.5.x. Un proceso 1.5.x ya iniciado (por ejemplo un servidor MCP) debe reiniciarse tras actualizar.
 
 ## Integraciones de IA

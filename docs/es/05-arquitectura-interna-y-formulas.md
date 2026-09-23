@@ -14,6 +14,6 @@ Pruebas de arquitectura imponen las dependencias. Las interfaces llaman entradas
 
 SQLite es la fuente durable de verdad. FTS5 hace búsqueda léxica literal. El refuerzo cambia el orden mediante observaciones repetidas y recencia; no usa embeddings ni afirma verdad factual.
 
-La sincronización PostgreSQL transfiere un snapshot versionado del estado local. Es opcional, explícita y no reemplaza la ruta local SQLite/FTS5. Promover formato requiere `sync --upgrade-format` cuando todos los equipos sean compatibles.
+La sincronización PostgreSQL transfiere un snapshot versionado del estado local. Es opcional, explícita y no reemplaza la ruta local SQLite/FTS5. Promover formato requiere `sync --upgrade-format` cuando todos los equipos sean compatibles. Las memorias de ámbito `ecosystem` no se replican todavía: hasta el formato 4 (plan propio, 1.7.0), `sync` se detiene con `SYNC_ECOSYSTEM_UNSUPPORTED` si existen.
 
 El producto publica actualmente binarios autónomos verificados para macOS y Linux. No hay addon nativo, instalador ni artefacto de release para Windows en el producto actual.
