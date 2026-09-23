@@ -29,6 +29,11 @@ jobs:
             sudo apt-get update
             sudo apt-get install --yes postgresql
             echo "FORGE614_TEST_POSTGRES_BIN=$(pg_config --bindir)" >> "$GITHUB_ENV"
+            echo "=== diag: background postgresql service state ==="
+            systemctl list-units --type=service --all 'postgresql*' || true
+            systemctl is-active postgresql || true
+            ps -eo pid,ppid,pcpu,pmem,etime,cmd | grep -i postgres || true
+            nproc || true
           else
             brew install postgresql@17
             echo "FORGE614_TEST_POSTGRES_BIN=$(brew --prefix postgresql@17)/bin" >> "$GITHUB_ENV"
