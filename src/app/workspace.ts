@@ -1,5 +1,5 @@
 import { MemoryError } from "../shared/errors";
-import { groupName,type Group,type GroupSummary } from "../modules/ecosystem";
+import { groupName,type Group,type GroupSource,type GroupSummary } from "../modules/ecosystem";
 import type { Memory } from "../modules/memory";
 import type { Project } from "../modules/projects";
 import { projectIdentity } from "../modules/projects";
@@ -136,5 +136,13 @@ export class MemoryWorkspace {
       const moved = store.moveMemoryToGroup(source, id, target.id);
       return { ...moved, to: { scope: "ecosystem", groupId: target.id } };
     } finally { store.close(); }
+  }
+
+  setGroupSource(group: string, projectId: string): GroupSource {
+    const store = this.open(); try { return store.setGroupSource(store.resolveGroup(group).id, projectId); } finally { store.close(); }
+  }
+
+  demoteMemory(id: string, projectId: string): { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } } {
+    const store = this.open(); try { return store.demoteMemory(projectId, id); } finally { store.close(); }
   }
 }

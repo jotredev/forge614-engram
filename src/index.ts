@@ -3,7 +3,7 @@ export type { MemoryType,MemoryScope,SearchScope,SaveInput,MemoryVersion,Memory,
 export { memoryProtocol } from "./modules/memory-protocol";
 export type { MemoryProtocol } from "./modules/memory-protocol";
 export type { Project } from "./modules/projects";
-export type { Group,GroupSummary,GroupMembership,IdentityEvent,MembershipSource,ProjectGroup } from "./modules/ecosystem";
+export type { Group,GroupSummary,GroupMembership,IdentityEvent,MembershipSource,ProjectGroup,GroupSource } from "./modules/ecosystem";
 export { MemoryError } from "./shared/errors";
 export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields,PreviousSession } from "./modules/sessions";
 export type { MemoryPreview,PreviewResult,VersionRead,TimelineInput,TimelineRow,TimelineResult,ContextInput,ContextRow,ContextResult } from "./modules/search";

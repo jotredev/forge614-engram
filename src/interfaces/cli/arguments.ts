@@ -3,10 +3,11 @@ import { MemoryError } from "../../shared/errors";
 const MEMORY_OPTIONS = ["project-id", "scope", "group"];
 const OPTIONS: Record<string, readonly string[]> = {
   init: ["json", "postgres-url", "directory"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "intelligence-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
-  "group-create": ["name"], "group-list": [], "group-bind": ["project-id","group"], "group-unbind": ["project-id"], "group-rename": ["group","name"],
+  "group-create": ["name"], "group-list": [], "group-bind": ["project-id","group"], "group-unbind": ["project-id"], "group-rename": ["group","name"], "group-source-set": ["group","project-id"],
+  "memory-demote": ["id","project-id"],
   "memory-move": ["id","project-id","scope","to-scope","group"],
   "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id"],
-  save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned","session-id","session-project-id"],
+  save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned","session-id","session-project-id","affects"],
   search: [...MEMORY_OPTIONS,"query","limit","preview"],
   get: [...MEMORY_OPTIONS,"id","version"], history: [...MEMORY_OPTIONS,"id"],
   archive: [...MEMORY_OPTIONS,"id"], restore: [...MEMORY_OPTIONS,"id"],

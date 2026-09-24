@@ -6,9 +6,9 @@ import { dispatch } from "./commands";
 
 // Commands and error codes introduced in 1.6.0 follow the ecosystem machine-contract convention:
 // errors carry schemaVersion. Every command and code that existed before keeps its exact shape.
-const CONTRACT_COMMANDS = (command: string) => command.startsWith("group-") || command === "memory-move";
+const CONTRACT_COMMANDS = (command: string) => command.startsWith("group-") || command === "memory-move" || command === "memory-demote";
 const CONTRACT_CODES = new Set(["PROJECT_FILE_INVALID","PROJECT_FILE_CONFLICT","GROUP_NAME_INVALID","GROUP_EXISTS","GROUP_NOT_FOUND",
-  "GROUP_AMBIGUOUS","GROUP_REQUIRED","TOPIC_CONFLICT","MIGRATION_VERIFY_FAILED","SECRET_REJECTED","INTELLIGENCE_REQUIRED","SUPERSEDES_NOT_FOUND"]);
+  "GROUP_AMBIGUOUS","GROUP_REQUIRED","TOPIC_CONFLICT","MIGRATION_VERIFY_FAILED","SECRET_REJECTED","INTELLIGENCE_REQUIRED","SUPERSEDES_NOT_FOUND","ECOSYSTEM_TYPE_NOT_ALLOWED","ECOSYSTEM_AFFECTS_REQUIRED","ECOSYSTEM_AFFECTS_UNKNOWN","ECOSYSTEM_BOARD_FULL","ECOSYSTEM_STATUS_FORBIDDEN","ECOSYSTEM_STATUS_TOO_LONG"]);
 function errorEnvelope(command: string, code: string, error: string): Record<string, unknown> {
   return CONTRACT_COMMANDS(command) || CONTRACT_CODES.has(code) ? { schemaVersion: 1, code, error } : { code, error };
 }

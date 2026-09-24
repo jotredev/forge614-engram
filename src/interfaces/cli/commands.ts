@@ -83,6 +83,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
         const unbound = workspace.unbindProject(projectId);
         result = { projectId, unbound: unbound.unbound, identityFilesUpdated: unbound.identityFiles.updated }; break;
       }
+      case "group-source-set": result = { source: workspace.setGroupSource(need("group"), projectIdentity(need("project-id"))) }; break;
       default: {
         const renamed = workspace.renameGroup(need("group"), need("name"));
         result = { group: renamed.group, identityFilesUpdated: renamed.identityFiles.updated };
@@ -98,6 +99,10 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     if (from === "project" && !values.has("project-id")) invalid("Un recuerdo de proyecto requiere --project-id.");
     const moved = workspace.moveMemory(need("id"), from === "shared" ? null : projectIdentity(need("project-id")), need("group"));
     console.log(JSON.stringify({ schemaVersion: 1, ...moved }, null, 2)); return;
+  }
+  if (command === "memory-demote") {
+    const demoted = workspace.demoteMemory(need("id"), projectIdentity(need("project-id")));
+    console.log(JSON.stringify({ schemaVersion: 1, ...demoted }, null, 2)); return;
   }
   if (command === "init" || command.startsWith("project-")) {
     let result: unknown;
@@ -193,6 +198,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     draft = { title: need("title"), content: need("content"), type: type as SaveInput["type"] };
     if (values.has("topic")) draft.topicKey = need("topic");
     if (values.has("request-key")) draft.requestKey = need("request-key");
+    if (values.has("affects")) draft.affects = need("affects").split(",");
     if (pinned !== undefined) draft.pinned = pinned === "true";
     if (values.has("expected-version")) {
       if (!draft.topicKey) invalid("--expected-version requiere --topic.");

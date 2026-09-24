@@ -75,7 +75,7 @@ export function registerMemoryTools(tools:ToolContext):void {
       if (globalIntent !== undefined) throw new MemoryError("INVALID_INPUT","globalIntent solo se acepta con scope shared explícito.");
       if (sessionProjectId !== undefined) throw new MemoryError("INVALID_INPUT","sessionProjectId solo se acepta con scope shared.");
       const target = await ecosystemTarget(tools,directory);
-      const saved = memoryStore().saveWithSession({ ...saveInput,scope:"ecosystem",projectId:null,groupId:target.group.id },
+      const saved = memoryStore().saveWithSession({ ...saveInput,scope:"ecosystem",projectId:null,groupId:target.group.id,fromProjectId:target.projectId },
         {mode:"assistant",...(sessionId?{sessionId,projectId:target.projectId}:{})});
       return saved.similar ? {...saved.memory,similar:saved.similar} : saved.memory;
     }
