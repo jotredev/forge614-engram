@@ -24,6 +24,7 @@ export const toolSchemas = {
       directory,scope:projectScope.optional(),globalIntent:text(1000).optional(),groupIntent:groupIntent.optional(),title:text(300),content:text(20_000),
       type:z.enum(memoryTypes),topicKey:text(300).optional(),pinned:z.boolean().optional(),
       expectedVersion:z.number().int().min(1).optional(),requestKey:text(300).optional(),
+      short:text(300).optional(),supersedes:id.optional(),affects:z.array(text(64)).min(1).max(20).optional(),
       sessionId:sessionId.optional(),sessionProjectId:id.optional(),
     }).strict(),
   memory_history: z.object({ directory,id,scope:projectScope.optional() }).strict(),

@@ -2,6 +2,18 @@ import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { registerMemoryTools } from "./memory-tools";
+
+test("memory_save passes metadata through and memory_get returns it with marks at level 11", async () => {
+  const h=await sdkHarness(registerMemoryTools);
+  try {
+    h.store.enableIntelligence();
+    const old=(await h.call("memory_save",{title:"Vieja",content:"usar A",type:"decision"})).data;
+    const fresh=(await h.call("memory_save",{title:"Nueva",content:"usar B",type:"decision",short:"B en vez de A",supersedes:old.id,affects:["shell","engram"]})).data;
+    expect((await h.call("memory_get",{id:fresh.id})).data).toMatchObject({meta:{short:"B en vez de A",affects:["engram","shell"]},marks:[]});
+    expect((await h.call("memory_get",{id:old.id})).data).toMatchObject({meta:{supersededBy:fresh.id},marks:["superseded"]});
+    expect((await h.call("memory_save",{title:"Clave",content:["pass","word = ","hunter2hunter2"].join(""),type:"fact"})).data.code).toBe("SECRET_REJECTED");
+  } finally {await h.close();}
+});
 import { sdkHarness } from "./__tests__/sdk-harness";
 
 test("memory handlers resolve projects, save revisions and expose owner-scoped previews and history", async () => {

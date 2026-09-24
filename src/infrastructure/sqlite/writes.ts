@@ -1,11 +1,13 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { groupIdentity } from "../../modules/ecosystem";
-import { memoryTypes,sameConfirmationPayload,type Memory,type MemoryOwner,type MemoryVersion,type SaveInput } from "../../modules/memory";
+import { findSecret,memoryTypes,normalizeAffects,normalizeShort,reviewAfterFor,sameConfirmationPayload,type Memory,type MemoryMeta,type MemoryOwner,type MemoryVersion,type SaveInput } from "../../modules/memory";
 import { projectIdentity,type Project } from "../../modules/projects";
 import { sessionIdentity,summaryContent,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../../modules/sessions";
 import { MemoryError } from "../../shared/errors";
 import { confirmationCandidate,confirmationRequest,reinforcementEnabled } from "./confirmations";
+import { intelligenceEnabled } from "./intelligence";
+import { readMeta,upsertMeta } from "./meta";
 import { getGroup,recordIdentityEvent,requireEcosystem } from "./ecosystem-groups";
 import { get,required,type Row } from "./memory";
 import { getProject,projectForDirectory,requireProjectBindings,resolveProjectDirectory as resolveProjectDirectoryInTransaction } from "./projects";
@@ -180,6 +182,28 @@ function requestReplay(db: Database, input: {
   return {...stored,sessionId:visible?stored.sessionId:null,sessionSource:visible?stored.sessionSource:null};
 }
 
+// Level-11 metadata for a save. The replaced memory must be active and in the same scope and owner.
+function applySaveMeta(db: Database, input: { id: string; type: SaveInput["type"]; now: string; newVersion: boolean; contentChanged: boolean;
+    short: string | undefined; affects: string[] | undefined; supersedes: string | null; scope: Memory["scope"]; ownerColumn: string; ownerId: string | null }): void {
+  if (input.supersedes !== null) {
+    if (input.supersedes === input.id) throw new MemoryError("INVALID_INPUT", "Un recuerdo no puede reemplazarse a sí mismo.");
+    const target = db.query(`SELECT id FROM memories WHERE scope=? AND ${input.ownerColumn} IS ? AND id=? AND state='active'`)
+      .get(input.scope, input.ownerId, input.supersedes) as { id: string } | null;
+    if (!target) throw new MemoryError("SUPERSEDES_NOT_FOUND", "El recuerdo a reemplazar no existe o no es del mismo alcance.");
+  }
+  const previous = readMeta(db, input.id);
+  const patch: Partial<MemoryMeta> = {};
+  if (input.newVersion) {
+    const reviewAfter = reviewAfterFor(input.type, input.now);
+    if (reviewAfter !== null || previous?.reviewAfter) patch.reviewAfter = reviewAfter;
+    if (input.short === undefined && input.contentChanged && previous?.short) patch.short = null;
+  }
+  if (input.short !== undefined) patch.short = input.short;
+  if (input.affects !== undefined) patch.affects = input.affects;
+  if (Object.keys(patch).length > 0) upsertMeta(db, input.id, patch, input.now);
+  if (input.supersedes !== null) upsertMeta(db, input.supersedes, { supersededBy: input.id }, input.now);
+}
+
 function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, requestNow: string, summary = false): SessionSaveResult {
     const scope = input.scope === undefined ? "project" : input.scope;
     if (scope !== "project" && scope !== "shared" && scope !== "ecosystem") throw new MemoryError("INVALID_INPUT", "scope debe ser project o shared.");
@@ -199,6 +223,13 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
     if (expected !== null && (!Number.isSafeInteger(expected) || expected < 1 || !topic)) {
       throw new MemoryError("INVALID_INPUT", "expectedVersion requiere un tema y un entero positivo.");
     }
+    const secret = findSecret([title, content, topic ?? "", typeof input.short === "string" ? input.short : ""].join("\n"));
+    if (secret !== null) throw new MemoryError("SECRET_REJECTED", `El recuerdo parece contener un secreto (${secret}); guárdalo sin el valor.`);
+    const wantsMeta = input.short !== undefined || input.supersedes !== undefined || input.affects !== undefined;
+    if (wantsMeta && !intelligenceEnabled(db)) throw new MemoryError("INTELLIGENCE_REQUIRED", "short, supersedes y affects requieren la memoria inteligente (forge614-engram intelligence-enable).");
+    const short = input.short === undefined ? undefined : normalizeShort(input.short);
+    const affects = input.affects === undefined ? undefined : normalizeAffects(input.affects);
+    const supersedes = input.supersedes === undefined ? null : required(input.supersedes, "supersedes");
     const pinned = input.pinned ?? false;
     const hash = createHash("sha256").update(JSON.stringify([scope,ownerId,title,content,input.type,topic,pinned,expected])).digest("hex");
     if (options.mode !== undefined && options.mode !== "independent" && options.mode !== "assistant") throw new MemoryError("INVALID_INPUT","mode no válido.");
@@ -259,6 +290,8 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
             .run(confirmationId,confirmed.id,confirmed.version,now,selected);
           if(request!==null) db.query(`INSERT INTO confirmation_requests(memoryId,requestKey,payloadHash,expectedVersion,confirmationId,response)
             VALUES(?,?,?,?,?,?)`).run(confirmed.id,request,hash,expected,confirmationId,JSON.stringify(response));
+          if (intelligenceEnabled(db) && wantsMeta) applySaveMeta(db, { id: confirmed.id, type: input.type, now, newVersion: false, contentChanged: false,
+            short, affects, supersedes, scope, ownerColumn, ownerId });
           return response;
         }
       }
@@ -287,6 +320,8 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
       }
       if (selected !== null) db.query("INSERT INTO session_entries(sessionId,memoryId,version,recordedAt) VALUES(?,?,?,?)")
         .run(selected,id,version,now);
+      if (intelligenceEnabled(db)) applySaveMeta(db, { id, type: input.type, now, newVersion: true, contentChanged: existing?.content !== content,
+        short, affects, supersedes, scope, ownerColumn, ownerId });
       return {memory:snapshot,sessionId:selected,sessionSource:source};
   }
 
