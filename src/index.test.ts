@@ -28,13 +28,15 @@ const ECOSYSTEM_STORE_METHODS = [
   "historyInGroup", "identityEvents", "listGroups", "renameGroup", "resolveGroup", "restoreInGroup",
   "searchInGroup", "searchPreviewsInGroup", "unbindProject", "registerProject", "rebindProjectDirectory", "projectDirectories", "moveMemoryToGroup", "saveSessionSummaryInGroup",
 ];
+// Added in 1.7.0 with memory intelligence. The lists above only ever grow.
+const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled"];
 
 describe("public SDK contract", () => {
   test("keeps literal runtime exports and public store methods", () => {
     expect(Object.keys(sdk).sort()).toEqual(RUNTIME_EXPORTS.sort());
     expect(Object.getOwnPropertyNames(sdk.MemoryStore.prototype)
       .filter(name => name !== "constructor").sort())
-      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS].sort());
+      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS, ...INTELLIGENCE_STORE_METHODS].sort());
   });
 
   test("exports the nonvisual initialization API needed by Forge614 Shell", () => {

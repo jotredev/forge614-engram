@@ -54,6 +54,11 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     workspace.init();const store=workspace.open();try{store.enableSearchReinforcement();}finally{store.close();}
     console.log(JSON.stringify({enabled:true,schema:7},null,2));return;
   }
+  if(command==="intelligence-enable"){
+    workspace.init();const store=workspace.open();
+    const result=(()=>{try{return store.enableIntelligence();}finally{store.close();}})();
+    console.log(JSON.stringify({enabled:true,schema:11,migrated:result.migrated,backup:result.backup},null,2));return;
+  }
   if (command === "project-bind") {
     const store = workspace.open();
     try { console.log(JSON.stringify(bindProjectContext(store,need("directory"),projectIdentity(need("project-id"))),null,2)); }

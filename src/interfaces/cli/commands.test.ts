@@ -187,6 +187,16 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
   expect(existsSync(config.databasePath)).toBe(false);
 }, 40000);
 
+test("intelligence enrollment is explicit and a second run is a no-op", async () => {
+  const dir=workspace();
+  const first=(await run(dir,"intelligence-enable"));
+  expect(first.code).toBe(0);
+  expect(JSON.parse(first.stdout)).toMatchObject({enabled:true,schema:11,migrated:true});
+  const second=(await run(dir,"intelligence-enable"));
+  expect(second.code).toBe(0);
+  expect(JSON.parse(second.stdout)).toMatchObject({enabled:true,schema:11,migrated:false});
+}, 40000);
+
 // Regression guard for the v1.5.3 hang investigation (experiment 4): commands.ts must
 // keep loading the MCP SDK and zod lazily, only for the "mcp" command. The preload
 // plugin throws if anything under node_modules/zod or node_modules/@modelcontextprotocol

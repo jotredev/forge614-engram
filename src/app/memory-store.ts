@@ -3,7 +3,8 @@ import * as groups from "../infrastructure/sqlite/ecosystem-groups";
 import * as memory from "../infrastructure/sqlite/memory";
 import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
-import { enableEcosystem,type EcosystemEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
+import { intelligenceEnabled } from "../infrastructure/sqlite/intelligence";
+import { enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
@@ -91,4 +92,8 @@ export class MemoryStore {
   contextForGroup(groupId: string, input?: ContextInput): ContextResult { return search.context(this.db, { groupId }, input); }
   archiveInGroup(groupId: string, id: string): Memory { return writes.archive(this.db, { groupId }, id); }
   restoreInGroup(groupId: string, id: string): Memory { return writes.restore(this.db, { groupId }, id); }
+
+  // Memory intelligence (schema level 11). Additive; explicit enrollment only.
+  intelligenceEnabled(): boolean { return intelligenceEnabled(this.db); }
+  enableIntelligence(): IntelligenceEnrolment { return enableIntelligence(this.db); }
 }

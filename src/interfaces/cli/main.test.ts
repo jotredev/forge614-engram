@@ -48,6 +48,8 @@ test("help, version and empty project list create no storage", async () => {
     "update [--json] Descarga, verifica y activa la última versión estable de Engram; --json devuelve el resultado estructurado.",
     "sessions-enable",
     "reinforcement-enable",
+    "intelligence-enable",
+    "Habilita explícitamente la memoria inteligente (esquema 11); respalda la base antes de migrar.",
     "session-start --directory <carpeta> --session-id <id>",
     "session-end --project-id <UUID> --session-id <id>",
     "session-summary --project-id <UUID> --session-id <id> --summary-json <json>",

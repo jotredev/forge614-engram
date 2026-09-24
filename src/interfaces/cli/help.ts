@@ -25,6 +25,8 @@ sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>,
 sessions-enable Habilita explícitamente sesiones (esquema 6).
 reinforcement-enable
                 Habilita explícitamente repeticiones y orden reforzado (esquema 7).
+intelligence-enable
+                Habilita explícitamente la memoria inteligente (esquema 11); respalda la base antes de migrar.
 mcp             Inicia el servidor MCP local por stdio; no migra la base.
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.

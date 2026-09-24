@@ -14,6 +14,11 @@ test("parser accepts reinforcement enrollment only as an optionless explicit com
   expect(() => parseArguments(["reinforcement-enable", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+test("parser accepts intelligence enrollment only as an optionless explicit command", () => {
+  expect(parseArguments(["intelligence-enable"]).command).toBe("intelligence-enable");
+  expect(() => parseArguments(["intelligence-enable", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
+});
+
 test("parser accepts update with optional JSON output and rejects unknown flags", () => {
   expect(parseArguments(["update"]).command).toBe("update");
   expect(parseArguments(["update", "--json"]).values.get("json")).toBe("true");
