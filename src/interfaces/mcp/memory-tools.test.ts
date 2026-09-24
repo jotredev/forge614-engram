@@ -16,6 +16,19 @@ test("memory_save passes metadata through and memory_get returns it with marks a
 });
 import { sdkHarness } from "./__tests__/sdk-harness";
 
+test("memory_save reports look-alikes of a new memory at level 11 and memory_search finds natural questions", async () => {
+  const h=await sdkHarness(registerMemoryTools);
+  try {
+    h.store.enableIntelligence();
+    const cause=(await h.call("memory_save",{title:"Bun 1.3.8 se atora en Linux",content:"La causa del cuelgue de CI es Bun 1.3.8 al cargar módulos en Linux; Bun 1.3.9 pasa.",type:"decision"})).data;
+    expect(cause).not.toHaveProperty("similar");
+    const fix=(await h.call("memory_save",{title:"Bun 1.4.2 fijado como versión única",content:"Todos los nodos fijan Bun 1.4.2; la 1.3.8 se atoraba en Linux al cargar módulos.",type:"decision"})).data;
+    expect(fix.similar.map((candidate:any)=>candidate.id)).toEqual([cause.id]);
+    const found=(await h.call("memory_search",{query:"qué versión de bun usamos",limit:3})).data;
+    expect(found.results.map((result:any)=>[result.memory.id,result.explanation.mode])).toEqual([[fix.id,"hybrid"]]);
+  } finally {await h.close();}
+});
+
 test("memory handlers resolve projects, save revisions and expose owner-scoped previews and history", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {

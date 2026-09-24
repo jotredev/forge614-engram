@@ -1,5 +1,5 @@
 export { memoryTypes } from "./types";
-export type { MemoryType, MemoryScope, MemoryOwner, SearchScope, SaveInput, MemoryVersion, Memory, SearchResult, ReinforcementExplanation, SearchExplanation } from "./types";
+export type { MemoryType, MemoryScope, MemoryOwner, SearchScope, SaveInput, MemoryVersion, Memory, SearchResult, ReinforcementExplanation, SearchExplanation, SimilarCandidate } from "./types";
 export { sameConfirmationPayload } from "./confirmations";
 export type { Confirmation,ConfirmationPayload,ConfirmationRequest } from "./confirmations";
 export {

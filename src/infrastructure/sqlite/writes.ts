@@ -8,6 +8,7 @@ import { MemoryError } from "../../shared/errors";
 import { confirmationCandidate,confirmationRequest,reinforcementEnabled } from "./confirmations";
 import { intelligenceEnabled } from "./intelligence";
 import { readMeta,upsertMeta } from "./meta";
+import { similarTo } from "./similar";
 import { getGroup,recordIdentityEvent,requireEcosystem } from "./ecosystem-groups";
 import { get,required,type Row } from "./memory";
 import { getProject,projectForDirectory,requireProjectBindings,resolveProjectDirectory as resolveProjectDirectoryInTransaction } from "./projects";
@@ -322,7 +323,10 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
         .run(selected,id,version,now);
       if (intelligenceEnabled(db)) applySaveMeta(db, { id, type: input.type, now, newVersion: true, contentChanged: existing?.content !== content,
         short, affects, supersedes, scope, ownerColumn, ownerId });
-      return {memory:snapshot,sessionId:selected,sessionSource:source};
+      // A brand-new memory without a topic reports up to three look-alikes so the caller can merge or supersede.
+      const similar = intelligenceEnabled(db) && !existing && topic === null
+        ? similarTo(db, { scope, ownerColumn, ownerId, title, content, excludeId: id }) : [];
+      return {memory:snapshot,sessionId:selected,sessionSource:source,...(similar.length > 0 ? { similar } : {})};
   }
 
 export function archive(db: Database, owner: MemoryOwner, id: string): Memory { return setState(db, owner,id,"archived"); }
