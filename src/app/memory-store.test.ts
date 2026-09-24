@@ -33,6 +33,15 @@ test("store facade explicitly reports and enables search reinforcement", () => {
   } finally { store.close(); }
 });
 
+test("memory store enrolls intelligence explicitly", () => {
+  const store = new MemoryStore(":memory:");
+  try {
+    expect(store.intelligenceEnabled()).toBe(false);
+    expect(store.enableIntelligence()).toEqual({ migrated: true, backup: null });
+    expect(store.intelligenceEnabled()).toBe(true);
+  } finally { store.close(); }
+});
+
 test("store facade exposes owner-scoped topic lookups for resumable work", () => {
   const store = new MemoryStore(":memory:");
   try {

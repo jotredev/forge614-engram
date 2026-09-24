@@ -2,7 +2,7 @@ import { MemoryError } from "../../shared/errors";
 
 const MEMORY_OPTIONS = ["project-id", "scope", "group"];
 const OPTIONS: Record<string, readonly string[]> = {
-  init: ["json", "postgres-url", "directory"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
+  init: ["json", "postgres-url", "directory"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "intelligence-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
   "group-create": ["name"], "group-list": [], "group-bind": ["project-id","group"], "group-unbind": ["project-id"], "group-rename": ["group","name"],
   "memory-move": ["id","project-id","scope","to-scope","group"],
   "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id"],

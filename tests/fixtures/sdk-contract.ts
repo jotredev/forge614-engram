@@ -41,6 +41,8 @@ interface ExpectedStore {
   projectDirectories(projectId:string):string[];moveMemoryToGroup(from:string|null,id:string,groupId:string):{memory:Memory;from:{scope:"project"|"shared";projectId:string|null}};
   saveSessionSummaryInGroup(projectId:string,sessionId:string,groupId:string,fields:SummaryFields,request:{requestKey:string;expectedVersion?:number}):SessionSaveResult;
   registerProject(projectId:string,name:string):{project:Project;created:boolean};rebindProjectDirectory(directory:string,projectId:string):{previousProjectId:string|null};
+  // Added in 1.7.0 (memory intelligence). Purely additive: nothing above changed.
+  intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};
 }
 type ActualStore = InstanceType<typeof MemoryStore>;
 type _StoreMethodNames = Assert<Equal<keyof ActualStore, keyof ExpectedStore>>;

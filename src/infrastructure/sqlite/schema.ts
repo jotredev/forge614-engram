@@ -220,16 +220,59 @@ CREATE TRIGGER memory_update AFTER UPDATE OF title,content,topic_key ON memories
   INSERT INTO memories_fts(rowid,title,content,topic_key) VALUES(new.rowid,new.title,new.content,new.topic_key);
 END;`;
 
+// Memory intelligence (schema level 11 = base 7 + ecosystem + this structure). Additive only:
+// side tables keep new data out of memory_versions, whose snapshot keys replication validates exactly.
+const INTELLIGENCE_SCHEMA = `CREATE TABLE memory_meta (
+  memory_id TEXT PRIMARY KEY NOT NULL REFERENCES memories(id),
+  short TEXT CHECK(short IS NULL OR length(short) BETWEEN 1 AND 300),
+  review_after TEXT,
+  superseded_by TEXT REFERENCES memories(id),
+  affects TEXT CHECK(affects IS NULL OR json_valid(affects)),
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX memory_meta_superseded ON memory_meta(superseded_by);
+CREATE TABLE session_activity (
+  sessionId TEXT PRIMARY KEY NOT NULL REFERENCES sessions(sessionId),
+  lastActivityAt TEXT NOT NULL,
+  interruptedAt TEXT
+);
+CREATE TABLE ecosystem_sources (
+  groupId TEXT PRIMARY KEY NOT NULL REFERENCES ecosystem_groups(id),
+  projectId TEXT NOT NULL REFERENCES projects(projectId),
+  setAt TEXT NOT NULL
+);
+CREATE VIRTUAL TABLE memories_words USING fts5(
+  title, content, topic_key, content='memories', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2'
+);
+CREATE TRIGGER memory_words_insert AFTER INSERT ON memories BEGIN
+  INSERT INTO memories_words(rowid,title,content,topic_key) VALUES(new.rowid,new.title,new.content,new.topic_key);
+END;
+CREATE TRIGGER memory_words_delete AFTER DELETE ON memories BEGIN
+  INSERT INTO memories_words(memories_words,rowid,title,content,topic_key)
+  VALUES('delete',old.rowid,old.title,old.content,old.topic_key);
+END;
+CREATE TRIGGER memory_words_update AFTER UPDATE OF title,content,topic_key ON memories BEGIN
+  INSERT INTO memories_words(memories_words,rowid,title,content,topic_key)
+  VALUES('delete',old.rowid,old.title,old.content,old.topic_key);
+  INSERT INTO memories_words(rowid,title,content,topic_key) VALUES(new.rowid,new.title,new.content,new.topic_key);
+END;
+`;
+
 type Base = 3 | 4 | 5 | 6 | 7;
-export interface SchemaState { readonly base: Base; readonly ecosystem: boolean }
+export interface SchemaState { readonly base: Base; readonly ecosystem: boolean; readonly intelligence: boolean }
 // Levels 3-7 are the linear feature chain. 8-10 are levels 5-7 with the ecosystem structure,
 // so enabling ecosystem never silently enables sessions or search reinforcement.
+// 11 is the only intelligence level: it requires base 7 and the ecosystem structure.
 function decode(version: number): SchemaState | null {
-  if (version >= 3 && version <= 7) return { base: version as Base, ecosystem: false };
-  if (version >= 8 && version <= 10) return { base: (version - 3) as Base, ecosystem: true };
+  if (version >= 3 && version <= 7) return { base: version as Base, ecosystem: false, intelligence: false };
+  if (version >= 8 && version <= 10) return { base: (version - 3) as Base, ecosystem: true, intelligence: false };
+  if (version === 11) return { base: 7, ecosystem: true, intelligence: true };
   return null;
 }
-function encode(state: SchemaState): number { return state.base + (state.ecosystem ? 3 : 0); }
+function encode(state: SchemaState): number {
+  if (state.intelligence) return 11;
+  return state.base + (state.ecosystem ? 3 : 0);
+}
 function currentVersion(db: Database): number { return (db.query("PRAGMA user_version").get() as { user_version: number }).user_version; }
 /** Feature level of the database, or null for a version this build does not know. Gates read this. */
 export function schemaFeatures(db: Database): SchemaState | null { return decode(currentVersion(db)); }
@@ -259,6 +302,7 @@ function validate(db: Database, version: number): void {
     try {
       reference.exec(schemaFor(state.base));
       if (state.ecosystem) applyEcosystemStructure(reference);
+      if (state.intelligence) reference.exec(INTELLIGENCE_SCHEMA);
       expectedDefinitions.set(version,definition(reference));
     } finally { reference.close(); }
   }
@@ -276,7 +320,7 @@ function upgradeTo(db: Database, target: 4 | 5 | 6 | 7, unsupported: string): vo
     validate(db, version);
     if (state.base >= target) return;
     db.exec(featureSql(state.base, target));
-    db.exec(`PRAGMA user_version=${encode({ base: target, ecosystem: state.ecosystem })}`);
+    db.exec(`PRAGMA user_version=${encode({ base: target, ecosystem: state.ecosystem, intelligence: state.intelligence })}`);
   }).immediate();
 }
 
@@ -332,14 +376,14 @@ function verificationFailed(): never {
 }
 
 // VACUUM INTO writes a complete, consistent copy even while the database is in WAL mode.
-function backupBeforeMigration(db: Database, version: number): string | null {
+function backupBeforeMigration(db: Database, version: number, label: "ecosystem" | "intelligence"): string | null {
   const main = (db.query("PRAGMA database_list").all() as { name: string; file: string }[]).find(entry => entry.name === "main");
   if (!main?.file) return null;
   // Nothing to lose in a database that holds no projects and no memories yet.
   const held = db.query("SELECT (SELECT count(*) FROM projects)+(SELECT count(*) FROM memories) AS n").get() as { n: number };
   if (held.n === 0) return null;
   const stamp = new Date().toISOString().replace(/[-:.]/g, "");
-  const target = `${main.file}.v${version}-pre-ecosystem-${stamp}-${randomUUID().slice(0, 8)}.bak`;
+  const target = `${main.file}.v${version}-pre-${label}-${stamp}-${randomUUID().slice(0, 8)}.bak`;
   db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
   chmodSync(target, 0o600);
   return target;
@@ -369,7 +413,7 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
   // Separate statements on purpose: a multi-statement exec does not surface a read-only error.
   db.exec("BEGIN IMMEDIATE");
   try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
-  const backup = backupBeforeMigration(db, version);
+  const backup = backupBeforeMigration(db, version, "ecosystem");
   let migrated = false;
   const foreignKeys = (db.query("PRAGMA foreign_keys").get() as { foreign_keys: number }).foreign_keys;
   db.exec("PRAGMA foreign_keys=OFF");
@@ -389,12 +433,61 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
         || requestsAfter.count !== requestsBefore.count || requestsAfter.digest !== requestsBefore.digest
         || foreignKeyViolations(db) > violationsBefore) verificationFailed();
       try { db.exec("INSERT INTO memories_fts(memories_fts) VALUES('integrity-check')"); } catch { verificationFailed(); }
-      db.exec(`PRAGMA user_version=${encode({ base: insideState.base, ecosystem: true })}`);
+      db.exec(`PRAGMA user_version=${encode({ base: insideState.base, ecosystem: true, intelligence: false })}`);
       migrated = true;
     }).immediate();
   } finally {
     db.exec(`PRAGMA foreign_keys=${foreignKeys ? "ON" : "OFF"}`);
   }
+  return { migrated, backup: migrated ? backup : null };
+}
+
+export interface IntelligenceEnrolment { readonly migrated: boolean; readonly backup: string | null }
+
+function ftsIntegrity(db: Database, table: "memories_fts" | "memories_words"): void {
+  try { db.exec(`INSERT INTO ${table}(${table}) VALUES('integrity-check')`); } catch { verificationFailed(); }
+}
+
+/**
+ * Explicit, additive enrollment for memory intelligence (level 11). Chains the prerequisites
+ * (ecosystem structure, sessions, reinforcement), then adds side tables and the word index in one
+ * transaction, verifying that no existing row changed. The MCP server never calls this.
+ */
+export function enableIntelligence(db: Database): IntelligenceEnrolment {
+  const seen = db.transaction(() => {
+    const current = currentVersion(db), decoded = decode(current);
+    if (!decoded) throw new MemoryError("MIGRATION_REQUIRED", "No se puede habilitar la memoria inteligente en este formato.");
+    validate(db, current);
+    return decoded;
+  }).deferred();
+  if (seen.intelligence) return { migrated: false, backup: null };
+  if (!seen.ecosystem) enableEcosystem(db);
+  enableSessionLifecycle(db);
+  enableSearchReinforcement(db);
+  const version = currentVersion(db);
+  // A connection that cannot write must fail before it leaves a useless backup behind.
+  db.exec("BEGIN IMMEDIATE");
+  try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
+  const backup = backupBeforeMigration(db, version, "intelligence");
+  let migrated = false;
+  db.transaction(() => {
+    const inside = currentVersion(db);
+    const insideState = decode(inside)!;
+    validate(db, inside);
+    if (insideState.intelligence) return;
+    const memoriesBefore = contentDigest(db, "memories");
+    const requestsBefore = contentDigest(db, "requests");
+    db.exec(INTELLIGENCE_SCHEMA);
+    db.exec("INSERT INTO memories_words(memories_words) VALUES('rebuild')");
+    const memoriesAfter = contentDigest(db, "memories");
+    const requestsAfter = contentDigest(db, "requests");
+    if (memoriesAfter.count !== memoriesBefore.count || memoriesAfter.digest !== memoriesBefore.digest
+      || requestsAfter.count !== requestsBefore.count || requestsAfter.digest !== requestsBefore.digest) verificationFailed();
+    ftsIntegrity(db, "memories_fts");
+    ftsIntegrity(db, "memories_words");
+    db.exec(`PRAGMA user_version=${encode({ base: 7, ecosystem: true, intelligence: true })}`);
+    migrated = true;
+  }).immediate();
   return { migrated, backup: migrated ? backup : null };
 }
 
