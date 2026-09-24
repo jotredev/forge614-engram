@@ -1,6 +1,15 @@
 import { expect, test } from "bun:test";
 import { toolSchemas } from "./schemas";
 
+test("memory_save accepts bounded metadata fields", () => {
+  const save = { title: "T", content: "c", type: "decision" as const };
+  expect(toolSchemas.memory_save.parse({ ...save, short: "  corta  ", supersedes: "id-1", affects: ["engram", "shell"] }))
+    .toMatchObject({ short: "corta", supersedes: "id-1", affects: ["engram", "shell"] });
+  expect(toolSchemas.memory_save.safeParse({ ...save, short: "x".repeat(301) }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, affects: [] }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, affects: Array.from({ length: 21 }, (_, i) => `p${i}`) }).success).toBe(false);
+});
+
 test("save schema normalizes durable text while preserving exact session identity", () => {
   expect(toolSchemas.memory_save.parse({title:"  Keep  ",content:"  Decision  ",type:"decision",sessionId:"chat-1"})).toEqual({title:"Keep",content:"Decision",type:"decision",sessionId:"chat-1"});
   for (const sessionId of [" chat", "chat ", "chat\n", "x".repeat(201)]) {

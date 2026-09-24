@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { type Memory,type MemoryOwner,type MemoryVersion,type SearchResult,type SearchScope } from "../../modules/memory";
+import { marksFor,type Memory,type MemoryOwner,type MemoryVersion,type SearchResult,type SearchScope } from "../../modules/memory";
 import {
   rankingFactors,MILLISECONDS_PER_DAY,RANKING_CONTENT_WEIGHT,RANKING_PINNED_WEIGHT,
   RANKING_RECENCY_DAYS,RANKING_RECENCY_WEIGHT,RANKING_STABILITY_BASE,RANKING_STABILITY_WEIGHT,
@@ -10,6 +10,8 @@ import type { ContextRow,MemoryPreview,TimelineRow } from "../../modules/search"
 import { searchTerms,validateSearchLimit,type ContextInput,type ContextResult,type PreviewResult,type TimelineInput,type TimelineResult,type VersionRead } from "../../modules/search";
 import { MemoryError } from "../../shared/errors";
 import { reinforcementEnabled } from "./confirmations";
+import { intelligenceEnabled } from "./intelligence";
+import { readMeta,readMetas } from "./meta";
 import { ecosystemEnabled,getGroup,groupOfProject } from "./ecosystem-groups";
 import { memory,ownerClause,required,type Row } from "./memory";
 import { sessionsEnabled } from "./sessions";
@@ -286,11 +288,20 @@ export function search(db: Database, projectId: string | null, query: string, li
   }
 
 export function searchPreviews(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all", groupId?: string | null): PreviewResult[] {
-    return readSearchPreviews(db, projectId === null ? null : projectIdentity(projectId), query, limit, scope, groupId);
+    const results = readSearchPreviews(db, projectId === null ? null : projectIdentity(projectId), query, limit, scope, groupId);
+    if (!intelligenceEnabled(db)) return results;
+    const metas = readMetas(db, results.map(result => result.memory.id)), now = new Date().toISOString();
+    return results.map(result => {
+      const meta = metas.get(result.memory.id) ?? null;
+      return meta === null ? result : { ...result, meta, marks: marksFor(meta, now) };
+    });
   }
 
 export function getVersion(db: Database, owner: MemoryOwner, id: string, version?: number): VersionRead | null {
-    return readGetVersion(db, owner, id, version);
+    const read = readGetVersion(db, owner, id, version);
+    if (read === null || !intelligenceEnabled(db)) return read;
+    const meta = readMeta(db, read.memory.id);
+    return meta === null ? read : { ...read, meta, marks: marksFor(meta, new Date().toISOString()) };
   }
 
 export function timeline(db: Database, projectId: string, input: TimelineInput): TimelineResult {

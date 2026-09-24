@@ -62,11 +62,14 @@ export function registerMemoryTools(tools:ToolContext):void {
     inputSchema:toolSchemas.memory_save,
   }, safely(async ({ directory,scope,globalIntent,groupIntent,sessionId,sessionProjectId,...input }) => {
     const saveInput: { title:string; content:string; type:MemoryType; topicKey?:string; pinned?:boolean;
-      expectedVersion?:number; requestKey?:string } = { title:input.title,content:input.content,type:input.type };
+      expectedVersion?:number; requestKey?:string; short?:string; supersedes?:string; affects?:string[] } = { title:input.title,content:input.content,type:input.type };
     if (input.topicKey !== undefined) saveInput.topicKey = input.topicKey;
     if (input.pinned !== undefined) saveInput.pinned = input.pinned;
     if (input.expectedVersion !== undefined) saveInput.expectedVersion = input.expectedVersion;
     if (input.requestKey !== undefined) saveInput.requestKey = input.requestKey;
+    if (input.short !== undefined) saveInput.short = input.short;
+    if (input.supersedes !== undefined) saveInput.supersedes = input.supersedes;
+    if (input.affects !== undefined) saveInput.affects = input.affects;
     if (scope === "ecosystem") {
       if (!groupIntent) throw new MemoryError("GROUP_INTENT_REQUIRED","scope ecosystem requiere explicar por qué aplica a todo el ecosistema (groupIntent).");
       if (globalIntent !== undefined) throw new MemoryError("INVALID_INPUT","globalIntent solo se acepta con scope shared explícito.");

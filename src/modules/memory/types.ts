@@ -2,7 +2,8 @@ export const memoryTypes = ["fact", "decision", "procedure", "warning", "prefere
 export type MemoryType = (typeof memoryTypes)[number];
 export type MemoryScope = "project" | "shared" | "ecosystem";
 export type SearchScope = MemoryScope | "all";
-export type SaveInput = { title:string;content:string;type:MemoryType;topicKey?:string;pinned?:boolean;expectedVersion?:number;requestKey?:string }
+export type SaveInput = { title:string;content:string;type:MemoryType;topicKey?:string;pinned?:boolean;expectedVersion?:number;requestKey?:string;
+  short?:string;supersedes?:string;affects?:readonly string[] }
   & ({scope?:"project";projectId:string}|{scope:"shared";projectId:null}|{scope:"ecosystem";projectId:null;groupId:string});
 /** A project id, null for shared, or a group for the ecosystem scope. */
 export type MemoryOwner = string | null | { readonly groupId: string };

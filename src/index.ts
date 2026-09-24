@@ -1,5 +1,5 @@
 export { memoryTypes } from "./modules/memory";
-export type { MemoryType,MemoryScope,SearchScope,SaveInput,MemoryVersion,Memory,SearchResult,Confirmation,ConfirmationRequest } from "./modules/memory";
+export type { MemoryType,MemoryScope,SearchScope,SaveInput,MemoryVersion,Memory,SearchResult,Confirmation,ConfirmationRequest,MemoryMeta,MemoryMark } from "./modules/memory";
 export { memoryProtocol } from "./modules/memory-protocol";
 export type { MemoryProtocol } from "./modules/memory-protocol";
 export type { Project } from "./modules/projects";
