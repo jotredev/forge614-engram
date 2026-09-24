@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.0 — en desarrollo
+
+Memoria inteligente; esta sección crece tarea por tarea.
+
+- **Esquema 11 (aditivo, con respaldo):** nivel nuevo = esquema 7 + ecosistema + inteligencia. Agrega tablas aparte (`memory_meta`, `session_activity`, `ecosystem_sources`) y un índice FTS5 por palabras sin distinguir acentos (`memories_words`); no reconstruye ninguna tabla existente. Se activa solo con `intelligence-enable`, que prueba primero que puede escribir, copia la base a `engram.db.v<versión>-pre-intelligence-<fecha>-<id>.bak` (permisos 0600; se omite si la base está vacía) y verifica recuento y suma SHA-256 de `memories` y `requests` en una sola transacción (`MIGRATION_VERIFY_FAILED` revierte todo). Una base en un nivel anterior encadena antes sus requisitos (ecosistema, sesiones, refuerzo). El servidor MCP nunca migra la base.
+- La replicación de grupos (formato 4) pasa a la versión 1.8.0.
+
 ## 1.6.0
 
 Ámbito `ecosystem` (memoria compartida entre repositorios relacionados) e identidad portátil del proyecto.
