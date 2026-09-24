@@ -5,12 +5,13 @@ import * as memory from "../infrastructure/sqlite/memory";
 import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
 import { intelligenceEnabled } from "../infrastructure/sqlite/intelligence";
+import * as board from "../infrastructure/sqlite/board";
 import { enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
 import * as writes from "../infrastructure/sqlite/writes";
-import type { Group,GroupSummary,IdentityEvent,MembershipSource,ProjectGroup } from "../modules/ecosystem";
+import type { Group,GroupSource,GroupSummary,IdentityEvent,MembershipSource,ProjectGroup } from "../modules/ecosystem";
 import { type Memory,type MemoryVersion,type SaveInput,type SearchResult,type SearchScope } from "../modules/memory";
 import { type Project } from "../modules/projects";
 import { type ContextInput,type ContextResult,type PreviewResult,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";
@@ -98,4 +99,7 @@ export class MemoryStore {
   intelligenceEnabled(): boolean { return intelligenceEnabled(this.db); }
   enableIntelligence(): IntelligenceEnrolment { return enableIntelligence(this.db); }
   previousInterrupted(projectId: string): PreviousSession | null { return previousInterrupted(this.db, projectId); }
+  setGroupSource(groupId: string, projectId: string): GroupSource { return board.setGroupSource(this.db, groupId, projectId); }
+  groupSource(groupId: string): GroupSource | null { return board.groupSource(this.db, groupId); }
+  demoteMemory(projectId: string, id: string): { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } } { return board.demoteMemory(this.db, projectId, id); }
 }

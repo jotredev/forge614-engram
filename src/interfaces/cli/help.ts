@@ -37,14 +37,18 @@ group-list      Lista los grupos y los proyectos de cada uno.
 group-bind      --project-id <UUID> --group <nombre|id>   (un proyecto pertenece como máximo a un grupo)
 group-unbind    --project-id <UUID>
 group-rename    --group <nombre|id> --name <nombre>
+group-source-set --group <nombre|id> --project-id <UUID>
 memory-move     --id <recuerdo> --to-scope ecosystem --group <nombre|id> [--project-id <UUID> | --scope shared]
                 Mueve un recuerdo a un grupo conservando su historial; queda registrado y nunca copia ni borra en silencio.
+memory-demote   --id <recuerdo> --project-id <UUID>
+                Baja un recuerdo del tablero al proyecto conservando su historial.
 
 Recuerdos: --project-id <UUID> (scope project por defecto) O --scope shared.
 Grupos: --scope ecosystem --group <nombre|id> en save, get, history, archive, restore y context; search acepta también --project-id.
 save     --title <título> --content <texto> [--type fact|decision|procedure|warning|preference]
          [--topic <tema>] [--expected-version <versión>] [--request-key <clave>]
          [--pinned true|false] [--session-id <id>] [--session-project-id <UUID>]
+         [--affects <proyecto-a,proyecto-b,...>]
          type=fact por defecto; un save shared con sesión requiere --session-project-id.
 get      --id <recuerdo> [--version <n>]
 history  --id <recuerdo>

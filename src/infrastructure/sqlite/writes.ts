@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { groupIdentity } from "../../modules/ecosystem";
+import { boardTypeAllowed,ECOSYSTEM_AFFECTS_MIN,ECOSYSTEM_BOARD_LIMIT,ECOSYSTEM_STATUS_MAX,ECOSYSTEM_STATUS_TOPIC,groupIdentity } from "../../modules/ecosystem";
 import { findSecret,memoryTypes,normalizeAffects,normalizeShort,reviewAfterFor,sameConfirmationPayload,type Memory,type MemoryMeta,type MemoryOwner,type MemoryVersion,type SaveInput } from "../../modules/memory";
 import { projectIdentity,type Project } from "../../modules/projects";
 import { sessionIdentity,summaryContent,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../../modules/sessions";
@@ -11,6 +11,7 @@ import { intelligenceEnabled } from "./intelligence";
 import { readMeta,upsertMeta } from "./meta";
 import { similarTo } from "./similar";
 import { getGroup,recordIdentityEvent,requireEcosystem } from "./ecosystem-groups";
+import { groupSource } from "./board";
 import { get,required,type Row } from "./memory";
 import { getProject,projectForDirectory,requireProjectBindings,resolveProjectDirectory as resolveProjectDirectoryInTransaction } from "./projects";
 import { endRuntimeSession,inferredSessions,manualSession,requireSessions,sessionsEnabled,startRuntimeSession,validateSelectedSession } from "./sessions";
@@ -232,8 +233,9 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
     const short = input.short === undefined ? undefined : normalizeShort(input.short);
     const affects = input.affects === undefined ? undefined : normalizeAffects(input.affects);
     const supersedes = input.supersedes === undefined ? null : required(input.supersedes, "supersedes");
-    const pinned = input.pinned ?? false;
-    const hash = createHash("sha256").update(JSON.stringify([scope,ownerId,title,content,input.type,topic,pinned,expected])).digest("hex");
+    let pinned = input.pinned ?? false;
+    if (scope === "ecosystem" && intelligenceEnabled(db) && topic === ECOSYSTEM_STATUS_TOPIC) pinned = true;
+    let hash = createHash("sha256").update(JSON.stringify([scope,ownerId,title,content,input.type,topic,pinned,expected])).digest("hex");
     if (options.mode !== undefined && options.mode !== "independent" && options.mode !== "assistant") throw new MemoryError("INVALID_INPUT","mode no válido.");
     const explicit = options.sessionId === undefined ? null : sessionIdentity(options.sessionId);
     const optionProject = options.projectId === undefined ? null : projectIdentity(options.projectId);
@@ -274,6 +276,32 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
       if (topic!==null && (existing ? existing.version !== expected : expected !== null)) {
         throw new MemoryError("VERSION_CONFLICT", "La versión esperada no coincide. Lee el tema antes de actualizarlo.");
       }
+      if (scope === "ecosystem" && intelligenceEnabled(db) && !summary) {
+        const status = topic === ECOSYSTEM_STATUS_TOPIC;
+        if (status) {
+          const source = groupSource(db, groupId!);
+          const from = (input as { fromProjectId?: string }).fromProjectId;
+          if (!source || !from || source.projectId !== from || db.query("SELECT 1 FROM ecosystem_memberships WHERE groupId=? AND projectId=?").get(groupId, from) === null) {
+            throw new MemoryError("ECOSYSTEM_STATUS_FORBIDDEN", "Solo el proyecto fuente del grupo puede guardar la nota de estado.");
+          }
+          if (!boardTypeAllowed(input.type, topic)) throw new MemoryError("ECOSYSTEM_TYPE_NOT_ALLOWED", "Ese tipo no está permitido en el tablero del ecosistema.");
+          if (Array.from(content).length > ECOSYSTEM_STATUS_MAX) throw new MemoryError("ECOSYSTEM_STATUS_TOO_LONG", "La nota de estado no puede superar 600 caracteres.");
+          pinned = true;
+        } else {
+          if (!boardTypeAllowed(input.type, topic)) throw new MemoryError("ECOSYSTEM_TYPE_NOT_ALLOWED", "Ese tipo no está permitido en el tablero del ecosistema.");
+          const previous = existing ? readMeta(db, existing.id)?.affects : null;
+          const effective = affects ?? previous;
+          if (!effective || effective.length < ECOSYSTEM_AFFECTS_MIN) throw new MemoryError("ECOSYSTEM_AFFECTS_REQUIRED", "El tablero requiere al menos dos proyectos afectados.");
+          const names = db.query("SELECT p.name FROM ecosystem_memberships m JOIN projects p ON p.projectId=m.projectId WHERE m.groupId=?").all(groupId) as { name: string }[];
+          const valid = new Set(names.map(row => row.name)); const unknown = effective.filter(name => !valid.has(name));
+          if (unknown.length) throw new MemoryError("ECOSYSTEM_AFFECTS_UNKNOWN", `Proyectos desconocidos: ${unknown.join(", ")}. Válidos: ${names.map(row => row.name).sort().join(", ")}.`);
+          if (!existing) {
+            const board = db.query("SELECT title FROM memories WHERE scope='ecosystem' AND groupId=? AND state='active' AND (topic_key IS NULL OR (topic_key<>? AND topic_key NOT GLOB 'session/*/summary')) ORDER BY title,id").all(groupId, ECOSYSTEM_STATUS_TOPIC) as { title: string }[];
+            if (board.length >= ECOSYSTEM_BOARD_LIMIT) throw new MemoryError("ECOSYSTEM_BOARD_FULL", `El tablero tiene ${board.length} recuerdos activos: ${board.map(row => row.title).join(" · ")}. Consolida o baja uno.`);
+          }
+        }
+      }
+      hash = createHash("sha256").update(JSON.stringify([scope,ownerId,title,content,input.type,topic,pinned,expected])).digest("hex");
       const now = requestNow;
       if (reinforcementEnabled(db) && existing) {
         const versionRow=db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(existing.id,existing.version) as {snapshot:string};
@@ -362,6 +390,17 @@ export function moveMemoryToGroup(db: Database, from: string | null, id: string,
       if (!current) throw new MemoryError("NOT_FOUND", "Recuerdo no encontrado en el alcance seleccionado.");
       const reserved = sessionsEnabled(db) && db.query("SELECT 1 FROM session_summaries WHERE memoryId=?").get(current.id);
       if (reserved) throw new MemoryError("SUMMARY_TOPIC_RESERVED", "Un resumen de sesión pertenece a su proyecto y no puede moverse.");
+      if (intelligenceEnabled(db)) {
+        if (current.topicKey === ECOSYSTEM_STATUS_TOPIC) throw new MemoryError("ECOSYSTEM_STATUS_FORBIDDEN", "La nota de estado no puede moverse al tablero.");
+        if (!boardTypeAllowed(current.type, current.topicKey)) throw new MemoryError("ECOSYSTEM_TYPE_NOT_ALLOWED", "Ese tipo no está permitido en el tablero del ecosistema.");
+        const affects = readMeta(db, current.id)?.affects;
+        if (!affects || affects.length < ECOSYSTEM_AFFECTS_MIN) throw new MemoryError("ECOSYSTEM_AFFECTS_REQUIRED", "El tablero requiere al menos dos proyectos afectados.");
+        const names = db.query("SELECT p.name FROM ecosystem_memberships m JOIN projects p ON p.projectId=m.projectId WHERE m.groupId=?").all(identity) as { name: string }[];
+        const valid = new Set(names.map(row => row.name)); const unknown = affects.filter(name => !valid.has(name));
+        if (unknown.length) throw new MemoryError("ECOSYSTEM_AFFECTS_UNKNOWN", `Proyectos desconocidos: ${unknown.join(", ")}. Válidos: ${names.map(row => row.name).sort().join(", ")}.`);
+        const board = db.query("SELECT title FROM memories WHERE scope='ecosystem' AND groupId=? AND state='active' AND (topic_key IS NULL OR (topic_key<>? AND topic_key NOT GLOB 'session/*/summary')) ORDER BY title,id").all(identity, ECOSYSTEM_STATUS_TOPIC) as { title: string }[];
+        if (board.length >= ECOSYSTEM_BOARD_LIMIT) throw new MemoryError("ECOSYSTEM_BOARD_FULL", `El tablero tiene ${board.length} recuerdos activos: ${board.map(row => row.title).join(" · ")}. Consolida o baja uno.`);
+      }
       if (current.topicKey !== null && db.query("SELECT 1 FROM memories WHERE scope='ecosystem' AND groupId=? AND topic_key=?").get(identity, current.topicKey)) {
         throw new MemoryError("TOPIC_CONFLICT", "El grupo ya tiene un recuerdo con ese tema; no se sobrescribe. Archívalo o cambia el tema primero.");
       }

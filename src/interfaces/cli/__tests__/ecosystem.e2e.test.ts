@@ -409,3 +409,22 @@ test("existing commands keep their exact JSON shape for someone who never uses t
   const error = JSON.parse((await engram.run("get", "--project-id", project.projectId, "--id", "nada")).stderr);
   expect(error).toEqual({ code: "NOT_FOUND", error: "Recuerdo no encontrado en el alcance seleccionado." });
 }, T);
+test("group-source-set, memory-demote and save --affects speak the machine contract at level 11", async () => {
+  const engram = await machine();
+  const ai = await engram.ok("project-create", "--name", "forge614-ai");
+  const node = await engram.ok("project-create", "--name", "forge614-engram");
+  await engram.ok("group-create", "--name", "forge614");
+  for (const project of [ai, node]) await engram.ok("group-bind", "--project-id", project.projectId, "--group", "forge614");
+  expect(await engram.fail("group-source-set", "--group", "forge614", "--project-id", ai.projectId)).toMatchObject({ schemaVersion: 1, code: "INTELLIGENCE_REQUIRED" });
+  await engram.ok("intelligence-enable");
+  expect(await engram.ok("group-source-set", "--group", "forge614", "--project-id", ai.projectId))
+    .toEqual({ schemaVersion: 1, source: { groupId: expect.any(String), projectId: ai.projectId, setAt: expect.any(String) } });
+  expect(await engram.fail("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Hecho", "--content", "libre", "--type", "fact"))
+    .toMatchObject({ schemaVersion: 1, code: "ECOSYSTEM_TYPE_NOT_ALLOWED" });
+  const rule = await engram.ok("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Contrato", "--content", "JSON versionado",
+    "--type", "decision", "--affects", "forge614-ai,forge614-engram");
+  const demoted = await engram.ok("memory-demote", "--id", rule.id, "--project-id", node.projectId);
+  expect(demoted).toMatchObject({ schemaVersion: 1, memory: { id: rule.id, scope: "project", projectId: node.projectId },
+    from: { scope: "ecosystem" }, to: { scope: "project", projectId: node.projectId } });
+  expect(await engram.fail("memory-demote", "--id", rule.id, "--project-id", node.projectId)).toMatchObject({ schemaVersion: 1, code: "NOT_FOUND" });
+}, T);

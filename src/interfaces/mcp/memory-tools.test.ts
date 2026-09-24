@@ -16,16 +16,17 @@ test("memory_save passes metadata through and memory_get returns it with marks a
 });
 import { sdkHarness } from "./__tests__/sdk-harness";
 
-test("memory_save reports look-alikes of a new memory at level 11 and memory_search finds natural questions", async () => {
+test("memory_save writes the ecosystem status note only from the group's source project (level 11)", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {
+    const seed=(await h.call("memory_save",{title:"Seed",content:"creates the project",type:"fact"})).data;
     h.store.enableIntelligence();
-    const cause=(await h.call("memory_save",{title:"Bun 1.3.8 se atora en Linux",content:"La causa del cuelgue de CI es Bun 1.3.8 al cargar módulos en Linux; Bun 1.3.9 pasa.",type:"decision"})).data;
-    expect(cause).not.toHaveProperty("similar");
-    const fix=(await h.call("memory_save",{title:"Bun 1.4.2 fijado como versión única",content:"Todos los nodos fijan Bun 1.4.2; la 1.3.8 se atoraba en Linux al cargar módulos.",type:"decision"})).data;
-    expect(fix.similar.map((candidate:any)=>candidate.id)).toEqual([cause.id]);
-    const found=(await h.call("memory_search",{query:"qué versión de bun usamos",limit:3})).data;
-    expect(found.results.map((result:any)=>[result.memory.id,result.explanation.mode])).toEqual([[fix.id,"hybrid"]]);
+    const group=h.store.createGroup("tienda");
+    h.store.bindProjectToGroup(seed.projectId,group.id);
+    const note={scope:"ecosystem",groupIntent:"status of the whole group",title:"Estado actual",content:"Frente: T4.",type:"fact",topicKey:"ecosystem/estado-actual"};
+    expect((await h.call("memory_save",note)).data.code).toBe("ECOSYSTEM_STATUS_FORBIDDEN");
+    h.store.setGroupSource(group.id,seed.projectId);
+    expect((await h.call("memory_save",note)).data).toMatchObject({scope:"ecosystem",topicKey:"ecosystem/estado-actual",pinned:true});
   } finally {await h.close();}
 });
 
@@ -146,4 +147,16 @@ test("the first tool call that upgrades the base carries the notice, and only th
     expect(again.notices).toBeUndefined();
     expect((await h.call("memory_current_project")).data.notices).toBeUndefined();
   } finally { await h.close(); }
+});
+test("memory_save reports look-alikes of a new memory at level 11 and memory_search finds natural questions", async () => {
+  const h=await sdkHarness(registerMemoryTools);
+  try {
+    h.store.enableIntelligence();
+    const cause=(await h.call("memory_save",{title:"Bun 1.3.8 se atora en Linux",content:"La causa del cuelgue de CI es Bun 1.3.8 al cargar módulos en Linux; Bun 1.3.9 pasa.",type:"decision"})).data;
+    expect(cause).not.toHaveProperty("similar");
+    const fix=(await h.call("memory_save",{title:"Bun 1.4.2 fijado como versión única",content:"Todos los nodos fijan Bun 1.4.2; la 1.3.8 se atoraba en Linux al cargar módulos.",type:"decision"})).data;
+    expect(fix.similar.map((candidate:any)=>candidate.id)).toEqual([cause.id]);
+    const found=(await h.call("memory_search",{query:"qué versión de bun usamos",limit:3})).data;
+    expect(found.results.map((result:any)=>[result.memory.id,result.explanation.mode])).toEqual([[fix.id,"hybrid"]]);
+  } finally {await h.close();}
 });
