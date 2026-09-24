@@ -63,3 +63,18 @@ store.enableEcosystem(); store.ecosystemEnabled();
 `SaveInput` accepts `{ scope: "ecosystem", projectId: null, groupId }`; `MemoryScope` becomes `"project" | "shared" | "ecosystem"` and a group memory includes `groupId` (project and shared memories keep their shape). `search(projectId, …, "all")` automatically includes the project's group; `search(projectId, …, "ecosystem")` uses that group. New exported types: `Group`, `GroupSummary`, `GroupMembership`, `MembershipSource`, `ProjectGroup`, `IdentityEvent`, `GroupBinding`, `GroupUnbinding`, `GroupRename`, `IdentityFilesResult`, `MemoryMove`. `memoryProtocol(3)` returns the version 3 contract.
 
 `saveProjectMemoryWithSession`, `startProjectSession`, and the other `directory`-based paths read the folder's `.forge614/project.json` first and resolve by its `id` (see chapter 11).
+
+## Memory intelligence (since 1.7.0, schema 11)
+
+```ts
+store.intelligenceEnabled();   // boolean
+store.enableIntelligence();    // IntelligenceEnrolment: { migrated, backup }; enables schema 11 after a backup
+store.save({ projectId, title: "Database", content: "…", type: "decision", topicKey: "db",
+  short: "We use local SQLite", affects: ["engram", "shell"], supersedes: oldId });
+store.searchPreviews(projectId, "sqlite")[0]?.meta;  // MemoryMeta | undefined
+store.getVersion(projectId, id)?.marks;              // MemoryMark[] | undefined: "superseded" | "verify"
+```
+
+`SaveInput` gains three optional fields accepted only with schema 11 (an earlier level answers `INTELLIGENCE_REQUIRED`): `short` (a 1–300 character short version), `affects` (1–20 project names of 1–64 characters; trimmed, deduplicated and sorted) and `supersedes` (the id of an active memory with the same scope and owner, which is marked as replaced by this one; it is never archived; if it does not exist or belongs to another scope, `SUPERSEDES_NOT_FOUND`). This data lives outside the memory version: it creates no new version and does not change the memory's hash, and saving the same text with new metadata only updates it. Every new version of a `decision` or `procedure` gets a review date 90 days ahead; once it passes, reads add the `verify` mark. When the content changes without a new `short`, the previous short version is cleared. `searchPreviews` and `getVersion` (and their `*InGroup` variants) add `meta` and `marks` only with schema 11 and only when the memory has metadata; otherwise the result keeps its shape. New exported types: `MemoryMeta` and `MemoryMark`.
+
+Every save (`save`, session summaries, CLI and MCP), at any database level, rejects with `SECRET_REJECTED` a title, content, topic or short version that looks like it contains a secret: a private key, an AWS key, a GitHub or Slack token, an `sk-` key, a JWT, a connection string with user and password, or an assignment with a literal value such as `password=<value>`. The error names the kind of secret, never the value. Naming where a key lives is allowed (`process.env.API_KEY`, `password: <redacted>`).
