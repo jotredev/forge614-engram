@@ -39,6 +39,18 @@ test("timeline uses the exact owner/version and context supports shared scope wi
   } finally {await h.close();}
 });
 
+test("memory_session_start reports the previous interrupted session once intelligence is enabled, but not on replay", async () => {
+  const h=await sdkHarness(registerSessionTools);
+  try {
+    h.store.enableIntelligence();
+    await h.call("memory_session_start",{sessionId:"first"});
+    const second=await h.call("memory_session_start",{sessionId:"second"});
+    expect(second.data.previous).toMatchObject({sessionId:"first"});
+    const replay=await h.call("memory_session_start",{sessionId:"second"});
+    expect(replay.data).not.toHaveProperty("previous");
+  } finally {await h.close();}
+});
+
 const both = (context: Parameters<typeof registerMemoryTools>[0]) => { registerMemoryTools(context); registerSessionTools(context); };
 async function member(h: Awaited<ReturnType<typeof sdkHarness>>) {
   const seed = (await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" })).data;

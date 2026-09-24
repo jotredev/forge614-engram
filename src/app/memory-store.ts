@@ -1,3 +1,4 @@
+import { previousInterrupted } from "../infrastructure/sqlite/activity";
 import { closeDatabase,defaultDatabasePath,openDatabase } from "../infrastructure/sqlite/connection";
 import * as groups from "../infrastructure/sqlite/ecosystem-groups";
 import * as memory from "../infrastructure/sqlite/memory";
@@ -13,7 +14,7 @@ import type { Group,GroupSummary,IdentityEvent,MembershipSource,ProjectGroup } f
 import { type Memory,type MemoryVersion,type SaveInput,type SearchResult,type SearchScope } from "../modules/memory";
 import { type Project } from "../modules/projects";
 import { type ContextInput,type ContextResult,type PreviewResult,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";
-import { type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
+import { type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
 import type { SyncSnapshot } from "../modules/synchronization";
 
 export class MemoryStore {
@@ -96,4 +97,5 @@ export class MemoryStore {
   // Memory intelligence (schema level 11). Additive; explicit enrollment only.
   intelligenceEnabled(): boolean { return intelligenceEnabled(this.db); }
   enableIntelligence(): IntelligenceEnrolment { return enableIntelligence(this.db); }
+  previousInterrupted(projectId: string): PreviousSession | null { return previousInterrupted(this.db, projectId); }
 }

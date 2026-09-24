@@ -5,3 +5,4 @@ export interface SessionSummary {sessionId:string;memoryId:string;version:number
 export interface SessionSaveOptions {sessionId?:string;projectId?:string;mode?:"independent"|"assistant";runtimeDirectory?:string}
 export interface SessionSaveResult {memory:MemoryVersion;sessionId:string|null;sessionSource:"explicit"|"inferred"|"manual"|null;similar?:SimilarCandidate[]}
 export interface SummaryFields {goal:string;instructions:string;discoveries:string;accomplishments:string;nextSteps:string;files:string[]}
+export interface PreviousSession {sessionId:string;interruptedAt:string;summary:MemoryVersion|null}

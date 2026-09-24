@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryStore } from "./memory-store";
-import { bindProjectContext, resolveProjectContext, saveProjectMemoryWithSession, startProjectSession } from "./project-context";
+import { bindProjectContext, resolveProjectContext, saveProjectMemoryWithSession, startProjectSession, startProjectSessionWithNotices } from "./project-context";
 
 test("context rejects a nonboolean create flag before directory discovery", () => {
   const store = new MemoryStore(":memory:");
@@ -24,5 +24,20 @@ test("explicit binding and session save preserve the selected project and canoni
     expect(result.memory.projectId).toBe(project.projectId);
     expect(store.getSession(project.projectId,"conversation")?.sessionId).toBe("conversation");
     expect(store.listProjects()).toHaveLength(1);
+  } finally { store.close(); rmSync(directory,{recursive:true,force:true}); }
+});
+
+test("a new session reports the project's previously interrupted session only once intelligence is enabled", () => {
+  const directory = mkdtempSync(join(tmpdir(),"engram-context-previous-"));
+  const store = new MemoryStore(":memory:");
+  try {
+    store.enableSessions();
+    const first = startProjectSessionWithNotices(store,directory,"first");
+    expect(first).not.toHaveProperty("previous");
+    store.enableIntelligence();
+    const second = startProjectSessionWithNotices(store,directory,"second");
+    expect(second.previous).toEqual({sessionId:"first",interruptedAt:expect.any(String),summary:null});
+    const replay = startProjectSessionWithNotices(store,directory,"second");
+    expect(replay).not.toHaveProperty("previous");
   } finally { store.close(); rmSync(directory,{recursive:true,force:true}); }
 });
