@@ -38,8 +38,28 @@ const BENIGN = [
   "El respaldo queda en engram.db.v10-pre-intelligence-20260924T180657787Z-0542aea7.bak.",
   "Precio de Opus 5.5: entrada $4, salida $20 por millón de tokens.",
   "La API key se configura como variable de entorno, nunca en la memoria.",
+  // Keyword followed by something that names or hides a value (errata 2026-09-24).
+  "La config usa apiKey: process.env.OPENAI_KEY",
+  "El error es secret: SECRET_REJECTED cuando el texto trae credenciales.",
+  "password: <redacted>",
+  "password: ********",
+  "Guarda el token en access_token = getTokenFromVault()",
+  "pwd = /Users/jorge/proyecto",
+  "api_key=${API_KEY} en el archivo de entorno.",
 ];
 
 test("real domain texts are never rejected", () => {
   for (const text of BENIGN) expect(findSecret(text)).toBeNull();
+});
+
+test("an assignment with a literal value is rejected whatever its form", () => {
+  const ASSIGNED = [
+    join("pass", "word: ", "hunter2hunter2."),
+    join("api", "_key=\"", "a8f3kd92mfk3", "\""),
+    join("sec", "ret: ", "AB12CD34EF56GH78"),
+    join("access", "Token = '", "x9Kd02mZq7", "'"),
+    join("pw", "d=", "Sup3r$ecret!", ", luego conectar"),
+    join("PASS", "WORD: ", "correcthorsebattery"),
+  ];
+  for (const text of ASSIGNED) expect(findSecret(text)).toBe("password-assignment");
 });
