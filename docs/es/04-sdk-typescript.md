@@ -63,3 +63,18 @@ store.enableEcosystem(); store.ecosystemEnabled();
 `SaveInput` admite `{ scope: "ecosystem", projectId: null, groupId }`; `MemoryScope` pasa a `"project" | "shared" | "ecosystem"` y un recuerdo de grupo incluye `groupId` (los de proyecto y compartidos no cambian de forma). `search(projectId, …, "all")` incluye automáticamente el grupo del proyecto; `search(projectId, …, "ecosystem")` usa ese grupo. Tipos exportados nuevos: `Group`, `GroupSummary`, `GroupMembership`, `MembershipSource`, `ProjectGroup`, `IdentityEvent`, `GroupBinding`, `GroupUnbinding`, `GroupRename`, `IdentityFilesResult`, `MemoryMove`. `memoryProtocol(3)` devuelve el contrato de la versión 3.
 
 `saveProjectMemoryWithSession`, `startProjectSession` y las demás rutas por `directory` leen primero el `.forge614/project.json` de la carpeta y resuelven por su `id` (consulta el capítulo 11).
+
+## Memoria inteligente (desde 1.7.0, esquema 11)
+
+```ts
+store.intelligenceEnabled();   // boolean
+store.enableIntelligence();    // IntelligenceEnrolment: { migrated, backup }; activa el esquema 11 con respaldo previo
+store.save({ projectId, title: "Base de datos", content: "…", type: "decision", topicKey: "db",
+  short: "Usamos SQLite local", affects: ["engram", "shell"], supersedes: oldId });
+store.searchPreviews(projectId, "sqlite")[0]?.meta;  // MemoryMeta | undefined
+store.getVersion(projectId, id)?.marks;              // MemoryMark[] | undefined: "superseded" | "verify"
+```
+
+`SaveInput` gana tres campos opcionales que solo se aceptan con el esquema 11 (en un nivel anterior responden `INTELLIGENCE_REQUIRED`): `short` (versión corta de 1 a 300 caracteres), `affects` (de 1 a 20 nombres de proyecto de 1 a 64 caracteres; se recortan, se quitan repetidos y se ordenan) y `supersedes` (id de un recuerdo activo del mismo ámbito y dueño, que queda marcado como reemplazado por este; nunca se archiva; si no existe o es de otro ámbito, `SUPERSEDES_NOT_FOUND`). Estos datos viven fuera de la versión del recuerdo: no crean versión nueva ni cambian su huella, y guardar el mismo texto con metadatos nuevos solo los actualiza. Cada versión nueva de una `decision` o un `procedure` recibe una fecha de revisión a 90 días; cuando pasa, la lectura añade la marca `verify`. Si el contenido cambia sin un `short` nuevo, la versión corta anterior se borra. `searchPreviews` y `getVersion` (y sus variantes `*InGroup`) añaden `meta` y `marks` solo con el esquema 11 y solo cuando el recuerdo tiene metadatos; en otro caso el resultado no cambia de forma. Tipos exportados nuevos: `MemoryMeta` y `MemoryMark`.
+
+Todo guardado (`save`, resúmenes de sesión, CLI y MCP), en cualquier nivel de la base, rechaza con `SECRET_REJECTED` un título, contenido, tema o versión corta que parezca contener un secreto: llave privada, clave de AWS, token de GitHub o Slack, clave `sk-`, JWT, cadena de conexión con usuario y contraseña, o una asignación con valor literal como `password=<valor>`. El error nombra el tipo de secreto, nunca el valor. Nombrar dónde vive una clave sí se permite (`process.env.API_KEY`, `password: <redacted>`).
