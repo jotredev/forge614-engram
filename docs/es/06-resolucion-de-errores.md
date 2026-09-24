@@ -49,6 +49,12 @@ Desde 1.7.0. En la CLI estos códigos devuelven `{schemaVersion,code,error}` por
 - `INTELLIGENCE_REQUIRED`: se enviaron `short`, `supersedes` o `affects` y la base aún no tiene la memoria inteligente. Actívala con `forge614-engram intelligence-enable` (respalda antes de migrar) o guarda sin esos campos.
 - `SUPERSEDES_NOT_FOUND`: `supersedes` apunta a un recuerdo que no existe, está archivado o es de otro ámbito o proyecto. Busca el id correcto con `memory_search`.
 - `AMBIGUOUS_SESSION`: con el esquema 11 ya no lo provocan sesiones abiertas obsoletas (las marcadas como interrumpidas o inactivas por más de 6 horas se ignoran); si aun así aparece, hay dos sesiones de la misma carpeta genuinamente activas: indica `sessionId`.
+- `ECOSYSTEM_TYPE_NOT_ALLOWED`: el recuerdo del tablero del ecosistema no es `decision`, `procedure` ni `warning` (la nota de estado admite además `fact`). El tablero es para reglas y contratos: cambia el tipo o deja el recuerdo en el proyecto.
+- `ECOSYSTEM_AFFECTS_REQUIRED`: los `affects` efectivos (los enviados o, si no hay, los ya guardados) son menos de 2. Envía al menos 2 nombres de proyectos del grupo (CLI: `--affects proyecto-a,proyecto-b`); al mover con `memory-move`, el recuerdo ya debe tenerlos guardados.
+- `ECOSYSTEM_AFFECTS_UNKNOWN`: algún nombre de `affects` no es el nombre exacto de un proyecto miembro del grupo; el mensaje nombra los desconocidos y los válidos. Corrige los nombres.
+- `ECOSYSTEM_BOARD_FULL`: el tablero ya tiene 40 recuerdos activos (no cuentan la nota de estado ni los resúmenes de sesión); el mensaje trae el conteo y los títulos. Consolida recuerdos o baja uno con `memory-demote`. Solo aparece al agregar un recuerdo nuevo, nunca al actualizar uno existente.
+- `ECOSYSTEM_STATUS_FORBIDDEN`: la nota de estado (tema `ecosystem/estado-actual`) solo la escribe el proyecto fuente del grupo, que debe seguir siendo miembro; tampoco se puede mover a un grupo un recuerdo con ese tema. Define el proyecto fuente con `group-source-set` y guarda por MCP o por el SDK con `fromProjectId`; por CLI siempre responde este código.
+- `ECOSYSTEM_STATUS_TOO_LONG`: el contenido de la nota de estado pasa de 600 caracteres. Acórtalo.
 
 ## Integraciones de IA
 

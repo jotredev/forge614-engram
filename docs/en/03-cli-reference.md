@@ -70,6 +70,8 @@ group-bind --project-id <UUID> --group <name|id>
 group-unbind --project-id <UUID>
 group-rename --group <name|id> --name <name>
 memory-move --id <memory-id> --to-scope ecosystem --group <name|id> [--project-id <UUID> | --scope shared]
+group-source-set --group <name|id> --project-id <UUID>
+memory-demote --id <memory-id> --project-id <UUID>
 ```
 
 `<name>` uses lowercase letters, digits, and single hyphens (`mi-tienda`), 1 to 64 characters. `--group` accepts the identifier (UUID) or a name that identifies exactly one group; if several share the name it returns `GROUP_AMBIGUOUS` and you pass the identifier shown by `group-list`. A project belongs to at most one group.
@@ -91,6 +93,8 @@ The first time creating a group upgrades the database, `group-create` adds `"not
 
 `memory-move` moves an existing memory into a group **keeping its id, history, and versions**: it appends a new version that records the scope change and a `MEMORY_MOVED` event. It never copies or deletes silently: if the group already has a memory with the same topic it answers `TOPIC_CONFLICT` and changes nothing; a session summary cannot be moved (`SUMMARY_TOPIC_RESERVED`). The source is a project (`--project-id`, the default) or shared (`--scope shared`).
 
+With schema 11 (memory intelligence, since 1.7.0), `group-source-set` stores or replaces the group's **source project**, the only one that can write the `ecosystem/estado-actual` status note, and records the `GROUP_SOURCE_SET` event; it prints `{ "schemaVersion": 1, "source": { "groupId", "projectId", "setAt" } }` and answers `GROUP_NOT_FOUND`, `PROJECT_NOT_FOUND`, or `GROUP_REQUIRED` (the project is not a member of the group). The CLI does not send which project is writing, so a `save --scope ecosystem` with that topic always answers `ECOSYSTEM_STATUS_FORBIDDEN`: the status note is written through MCP (`memory_save`) or the SDK. `memory-demote` is the inverse of `memory-move`: it returns to the project a memory from the board of that project's group **keeping its id, all its versions, and its metadata**, appends a version that records the scope change and a `MEMORY_DEMOTED` event, and prints `{ "schemaVersion": 1, "memory", "from": { "scope": "ecosystem", "groupId" }, "to": { "scope": "project", "projectId" } }`. Its errors, in this order: `GROUP_REQUIRED` (the project is not in a group), `NOT_FOUND` (the memory is not on that board), `TOPIC_CONFLICT` (the project already has that topic), and `REQUEST_CONFLICT`. Both commands answer `INTELLIGENCE_REQUIRED` without schema 11. With schema 11, `memory-move` into a group and every `save --scope ecosystem` also follow the board rules (chapter 11), and the six `ECOSYSTEM_*` codes carry `schemaVersion` on any command.
+
 ```text
 // memory-move
 { "schemaVersion": 1, "memory": { "id": "<uuid>", "projectId": null, "scope": "ecosystem", "groupId": "<uuid>", "version": 2, "state": "active", "…": "…" },
@@ -103,6 +107,7 @@ The first time a command creates or uses a group in a database created by 1.5.x,
 save --project-id <UUID> --title <text> --content <text> [--type fact|decision|procedure|warning|preference]
      [--topic <key>] [--expected-version <n>] [--request-key <key>] [--pinned true|false]
      [--session-id <id>] [--session-project-id <UUID>]
+     [--affects <project-a,project-b,...>]
 search --project-id <UUID> --query <text> [--scope all|project|shared|ecosystem] [--limit <1..100>] [--preview]
 search --scope shared --query <text>
 search --scope ecosystem --group <name|id> --query <text>
@@ -113,6 +118,8 @@ save|get|history|archive|restore --scope ecosystem --group <name|id> …
 ```
 
 Use `--scope shared` rather than `--project-id` for a shared memory. Updating an existing topic requires `--expected-version`.
+
+`--affects` lists, comma-separated, the names of the projects a memory affects; the ecosystem board requires at least two (chapter 11). Without schema 11 it answers `INTELLIGENCE_REQUIRED`.
 
 Use `--scope ecosystem --group <name|id>` (without `--project-id`) for a group's memory; it has the same topics, versions, archive/restore, and reinforcement as the other scopes, and its JSON adds `groupId`. In `search`, `--scope ecosystem` accepts `--group` or the `--project-id` of a project that belongs to a group (otherwise `GROUP_REQUIRED`). `--group` is accepted only with `--scope ecosystem`. With `--project-id` and `--scope all`, the search automatically includes the project's group; when a topic repeats, the project's wins, then the group's, and finally the shared one.
 

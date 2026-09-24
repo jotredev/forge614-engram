@@ -69,6 +69,22 @@ The new scopes need an extension of the database schema. It is **additive**: onl
 - **Verification.** The migration runs in a single transaction and compares, before and after, the row count and a SHA-256 checksum of the content of `memories` and `requests`, plus foreign keys and the text index. If anything differs it rolls everything back and answers `MIGRATION_VERIFY_FAILED`; the backup is kept. Applying it twice changes nothing. In the test with 50,000 memories it took about 0.65 s, including backup and verification (measured on macOS).
 - **Backward compatibility.** A database created by 1.5.3 opens and reads completely with 1.6.0 without loss (real fixtures in the tests). In the opposite direction, Engram 1.5.3 does not open an already upgraded database: it answers `DATABASE_VERSION` ("Base incompatible: no se puede abrir con esta versión") and **does not modify it** (verified: integrity correct, same rows). The pre-migration backup does open with 1.5.3. A 1.5.x process that was already running (for example an MCP server) must be restarted after upgrading.
 
+## The ecosystem board (since 1.7.0)
+
+With schema 11, a group's `ecosystem` scope works as a shared board. It is for the rules and contracts that hold for several projects of the group (an architecture decision, a common procedure, a warning), never for statuses or work progress, which stay in each project. Below schema 11 none of this applies: an `ecosystem` memory is saved and moved as in 1.6.0.
+
+Every `ecosystem` save (CLI `save`, SDK `save` and `saveWithSession`, MCP `memory_save`) and every `memory-move` into a group follow these rules, checked in this order:
+
+1. **Type:** only `decision`, `procedure`, or `warning` (`ECOSYSTEM_TYPE_NOT_ALLOWED`).
+2. **`affects`:** the effective ones, the ones sent or, if none, the ones already stored, must be at least 2 names (`ECOSYSTEM_AFFECTS_REQUIRED`) and each the exact name of a project that is a member of the group (`ECOSYSTEM_AFFECTS_UNKNOWN`, whose message names the unknown ones and the valid ones). In the CLI they are sent with `save --affects <project-a,project-b,...>`.
+3. **Limit:** the board admits 40 active memories. It is only checked when a new memory is added (`ECOSYSTEM_BOARD_FULL`, whose message carries the count and the titles so you can consolidate or demote one). The status note and session summaries do not count; memories without a topic do.
+
+Group session summaries (`memory_session_summary` with `scope: "ecosystem"`) do not follow these rules.
+
+**Status note and source project.** The reserved topic `ecosystem/estado-actual` holds a short note with the group's status. Only the group's **source project** writes it; it is set with `group-source-set --group <name|id> --project-id <UUID>` (SDK: `setGroupSource`) and must still be a member; any other author gets `ECOSYSTEM_STATUS_FORBIDDEN`. Through MCP, `memory_save` always sends the folder's project as the author; the CLI sends no author, so through the CLI the status note always answers that error. The note admits the types `decision`, `procedure`, `warning`, and `fact`, has a maximum of 600 characters of content (`ECOSYSTEM_STATUS_TOO_LONG`), is always pinned, does not ask for `affects`, and does not count toward the limit. Repeating the same request (`requestKey`) returns the same memory, and a memory with that topic cannot be moved into a group (`ECOSYSTEM_STATUS_FORBIDDEN`).
+
+**Demoting a memory.** `memory-demote --id <memory> --project-id <UUID>` (SDK: `demoteMemory(projectId, id)`) returns to the project a memory from the board of that project's group, keeping its id, all its versions, and its metadata (short version, `affects`, validity). It appends a version that records the scope change and a `MEMORY_DEMOTED` event. If the project already has a memory with that topic it answers `TOPIC_CONFLICT`. The commands are detailed in [chapter 3](03-cli-reference.md).
+
 ## Current limits
 
 - **PostgreSQL replica.** **`ecosystem` memories are not replicated yet.** Synchronization does not describe the group scope yet: if `ecosystem` memories exist, `sync` stops with `SYNC_ECOSYSTEM_UNSUPPORTED` without touching local or remote data; without group memories it works as before. Group replication will arrive in its own plan (1.7.0, "format 4").

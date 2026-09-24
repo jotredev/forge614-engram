@@ -70,6 +70,8 @@ group-bind --project-id <UUID> --group <nombre|id>
 group-unbind --project-id <UUID>
 group-rename --group <nombre|id> --name <nombre>
 memory-move --id <id-recuerdo> --to-scope ecosystem --group <nombre|id> [--project-id <UUID> | --scope shared]
+group-source-set --group <nombre|id> --project-id <UUID>
+memory-demote --id <id-recuerdo> --project-id <UUID>
 ```
 
 `<nombre>` usa minúsculas, dígitos y guiones simples (`mi-tienda`), de 1 a 64 caracteres. `--group` acepta el identificador (UUID) o un nombre que identifique exactamente un grupo; si hay varios con ese nombre devuelve `GROUP_AMBIGUOUS` y se indica el identificador que muestra `group-list`. Un proyecto pertenece como máximo a un grupo.
@@ -91,6 +93,8 @@ La primera vez que crear un grupo actualiza la base, `group-create` añade `"not
 
 `memory-move` mueve un recuerdo existente a un grupo **conservando su id, su historial y sus versiones**: añade una versión nueva que registra el cambio de ámbito y un evento `MEMORY_MOVED`. Nunca copia ni borra en silencio: si el grupo ya tiene un recuerdo con el mismo tema responde `TOPIC_CONFLICT` y no cambia nada; un resumen de sesión no puede moverse (`SUMMARY_TOPIC_RESERVED`). El origen es un proyecto (`--project-id`, por defecto) o compartido (`--scope shared`).
 
+Con el esquema 11 (memoria inteligente, desde 1.7.0), `group-source-set` guarda o reemplaza el **proyecto fuente** del grupo, el único que puede escribir la nota de estado `ecosystem/estado-actual`, y registra el evento `GROUP_SOURCE_SET`; imprime `{ "schemaVersion": 1, "source": { "groupId", "projectId", "setAt" } }` y responde `GROUP_NOT_FOUND`, `PROJECT_NOT_FOUND` o `GROUP_REQUIRED` (el proyecto no es miembro del grupo). La CLI no envía qué proyecto escribe, así que un `save --scope ecosystem` con ese tema siempre responde `ECOSYSTEM_STATUS_FORBIDDEN`: la nota de estado se escribe por MCP (`memory_save`) o por el SDK. `memory-demote` hace lo inverso a `memory-move`: devuelve al proyecto un recuerdo del tablero del grupo de ese proyecto **conservando su id, todas sus versiones y sus metadatos**, añade una versión que registra el cambio de ámbito y el evento `MEMORY_DEMOTED`, e imprime `{ "schemaVersion": 1, "memory", "from": { "scope": "ecosystem", "groupId" }, "to": { "scope": "project", "projectId" } }`. Sus errores, en este orden: `GROUP_REQUIRED` (el proyecto no está en un grupo), `NOT_FOUND` (el recuerdo no está en ese tablero), `TOPIC_CONFLICT` (el proyecto ya tiene ese tema) y `REQUEST_CONFLICT`. Ambos comandos responden `INTELLIGENCE_REQUIRED` sin el esquema 11. Con el esquema 11, `memory-move` hacia un grupo y todo `save --scope ecosystem` cumplen además las reglas del tablero (capítulo 11), y los seis códigos `ECOSYSTEM_*` llevan `schemaVersion` en cualquier comando.
+
 ```text
 // memory-move
 { "schemaVersion": 1, "memory": { "id": "<uuid>", "projectId": null, "scope": "ecosystem", "groupId": "<uuid>", "version": 2, "state": "active", "…": "…" },
@@ -103,6 +107,7 @@ La primera vez que un comando crea o usa un grupo en una base creada por 1.5.x, 
 save --project-id <UUID> --title <texto> --content <texto> [--type fact|decision|procedure|warning|preference]
      [--topic <clave>] [--expected-version <n>] [--request-key <clave>] [--pinned true|false]
      [--session-id <id>] [--session-project-id <UUID>]
+     [--affects <proyecto-a,proyecto-b,...>]
 search --project-id <UUID> --query <texto> [--scope all|project|shared|ecosystem] [--limit <1..100>] [--preview]
 search --scope shared --query <texto>
 search --scope ecosystem --group <nombre|id> --query <texto>
@@ -113,6 +118,8 @@ save|get|history|archive|restore --scope ecosystem --group <nombre|id> …
 ```
 
 Usa `--scope shared` en vez de `--project-id` para un recuerdo compartido. Actualizar un tema existente requiere `--expected-version`.
+
+`--affects` lista, separados por comas, los nombres de los proyectos a los que afecta el recuerdo; el tablero del ecosistema exige al menos dos (capítulo 11). Sin el esquema 11 responde `INTELLIGENCE_REQUIRED`.
 
 Usa `--scope ecosystem --group <nombre|id>` (sin `--project-id`) para el recuerdo de un grupo; tiene los mismos temas, versiones, archivo/restauración y refuerzo que los otros ámbitos, y su JSON añade `groupId`. En `search`, `--scope ecosystem` acepta `--group` o el `--project-id` de un proyecto que pertenezca a un grupo (si no pertenece, `GROUP_REQUIRED`). `--group` solo se acepta con `--scope ecosystem`. Con `--project-id` y `--scope all`, la búsqueda incluye automáticamente el grupo del proyecto; si un tema se repite, gana el del proyecto, luego el del grupo y por último el compartido.
 

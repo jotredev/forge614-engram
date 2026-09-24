@@ -69,6 +69,22 @@ Los ámbitos nuevos necesitan una ampliación del esquema de la base. Es **aditi
 - **Verificación.** La migración ocurre en una sola transacción y compara, antes y después, el recuento de filas y una suma SHA-256 del contenido de `memories` y `requests`, además de las claves foráneas y el índice de texto. Si algo difiere, revierte todo y responde `MIGRATION_VERIFY_FAILED`; el respaldo se conserva. Aplicarla dos veces no cambia nada. En la prueba con 50 000 recuerdos tardó unos 0,65 s, incluidos respaldo y verificación (medido en macOS).
 - **Compatibilidad hacia atrás.** Una base creada por 1.5.3 se abre y se lee completa con 1.6.0 sin pérdida (fixtures reales en las pruebas). En sentido inverso, Engram 1.5.3 no abre una base ya actualizada: responde `DATABASE_VERSION` ("Base incompatible: no se puede abrir con esta versión") y **no la modifica** (verificado: integridad correcta, mismas filas). El respaldo previo sí se abre con 1.5.3. Un proceso 1.5.x que ya estuviera en marcha (por ejemplo un servidor MCP) debe reiniciarse después de actualizar.
 
+## El tablero del ecosistema (desde 1.7.0)
+
+Con el esquema 11, el ámbito `ecosystem` de un grupo funciona como un tablero compartido. Sirve para las reglas y los contratos que valen para varios proyectos del grupo (una decisión de arquitectura, un procedimiento común, una advertencia), nunca para estados ni avances de trabajo, que se quedan en cada proyecto. Por debajo del esquema 11 nada de esto aplica: un recuerdo `ecosystem` se guarda y se mueve como en 1.6.0.
+
+Todo guardado `ecosystem` (CLI `save`, SDK `save` y `saveWithSession`, MCP `memory_save`) y todo `memory-move` hacia un grupo cumplen estas reglas, comprobadas en este orden:
+
+1. **Tipo:** solo `decision`, `procedure` o `warning` (`ECOSYSTEM_TYPE_NOT_ALLOWED`).
+2. **`affects`:** los efectivos, los enviados o, si no hay, los ya guardados, deben ser al menos 2 nombres (`ECOSYSTEM_AFFECTS_REQUIRED`) y cada uno el nombre exacto de un proyecto miembro del grupo (`ECOSYSTEM_AFFECTS_UNKNOWN`, cuyo mensaje nombra los desconocidos y los válidos). En la CLI se envían con `save --affects <proyecto-a,proyecto-b,...>`.
+3. **Tope:** el tablero admite 40 recuerdos activos. Solo se comprueba al agregar un recuerdo nuevo (`ECOSYSTEM_BOARD_FULL`, cuyo mensaje trae el conteo y los títulos para consolidar o bajar uno). No cuentan la nota de estado ni los resúmenes de sesión; sí cuentan los recuerdos sin tema.
+
+Los resúmenes de sesión de grupo (`memory_session_summary` con `scope: "ecosystem"`) no siguen estas reglas.
+
+**Nota de estado y proyecto fuente.** El tema reservado `ecosystem/estado-actual` guarda una nota corta con el estado del grupo. Solo la escribe el **proyecto fuente** del grupo, que se define con `group-source-set --group <nombre|id> --project-id <UUID>` (SDK: `setGroupSource`) y debe seguir siendo miembro; cualquier otro autor recibe `ECOSYSTEM_STATUS_FORBIDDEN`. Por MCP, `memory_save` envía siempre como autor el proyecto de la carpeta; la CLI no envía autor, así que por CLI la nota de estado siempre responde ese error. La nota admite los tipos `decision`, `procedure`, `warning` y `fact`, tiene un máximo de 600 caracteres de contenido (`ECOSYSTEM_STATUS_TOO_LONG`), siempre queda fijada, no pide `affects` y no cuenta para el tope. Repetir la misma petición (`requestKey`) devuelve el mismo recuerdo, y un recuerdo con ese tema no puede moverse a un grupo (`ECOSYSTEM_STATUS_FORBIDDEN`).
+
+**Bajar un recuerdo.** `memory-demote --id <recuerdo> --project-id <UUID>` (SDK: `demoteMemory(projectId, id)`) devuelve al proyecto un recuerdo del tablero del grupo de ese proyecto, conservando su id, todas sus versiones y sus metadatos (versión corta, `affects`, vigencia). Añade una versión que registra el cambio de ámbito y el evento `MEMORY_DEMOTED`. Si el proyecto ya tiene un recuerdo con ese tema responde `TOPIC_CONFLICT`. El detalle de los comandos está en el [capítulo 3](03-referencia-cli.md).
+
 ## Límites actuales
 
 - **Réplica PostgreSQL.** **Las memorias de ámbito `ecosystem` no se replican todavía.** La sincronización aún no describe el ámbito de grupo: si existen recuerdos `ecosystem`, `sync` se detiene con `SYNC_ECOSYSTEM_UNSUPPORTED` sin tocar datos locales ni remotos; sin recuerdos de grupo funciona igual que antes. La replicación de grupos llegará en un plan propio (1.7.0, «formato 4»).
