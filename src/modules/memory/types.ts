@@ -14,7 +14,10 @@ export interface ReinforcementExplanation {
   pinnedBoost:number;recencyBoost:number;stabilityBoost:number;
 }
 export interface SearchExplanation {
-  mode:"fts5"|"literal";bm25:number|null;multiplier:number;orderScore:number|null;
+  mode:"fts5"|"literal"|"hybrid";bm25:number|null;multiplier:number;orderScore:number|null;
   reinforcement?:ReinforcementExplanation;
 }
 export interface SearchResult { memory:Memory;explanation:SearchExplanation }
+
+/** A memory of the same scope and owner that looks like the one just saved (level 11). */
+export interface SimilarCandidate { id:string;title:string;version:number;score:number }

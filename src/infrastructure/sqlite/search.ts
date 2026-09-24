@@ -13,6 +13,7 @@ import { reinforcementEnabled } from "./confirmations";
 import { intelligenceEnabled } from "./intelligence";
 import { readMeta,readMetas } from "./meta";
 import { ecosystemEnabled,getGroup,groupOfProject } from "./ecosystem-groups";
+import { hybridHits } from "./hybrid";
 import { memory,ownerClause,required,type Row } from "./memory";
 import { sessionsEnabled } from "./sessions";
 
@@ -118,9 +119,21 @@ function reinforcedExplanation(row: ReinforcedSearchRow, now: string): SearchRes
   return {mode:"fts5",bm25:row.bm25,multiplier:row.multiplier,orderScore:row.bm25*row.multiplier,reinforcement};
 }
 
+// Level 11: rank ids with the hybrid search, then read the requested projection in that order.
+function hybridRows<T extends { id: string }>(db: Database, columns: string, selection: Selection, query: string, limit: number):
+    { row: T; explanation: SearchResult["explanation"] }[] {
+  const hits = hybridHits(db, selection, query, limit);
+  if (hits.length === 0) return [];
+  const rows = db.query(`SELECT ${columns} FROM memories m WHERE m.id IN (${hits.map(() => "?").join(",")})`).all(...hits.map(hit => hit.id)) as T[];
+  const byId = new Map(rows.map(row => [row.id, row]));
+  return hits.map(hit => ({ row: byId.get(hit.id)!, explanation: hit.explanation }));
+}
+
 function readSearchPreviews(db: Database, projectId: string | null, query: string, limit = 10, scope: SearchScope = "all", groupId?: string | null): PreviewResult[] {
   const PREVIEW_COLUMNS = previewColumns(db);
   const selection = searchSelection(db, projectId, scope, groupId); const parsed = searchTerms(query); validateSearchLimit(limit);
+  if (intelligenceEnabled(db)) return hybridRows<PreviewRow>(db, PREVIEW_COLUMNS, selection, query, limit)
+    .map(({ row, explanation }) => ({ memory: preview(row), explanation }));
   if (parsed.literal) {
     const folded = parsed.terms.map(term => term.toLowerCase()); const result: PreviewResult[] = [];
     const statement = db.prepare(literalQuery(`${PREVIEW_COLUMNS},m.content`, selection));
@@ -258,6 +271,8 @@ export function search(db: Database, projectId: string | null, query: string, li
     const identity = projectId === null ? null : projectIdentity(projectId);
     const selection = searchSelection(db, identity, scope, groupId);
     const parsed = searchTerms(query); validateSearchLimit(limit);
+    if (intelligenceEnabled(db)) return hybridRows<Row>(db, "m.*", selection, query, limit)
+      .map(({ row, explanation }) => ({ memory: memory(row), explanation }));
     if (parsed.literal) {
       // SQLite LIKE folds ASCII only. Scan scoped rows with Unicode lowercase
       // for short terms; iterate so a large project is not loaded into RAM.
