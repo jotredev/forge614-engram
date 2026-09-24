@@ -5,6 +5,7 @@ import { findSecret,memoryTypes,normalizeAffects,normalizeShort,reviewAfterFor,s
 import { projectIdentity,type Project } from "../../modules/projects";
 import { sessionIdentity,summaryContent,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../../modules/sessions";
 import { MemoryError } from "../../shared/errors";
+import { touchSession } from "./activity";
 import { confirmationCandidate,confirmationRequest,reinforcementEnabled } from "./confirmations";
 import { intelligenceEnabled } from "./intelligence";
 import { readMeta,upsertMeta } from "./meta";
@@ -289,6 +290,7 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
           const response:SessionSaveResult={memory:confirmed,sessionId:selected,sessionSource:source};
           db.query("INSERT INTO confirmations(confirmationId,memoryId,version,recordedAt,sessionId) VALUES(?,?,?,?,?)")
             .run(confirmationId,confirmed.id,confirmed.version,now,selected);
+          if (selected !== null && source !== "manual") touchSession(db, selected, now);
           if(request!==null) db.query(`INSERT INTO confirmation_requests(memoryId,requestKey,payloadHash,expectedVersion,confirmationId,response)
             VALUES(?,?,?,?,?,?)`).run(confirmed.id,request,hash,expected,confirmationId,JSON.stringify(response));
           if (intelligenceEnabled(db) && wantsMeta) applySaveMeta(db, { id: confirmed.id, type: input.type, now, newVersion: false, contentChanged: false,
@@ -321,6 +323,7 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
       }
       if (selected !== null) db.query("INSERT INTO session_entries(sessionId,memoryId,version,recordedAt) VALUES(?,?,?,?)")
         .run(selected,id,version,now);
+      if (selected !== null && source !== "manual") touchSession(db, selected, now);
       if (intelligenceEnabled(db)) applySaveMeta(db, { id, type: input.type, now, newVersion: true, contentChanged: existing?.content !== content,
         short, affects, supersedes, scope, ownerColumn, ownerId });
       // A brand-new memory without a topic reports up to three look-alikes so the caller can merge or supersede.

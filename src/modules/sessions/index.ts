@@ -1,2 +1,2 @@
-export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields } from "./types";
-export { sessionIdentity,summaryContent } from "./rules";
+export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields,PreviousSession } from "./types";
+export { sessionIdentity,summaryContent,INACTIVITY_HOURS } from "./rules";

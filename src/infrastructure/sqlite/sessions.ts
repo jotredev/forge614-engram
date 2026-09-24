@@ -3,6 +3,8 @@ import { type Memory } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
 import { sessionIdentity,type Session } from "../../modules/sessions";
 import { MemoryError } from "../../shared/errors";
+import { inactivityThreshold,interruptOtherSessions,touchSession } from "./activity";
+import { intelligenceEnabled } from "./intelligence";
 import { schemaFeatures } from "./schema";
 
 export function sessionRow(db: Database, sessionId: string): Session | null {
@@ -13,7 +15,9 @@ export function sessionRow(db: Database, sessionId: string): Session | null {
 // These helpers deliberately do not open or commit transactions. Their caller owns
 // the transaction so project creation, local binding, and lifecycle changes compose.
 export function startRuntimeSession(db: Database, projectId: string, sessionId: string, runtimeDirectory?: string): Session {
+  const at = new Date().toISOString();
   const existing = sessionRow(db, sessionId);
+  let created = false;
   if (existing) {
     if (existing.projectId !== projectId || existing.kind !== "runtime" || existing.endedAt !== null) {
       throw new MemoryError("SESSION_CONFLICT", "El identificador de sesión no está disponible.");
@@ -22,12 +26,16 @@ export function startRuntimeSession(db: Database, projectId: string, sessionId: 
     const project = db.query("SELECT 1 FROM projects WHERE projectId=?").get(projectId);
     if (!project) throw new MemoryError("PROJECT_NOT_FOUND", "Proyecto no encontrado en esta base.");
     db.query("INSERT INTO sessions(sessionId,projectId,kind,startedAt,endedAt) VALUES(?,?,'runtime',?,NULL)")
-      .run(sessionId, projectId, new Date().toISOString());
+      .run(sessionId, projectId, at);
+    created = true;
   }
   if (runtimeDirectory !== undefined) {
     db.query("INSERT OR IGNORE INTO local_session_bindings(sessionId,directory) VALUES(?,?)")
       .run(sessionId, runtimeDirectory);
   }
+  // A brand-new runtime session interrupts every other open runtime session of the project; a replay never does.
+  touchSession(db, sessionId, at);
+  if (created) interruptOtherSessions(db, projectId, sessionId, at);
   return sessionRow(db, sessionId)!;
 }
 
@@ -38,8 +46,10 @@ export function endRuntimeSession(db: Database, projectId: string, sessionId: st
   }
   if (existing.kind !== "runtime") throw new MemoryError("SESSION_KIND", "Una sesión manual no puede cerrarse.");
   if (existing.endedAt === null) {
+    const at = new Date().toISOString();
     db.query("UPDATE sessions SET endedAt=? WHERE sessionId=? AND endedAt IS NULL")
-      .run(new Date().toISOString(), sessionId);
+      .run(at, sessionId);
+    touchSession(db, sessionId, at);
   }
   return sessionRow(db, sessionId)!;
 }
@@ -70,6 +80,17 @@ export function validateSelectedSession(db: Database, sessionId: string, scope: 
   }
 
 export function inferredSessions(db: Database, projectId: string, directory: string, requestNow: string): string[] {
+    // At level 11 a stale or explicitly interrupted session must never be silently inferred: the six-hour
+    // activity window (session_activity) replaces the plain seven-day window used below that level.
+    if (intelligenceEnabled(db)) {
+      const threshold = inactivityThreshold(requestNow);
+      return (db.query(`SELECT s.sessionId FROM sessions s LEFT JOIN session_activity sa ON sa.sessionId=s.sessionId
+        WHERE s.projectId=? AND s.kind='runtime' AND s.endedAt IS NULL
+        AND EXISTS (SELECT 1 FROM local_session_bindings b WHERE b.sessionId=s.sessionId AND b.directory=?)
+        AND sa.interruptedAt IS NULL
+        AND coalesce(sa.lastActivityAt,(SELECT max(e.recordedAt) FROM session_entries e WHERE e.sessionId=s.sessionId),s.startedAt) >= ?
+        ORDER BY s.sessionId`).all(projectId,directory,threshold) as {sessionId:string}[]).map(row=>row.sessionId);
+    }
     const threshold = new Date(Date.parse(requestNow)-7*24*60*60*1000).toISOString();
     return (db.query(`SELECT s.sessionId FROM sessions s
       WHERE s.projectId=? AND s.kind='runtime' AND s.endedAt IS NULL

@@ -1,6 +1,6 @@
 import { MemoryError } from "../shared/errors";
 import type { MemoryVersion, SaveInput } from "../modules/memory";
-import type { Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";
+import type { PreviousSession, Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";
 import { MemoryStore } from "./memory-store";
 import { applyIdentityFile, groupOf, publishIdentity, type IdentityNotice } from "./project-identity";
 import { readProjectFile } from "../infrastructure/filesystem/project-identity-file";
@@ -86,16 +86,22 @@ export function saveProjectMemoryWithSession(store: MemoryStore, directory: stri
   return saveProjectMemoryWithSessionAndNotices(store, directory, input, options).saved;
 }
 
-/** Like startProjectSession, also reporting the identity notices (for example the file just written). */
-export function startProjectSessionWithNotices(store: MemoryStore, directory: string, sessionId: string): { session: Session; notices: IdentityNotice[] } {
+/** Like startProjectSession, also reporting the identity notices (for example the file just written) and,
+ * for a session created by this call, the project's previously interrupted session (if any). */
+export function startProjectSessionWithNotices(store: MemoryStore, directory: string, sessionId: string): { session: Session; notices: IdentityNotice[]; previous?: PreviousSession } {
   const canonical = canonicalProject(directory);
   const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
   const root = identityRoot(directory, canonical);
-  const notices = [...applyIdentityFile(store, canonical.directory, root).notices];
+  const identity = applyIdentityFile(store, canonical.directory, root);
+  const notices = [...identity.notices];
+  // Level 11 only: whether this id already names a session, read before starting (a replay never reports `previous`).
+  const known = store.intelligenceEnabled() ? (identity.projectId ?? store.projectForDirectory(canonical.directory)?.projectId ?? null) : null;
+  const existed = known !== null && store.getSession(known, sessionId) !== null;
   const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable);
   const project = store.getProject(session.projectId);
   if (project) notices.push(...publishIdentity(store, project, root, true));
-  return { session, notices };
+  const previous = store.intelligenceEnabled() && !existed ? store.previousInterrupted(session.projectId) : null;
+  return { session, notices, ...(previous ? { previous } : {}) };
 }
 
 export function startProjectSession(store: MemoryStore, directory: string, sessionId: string): Session {

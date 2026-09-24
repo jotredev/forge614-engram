@@ -3,6 +3,7 @@ import type {
   Project, SaveInput, SearchResult, SearchScope, Session, SessionEntry, SessionSaveOptions,
   SessionSaveResult, SessionSummary, SummaryFields, TimelineInput, TimelineResult, VersionRead,
   WorkspaceSettings, MemoryStore, Group, GroupSummary, IdentityEvent, MembershipSource, ProjectGroup,
+  PreviousSession,
 } from "../../src/index";
 import type { SyncSnapshot } from "../../src/modules/synchronization";
 
@@ -42,7 +43,7 @@ interface ExpectedStore {
   saveSessionSummaryInGroup(projectId:string,sessionId:string,groupId:string,fields:SummaryFields,request:{requestKey:string;expectedVersion?:number}):SessionSaveResult;
   registerProject(projectId:string,name:string):{project:Project;created:boolean};rebindProjectDirectory(directory:string,projectId:string):{previousProjectId:string|null};
   // Added in 1.7.0 (memory intelligence). Purely additive: nothing above changed.
-  intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};
+  intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};previousInterrupted(projectId:string):PreviousSession|null;
 }
 type ActualStore = InstanceType<typeof MemoryStore>;
 type _StoreMethodNames = Assert<Equal<keyof ActualStore, keyof ExpectedStore>>;
