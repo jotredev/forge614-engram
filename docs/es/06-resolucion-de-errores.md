@@ -48,6 +48,7 @@ Desde 1.7.0. En la CLI estos códigos devuelven `{schemaVersion,code,error}` por
 - `SECRET_REJECTED`: el título, el contenido, el tema o la versión corta parecen contener un secreto (el mensaje dice de qué tipo, nunca el valor). Quita el valor y guarda solo dónde vive, por ejemplo `password: <redacted>` o el nombre de la variable de entorno. Aplica en cualquier nivel de la base.
 - `INTELLIGENCE_REQUIRED`: se enviaron `short`, `supersedes` o `affects` y la base aún no tiene la memoria inteligente. Actívala con `forge614-engram intelligence-enable` (respalda antes de migrar) o guarda sin esos campos.
 - `SUPERSEDES_NOT_FOUND`: `supersedes` apunta a un recuerdo que no existe, está archivado o es de otro ámbito o proyecto. Busca el id correcto con `memory_search`.
+- `AMBIGUOUS_SESSION`: con el esquema 11 ya no lo provocan sesiones abiertas obsoletas (las marcadas como interrumpidas o inactivas por más de 6 horas se ignoran); si aun así aparece, hay dos sesiones de la misma carpeta genuinamente activas: indica `sessionId`.
 
 ## Integraciones de IA
 
