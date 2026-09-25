@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ListRootsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { procSnapshot } from "../../../tests/fixtures/proc-snapshot";
+import { memoryProtocol } from "../../modules/memory-protocol";
 
 const temporaryDirectories: string[] = [];
 const clients: Client[] = [];
@@ -70,7 +71,7 @@ afterEach(async () => {
 test("stdio initializes and advertises exactly the bounded memory tool surface", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   const { client, transport } = await connect({ cwd: root, userDirectory });
-  expect(client.getInstructions()).toContain("memory_current_project");
+  expect(client.getInstructions()).toBe(memoryProtocol(4).mcpInstructions);
   expect((await client.listTools()).tools.map(tool => tool.name).sort()).toEqual([
     "memory_context", "memory_current_project", "memory_get", "memory_history",
     "memory_save", "memory_search", "memory_session_end", "memory_session_start",

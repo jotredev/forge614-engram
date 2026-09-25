@@ -7,9 +7,10 @@ init [--json] [--postgres-url <URL>]
                 Con --json también acepta --directory <carpeta>: vincula esa carpeta como proyecto y escribe
                 .forge614/project.json en silencio (identidad portátil; repetirlo no cambia nada).
 update [--json] Descarga, verifica y activa la última versión estable de Engram; --json devuelve el resultado estructurado.
-memory-protocol --json [--protocol-version 1|2]
+memory-protocol --json [--protocol-version 1|2|3|4]
                 Publica las reglas versionadas que Engines instala en asistentes compatibles. Defecto 1.
                 La versión 3 anuncia el ámbito ecosystem y exige groupIntent al guardar en él.
+                La versión 4 es el manual de la memoria inteligente (completo y para MCP) y anuncia startup-context --format 2.
 startup-context --directory <carpeta> --json [--format 1|2]
                 Interfaz pública, no interactiva y de solo lectura para precargar contexto al iniciar
                 una sesión de agente: shared y, si <carpeta> ya está vinculada, el proyecto correspondiente.
