@@ -17,7 +17,7 @@ sync-watch [--interval <1..3600>]       retry synchronization while the process 
 sessions-enable                         explicitly enable session lifecycle
 reinforcement-enable                    explicitly enable local repeated-memory ordering
 intelligence-enable                     explicitly enable memory intelligence (schema 11); backs up before migrating
-memory-protocol --json [--protocol-version 1|2|3]
+memory-protocol --json [--protocol-version 1|2|3|4]
                                         print the public memory contract; version 1 is the default
 startup-context --directory <path> --json [--format 1|2]
                                         preload context for a host before a session and keep the repository identity in step
@@ -35,7 +35,7 @@ forge614-engram memory-protocol --json
 
 This non-interactive command publishes the versioned JSON contract that Forge614 Engines can use to prepare a safe installation in compatible AI clients. It requires `--json`; without it, or with unknown flags, it writes the standard `{code,error}` JSON error to stderr and exits with code `1`.
 
-It does not require a TTY, create or open `~/.forge614/engram/`, initialize SQLite, or query projects, PostgreSQL, or user data. The contract is available from release `v1.3.0`; that does not mean Engram configures AI clients directly. Version 3 (since 1.6.0) announces the `ecosystem` scope; versions 1 and 2 do not change. See [09. Public Memory Protocol](09-public-memory-protocol.md) for lifecycle, security, and boundaries.
+It does not require a TTY, create or open `~/.forge614/engram/`, initialize SQLite, or query projects, PostgreSQL, or user data. The contract is available from release `v1.3.0`; that does not mean Engram configures AI clients directly. Version 3 (since 1.6.0) announces the `ecosystem` scope; versions 1 and 2 do not change. Version 4 (since 1.7.0) publishes the memory-intelligence manual, complete and for MCP, and announces `startup-context --format 2`; the default stays at 1. See [09. Public Memory Protocol](09-public-memory-protocol.md) for lifecycle, security, and boundaries.
 
 ## Updating for people and tools
 

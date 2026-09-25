@@ -89,7 +89,7 @@ Each list is filled in order and stops at the first line that does not fit; what
 
 Format 2 works at any database level: it does not require `intelligence-enable`. Only with schema 11 does the short version replace the title in essentials, memories marked as superseded not appear, `[verify]` appear, and the previous session get included; below it, the block is built from the same sources without those extras. It uses the same opening and the same project resolution as format 1 (read-only first and, only if it must register the identity, writable), but it does not include `notices`.
 
-Without `--format`, the command keeps returning format 1, with the same output as always. `--format` accepts only `1` or `2`: any other value answers `INVALID_INPUT` (`format debe ser 1 o 2.`) before the database is opened. No version of the memory protocol (1 to 3) announces format 2 yet. From the SDK, `MemoryStore.startupBlock` delivers the same block.
+Without `--format`, the command keeps returning format 1, with the same output as always. `--format` accepts only `1` or `2`: any other value answers `INVALID_INPUT` (`format debe ser 1 o 2.`) before the database is opened. Versions 2 and 3 of the memory protocol announce the command without `--format`, that is, format 1 (version 1 announces none); version 4 (since 1.7.0) announces format 2. From the SDK, `MemoryStore.startupBlock` delivers the same block.
 
 
 ## Safe errors
@@ -100,4 +100,4 @@ Without `--format`, the command keeps returning format 1, with the same output a
 
 ## Relationship to the memory protocol
 
-`memory-protocol --json --protocol-version 1` does not change. Version 2 adds `startupContext` to announce this command to Engines and Shell without changing the instructions or lifecycle. Version 3 also announces the `ecosystem` scope and describes this command including the group block. Announcing it does not prove that any host already consumes it.
+`memory-protocol --json --protocol-version 1` does not change. Version 2 adds `startupContext` to announce this command to Engines and Shell without changing the instructions or lifecycle. Version 3 also announces the `ecosystem` scope and describes this command including the group block. Version 4 announces this command with `--format 2`. Announcing it does not prove that any host already consumes it.

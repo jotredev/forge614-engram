@@ -89,7 +89,7 @@ Cada lista se llena en orden y se detiene en la primera línea que no cabe; lo q
 
 El formato 2 funciona en cualquier nivel de la base: no exige `intelligence-enable`. Solo con el esquema 11, la versión corta reemplaza al título en el esencial, los recuerdos marcados como reemplazados no aparecen, aparece `[verify]` y se incluye la sesión anterior; por debajo, el bloque sale de las mismas fuentes sin esos extras. Usa la misma apertura y la misma resolución del proyecto que el formato 1 (primero en solo lectura y, solo si debe registrar la identidad, en escritura), pero no incluye `notices`.
 
-Sin `--format`, el comando sigue devolviendo el formato 1, con la salida de siempre. `--format` acepta solo `1` o `2`: otro valor responde `INVALID_INPUT` (`format debe ser 1 o 2.`) antes de abrir la base. Ninguna versión del protocolo de memoria (1 a 3) anuncia todavía el formato 2. Desde el SDK, el mismo bloque lo entrega `MemoryStore.startupBlock`.
+Sin `--format`, el comando sigue devolviendo el formato 1, con la salida de siempre. `--format` acepta solo `1` o `2`: otro valor responde `INVALID_INPUT` (`format debe ser 1 o 2.`) antes de abrir la base. Las versiones 2 y 3 del protocolo de memoria anuncian el comando sin `--format`, es decir, el formato 1 (la versión 1 no anuncia ninguno); la versión 4 (desde 1.7.0) anuncia el formato 2. Desde el SDK, el mismo bloque lo entrega `MemoryStore.startupBlock`.
 
 
 ## Errores seguros
@@ -100,4 +100,4 @@ Sin `--format`, el comando sigue devolviendo el formato 1, con la salida de siem
 
 ## Relación con memory protocol
 
-`memory-protocol --json --protocol-version 1` no cambia. La versión 2 agrega `startupContext` para anunciar este comando a Engines y Shell, sin cambiar instrucciones ni lifecycle. La versión 3 anuncia además el ámbito `ecosystem` y describe este comando incluyendo el bloque de grupo. Anunciarlo no demuestra que algún host ya lo consuma.
+`memory-protocol --json --protocol-version 1` no cambia. La versión 2 agrega `startupContext` para anunciar este comando a Engines y Shell, sin cambiar instrucciones ni lifecycle. La versión 3 anuncia además el ámbito `ecosystem` y describe este comando incluyendo el bloque de grupo. La versión 4 anuncia este comando con `--format 2`. Anunciarlo no demuestra que algún host ya lo consuma.

@@ -17,7 +17,7 @@ sync-watch [--interval <1..3600>]       reintenta sync mientras el proceso perma
 sessions-enable                         habilita explícitamente sesiones
 reinforcement-enable                    habilita explícitamente orden local por repeticiones
 intelligence-enable                     habilita explícitamente la memoria inteligente (esquema 11); respalda antes de migrar
-memory-protocol --json [--protocol-version 1|2|3]
+memory-protocol --json [--protocol-version 1|2|3|4]
                                         imprime el contrato público de memoria; versión 1 por defecto
 startup-context --directory <ruta> --json [--format 1|2]
                                         precarga contexto para un host antes de una sesión y mantiene al día la identidad del repositorio
@@ -35,7 +35,7 @@ forge614-engram memory-protocol --json
 
 Este comando no interactivo publica el contrato JSON versionado para que Forge614 Engines pueda preparar una instalación segura en asistentes compatibles. Requiere `--json`; sin esa opción, o con flags desconocidos, devuelve el error JSON estándar `{code,error}` a stderr y sale con código `1`.
 
-No requiere TTY, no crea ni abre `~/.forge614/engram/`, no inicializa SQLite y no consulta proyectos, PostgreSQL ni datos de la persona. El contrato está disponible desde la release `v1.3.0`; eso no implica que Engram configure asistentes directamente. La versión 3 (desde 1.6.0) anuncia el ámbito `ecosystem`; las versiones 1 y 2 no cambian. Consulta [09. Protocolo Público de Memoria](09-protocolo-publico-de-memoria.md) para el ciclo de vida, seguridad y límites.
+No requiere TTY, no crea ni abre `~/.forge614/engram/`, no inicializa SQLite y no consulta proyectos, PostgreSQL ni datos de la persona. El contrato está disponible desde la release `v1.3.0`; eso no implica que Engram configure asistentes directamente. La versión 3 (desde 1.6.0) anuncia el ámbito `ecosystem`; las versiones 1 y 2 no cambian. La versión 4 (desde 1.7.0) publica el manual de la memoria inteligente, completo y para MCP, y anuncia `startup-context --format 2`; el valor por defecto sigue en 1. Consulta [09. Protocolo Público de Memoria](09-protocolo-publico-de-memoria.md) para el ciclo de vida, seguridad y límites.
 
 ## Actualización para personas y herramientas
 
