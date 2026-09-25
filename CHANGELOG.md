@@ -1,8 +1,8 @@
 # Changelog
 
-## 1.7.0 — en desarrollo
+## 1.7.0
 
-Memoria inteligente; esta sección crece tarea por tarea.
+Memoria inteligente: esquema 11, búsqueda híbrida, parecidos y secretos al guardar, sesiones interrumpidas, reglas del tablero, bloque de arranque y protocolo v4.
 
 - **Esquema 11 (aditivo, con respaldo):** nivel nuevo = esquema 7 + ecosistema + inteligencia. Agrega tablas aparte (`memory_meta`, `session_activity`, `ecosystem_sources`) y un índice FTS5 por palabras sin distinguir acentos (`memories_words`); no reconstruye ninguna tabla existente. Una base nueva (cuyo archivo no existía) nace en el nivel 11, sin respaldo; en una base existente se activa solo con `intelligence-enable`, que prueba primero que puede escribir, copia la base a `engram.db.v<versión>-pre-intelligence-<fecha>-<id>.bak` (permisos 0600; se omite si la base está vacía) y verifica recuento y suma SHA-256 de `memories` y `requests` en una sola transacción (`MIGRATION_VERIFY_FAILED` revierte todo). Una base en un nivel anterior encadena antes sus requisitos (ecosistema, sesiones, refuerzo). El servidor MCP nunca migra la base.
 - **Filtro de secretos y metadatos del recuerdo:** todo guardado (CLI, SDK, MCP y resúmenes de sesión), en cualquier nivel de la base, rechaza con `SECRET_REJECTED` un texto que parezca contener un secreto; el error nombra el tipo, nunca el valor, y nombrar dónde vive una clave sigue permitido. Con el esquema 11, `memory_save` y `SaveInput` aceptan `short`, `affects` y `supersedes` (`INTELLIGENCE_REQUIRED` en niveles anteriores; `SUPERSEDES_NOT_FOUND` si el reemplazado no existe en el mismo ámbito); las decisiones y los procedimientos reciben fecha de revisión a 90 días; `memory_search` y `memory_get` añaden `meta` y `marks` (`superseded`, `verify`). Los metadatos no crean versión ni cambian la huella del recuerdo. Tipos nuevos del SDK: `MemoryMeta` y `MemoryMark`.
