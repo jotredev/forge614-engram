@@ -77,12 +77,14 @@ test("apply initializes local storage without creating a project", async () => {
 
   const result = await applyMemoryInitialization(request, preview.expectedRevision, config);
 
+  // A brand-new database is born with memory intelligence (schema 11), which already includes
+  // reinforcement: it reports enabled even though this request did not ask to enable it.
   expect(result).toEqual({
     status: {
       initialized: true,
       storage: "sqlite",
       postgresConfigured: false,
-      reinforcementEnabled: false,
+      reinforcementEnabled: true,
     },
     initializedStorage: true,
     configuredPostgres: false,

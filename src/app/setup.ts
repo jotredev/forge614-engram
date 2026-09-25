@@ -62,6 +62,8 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     let enableReinforcement=reinforcementEnabled;
     if(reinforcementEnabled) {
       io.write("El refuerzo de recuerdos ya está habilitado. Se conservará habilitado; esta configuración no ofrece una degradación.");
+    } else if(!configured) {
+      io.write("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
     } else {
       io.write("registrar repeticiones mejora el orden; no verifica la verdad.");
       io.write("sincronizar esta función requiere actualizar todos los equipos.");

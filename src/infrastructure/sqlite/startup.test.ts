@@ -28,6 +28,8 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
   const old = save(db, { scope: "project", projectId: ai, title: "Old note", content: "Replaced", type: "fact" });
   const fresh = save(db, { scope: "project", projectId: ai, title: "New note", content: "Replaces the old one", type: "fact", supersedes: old.id });
   save(db, { scope: "project", projectId: other, title: "Other project note", content: "Elsewhere", type: "fact" });
+  // Saves in the same millisecond tie on updated_at (then id decides): make the project order explicit.
+  db.run("UPDATE memories SET updated_at=? WHERE id=?", ["2026-01-01T00:00:00.000Z", language.id]);
   startSession(db, ai, "first", "/ai");
   const summary = saveSessionSummary(db, ai, "first", fields, { requestKey: "summary-1" });
   startSession(db, ai, "second", "/ai");
