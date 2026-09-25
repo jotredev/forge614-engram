@@ -15,7 +15,7 @@ const OPTIONS: Record<string, readonly string[]> = {
   "session-summary":["project-id","session-id","summary-json","request-key","expected-version"],
   timeline:["project-id","session-id","id","version","before","after"],
   context:["project-id","scope","group","compact","max-bytes"],
-  "startup-context":["directory","json"],
+  "startup-context":["directory","json","format"],
 };
 const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format","json"]);
 export function invalid(message: string): never { throw new MemoryError("INVALID_INPUT",message); }
@@ -60,6 +60,9 @@ export function parseArguments(args:string[]) {
   }
   if (command === "startup-context" && !values.has("json")) {
     invalid("startup-context requiere --json.");
+  }
+  if (command === "startup-context" && values.has("format") && !["1","2"].includes(values.get("format")!)) {
+    invalid("format debe ser 1 o 2.");
   }
   const need = (key: string): string => values.get(key) ?? invalid(`Falta --${key}.`);
   return { command, values, need };

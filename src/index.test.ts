@@ -29,7 +29,7 @@ const ECOSYSTEM_STORE_METHODS = [
   "searchInGroup", "searchPreviewsInGroup", "unbindProject", "registerProject", "rebindProjectDirectory", "projectDirectories", "moveMemoryToGroup", "saveSessionSummaryInGroup",
 ];
 // Added in 1.7.0 with memory intelligence. The lists above only ever grow.
-const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted", "setGroupSource", "groupSource", "demoteMemory"];
+const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted", "setGroupSource", "groupSource", "demoteMemory", "startupBlock"];
 
 describe("public SDK contract", () => {
   test("keeps literal runtime exports and public store methods", () => {

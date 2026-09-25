@@ -6,7 +6,7 @@ export type { Project } from "./modules/projects";
 export type { Group,GroupSummary,GroupMembership,IdentityEvent,MembershipSource,ProjectGroup,GroupSource } from "./modules/ecosystem";
 export { MemoryError } from "./shared/errors";
 export type { Session,SessionEntry,SessionSummary,SessionSaveOptions,SessionSaveResult,SummaryFields,PreviousSession } from "./modules/sessions";
-export type { MemoryPreview,PreviewResult,VersionRead,TimelineInput,TimelineRow,TimelineResult,ContextInput,ContextRow,ContextResult } from "./modules/search";
+export type { MemoryPreview,PreviewResult,VersionRead,TimelineInput,TimelineRow,TimelineResult,ContextInput,ContextRow,ContextResult,StartupBlock } from "./modules/search";
 export { MemoryStore } from "./app/memory-store";
 export { defaultDatabasePath } from "./infrastructure/filesystem/paths";
 export { saveProjectMemoryWithSession, startProjectSession } from "./app/project-context";

@@ -1,4 +1,4 @@
-import type { ContextInput, ContextResult } from "../modules/search";
+import type { ContextInput, ContextResult, StartupBlock } from "../modules/search";
 import { MemoryStore } from "./memory-store";
 import { resolveStartupProjectContext } from "./project-context";
 import type { IdentityNotice } from "./project-identity";
@@ -57,4 +57,12 @@ export function readStartupContext(store: MemoryStore, directory: string): Start
     : { status: "bound", projectId: resolved.projectId, context: store.context(resolved.projectId),
         source: resolved.source === "file" ? "file" : "path", ...notices };
   return { format: 1, shared, ecosystem, project };
+}
+
+/**
+ * Format 2: the same project resolution as readStartupContext, rendered by Engram as one ready-to-inject text
+ * block within 5000 characters (see startupBlock). Identity notices are not part of this format.
+ */
+export function readStartupBlock(store: MemoryStore, directory: string): StartupBlock {
+  return store.startupBlock(resolveStartupProjectContext(store, directory).projectId);
 }
