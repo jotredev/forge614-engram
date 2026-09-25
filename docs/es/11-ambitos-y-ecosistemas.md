@@ -87,7 +87,7 @@ Los resúmenes de sesión de grupo (`memory_session_summary` con `scope: "ecosys
 
 ## Límites actuales
 
-- **Réplica PostgreSQL.** **Las memorias de ámbito `ecosystem` no se replican todavía.** La sincronización aún no describe el ámbito de grupo: si existen recuerdos `ecosystem`, `sync` se detiene con `SYNC_ECOSYSTEM_UNSUPPORTED` sin tocar datos locales ni remotos; sin recuerdos de grupo funciona igual que antes. La replicación de grupos llegará en un plan propio (1.7.0, «formato 4»).
+- **Réplica PostgreSQL.** **Las memorias de ámbito `ecosystem` no se replican todavía.** La sincronización aún no describe el ámbito de grupo: si existen recuerdos `ecosystem`, `sync` se detiene con `SYNC_ECOSYSTEM_UNSUPPORTED` sin tocar datos locales ni remotos; sin recuerdos de grupo funciona igual que antes. La replicación de grupos llegará en un plan propio (1.8.0, «formato 4»).
 - **`forge614.node.json` es de solo lectura** para Engram y solo se usa su campo `ecosystem`.
 - **Un grupo es local a la base** de esta máquina más los archivos `.forge614/project.json` de cada repositorio; no hay un servicio central de grupos.
 - La pregunta de a qué grupo pertenece un proyecto sin declaración no la hace Engram (la hace Shell en su flujo visual).

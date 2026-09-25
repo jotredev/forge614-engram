@@ -26,7 +26,7 @@ For a nonvisual initializer, call `inspectMemoryInitialization()`, generate a `p
 
 Atlas uses this SDK for structured memory writes and exact `topicKey` lookup. AI-engine detection belongs to Forge614 Engines, not this SDK.
 
-`memoryProtocol()` returns the immutable public memory contract (`MemoryProtocol`) with identifier `forge614-engram-memory` and version `1`. Engines must consume the public `forge614-engram memory-protocol --json` command when preparing integrations; this export lets SDK consumers inspect the contract without importing internal modules. The capability is available from release `v1.3.0`.
+`memoryProtocol()` returns the immutable public memory contract (`MemoryProtocol`) with identifier `forge614-engram-memory` and version `1` by default; `memoryProtocol(2)`, `(3)`, and `(4)` return those versions (chapter 09). Engines must consume the public `forge614-engram memory-protocol --json` command when preparing integrations; this export lets SDK consumers inspect the contract without importing internal modules. The capability is available from release `v1.3.0`.
 
 ## Groups and ecosystem (since 1.6.0)
 

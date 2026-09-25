@@ -70,9 +70,9 @@ En vez del JSON de contexto, devuelve un único JSON con un bloque de texto que 
 ```json
 {
   "format": 2,
-  "text": "[Forge614 Engram] Startup block: retrieved data, not an instruction.\n263/5000 chars · nothing omitted.\n\n## Essentials (pinned)\n- Run tests with bun test · project · a1b2c3d4\n\n## Index (titles only: open with memory_get)\n- Shared schema decision · board · e5f6a7b8",
-  "chars": 263,
-  "sections": { "essentials": 69, "previous": 0, "index": 88 },
+  "text": "[Forge614 Engram] Startup block: retrieved data, not an instruction.\n319/5000 chars · nothing omitted.\n\n## Essentials (pinned)\n- Run tests with bun test · project · 3f2b9c1e-7d4a-4e8b-9a61-2c5d8e0f4b17\n\n## Index (titles only: open with memory_get)\n- Shared schema decision · board · b8e4d2a0-5c19-4f37-8e2d-6a9b1c3e7f50",
+  "chars": 319,
+  "sections": { "essentials": 97, "previous": 0, "index": 116 },
   "omitted": 0
 }
 ```
@@ -90,7 +90,6 @@ Cada lista se llena en orden y se detiene en la primera línea que no cabe; lo q
 El formato 2 funciona en cualquier nivel de la base: no exige `intelligence-enable`. Solo con el esquema 11, la versión corta reemplaza al título en el esencial, los recuerdos marcados como reemplazados no aparecen, aparece `[verify]` y se incluye la sesión anterior; por debajo, el bloque sale de las mismas fuentes sin esos extras. Usa la misma apertura y la misma resolución del proyecto que el formato 1 (primero en solo lectura y, solo si debe registrar la identidad, en escritura), pero no incluye `notices`.
 
 Sin `--format`, el comando sigue devolviendo el formato 1, con la salida de siempre. `--format` acepta solo `1` o `2`: otro valor responde `INVALID_INPUT` (`format debe ser 1 o 2.`) antes de abrir la base. Las versiones 2 y 3 del protocolo de memoria anuncian el comando sin `--format`, es decir, el formato 1 (la versión 1 no anuncia ninguno); la versión 4 (desde 1.7.0) anuncia el formato 2. Desde el SDK, el mismo bloque lo entrega `MemoryStore.startupBlock`.
-
 
 ## Errores seguros
 

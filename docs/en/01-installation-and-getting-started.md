@@ -58,7 +58,7 @@ forge614-engram init --json --postgres-url 'postgresql://user:password@host/data
 
 The URL is not printed in normal output or structured errors. SQLite and FTS5 remain local even when PostgreSQL is configured.
 
-`init` does not create/select a project or detect/configure AI clients. It only establishes memory storage, optional PostgreSQL synchronization, and optional reinforcement.
+`init` does not create/select a project or detect/configure AI clients. It only establishes memory storage and optional PostgreSQL synchronization. A new database starts with memory intelligence (it includes sessions and reinforcement); on an existing database without reinforcement, the terminal `init` still asks, and memory intelligence is enabled with `intelligence-enable` (chapter 05).
 
 ## Create and use a project
 
