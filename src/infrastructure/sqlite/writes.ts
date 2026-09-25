@@ -226,7 +226,8 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
     if (expected !== null && (!Number.isSafeInteger(expected) || expected < 1 || !topic)) {
       throw new MemoryError("INVALID_INPUT", "expectedVersion requiere un tema y un entero positivo.");
     }
-    const secret = findSecret([title, content, topic ?? "", typeof input.short === "string" ? input.short : ""].join("\n"));
+    const secret = findSecret([title, content, topic ?? "", typeof input.short === "string" ? input.short : "",
+      ...(Array.isArray(input.affects) ? input.affects.filter(name => typeof name === "string") : [])].join("\n"));
     if (secret !== null) throw new MemoryError("SECRET_REJECTED", `El recuerdo parece contener un secreto (${secret}); guárdalo sin el valor.`);
     const wantsMeta = input.short !== undefined || input.supersedes !== undefined || input.affects !== undefined;
     if (wantsMeta && !intelligenceEnabled(db)) throw new MemoryError("INTELLIGENCE_REQUIRED", "short, supersedes y affects requieren la memoria inteligente (forge614-engram intelligence-enable).");
