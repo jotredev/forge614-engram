@@ -11,14 +11,16 @@
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d129813c86b5ffa723fa00a2?pvs=204",
       "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:c980223f0a0ff0da10bb911c03378a9573e8f42617f232d9265c67c175563482"
+      "contentFingerprint": "sha256:c980223f0a0ff0da10bb911c03378a9573e8f42617f232d9265c67c175563482",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/en/01-installation-and-getting-started.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981b2a2dec3d88a0e7e20?pvs=204",
       "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:fe4f81e5cf8f04a775479628b139af2f06aa82707b3ff36566e0cb37f6acf144"
+      "contentFingerprint": "sha256:fe4f81e5cf8f04a775479628b139af2f06aa82707b3ff36566e0cb37f6acf144",
+      "notionSyncPending": true
     },
     {
       "localPath": "docs/es/03-referencia-cli.md",

@@ -16,7 +16,7 @@ sync [--upgrade-format]                 synchronize configured PostgreSQL replic
 sync-watch [--interval <1..3600>]       retry synchronization while the process remains open
 sessions-enable                         explicitly enable session lifecycle
 reinforcement-enable                    explicitly enable local repeated-memory ordering
-intelligence-enable                     explicitly enable memory intelligence (schema 11); backs up before migrating
+intelligence-enable                     explicitly enable memory intelligence (schema 11); backs up before migrating; a new database is born this way
 memory-protocol --json [--protocol-version 1|2|3|4]
                                         print the public memory contract; version 1 is the default
 startup-context --directory <path> --json [--format 1|2]

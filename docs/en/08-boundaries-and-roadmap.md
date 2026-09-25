@@ -23,7 +23,19 @@ It is intentionally **not** a visual workspace, assistant detector, assistant co
 - `group-*` and `memory-move` commands; `--scope ecosystem --group` in the CLI; `scope: "ecosystem"` with `groupIntent` in MCP; public protocol version 3; an `ecosystem` block in `startup-context` and `context`.
 - Additive database upgrade with automatic backup and verification (levels 8, 9, and 10).
 
-Limits of this delivery: `ecosystem` memories are not replicated yet: the PostgreSQL replica refuses (`SYNC_ECOSYSTEM_UNSUPPORTED`) while they exist; group replication will arrive in its own plan (1.7.0, "format 4"). Engram only reads `forge614.node.json` and never infers a group. Asking which group a project without a declaration belongs to is Shell's visual flow. Having Engines and Shell inject the `ecosystem` block is those products' work: Engram publishes the contract and does not prove they already consume it.
+Limits of this delivery: `ecosystem` memories are not replicated yet: the PostgreSQL replica refuses (`SYNC_ECOSYSTEM_UNSUPPORTED`) while they exist; group replication will arrive in its own plan (1.8.0, "format 4"). Engram only reads `forge614.node.json` and never infers a group. Asking which group a project without a declaration belongs to is Shell's visual flow. Having Engines and Shell inject the `ecosystem` block is those products' work: Engram publishes the contract and does not prove they already consume it.
+
+## Capabilities added in v1.7.0
+
+- Schema 11 (memory intelligence): a new database is born at that level and an existing database enables it only with `intelligence-enable`, with a backup and verification. See [05. Internal Architecture and Formulas](05-internal-architecture-and-formulas.md).
+- Secret filter on save and memory metadata (short version, review date, replacement, and affected projects).
+- Hybrid search and similar memories on save.
+- Interrupted sessions: the previous session is offered as `previous`.
+- Group board rules: status note, source project, and demoting a memory back to the project. See [11. Scopes and Ecosystems](11-scopes-and-ecosystems.md).
+- Startup block (format 2), ready to inject. See [10. Startup Context](10-startup-context.md).
+- Protocol v4 (the memory-intelligence manual) with MCP server instructions and field descriptions. See [09. Public Memory Protocol](09-public-memory-protocol.md).
+
+Limit of this delivery: group replication (format 4) will arrive in 1.8.0.
 
 ## Explicit non-goals
 
@@ -38,7 +50,7 @@ Limits of this delivery: `ecosystem` memories are not replicated yet: the Postgr
 
 ## Public memory protocol: integration status
 
-The `forge614-engram-memory` version `1` contract is available from release `v1.3.0` and can be inspected with `forge614-engram memory-protocol --json`. Its publication does not mean that an AI-client integration is already installed.
+The `forge614-engram-memory` version `1` contract is available from release `v1.3.0` and can be inspected with `forge614-engram memory-protocol --json`. Its publication does not mean that an AI-client integration is already installed. Version 4 (since 1.7.0) is the memory-intelligence manual and the default stays at 1 until Engines accepts it.
 
 It does **not yet** install MCP, instructions, hooks, or plugins in Claude Code, Codex, or Cursor. Forge614 Engines will consume the public command and apply the protocol through each assistant's safe mechanism. Forge614 Shell will show a preview and request human confirmation. Engram does not configure AI clients directly.
 

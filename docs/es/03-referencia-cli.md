@@ -16,7 +16,7 @@ sync [--upgrade-format]                 sincroniza réplica PostgreSQL configura
 sync-watch [--interval <1..3600>]       reintenta sync mientras el proceso permanece abierto
 sessions-enable                         habilita explícitamente sesiones
 reinforcement-enable                    habilita explícitamente orden local por repeticiones
-intelligence-enable                     habilita explícitamente la memoria inteligente (esquema 11); respalda antes de migrar
+intelligence-enable                     habilita explícitamente la memoria inteligente (esquema 11); respalda antes de migrar; una base nueva ya nace así
 memory-protocol --json [--protocol-version 1|2|3|4]
                                         imprime el contrato público de memoria; versión 1 por defecto
 startup-context --directory <ruta> --json [--format 1|2]

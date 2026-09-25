@@ -26,7 +26,7 @@ Para inicialización no visual, llama `inspectMemoryInitialization()`, genera un
 
 Atlas usa este SDK para escrituras estructuradas y consultas exactas por `topicKey`. La detección de motores de IA pertenece a Forge614 Engines, no a este SDK.
 
-`memoryProtocol()` devuelve el contrato público e inmutable de memoria (`MemoryProtocol`) con el identificador `forge614-engram-memory` y versión `1`. Engines debe consumir este contrato por el comando público `forge614-engram memory-protocol --json` cuando prepare integraciones; este export permite a consumidores del SDK inspeccionarlo sin importar módulos internos. La funcionalidad está disponible desde la release `v1.3.0`.
+`memoryProtocol()` devuelve el contrato público e inmutable de memoria (`MemoryProtocol`) con el identificador `forge614-engram-memory` y versión `1` por defecto; `memoryProtocol(2)`, `(3)` y `(4)` devuelven esas versiones (capítulo 09). Engines debe consumir este contrato por el comando público `forge614-engram memory-protocol --json` cuando prepare integraciones; este export permite a consumidores del SDK inspeccionarlo sin importar módulos internos. La funcionalidad está disponible desde la release `v1.3.0`.
 
 ## Grupos y ecosistema (desde 1.6.0)
 

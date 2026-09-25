@@ -87,7 +87,7 @@ Group session summaries (`memory_session_summary` with `scope: "ecosystem"`) do 
 
 ## Current limits
 
-- **PostgreSQL replica.** **`ecosystem` memories are not replicated yet.** Synchronization does not describe the group scope yet: if `ecosystem` memories exist, `sync` stops with `SYNC_ECOSYSTEM_UNSUPPORTED` without touching local or remote data; without group memories it works as before. Group replication will arrive in its own plan (1.7.0, "format 4").
+- **PostgreSQL replica.** **`ecosystem` memories are not replicated yet.** Synchronization does not describe the group scope yet: if `ecosystem` memories exist, `sync` stops with `SYNC_ECOSYSTEM_UNSUPPORTED` without touching local or remote data; without group memories it works as before. Group replication will arrive in its own plan (1.8.0, "format 4").
 - **`forge614.node.json` is read-only** for Engram and only its `ecosystem` field is used.
 - **A group is local to this machine's database** plus each repository's `.forge614/project.json` files; there is no central group service.
 - Asking which group a project without a declaration belongs to is not done by Engram (Shell does it in its visual flow).

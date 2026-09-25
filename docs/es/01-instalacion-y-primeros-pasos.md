@@ -58,7 +58,7 @@ forge614-engram init --json --postgres-url 'postgresql://user:password@host/data
 
 La URL no aparece en salida normal ni errores estructurados. SQLite y FTS5 siguen locales incluso con PostgreSQL configurado.
 
-`init` no crea/selecciona proyectos ni detecta/configura clientes de IA. Solo prepara memoria, sincronización PostgreSQL opcional y refuerzo opcional.
+`init` no crea/selecciona proyectos ni detecta/configura clientes de IA. Solo prepara la memoria y la sincronización PostgreSQL opcional. Una base nueva nace con la memoria inteligente (incluye sesiones y refuerzo); en una base existente sin refuerzo, el `init` de terminal sigue preguntando, y la memoria inteligente se activa con `intelligence-enable` (capítulo 05).
 
 ## Crear y usar un proyecto
 

@@ -34,7 +34,7 @@ SQLite is the durable local database. FTS5 is its lexical full-text search index
 
 ## PostgreSQL replica
 
-An optional synchronized copy of the local Engram state. It does not replace SQLite or FTS5. Configure it with `init --json --postgres-url <URL>` and synchronize explicitly. It does not replicate `ecosystem` memories yet (coming in 1.7.0, "format 4").
+An optional synchronized copy of the local Engram state. It does not replace SQLite or FTS5. Configure it with `init --json --postgres-url <URL>` and synchronize explicitly. It does not replicate `ecosystem` memories yet (coming in 1.8.0, "format 4").
 
 ## Reinforcement
 

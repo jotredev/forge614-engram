@@ -23,7 +23,19 @@ Intencionalmente **no** es un espacio visual, detector de asistentes, configurad
 - Comandos `group-*` y `memory-move`; `--scope ecosystem --group` en la CLI; `scope: "ecosystem"` con `groupIntent` en MCP; protocolo público versión 3; bloque `ecosystem` en `startup-context` y `context`.
 - Actualización aditiva de la base con respaldo automático y verificación (niveles 8, 9 y 10).
 
-Límites de esta entrega: las memorias de ámbito `ecosystem` no se replican todavía: la réplica PostgreSQL rechaza (`SYNC_ECOSYSTEM_UNSUPPORTED`) mientras existan; la replicación de grupos llegará en un plan propio (1.7.0, «formato 4»). Engram solo lee `forge614.node.json` y nunca infiere un grupo. La pregunta de a qué grupo pertenece un proyecto sin declaración es del flujo visual de Shell. Que Engines y Shell inyecten el bloque `ecosystem` es un trabajo de esos productos: Engram publica el contrato, no demuestra que ya lo consuman.
+Límites de esta entrega: las memorias de ámbito `ecosystem` no se replican todavía: la réplica PostgreSQL rechaza (`SYNC_ECOSYSTEM_UNSUPPORTED`) mientras existan; la replicación de grupos llegará en un plan propio (1.8.0, «formato 4»). Engram solo lee `forge614.node.json` y nunca infiere un grupo. La pregunta de a qué grupo pertenece un proyecto sin declaración es del flujo visual de Shell. Que Engines y Shell inyecten el bloque `ecosystem` es un trabajo de esos productos: Engram publica el contrato, no demuestra que ya lo consuman.
+
+## Capacidades incorporadas en v1.7.0
+
+- Esquema 11 (memoria inteligente): una base nueva nace en ese nivel y una base existente lo activa solo con `intelligence-enable`, con respaldo y verificación. Consulta [05. Arquitectura Interna y Fórmulas](05-arquitectura-interna-y-formulas.md).
+- Filtro de secretos al guardar y metadatos del recuerdo (versión corta, vigencia, reemplazo y proyectos afectados).
+- Búsqueda híbrida y recuerdos parecidos al guardar.
+- Sesiones interrumpidas: la sesión anterior se ofrece como `previous`.
+- Reglas del tablero del grupo: nota de estado, proyecto fuente y bajar un recuerdo al proyecto. Consulta [11. Ámbitos y Ecosistemas](11-ambitos-y-ecosistemas.md).
+- Bloque de arranque (formato 2), listo para inyectar. Consulta [10. Contexto de Inicio](10-contexto-de-inicio.md).
+- Protocolo v4 (manual de la memoria inteligente) con instrucciones del servidor MCP y descripciones de campos. Consulta [09. Protocolo Público de Memoria](09-protocolo-publico-de-memoria.md).
+
+Límite de esta entrega: la replicación de grupos (formato 4) llegará en 1.8.0.
 
 ## No objetivos explícitos
 
@@ -38,7 +50,7 @@ Límites de esta entrega: las memorias de ámbito `ecosystem` no se replican tod
 
 ## Protocolo público de memoria: estado de integración
 
-El contrato `forge614-engram-memory` versión `1` está disponible desde la release `v1.3.0` y se puede inspeccionar con `forge614-engram memory-protocol --json`. Su publicación no significa que una integración de asistentes ya esté instalada.
+El contrato `forge614-engram-memory` versión `1` está disponible desde la release `v1.3.0` y se puede inspeccionar con `forge614-engram memory-protocol --json`. Su publicación no significa que una integración de asistentes ya esté instalada. La versión 4 (desde 1.7.0) es el manual de la memoria inteligente y el valor por defecto sigue en 1 hasta que Engines la acepte.
 
 Todavía **no** instala MCP, instrucciones, hooks ni plugins en Claude Code, Codex o Cursor. Forge614 Engines será quien consuma el comando público y aplique el protocolo mediante el mecanismo seguro de cada asistente. Forge614 Shell mostrará una vista previa y pedirá confirmación humana. Engram no configura asistentes directamente.
 
