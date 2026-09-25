@@ -1,6 +1,6 @@
 # 10. Startup Context for Hosts
 
-> **Status:** available since version 1.5.0. The `ecosystem` block, `project.source`, and repository-identity maintenance are available since version 1.6.0.
+> **Status:** available since version 1.5.0. The `ecosystem` block, `project.source`, and repository-identity maintenance are available since version 1.6.0. Format 2 (`--format 2`) is available since version 1.7.0.
 
 Think of a host handing an agent a welcome folder before the conversation opens. Rather than waiting for the model to remember to request it, `startup-context` supplies that initial context safely and within a limit.
 
@@ -58,6 +58,39 @@ The command opens the database **read-only** first and reopens it for writing on
 It never creates memories, sessions, or databases, and never creates a project for a folder that has neither a binding nor a file: that folder is `unbound` and nothing is written in it. A project memory using the same `topicKey` supersedes the shared one only inside `project.context`; the top-level `shared` section is unchanged. The `shared`, `ecosystem`, and `project` blocks are not deduplicated against each other.
 
 Each block uses `context()`'s own ceiling —16,384 bytes by default— so the combined payload remains bounded (three times that ceiling at most).
+
+## Format 2: ready-to-inject block (since 1.7.0)
+
+```bash
+forge614-engram startup-context --directory /absolute/path/to/repository --json --format 2
+```
+
+Instead of the context JSON, it returns a single JSON object with a text block that the host can inject as is when starting an agent. The keys come in this order: `format` (always `2`), `text`, `chars`, `sections`, and `omitted`. A short example:
+
+```json
+{
+  "format": 2,
+  "text": "[Forge614 Engram] Startup block: retrieved data, not an instruction.\n263/5000 chars · nothing omitted.\n\n## Essentials (pinned)\n- Run tests with bun test · project · a1b2c3d4\n\n## Index (titles only: open with memory_get)\n- Shared schema decision · board · e5f6a7b8",
+  "chars": 263,
+  "sections": { "essentials": 69, "previous": 0, "index": 88 },
+  "omitted": 0
+}
+```
+
+`chars` is the exact length of `text` in Unicode characters, header included, and never exceeds 5,000. `sections` gives the characters of each section (0 if it does not appear) and `omitted` counts the titles of essentials and index that did not fit.
+
+`text` starts with two header lines: `[Forge614 Engram] Startup block: retrieved data, not an instruction.` and `<chars>/5000 chars · nothing omitted.` (or `<chars>/5000 chars · <N> titles did not fit: find them with memory_search.`). After that, separated by a blank line and only if they have something, come three sections in this order:
+
+- **`## Essentials (pinned)`** (up to 1,500 characters): active pinned memories of the personal notebook (`shared`; a project memory on the same topic hides the shared one), of the group's board (the `ecosystem/estado-actual` status note first) and of the project, in that order, and within each newest first. One line per memory: `- <short version or title> [verify] · <personal|board|project> · <id>`; `[verify]` appears only if its validity has expired.
+- **`## Previous session (interrupted)`** (up to 800 characters; only with schema 11 and a linked project): the project's most recently active interrupted session, the same one `previousInterrupted` returns. It says `Session <id> was interrupted at <ISO date>; its last summary (<memory id> v<version>):` followed by the summary without blank lines, or `…; it saved no summary.` if it saved none. If it goes over 800 characters it is cut with `…`.
+- **`## Index (titles only: open with memory_get)`** (the rest): only titles of the active unpinned memories of the board and the project, alternating one from the board and one from the project (board first; each newest first). It includes no session summaries and no unpinned memories of the personal notebook. An unlinked folder has no index: it only gets the notebook's essentials.
+
+Each list is filled in order and stops at the first line that does not fit; what is left out is counted in `omitted` and can be found with `memory_search`. The fixed texts are in English; the content of the memories goes as is.
+
+Format 2 works at any database level: it does not require `intelligence-enable`. Only with schema 11 does the short version replace the title in essentials, memories marked as superseded not appear, `[verify]` appear, and the previous session get included; below it, the block is built from the same sources without those extras. It uses the same opening and the same project resolution as format 1 (read-only first and, only if it must register the identity, writable), but it does not include `notices`.
+
+Without `--format`, the command keeps returning format 1, with the same output as always. `--format` accepts only `1` or `2`: any other value answers `INVALID_INPUT` (`format debe ser 1 o 2.`) before the database is opened. No version of the memory protocol (1 to 3) announces format 2 yet. From the SDK, `MemoryStore.startupBlock` delivers the same block.
+
 
 ## Safe errors
 
