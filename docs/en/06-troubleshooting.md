@@ -45,7 +45,7 @@ Since 1.6.0. The `group-*` commands, `memory-move`, and the codes in this sectio
 
 Since 1.7.0. In the CLI these codes return `{schemaVersion,code,error}` on stderr.
 
-- `SECRET_REJECTED`: the title, content, topic or short version looks like it contains a secret (the message names its kind, never the value). Remove the value and save only where it lives, for example `password: <redacted>` or the environment variable name. Applies at any database level.
+- `SECRET_REJECTED`: the title, content, topic, short version or an affected project (`affects`) looks like it contains a secret (the message names its kind, never the value). Remove the value and save only where it lives, for example `password: <redacted>` or the environment variable name. Applies at any database level.
 - `INTELLIGENCE_REQUIRED`: `short`, `supersedes` or `affects` were sent and the database does not have memory intelligence yet. Enable it with `forge614-engram intelligence-enable` (it backs up before migrating) or save without those fields.
 - `SUPERSEDES_NOT_FOUND`: `supersedes` points to a memory that does not exist, is archived, or belongs to another scope or project. Find the right id with `memory_search`.
 - `AMBIGUOUS_SESSION`: with schema 11 this no longer comes from stale open sessions (sessions marked as interrupted or idle for more than 6 hours are ignored); if it still appears, two sessions of the same folder are genuinely alive: pass `sessionId`.
