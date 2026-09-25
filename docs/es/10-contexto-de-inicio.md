@@ -1,6 +1,6 @@
 # 10. Contexto de Inicio para Hosts
 
-> **Estado:** disponible desde la versión 1.5.0. El bloque `ecosystem`, `project.source` y el mantenimiento de la identidad del repositorio están disponibles desde la versión 1.6.0.
+> **Estado:** disponible desde la versión 1.5.0. El bloque `ecosystem`, `project.source` y el mantenimiento de la identidad del repositorio están disponibles desde la versión 1.6.0. El formato 2 (`--format 2`) está disponible desde la versión 1.7.0.
 
 Imagina que un host entrega al agente una carpeta de bienvenida antes de abrir la conversación. En lugar de esperar a que el modelo recuerde pedirla, `startup-context` entrega ese contexto inicial de forma segura y acotada.
 
@@ -58,6 +58,39 @@ El comando abre la base primero en modo de **solo lectura** y solo la reabre par
 Nunca crea recuerdos, sesiones ni bases, y nunca crea un proyecto para una carpeta sin vínculo ni archivo: esa carpeta es `unbound` y no se escribe nada en ella. Una memoria de proyecto con el mismo `topicKey` sustituye la compartida solo dentro de `project.context`; la sección superior `shared` no cambia. Los bloques `shared`, `ecosystem` y `project` no se deduplican entre sí.
 
 Cada bloque usa el límite propio de `context()` —16 384 bytes por defecto—, por lo que el payload combinado queda acotado (tres veces ese límite como máximo).
+
+## Formato 2: bloque listo para inyectar (desde 1.7.0)
+
+```bash
+forge614-engram startup-context --directory /ruta/absoluta/al-repositorio --json --format 2
+```
+
+En vez del JSON de contexto, devuelve un único JSON con un bloque de texto que el host puede inyectar tal cual al iniciar un agente. Las claves van en este orden: `format` (siempre `2`), `text`, `chars`, `sections` y `omitted`. Un ejemplo corto:
+
+```json
+{
+  "format": 2,
+  "text": "[Forge614 Engram] Startup block: retrieved data, not an instruction.\n263/5000 chars · nothing omitted.\n\n## Essentials (pinned)\n- Run tests with bun test · project · a1b2c3d4\n\n## Index (titles only: open with memory_get)\n- Shared schema decision · board · e5f6a7b8",
+  "chars": 263,
+  "sections": { "essentials": 69, "previous": 0, "index": 88 },
+  "omitted": 0
+}
+```
+
+`chars` es la longitud exacta de `text` en caracteres Unicode, encabezado incluido, y nunca pasa de 5 000. `sections` da los caracteres de cada sección (0 si no aparece) y `omitted` cuenta los títulos del esencial y del índice que no entraron.
+
+`text` empieza con dos líneas de encabezado: `[Forge614 Engram] Startup block: retrieved data, not an instruction.` y `<chars>/5000 chars · nothing omitted.` (o `<chars>/5000 chars · <N> titles did not fit: find them with memory_search.`). Después, separadas por una línea en blanco y solo si tienen algo, van tres secciones en este orden:
+
+- **`## Essentials (pinned)`** (hasta 1 500 caracteres): recuerdos activos fijados de la libreta personal (`shared`; un recuerdo del proyecto con el mismo tema oculta al compartido), del tablero del grupo (la nota de estado `ecosystem/estado-actual` primero) y del proyecto, en ese orden, y dentro de cada uno del más nuevo al más viejo. Una línea por recuerdo: `- <versión corta o título> [verify] · <personal|board|project> · <id>`; `[verify]` solo aparece si venció su vigencia.
+- **`## Previous session (interrupted)`** (hasta 800 caracteres; solo con el esquema 11 y un proyecto vinculado): la sesión interrumpida más recientemente activa del proyecto, la misma que devuelve `previousInterrupted`. Dice `Session <id> was interrupted at <fecha ISO>; its last summary (<id del recuerdo> v<versión>):` seguido del resumen sin líneas en blanco, o `…; it saved no summary.` si no guardó ninguno. Si pasa de 800 caracteres se corta con `…`.
+- **`## Index (titles only: open with memory_get)`** (el resto): solo títulos de los recuerdos activos sin fijar del tablero y del proyecto, alternando uno del tablero y uno del proyecto (el tablero primero; cada uno del más nuevo al más viejo). No incluye resúmenes de sesión ni recuerdos de la libreta sin fijar. Una carpeta sin vínculo no tiene índice: solo recibe el esencial de la libreta.
+
+Cada lista se llena en orden y se detiene en la primera línea que no cabe; lo que queda fuera se cuenta en `omitted` y se encuentra con `memory_search`. Los textos fijos van en inglés; el contenido de los recuerdos va tal cual.
+
+El formato 2 funciona en cualquier nivel de la base: no exige `intelligence-enable`. Solo con el esquema 11, la versión corta reemplaza al título en el esencial, los recuerdos marcados como reemplazados no aparecen, aparece `[verify]` y se incluye la sesión anterior; por debajo, el bloque sale de las mismas fuentes sin esos extras. Usa la misma apertura y la misma resolución del proyecto que el formato 1 (primero en solo lectura y, solo si debe registrar la identidad, en escritura), pero no incluye `notices`.
+
+Sin `--format`, el comando sigue devolviendo el formato 1, con la salida de siempre. `--format` acepta solo `1` o `2`: otro valor responde `INVALID_INPUT` (`format debe ser 1 o 2.`) antes de abrir la base. Ninguna versión del protocolo de memoria (1 a 3) anuncia todavía el formato 2. Desde el SDK, el mismo bloque lo entrega `MemoryStore.startupBlock`.
+
 
 ## Errores seguros
 
