@@ -241,3 +241,28 @@ test("startup-context opens the base read-only when nothing has to be written, s
     expect(readdirSync(engramDirectory).sort()).toEqual(before);
   } finally { holder.kill(9); }
 }, 40000);
+
+test("startup-context --format 2 prints the ready-to-inject block, --format 1 matches the default byte for byte and other formats fail", async () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  expect((await runCli(root, userDirectory, "intelligence-enable")).code).toBe(0);
+  const projectId = JSON.parse((await runCli(root, userDirectory, "project-create", "--name", "demo")).stdout).projectId;
+  const directory = temporary();
+  expect((await runCli(root, userDirectory, "project-bind", "--directory", directory, "--project-id", projectId)).code).toBe(0);
+  expect((await runCli(root, userDirectory, "save", "--project-id", projectId, "--title", "Project note", "--content", "Only this repo", "--type", "fact")).code).toBe(0);
+
+  const block = await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json", "--format", "2");
+  expect(block.code).toBe(0);
+  const body = JSON.parse(block.stdout);
+  expect(Object.keys(body)).toEqual(["format", "text", "chars", "sections", "omitted"]);
+  expect(body).toMatchObject({ format: 2, omitted: 0 });
+  expect(body.text).toContain("- Project note · project · ");
+  const byDefault = await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json");
+  const explicit = await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json", "--format", "1");
+  expect(explicit.stdout).toBe(byDefault.stdout);
+  expect(JSON.parse(byDefault.stdout).format).toBe(1);
+  const unknown = await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json", "--format", "3");
+  expect(unknown.code).toBe(1);
+  expect(JSON.parse(unknown.stderr).code).toBe("INVALID_INPUT");
+  expect(unknown.stdout).toBe("");
+}, 60000);

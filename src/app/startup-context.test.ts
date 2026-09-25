@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryStore } from "./memory-store";
 import { bindProjectContext } from "./project-context";
-import { readStartupContext } from "./startup-context";
+import { readStartupBlock, readStartupContext } from "./startup-context";
 
 const directories: string[] = [];
 function temporary(prefix = "engram-startup-context-"): string {
@@ -174,4 +174,64 @@ test("project.source tells whether the identity came from the file or from the r
     expect(second.project.source).toBe("file");
     expect(second.project.notices).toBeUndefined();
   } finally { store.close(); }
+});
+
+test("format 2 fits a base shaped like the owner's (107 memories) in 5000 characters, with the occupancy header and the interrupted session", () => {
+  const store = new MemoryStore(":memory:");
+  try {
+    store.enableProjectBindings();
+    const project = store.createProject("forge614-ai");
+    const directory = temporary();
+    bindProjectContext(store, directory, project.projectId);
+    store.enableIntelligence();
+    const sibling = store.createProject("forge614-engram");
+    const group = store.ensureGroup(crypto.randomUUID(), "forge614").group;
+    for (const member of [project, sibling]) store.bindProjectToGroup(member.projectId, group.id, "command");
+    for (let n = 0; n < 14; n++) {
+      store.save({ scope: "shared", projectId: null, title: `Shared preference ${n}: ${"regla ".repeat(12)}`, content: "p".repeat(400),
+        type: "preference", ...(n < 4 ? { pinned: true, short: `Short rule ${n}` } : {}) });
+    }
+    store.save({ scope: "ecosystem", projectId: null, groupId: group.id, title: "Board rule", content: "Nodes speak JSON.", type: "decision",
+      affects: ["forge614-ai", "forge614-engram"] });
+    for (let n = 0; n < 92; n++) {
+      store.save({ scope: "project", projectId: project.projectId, title: `Project memory ${n}: ${"decisión ".repeat(8)}`, content: "c".repeat(900), type: "decision" });
+    }
+    store.startSession(project.projectId, "first", directory);
+    store.saveSessionSummary(project.projectId, "first",
+      { goal: "Prepare T6", instructions: "", discoveries: "", accomplishments: "", nextSteps: "Write the plan", files: [] }, { requestKey: "summary" });
+    store.startSession(project.projectId, "second", directory);
+
+    const block = readStartupBlock(store, directory);
+
+    expect(block.format).toBe(2);
+    expect(block.chars).toBe(Array.from(block.text).length);
+    expect(block.chars).toBeLessThanOrEqual(5000);
+    expect(block.text.split("\n")[1]).toBe(`${block.chars}/5000 chars · ${block.omitted} titles did not fit: find them with memory_search.`);
+    expect(block.omitted).toBeGreaterThan(0);
+    expect(block.text).toContain("- Short rule 0 · personal · ");
+    expect(block.text).toContain("## Previous session (interrupted)\nSession first was interrupted at ");
+    expect(block.text).toContain("Goal:\nPrepare T6\n");
+    expect(block.text).toContain("- Board rule · board · ");
+    expect(block.text).not.toContain("ccccc");
+    expect(readStartupContext(store, directory).format).toBe(1);
+  } finally { store.close(); }
+});
+
+test("format 2 never writes: a readonly connection renders the block for a bound and an unbound directory", () => {
+  const dbPath = join(temporary(), "engram.db");
+  const boundDirectory = temporary();
+  {
+    const writable = new MemoryStore(dbPath);
+    try {
+      writable.enableProjectBindings();
+      const project = writable.createProject("Readonly block");
+      bindProjectContext(writable, boundDirectory, project.projectId);
+      writable.save({ scope: "project", projectId: project.projectId, title: "Project note", content: "Body", type: "fact" });
+    } finally { writable.close(); }
+  }
+  const readonlyStore = new MemoryStore(dbPath, { readonly: true });
+  try {
+    expect(readStartupBlock(readonlyStore, boundDirectory).text).toContain("- Project note · project · ");
+    expect(readStartupBlock(readonlyStore, temporary()).sections).toEqual({ essentials: 0, previous: 0, index: 0 });
+  } finally { readonlyStore.close(); }
 });

@@ -3,7 +3,7 @@ import type {
   Project, SaveInput, SearchResult, SearchScope, Session, SessionEntry, SessionSaveOptions,
   SessionSaveResult, SessionSummary, SummaryFields, TimelineInput, TimelineResult, VersionRead,
   WorkspaceSettings, MemoryStore, Group, GroupSummary, IdentityEvent, MembershipSource, ProjectGroup,
-  PreviousSession, GroupSource,
+  PreviousSession, GroupSource, StartupBlock,
 } from "../../src/index";
 import type { SyncSnapshot } from "../../src/modules/synchronization";
 
@@ -46,6 +46,7 @@ interface ExpectedStore {
   intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};previousInterrupted(projectId:string):PreviousSession|null;
   setGroupSource(groupId:string,projectId:string):GroupSource;groupSource(groupId:string):GroupSource|null;
   demoteMemory(projectId:string,id:string):{memory:Memory;from:{scope:"ecosystem";groupId:string};to:{scope:"project";projectId:string}};
+  startupBlock(projectId:string|null):StartupBlock;
 }
 type ActualStore = InstanceType<typeof MemoryStore>;
 type _StoreMethodNames = Assert<Equal<keyof ActualStore, keyof ExpectedStore>>;

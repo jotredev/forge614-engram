@@ -10,7 +10,7 @@ update [--json] Descarga, verifica y activa la última versión estable de Engra
 memory-protocol --json [--protocol-version 1|2]
                 Publica las reglas versionadas que Engines instala en asistentes compatibles. Defecto 1.
                 La versión 3 anuncia el ámbito ecosystem y exige groupIntent al guardar en él.
-startup-context --directory <carpeta> --json
+startup-context --directory <carpeta> --json [--format 1|2]
                 Interfaz pública, no interactiva y de solo lectura para precargar contexto al iniciar
                 una sesión de agente: shared y, si <carpeta> ya está vinculada, el proyecto correspondiente.
                 Acepta cualquier carpeta existente y legible; sin vínculo devuelve unbound, no es un error
@@ -18,6 +18,8 @@ startup-context --directory <carpeta> --json
                 Devuelve además el bloque ecosystem (si el proyecto pertenece a un grupo) y project.source
                 (file, path o unbound). Mantiene al día la identidad del repositorio: registra por id un clon
                 que trae su .forge614/project.json y escribe ese archivo a un proyecto vinculado solo por ruta.
+                --format 2 devuelve un solo bloque de texto listo para inyectar (máximo 5000 caracteres):
+                esencial fijado, sesión anterior interrumpida e índice de títulos. Defecto 1.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
 sync [--upgrade-format]
                 Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
