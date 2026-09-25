@@ -270,7 +270,7 @@ integration("PostgreSQL publishes only one winner for a concurrent head and reje
 
 integration("setup refuses an incompatible PostgreSQL schema without publishing config or creating SQLite",async()=>{
   const config=new WorkspaceConfig(join(directory,"refused-user",".forge614"));
-  const answers=["si",url,"no","si"];
+  const answers=["si",url,"si"];
   await expect(runSetup({write(){},ask:async()=>answers.shift()??null},config)).rejects.toMatchObject({code:"POSTGRES_SCHEMA"});
   expect(existsSync(config.root)).toBe(false);
 },postgresTestTimeoutMs);
