@@ -321,3 +321,19 @@ test("explicit session CLI lifecycle, previews, version reads, timeline and cont
   expect((await run(dir,"session-summary","--project-id",session.projectId,"--session-id","chat-one","--summary-json",summary,"--request-key","summary-1")).code).toBe(0);
   expect(JSON.parse((await run(dir,"session-end","--project-id",session.projectId,"--session-id","chat-one")).stdout).endedAt).not.toBeNull();
 }, 40000);
+
+test("session-start CLI reports a session opened right before as parallel, not previous, and never marks it", async () => {
+  const dir=workspace();
+  expect((await run(dir,"intelligence-enable")).code).toBe(0);
+  const first=(await run(dir,"session-start","--directory",dir,"--session-id","chat-one"));
+  expect(first.code).toBe(0);
+  expect(JSON.parse(first.stdout)).not.toHaveProperty("previous");
+  expect(JSON.parse(first.stdout)).not.toHaveProperty("parallel");
+  const second=(await run(dir,"session-start","--directory",dir,"--session-id","chat-two"));
+  expect(second.code).toBe(0);
+  const started=JSON.parse(second.stdout);
+  expect(started).not.toHaveProperty("previous");
+  expect(started.parallel).toMatchObject([{sessionId:"chat-one"}]);
+  const replay=(await run(dir,"session-start","--directory",dir,"--session-id","chat-two"));
+  expect(JSON.parse(replay.stdout)).not.toHaveProperty("parallel");
+}, 40000);

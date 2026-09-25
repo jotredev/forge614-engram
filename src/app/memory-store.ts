@@ -1,4 +1,4 @@
-import { previousInterrupted } from "../infrastructure/sqlite/activity";
+import { parallelSessions,previousInterrupted } from "../infrastructure/sqlite/activity";
 import { closeDatabase,defaultDatabasePath,openDatabase } from "../infrastructure/sqlite/connection";
 import * as groups from "../infrastructure/sqlite/ecosystem-groups";
 import * as memory from "../infrastructure/sqlite/memory";
@@ -16,7 +16,7 @@ import type { Group,GroupSource,GroupSummary,IdentityEvent,MembershipSource,Proj
 import { type Memory,type MemoryVersion,type SaveInput,type SearchResult,type SearchScope } from "../modules/memory";
 import { type Project } from "../modules/projects";
 import { type ContextInput,type ContextResult,type PreviewResult,type StartupBlock,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";
-import { type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
+import { type ParallelSession,type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
 import type { SyncSnapshot } from "../modules/synchronization";
 
 export class MemoryStore {
@@ -101,6 +101,8 @@ export class MemoryStore {
   enableIntelligence(): IntelligenceEnrolment { return enableIntelligence(this.db); }
   previousInterrupted(projectId: string): PreviousSession | null { return previousInterrupted(this.db, projectId); }
   startupBlock(projectId: string | null): StartupBlock { return startupBlock(this.db, projectId); }
+  // Added in 1.7.1: sessions still open in parallel with the given one, "notice by time" instead of marking at start.
+  parallelSessions(projectId: string, sessionId: string): ParallelSession[] { return parallelSessions(this.db, projectId, sessionId); }
   setGroupSource(groupId: string, projectId: string): GroupSource { return board.setGroupSource(this.db, groupId, projectId); }
   groupSource(groupId: string): GroupSource | null { return board.groupSource(this.db, groupId); }
   demoteMemory(projectId: string, id: string): { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } } { return board.demoteMemory(this.db, projectId, id); }

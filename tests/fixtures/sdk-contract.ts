@@ -3,7 +3,7 @@ import type {
   Project, SaveInput, SearchResult, SearchScope, Session, SessionEntry, SessionSaveOptions,
   SessionSaveResult, SessionSummary, SummaryFields, TimelineInput, TimelineResult, VersionRead,
   WorkspaceSettings, MemoryStore, Group, GroupSummary, IdentityEvent, MembershipSource, ProjectGroup,
-  PreviousSession, GroupSource, StartupBlock,
+  PreviousSession, GroupSource, StartupBlock, ParallelSession,
 } from "../../src/index";
 import type { SyncSnapshot } from "../../src/modules/synchronization";
 
@@ -47,6 +47,8 @@ interface ExpectedStore {
   setGroupSource(groupId:string,projectId:string):GroupSource;groupSource(groupId:string):GroupSource|null;
   demoteMemory(projectId:string,id:string):{memory:Memory;from:{scope:"ecosystem";groupId:string};to:{scope:"project";projectId:string}};
   startupBlock(projectId:string|null):StartupBlock;
+  // Added in 1.7.1 (parallel-session notice, "notice by time"). Purely additive: nothing above changed.
+  parallelSessions(projectId:string,sessionId:string):ParallelSession[];
 }
 type ActualStore = InstanceType<typeof MemoryStore>;
 type _StoreMethodNames = Assert<Equal<keyof ActualStore, keyof ExpectedStore>>;

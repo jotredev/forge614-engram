@@ -3,7 +3,7 @@ import { type Memory } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
 import { sessionIdentity,type Session } from "../../modules/sessions";
 import { MemoryError } from "../../shared/errors";
-import { inactivityThreshold,interruptOtherSessions,touchSession } from "./activity";
+import { inactivityThreshold,touchSession } from "./activity";
 import { intelligenceEnabled } from "./intelligence";
 import { schemaFeatures } from "./schema";
 
@@ -17,7 +17,6 @@ export function sessionRow(db: Database, sessionId: string): Session | null {
 export function startRuntimeSession(db: Database, projectId: string, sessionId: string, runtimeDirectory?: string): Session {
   const at = new Date().toISOString();
   const existing = sessionRow(db, sessionId);
-  let created = false;
   if (existing) {
     if (existing.projectId !== projectId || existing.kind !== "runtime" || existing.endedAt !== null) {
       throw new MemoryError("SESSION_CONFLICT", "El identificador de sesión no está disponible.");
@@ -27,15 +26,15 @@ export function startRuntimeSession(db: Database, projectId: string, sessionId: 
     if (!project) throw new MemoryError("PROJECT_NOT_FOUND", "Proyecto no encontrado en esta base.");
     db.query("INSERT INTO sessions(sessionId,projectId,kind,startedAt,endedAt) VALUES(?,?,'runtime',?,NULL)")
       .run(sessionId, projectId, at);
-    created = true;
   }
   if (runtimeDirectory !== undefined) {
     db.query("INSERT OR IGNORE INTO local_session_bindings(sessionId,directory) VALUES(?,?)")
       .run(sessionId, runtimeDirectory);
   }
-  // A brand-new runtime session interrupts every other open runtime session of the project; a replay never does.
+  // Opening a session marks nobody: other open runtime sessions of the project keep their own
+  // activity untouched (1.7.1). Whether one of them counts as left open is decided later, by
+  // elapsed time, in previousInterrupted/parallelSessions.
   touchSession(db, sessionId, at);
-  if (created) interruptOtherSessions(db, projectId, sessionId, at);
   return sessionRow(db, sessionId)!;
 }
 
@@ -80,7 +79,7 @@ export function validateSelectedSession(db: Database, sessionId: string, scope: 
   }
 
 export function inferredSessions(db: Database, projectId: string, directory: string, requestNow: string): string[] {
-    // At level 11 a stale or explicitly interrupted session must never be silently inferred: the six-hour
+    // At level 11 a stale session, or one still carrying a mark left by 1.7.0, must never be silently inferred: the six-hour
     // activity window (session_activity) replaces the plain seven-day window used below that level.
     if (intelligenceEnabled(db)) {
       const threshold = inactivityThreshold(requestNow);

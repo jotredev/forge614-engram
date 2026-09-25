@@ -6,3 +6,4 @@ export interface SessionSaveOptions {sessionId?:string;projectId?:string;mode?:"
 export interface SessionSaveResult {memory:MemoryVersion;sessionId:string|null;sessionSource:"explicit"|"inferred"|"manual"|null;similar?:SimilarCandidate[]}
 export interface SummaryFields {goal:string;instructions:string;discoveries:string;accomplishments:string;nextSteps:string;files:string[]}
 export interface PreviousSession {sessionId:string;interruptedAt:string;summary:MemoryVersion|null}
+export interface ParallelSession {sessionId:string;lastActivityAt:string}

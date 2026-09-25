@@ -133,7 +133,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     console.log(JSON.stringify(result,null,2)); return;
   }
   if(command==="session-start"){
-    const store=workspace.open();try{const started=startProjectSessionWithNotices(store,need("directory"),need("session-id"));console.log(JSON.stringify({...started.session,...(started.previous?{previous:started.previous}:{}),...(started.notices.length?{notices:started.notices}:{})},null,2));}finally{store.close();}return;
+    const store=workspace.open();try{const started=startProjectSessionWithNotices(store,need("directory"),need("session-id"));console.log(JSON.stringify({...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{})},null,2));}finally{store.close();}return;
   }
   if(command==="session-end"){
     const store=workspace.open();try{console.log(JSON.stringify(store.endSession(projectIdentity(need("project-id")),need("session-id")),null,2));}finally{store.close();}return;

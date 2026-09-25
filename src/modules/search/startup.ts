@@ -47,7 +47,7 @@ function list(title: string, lines: string[], max: number): { text: string; show
   return { text: shown === 0 ? "" : text, shown };
 }
 
-/** Renders the ready-to-inject startup block: essentials, the interrupted previous session and the index, within STARTUP_TOTAL. */
+/** Renders the ready-to-inject startup block: essentials, the previous session left open for PARALLEL_MINUTES or more and the index, within STARTUP_TOTAL. */
 export function renderStartupBlock(input: StartupBlockInput): StartupBlock {
   // Reserve the widest header these totals can produce, so the finished block never passes STARTUP_TOTAL.
   let budget = STARTUP_TOTAL - length(header(STARTUP_TOTAL, input.essentialsTotal + input.indexTotal));
@@ -62,9 +62,9 @@ export function renderStartupBlock(input: StartupBlockInput): StartupBlock {
   if (input.previous !== null) {
     const { sessionId, interruptedAt, summary } = input.previous;
     const lead = summary === null
-      ? `Session ${sessionId} was interrupted at ${interruptedAt}; it saved no summary.`
+      ? `Session ${sessionId} was left open; its last activity was at ${interruptedAt}; it saved no summary.`
       // Blank lines are squeezed so that a blank line only ever separates the block's sections.
-      : `Session ${sessionId} was interrupted at ${interruptedAt}; its last summary (${summary.id} v${summary.version}):\n${summary.content.replace(/\n\s*\n/g, "\n").trim()}`;
+      : `Session ${sessionId} was left open; its last activity was at ${interruptedAt}; its last summary (${summary.id} v${summary.version}):\n${summary.content.replace(/\n\s*\n/g, "\n").trim()}`;
     previousChars = add(clip(`## Previous session (interrupted)\n${lead}`, Math.min(STARTUP_PREVIOUS, budget - 2)));
   }
 

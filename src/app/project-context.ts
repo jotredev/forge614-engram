@@ -1,6 +1,6 @@
 import { MemoryError } from "../shared/errors";
 import type { MemoryVersion, SaveInput } from "../modules/memory";
-import type { PreviousSession, Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";
+import type { ParallelSession, PreviousSession, Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";
 import { MemoryStore } from "./memory-store";
 import { applyIdentityFile, groupOf, publishIdentity, type IdentityNotice } from "./project-identity";
 import { readProjectFile } from "../infrastructure/filesystem/project-identity-file";
@@ -87,21 +87,24 @@ export function saveProjectMemoryWithSession(store: MemoryStore, directory: stri
 }
 
 /** Like startProjectSession, also reporting the identity notices (for example the file just written) and,
- * for a session created by this call, the project's previously interrupted session (if any). */
-export function startProjectSessionWithNotices(store: MemoryStore, directory: string, sessionId: string): { session: Session; notices: IdentityNotice[]; previous?: PreviousSession } {
+ * for a session created by this call (never on replay): the project's previous session left open for
+ * PARALLEL_MINUTES or more (if any), and any of its other open runtime sessions still open in parallel
+ * with this one (if any, at most PARALLEL_LIMIT, 1.7.1). */
+export function startProjectSessionWithNotices(store: MemoryStore, directory: string, sessionId: string): { session: Session; notices: IdentityNotice[]; previous?: PreviousSession; parallel?: ParallelSession[] } {
   const canonical = canonicalProject(directory);
   const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
   const root = identityRoot(directory, canonical);
   const identity = applyIdentityFile(store, canonical.directory, root);
   const notices = [...identity.notices];
-  // Level 11 only: whether this id already names a session, read before starting (a replay never reports `previous`).
+  // Level 11 only: whether this id already names a session, read before starting (a replay never reports `previous`/`parallel`).
   const known = store.intelligenceEnabled() ? (identity.projectId ?? store.projectForDirectory(canonical.directory)?.projectId ?? null) : null;
   const existed = known !== null && store.getSession(known, sessionId) !== null;
   const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable);
   const project = store.getProject(session.projectId);
   if (project) notices.push(...publishIdentity(store, project, root, true));
   const previous = store.intelligenceEnabled() && !existed ? store.previousInterrupted(session.projectId) : null;
-  return { session, notices, ...(previous ? { previous } : {}) };
+  const parallel = store.intelligenceEnabled() && !existed ? store.parallelSessions(session.projectId, sessionId) : null;
+  return { session, notices, ...(previous ? { previous } : {}), ...(parallel && parallel.length ? { parallel } : {}) };
 }
 
 export function startProjectSession(store: MemoryStore, directory: string, sessionId: string): Session {

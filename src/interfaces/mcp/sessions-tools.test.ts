@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { registerMemoryTools } from "./memory-tools";
 import { registerSessionTools } from "./sessions-tools";
 import { sdkHarness } from "./__tests__/sdk-harness";
@@ -39,16 +39,24 @@ test("timeline uses the exact owner/version and context supports shared scope wi
   } finally {await h.close();}
 });
 
-test("memory_session_start reports the previous interrupted session once intelligence is enabled, but not on replay", async () => {
+test("memory_session_start reports a parallel session started right after another, and the previous session once it is left open, but neither on replay", async () => {
   const h=await sdkHarness(registerSessionTools);
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
   try {
     h.store.enableIntelligence();
     await h.call("memory_session_start",{sessionId:"first"});
     const second=await h.call("memory_session_start",{sessionId:"second"});
-    expect(second.data.previous).toMatchObject({sessionId:"first"});
+    expect(second.data).not.toHaveProperty("previous");
+    expect(second.data.parallel).toMatchObject([{sessionId:"first"}]);
     const replay=await h.call("memory_session_start",{sessionId:"second"});
     expect(replay.data).not.toHaveProperty("previous");
-  } finally {await h.close();}
+    expect(replay.data).not.toHaveProperty("parallel");
+    // Once "first" has been left open for over PARALLEL_MINUTES, a fresh session reports it as previous.
+    setSystemTime(new Date("2026-01-01T00:31:00.000Z"));
+    const third=await h.call("memory_session_start",{sessionId:"third"});
+    expect(third.data.previous).toMatchObject({sessionId:"first"});
+    expect(third.data).not.toHaveProperty("parallel");
+  } finally {setSystemTime(); await h.close();}
 });
 
 const both = (context: Parameters<typeof registerMemoryTools>[0]) => { registerMemoryTools(context); registerSessionTools(context); };
