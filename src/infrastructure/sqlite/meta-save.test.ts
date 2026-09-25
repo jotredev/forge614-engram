@@ -20,6 +20,19 @@ test("secrets are rejected at every schema level, naming the kind and never the 
   });
 });
 
+test("secrets in short or affects are rejected too, and nothing is stored", () => withDatabase(db => {
+  enableIntelligence(db);
+  const project = createProject(db, "Secrets");
+  for (const extra of [{ short: secretText }, { affects: ["forge614-engram", secretText] }]) {
+    let error: unknown;
+    try { save(db, { projectId: project.projectId, type: "decision", title: "Regla", content: "c", ...extra }); } catch (caught) { error = caught; }
+    expect(error).toMatchObject({ code: "SECRET_REJECTED" });
+    expect(String((error as Error).message)).not.toContain("hunter2");
+  }
+  expect(db.query("SELECT count(*) AS n FROM memories").get()).toEqual({ n: 0 });
+  expect(db.query("SELECT count(*) AS n FROM memory_meta").get()).toEqual({ n: 0 });
+}));
+
 test("metadata fields below level 11 are rejected, never dropped", () => withDatabase(db => {
   enableSearchReinforcement(db);
   const project = createProject(db, "Old");
