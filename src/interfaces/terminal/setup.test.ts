@@ -32,7 +32,9 @@ test("terminal EOF and Ctrl+C cancel without initializing storage", () => {
 });
 
 test("terminal completes memory setup without opening assistant selection", () => {
-  const { result, config } = terminal("no\nno\nmaybe\nsi\n");
+  // Brand new: the reinforcement question is skipped (schema 11 already includes it), so the
+  // confirmation loop starts right after the PostgreSQL question.
+  const { result, config } = terminal("no\nmaybe\nsi\n");
   expect(result.exitCode).toBe(0);
   expect(result.stderr.toString()).toBe("");
   const projects = new MemoryWorkspace(config).listProjects();

@@ -100,9 +100,11 @@ test("stdio save, search, get, history, update and request replay persist across
     directory: project, title: "Database decision", content: "Use SQLite locally", type: "decision",
     topicKey: "architecture/database", requestKey: "save-1",
   };
-  const saved = data(await call(connection.client, "memory_save", input)) as { id: string; projectId: string; version: number;sessionId:null;sessionSource:null };
+  const saved = data(await call(connection.client, "memory_save", input)) as { id: string; projectId: string; version: number;sessionId:string;sessionSource:string };
   expect(saved.version).toBe(1);
-  expect(saved).toMatchObject({sessionId:null,sessionSource:null});
+  // A brand-new database is born with sessions already enabled (schema 11): a directory-scoped
+  // save with no explicit session attaches to that directory's manual session.
+  expect(saved).toMatchObject({sessionId:expect.any(String),sessionSource:"manual"});
   expect(data(await call(connection.client, "memory_save", input))).toEqual(saved);
   expect((data(await call(connection.client, "memory_search", { directory: project, query: "SQLite" })) as {format:number;results:unknown[]}).results).toHaveLength(1);
   expect(data(await call(connection.client, "memory_get", { directory: project, id: saved.id }))).toMatchObject({ memory:{id: saved.id},currentVersion:1 });
@@ -206,6 +208,15 @@ test("MCP accepts the SDK session identifier boundary and reports ambiguous assi
   expect((await call(client,"memory_session_start",{sessionId:"x".repeat(201)})).isError).toBe(true);
   expect((await call(client,"memory_session_start",{sessionId:" chat"})).isError).toBe(true);
   expect((await call(client,"memory_session_start",{sessionId:"chat-two"})).isError).not.toBe(true);
+  // At level 11, starting chat-two marks every other open runtime session (longId) as
+  // interrupted; session inference ignores interrupted sessions, so only chat-two remains a
+  // candidate and this save is not ambiguous.
+  const solo=await call(client,"memory_save",{title:"Not ambiguous yet",content:"Only chat-two is live",type:"fact"});
+  expect(solo.isError).not.toBe(true);
+  expect(data(solo)).toMatchObject({sessionId:"chat-two",sessionSource:"inferred"});
+  // Explicit activity on longId clears its interruption mark (touchSession), so both runtime
+  // sessions are open and live again: assistant inference is genuinely ambiguous once more.
+  expect((await call(client,"memory_save",{title:"Revive",content:"Touch longId",type:"fact",sessionId:longId})).isError).not.toBe(true);
   const result=await call(client,"memory_save",{title:"Ambiguous",content:"Two chats",type:"fact"});
   expect(result.isError).toBe(true);expect(data(result)).toMatchObject({code:"AMBIGUOUS_SESSION"});
 }, 40000);

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { MemoryError } from "../shared/errors";
 import { groupName,type Group,type GroupSource,type GroupSummary } from "../modules/ecosystem";
 import type { Memory } from "../modules/memory";
@@ -27,8 +28,11 @@ export class MemoryWorkspace {
       return;
     }
     this.config.prepare();
+    // Only a database file created right here starts with memory intelligence (schema 11): it holds nothing to
+    // back up. One already on disk, even without its config, is never migrated here; intelligence-enable does it.
+    const brandNew = !existsSync(this.config.databasePath);
     const store = openWorkspaceDatabase(this.config.databasePath, true, false, (path, options) => new MemoryStore(path, options));
-    try { this.config.save(); }
+    try { if (brandNew) store.enableIntelligence(); this.config.save(); }
     finally { store.close(); }
   }
 

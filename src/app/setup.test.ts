@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 import { MemoryWorkspace } from "./workspace";
 import { runSetup, type SetupIO } from "./setup";
+import { legacyConfiguredWorkspace } from "../../tests/fixtures/legacy-workspace";
 
 const directories: string[] = [];
 function fixture() {
@@ -47,15 +48,28 @@ test("setup automatically restricts an existing user-owned workspace directory b
 
 test("setup defaults to no PostgreSQL and initializes global storage without a project", async () => {
   const { config, workspace } = fixture();
-  const { io, output, questions } = conversation(["", "", "sí"], () => expect(existsSync(config.root)).toBe(false));
+  // The new database is born already at schema 11: no reinforcement question is asked, and it
+  // reports enabled from the start.
+  const { io, output, questions } = conversation(["", "sí"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(3);
+  expect(questions).toHaveLength(2);
   expect(workspace.listProjects()).toEqual([]);
   expect(readFileSync(join(config.root, ".env"), "utf8")).toBe('FORMAT_VERSION="2"\nSTORAGE="sqlite"\n');
   expect(output.join("\n")).toContain(config.databasePath);
+  expect(output.join("\n")).toContain("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
   const store = workspace.open(true);
-  try { expect(store.reinforcementEnabled()).toBe(false); }
+  try { expect(store.reinforcementEnabled()).toBe(true); }
   finally { store.close(); }
+});
+
+test("setup on a brand-new database writes the intelligence phrase and never asks about reinforcement", async () => {
+  const { config } = fixture();
+  const { io, output, questions } = conversation(["", "sí"], () => expect(existsSync(config.root)).toBe(false));
+  expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
+  expect(output.join("\n")).toContain("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
+  expect(output.join("\n")).not.toContain("¿Quieres habilitar el refuerzo de recuerdos?");
+  // Only the PostgreSQL question and the final confirmation: no reinforcement question in between.
+  expect(questions).toHaveLength(2);
 });
 
 test("setup preserves existing projects and memories without asking which project to use", async () => {
@@ -66,9 +80,12 @@ test("setup preserves existing projects and memories without asking which projec
   try { id = store.save({ projectId: project.projectId, title: "Keep", content: "SQLite", type: "fact" }).id; }
   finally { store.close(); }
   const before = readFileSync(join(config.root, ".env"));
-  const { io, output, questions } = conversation(["no", "no", "yes"]);
+  // The project was created through workspace.createProject(), which already births the
+  // database at schema 11 (memory intelligence): reinforcement is already enabled, so setup
+  // reports it instead of asking.
+  const { io, output, questions } = conversation(["no", "yes"]);
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(3);
+  expect(questions).toHaveLength(2);
   expect(workspace.listProjects()).toEqual([project]);
   expect(readFileSync(join(config.root, ".env"))).toEqual(before);
   const reopened = workspace.open(true);
@@ -80,9 +97,11 @@ test("setup preserves existing projects and memories without asking which projec
 
 test("setup retries invalid confirmation without interpreting old project menu choices", async () => {
   const { config, workspace } = fixture();
-  const { io, questions } = conversation(["no", "no", "1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
+  // Brand new: no reinforcement question is asked, so the confirmation loop starts right after
+  // the PostgreSQL question.
+  const { io, questions } = conversation(["no", "1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
-  expect(questions).toHaveLength(8);
+  expect(questions).toHaveLength(7);
   expect(workspace.listProjects()).toEqual([]);
 });
 
@@ -111,8 +130,11 @@ test("setup refuses a missing configured database before prompting without recre
 });
 
 test("setup only enrolls reinforcement after the final confirmation", async () => {
+  // The reinforcement question is only ever asked for a database that already exists below
+  // level 7: a brand-new workspace is born with it enabled already (see the tests above), so
+  // each scenario here starts from a pre-existing, still-configured legacy-level database.
   const declined = fixture();
-  declined.workspace.init();
+  legacyConfiguredWorkspace(declined.config);
   const declinedConfig = readFileSync(join(declined.config.root, ".env"));
   expect(await runSetup(conversation(["no", "no", "si"]).io, declined.config))
     .toEqual({ cancelled: false, storage: "sqlite" });
@@ -122,7 +144,7 @@ test("setup only enrolls reinforcement after the final confirmation", async () =
   finally { store.close(); }
 
   const cancelled = fixture();
-  cancelled.workspace.init();
+  legacyConfiguredWorkspace(cancelled.config);
   const cancelledDatabase = readFileSync(cancelled.config.databasePath);
   const cancelledConfig = readFileSync(join(cancelled.config.root, ".env"));
   expect(await runSetup(conversation(["no", "si", "no"]).io, cancelled.config))
@@ -134,7 +156,8 @@ test("setup only enrolls reinforcement after the final confirmation", async () =
   finally { store.close(); }
 
   const accepted = fixture();
-  const { io, output } = conversation(["no", "si", "si"], () => expect(existsSync(accepted.config.root)).toBe(false));
+  legacyConfiguredWorkspace(accepted.config);
+  const { io, output } = conversation(["no", "si", "si"]);
   expect(await runSetup(io, accepted.config)).toEqual({ cancelled: false, storage: "sqlite" });
   store = accepted.workspace.open(true);
   try { expect(store.reinforcementEnabled()).toBe(true); }

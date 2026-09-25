@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
@@ -56,6 +56,61 @@ test("init can attach existing compatible database without rewriting or losing p
   const before = readFileSync(f.db); f.workspace.init();
   expect(readFileSync(f.db)).toEqual(before); expect(f.workspace.listProjects()).toEqual([project]);
   expect(existsSync(join(f.root,".env"))).toBe(true);
+});
+
+function userVersion(path: string): number {
+  const db = new Database(path, { readonly: true });
+  try { return (db.query("PRAGMA user_version").get() as { user_version: number }).user_version; }
+  finally { db.close(); }
+}
+
+test("init on a folder with no database leaves PRAGMA user_version at 11 and creates no .bak file", () => {
+  const f = fixture();
+  f.workspace.init();
+  expect(userVersion(f.db)).toBe(11);
+  expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
+});
+
+test("OWNER GUARANTEE: an existing populated database below level 11 passes through init() unchanged", () => {
+  const f = fixture();
+  const store = new MemoryStore(f.db);
+  const a = store.createProject("Alpha"); const b = store.createProject("Beta");
+  store.save({ projectId: a.projectId, title: "One", content: "Project memory", type: "fact" });
+  store.save({ projectId: b.projectId, title: "Two", content: "Another project memory", type: "decision" });
+  store.save({ scope: "shared", projectId: null, title: "Three", content: "Shared memory", type: "preference" });
+  store.close();
+  const versionBefore = userVersion(f.db);
+  expect(versionBefore).toBeLessThan(11);
+  const fingerprint = () => {
+    const db = new Database(f.db, { readonly: true });
+    try { return db.query("SELECT id,version,title,content FROM memories ORDER BY id").all(); }
+    finally { db.close(); }
+  };
+  const rowsBefore = fingerprint();
+
+  f.workspace.init();
+
+  expect(userVersion(f.db)).toBe(versionBefore);
+  expect(fingerprint()).toEqual(rowsBefore);
+  expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
+});
+
+test("OWNER GUARANTEE: a configured 1.6.0 database at level 10 passes through init() twice untouched", () => {
+  const f = fixture();
+  mkdirSync(f.root, { mode: 0o700 });
+  copyFileSync(join(import.meta.dir, "../../tests/fixtures/v1.6.0/schema-10.db"), f.db);
+  const rows = () => {
+    const db = new Database(f.db, { readonly: true });
+    try { return db.query("SELECT id,scope,version,title,content,state FROM memories ORDER BY id").all(); }
+    finally { db.close(); }
+  };
+  const before = rows();
+  expect(before.length).toBeGreaterThan(0);
+  f.workspace.init(); // attaches the existing database and writes the config
+  f.workspace.init(); // the everyday case: config and database already there
+  expect(userVersion(f.db)).toBe(10);
+  expect(rows()).toEqual(before);
+  expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
 });
 
 test("foreign and old databases are refused before config publication", () => {
@@ -162,11 +217,16 @@ test("group operations fail cleanly and never migrate a database only to report 
 });
 
 test("enrolling the ecosystem level backs up a database that holds data and skips an empty one", () => {
-  const empty = fixture();
-  empty.workspace.init(); empty.workspace.createGroup("primero");
+  // A brand-new workspace is now born at level 11 (ecosystem already included), so it never
+  // exercises this migration. It still applies to a database that already existed below level 8;
+  // init() attaches such a database without migrating it (see the "init can attach..." test above),
+  // and only the explicit createGroup enrollment below performs the ecosystem migration.
+  const empty = fixture(); new MemoryStore(empty.db).close();
+  empty.workspace.createGroup("primero");
   expect(readdirSync(empty.root).filter(name => name.includes("pre-ecosystem"))).toEqual([]);
   const used = fixture();
-  used.workspace.createProject("Con datos"); used.workspace.createGroup("primero");
+  const usedStore = new MemoryStore(used.db); usedStore.createProject("Con datos"); usedStore.close();
+  used.workspace.createGroup("primero");
   expect(readdirSync(used.root).filter(name => name.includes("pre-ecosystem"))).toHaveLength(1);
 });
 

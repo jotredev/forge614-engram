@@ -7,6 +7,7 @@ import { MemoryWorkspace } from "../../app/workspace";
 import { parseArguments } from "./arguments";
 import { dispatch, runUpdateCommand, updateResultJson } from "./commands";
 import { procSnapshot } from "../../../tests/fixtures/proc-snapshot";
+import { legacyConfiguredWorkspace } from "../../../tests/fixtures/legacy-workspace";
 
 const directories: string[] = [];
 function workspace() {
@@ -122,15 +123,25 @@ test("init --json remains noninteractive, reports initialization status and does
   const dir = workspace();
   const result = (await run(dir, "init", "--json"));
   expect(result.code).toBe(0);
+  // A brand-new database is born with memory intelligence (schema 11), which already includes
+  // reinforcement.
   expect(JSON.parse(result.stdout)).toEqual({
     initialized: true,
     storage: "sqlite",
     postgresConfigured: false,
-    reinforcementEnabled: false,
+    reinforcementEnabled: true,
   });
   expect(result.stderr).toBe("");
   expect(existsSync(join(dir, "user", ".claude.json"))).toBe(false);
   expect(existsSync(join(dir, "user", ".codex", "config.toml"))).toBe(false);
+}, 40000);
+
+test("intelligence-enable right after init --json on a fresh folder is a no-op that reports schema 11", async () => {
+  const dir = workspace();
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const result = await run(dir, "intelligence-enable");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ enabled: true, schema: 11, migrated: false, backup: null });
 }, 40000);
 
 test("init --json rejects an unavailable PostgreSQL URL without exposing it or creating storage", async () => {
@@ -158,8 +169,10 @@ test("repeating init --json preserves an existing PostgreSQL configuration", asy
 
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", async () => {
   const dir=workspace();
-  expect((await run(dir,"init","--json")).code).toBe(0);
   const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
+  // A brand-new database is already born with reinforcement enabled (schema 11); only a
+  // pre-existing, still-configured legacy-level database can observe it being off beforehand.
+  legacyConfiguredWorkspace(config);
   const memoryWorkspace=new MemoryWorkspace(config);
   let store=memoryWorkspace.open(true);
   try { expect(store.reinforcementEnabled()).toBe(false); }
@@ -189,6 +202,10 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
 
 test("intelligence enrollment is explicit and a second run is a no-op", async () => {
   const dir=workspace();
+  const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
+  // A brand-new database is already at schema 11 (no migration to observe); only a pre-existing
+  // legacy-level database exercises an actual migration here.
+  legacyConfiguredWorkspace(config);
   const first=(await run(dir,"intelligence-enable"));
   expect(first.code).toBe(0);
   expect(JSON.parse(first.stdout)).toMatchObject({enabled:true,schema:11,migrated:true});

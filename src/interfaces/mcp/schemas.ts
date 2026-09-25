@@ -28,7 +28,7 @@ export const toolSchemas = {
       expectedVersion:z.number().int().min(1).describe(describe.expectedVersion).optional(),requestKey:text(300).describe(describe.requestKey).optional(),
       short:text(300).describe(describe.short).optional(),supersedes:id.describe(describe.supersedes).optional(),
       affects:z.array(text(64)).min(1).max(20).describe(describe.affects).optional(),
-      sessionId:sessionId.optional(),sessionProjectId:id.optional(),
+      sessionId:sessionId.optional(),sessionProjectId:text(128).describe(describe.sessionProjectId).optional(),
     }).strict(),
   memory_history: z.object({ directory,id,scope:projectScope.optional() }).strict(),
   memory_session_start: z.object({directory,sessionId}).strict(),

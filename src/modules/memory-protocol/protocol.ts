@@ -205,6 +205,7 @@ export const FIELD_DESCRIPTIONS = Object.freeze({
   expectedVersion: "The version you read; the save fails if the memory changed since.",
   requestKey: "Stable key of one logical save; reuse it to retry safely.",
   sessionId: "Stable id of this conversation: start it with memory_session_start and pass it on every save.",
+  sessionProjectId: "Only with scope shared and a sessionId: the projectId that memory_session_start returned.",
   query: "Natural-language words to look for.",
   id: "Memory id returned by search, save or context.",
   summary: "Live summary of the session; update it after each important step, not only at the end.",

@@ -44,8 +44,10 @@ const T = 60_000;
 test("group-create, group-list and group-rename speak the machine contract with schemaVersion", async () => {
   const engram = await machine();
   const created = await engram.ok("group-create", "--name", "mi-tienda");
-  // Creating the first group upgrades the (still empty) base, and the result says so.
-  expect(created).toEqual({ schemaVersion: 1, group: { id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "mi-tienda", createdAt: expect.any(String) }, notices: [expect.objectContaining({ code: "DATABASE_MIGRATED" })] });
+  // A brand-new base is now born already at the ecosystem-and-intelligence level (schema 11),
+  // so creating the first group never migrates it: no notices field at all (an empty array is
+  // never serialized).
+  expect(created).toEqual({ schemaVersion: 1, group: { id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "mi-tienda", createdAt: expect.any(String) } });
   expect(await engram.ok("group-list")).toEqual({ schemaVersion: 1, groups: [{ ...created.group, projects: [] }] });
   const renamed = await engram.ok("group-rename", "--group", "mi-tienda", "--name", "tienda-2");
   expect(renamed).toMatchObject({ schemaVersion: 1, group: { id: created.group.id, name: "tienda-2" } });
@@ -96,7 +98,12 @@ test("a node file that declares ecosystem forge614 binds the fixed group, writes
   const group = bound.project.group;
   expect(group.id).toMatch(/^[0-9a-f-]{36}$/);
   expect(readIdentity(repository)).toEqual({ schemaVersion: 1, project: { id: bound.project.projectId, name: expect.any(String) }, ecosystem: group });
-  await engram.ok("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Fuente de verdad", "--content", "las actas viven en forge614-ai", "--type", "decision", "--topic", "eco/source");
+  // The ecosystem board now requires (memory intelligence, born with a brand-new base) an
+  // allowed type plus at least two affected member projects: bind a second project to the group.
+  const repositoryName = readIdentity(repository).project.name as string;
+  const sibling = await engram.ok("project-create", "--name", "forge614-sibling");
+  await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "forge614");
+  await engram.ok("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Fuente de verdad", "--content", "las actas viven en forge614-ai", "--type", "decision", "--topic", "eco/source", "--affects", `${repositoryName},forge614-sibling`);
   const after = await engram.ok("startup-context", "--directory", repository, "--json");
   expect(after.ecosystem).toMatchObject({ status: "member", group });
   expect(after.ecosystem.context.recent.map((row: any) => row.title)).toEqual(["Fuente de verdad"]);
@@ -207,7 +214,9 @@ test("when the local binding and the file disagree the file wins, the event is r
   const digest = sha(identityPath(repository));
   const context = await engram.ok("startup-context", "--directory", repository, "--json");
   expect(context.project).toMatchObject({ projectId: declared, source: "file" });
-  expect(context.project.notices.map((item: any) => item.code)).toEqual(["DATABASE_MIGRATED", "PROJECT_REBOUND_FROM_FILE"]);
+  // A brand-new base is already at the ecosystem-and-intelligence level: rebinding from the file
+  // is the only notice, with no migration ahead of it.
+  expect(context.project.notices.map((item: any) => item.code)).toEqual(["PROJECT_REBOUND_FROM_FILE"]);
   expect(sha(identityPath(repository))).toBe(digest);
   const db = new Database(engram.database, { readonly: true });
   try { expect(db.query("SELECT previousProjectId FROM identity_events WHERE action='PROJECT_REBOUND_FROM_FILE'").all()).toEqual([{ previousProjectId: local.projectId }]); }
@@ -248,9 +257,14 @@ test("a repeated topic key resolves project over ecosystem over shared", async (
   const { project } = await engram.ok("init", "--json", "--directory", repository);
   await engram.ok("group-create", "--name", "tienda");
   await engram.ok("group-bind", "--project-id", project.projectId, "--group", "tienda");
+  // The ecosystem board now requires at least two affected member projects (memory
+  // intelligence, born with a brand-new base): bind a second one to the group.
+  const repositoryName = readIdentity(repository).project.name as string;
+  const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
+  await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
   const save = (scope: string[], content: string) => engram.ok("save", ...scope, "--title", "Deploy", "--content", content, "--type", "procedure", "--topic", "deploy");
   const shared = await save(["--scope", "shared"], "compartida despliegue");
-  const ecosystem = await save(["--scope", "ecosystem", "--group", "tienda"], "ecosistema despliegue");
+  const ecosystem = await save(["--scope", "ecosystem", "--group", "tienda", "--affects", `${repositoryName},tienda-sibling`], "ecosistema despliegue");
   const titles = async () => (await engram.ok("search", "--project-id", project.projectId, "--scope", "all", "--query", "despliegue")).map((result: any) => `${result.memory.scope}`);
   expect(await titles()).toEqual(["ecosystem"]);
   const mine = await save(["--project-id", project.projectId], "proyecto despliegue");
@@ -265,7 +279,13 @@ test("a repeated topic key resolves project over ecosystem over shared", async (
 test("save, get, history, search and context accept --scope ecosystem --group and refuse inconsistent flags", async () => {
   const engram = await machine();
   const group = (await engram.ok("group-create", "--name", "tienda")).group;
-  const saved = await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "usa kebab-case", "--type", "decision", "--topic", "estilo");
+  // The ecosystem board now requires at least two affected member projects (memory
+  // intelligence, born with a brand-new base).
+  const a = await engram.ok("project-create", "--name", "tienda-a");
+  const b = await engram.ok("project-create", "--name", "tienda-b");
+  await engram.ok("group-bind", "--project-id", a.projectId, "--group", "tienda");
+  await engram.ok("group-bind", "--project-id", b.projectId, "--group", "tienda");
+  const saved = await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "usa kebab-case", "--type", "decision", "--topic", "estilo", "--affects", "tienda-a,tienda-b");
   expect(await engram.ok("get", "--scope", "ecosystem", "--group", group.id, "--id", saved.id)).toMatchObject({ id: saved.id, scope: "ecosystem", groupId: group.id });
   expect((await engram.ok("get", "--scope", "ecosystem", "--group", "tienda", "--id", saved.id, "--version", "1")).memory.title).toBe("Regla");
   expect(await engram.ok("history", "--scope", "ecosystem", "--group", "tienda", "--id", saved.id)).toHaveLength(1);
@@ -286,7 +306,11 @@ test("context for a project in a group also returns its ecosystem block; for a l
   const member = await engram.ok("project-create", "--name", "miembro");
   const group = (await engram.ok("group-create", "--name", "tienda")).group;
   await engram.ok("group-bind", "--project-id", member.projectId, "--group", "tienda");
-  await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "de grupo", "--type", "decision");
+  // The ecosystem board now requires at least two affected member projects (memory
+  // intelligence, born with a brand-new base).
+  const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
+  await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
+  await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "de grupo", "--type", "decision", "--affects", "miembro,tienda-sibling");
   expect(Object.keys(await engram.ok("context", "--project-id", loose.projectId))).toEqual(["format", "pinned", "recent", "summaries", "omitted", "truncated"]);
   const withGroup = await engram.ok("context", "--project-id", member.projectId);
   expect(withGroup.ecosystem).toMatchObject({ status: "member", group: { id: group.id, name: "tienda" } });
@@ -298,7 +322,13 @@ test("memory-move re-scopes a memory into a group keeping its id, history and ve
   const engram = await machine();
   const project = await engram.ok("project-create", "--name", "frontend");
   await engram.ok("group-create", "--name", "tienda");
-  const first = await engram.ok("save", "--project-id", project.projectId, "--title", "Contrato", "--content", "v1", "--type", "decision", "--topic", "api");
+  // The ecosystem board now requires at least two affected member projects (memory
+  // intelligence, born with a brand-new base): bind the project and a sibling, and record the
+  // affected projects on the memory before it moves (the move itself reuses that metadata).
+  const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
+  await engram.ok("group-bind", "--project-id", project.projectId, "--group", "tienda");
+  await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
+  const first = await engram.ok("save", "--project-id", project.projectId, "--title", "Contrato", "--content", "v1", "--type", "decision", "--topic", "api", "--affects", "frontend,tienda-sibling");
   await engram.ok("save", "--project-id", project.projectId, "--title", "Contrato", "--content", "v2", "--type", "decision", "--topic", "api", "--expected-version", "1");
   const moved = await engram.ok("memory-move", "--id", first.id, "--project-id", project.projectId, "--to-scope", "ecosystem", "--group", "tienda");
   expect(moved).toMatchObject({ schemaVersion: 1, from: { scope: "project", projectId: project.projectId }, to: { scope: "ecosystem" }, memory: { id: first.id, scope: "ecosystem", projectId: null, version: 3, content: "v2", state: "active" } });
@@ -310,12 +340,13 @@ test("memory-move re-scopes a memory into a group keeping its id, history and ve
   try { expect(db.query("SELECT action,groupId IS NOT NULL AS g FROM identity_events WHERE action='MEMORY_MOVED'").all()).toEqual([{ action: "MEMORY_MOVED", g: 1 }]); }
   finally { db.close(); }
   // Nothing is copied or deleted silently: a topic already taken in the group stops the move.
-  const other = await engram.ok("save", "--project-id", project.projectId, "--title", "Otro", "--content", "c", "--type", "fact", "--topic", "api");
+  // (type decision, not fact: the ecosystem board no longer allows fact outside the status note.)
+  const other = await engram.ok("save", "--project-id", project.projectId, "--title", "Otro", "--content", "c", "--type", "decision", "--topic", "api", "--affects", "frontend,tienda-sibling");
   const conflict = await engram.fail("memory-move", "--id", other.id, "--project-id", project.projectId, "--to-scope", "ecosystem", "--group", "tienda");
   expect(conflict).toEqual({ schemaVersion: 1, code: "TOPIC_CONFLICT", error: expect.any(String) });
   expect(await engram.ok("get", "--project-id", project.projectId, "--id", other.id)).toMatchObject({ scope: "project" });
   // Shared memories can move too.
-  const shared = await engram.ok("save", "--scope", "shared", "--title", "Global", "--content", "g", "--type", "fact", "--topic", "g");
+  const shared = await engram.ok("save", "--scope", "shared", "--title", "Global", "--content", "g", "--type", "decision", "--topic", "g", "--affects", "frontend,tienda-sibling");
   expect((await engram.ok("memory-move", "--id", shared.id, "--scope", "shared", "--to-scope", "ecosystem", "--group", "tienda")).from).toEqual({ scope: "shared", projectId: null });
 }, T);
 
@@ -415,8 +446,11 @@ test("group-source-set, memory-demote and save --affects speak the machine contr
   const node = await engram.ok("project-create", "--name", "forge614-engram");
   await engram.ok("group-create", "--name", "forge614");
   for (const project of [ai, node]) await engram.ok("group-bind", "--project-id", project.projectId, "--group", "forge614");
-  expect(await engram.fail("group-source-set", "--group", "forge614", "--project-id", ai.projectId)).toMatchObject({ schemaVersion: 1, code: "INTELLIGENCE_REQUIRED" });
-  await engram.ok("intelligence-enable");
+  // A brand-new base is already born at level 11 (memory intelligence included), so
+  // intelligence-enable is a no-op here; the INTELLIGENCE_REQUIRED gate itself (group-source-set
+  // refusing a pre-intelligence database) is covered directly in board.test.ts and
+  // meta-save.test.ts against a database built at a lower level.
+  expect(await engram.ok("intelligence-enable")).toMatchObject({ enabled: true, migrated: false });
   expect(await engram.ok("group-source-set", "--group", "forge614", "--project-id", ai.projectId))
     .toEqual({ schemaVersion: 1, source: { groupId: expect.any(String), projectId: ai.projectId, setAt: expect.any(String) } });
   expect(await engram.fail("save", "--scope", "ecosystem", "--group", "forge614", "--title", "Hecho", "--content", "libre", "--type", "fact"))

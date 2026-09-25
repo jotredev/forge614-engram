@@ -168,7 +168,7 @@ test("tools/list publishes the manual's field descriptions for memory_save and m
     const tools=(await h.client.listTools()).tools;
     const fields=(name:string)=>tools.find(tool=>tool.name===name)!.inputSchema.properties as Record<string,{description?:string}>;
     const save=fields("memory_save");
-    for (const field of ["directory","scope","globalIntent","groupIntent","title","content","type","topicKey","pinned","expectedVersion","requestKey","short","supersedes","affects","sessionId"] as const) {
+    for (const field of ["directory","scope","globalIntent","groupIntent","title","content","type","topicKey","pinned","expectedVersion","requestKey","short","supersedes","affects","sessionId","sessionProjectId"] as const) {
       expect(save[field]?.description).toBe(FIELD_DESCRIPTIONS[field]);
     }
     expect(fields("memory_search").query?.description).toBe(FIELD_DESCRIPTIONS.query);
