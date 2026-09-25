@@ -48,13 +48,15 @@ Since 1.7.0. In the CLI these codes return `{schemaVersion,code,error}` on stder
 - `SECRET_REJECTED`: the title, content, topic, short version or an affected project (`affects`) looks like it contains a secret (the message names its kind, never the value). Remove the value and save only where it lives, for example `password: <redacted>` or the environment variable name. Applies at any database level.
 - `INTELLIGENCE_REQUIRED`: `short`, `supersedes` or `affects` were sent and the database does not have memory intelligence yet. Enable it with `forge614-engram intelligence-enable` (it backs up before migrating) or save without those fields.
 - `SUPERSEDES_NOT_FOUND`: `supersedes` points to a memory that does not exist, is archived, or belongs to another scope or project. Find the right id with `memory_search`.
-- `AMBIGUOUS_SESSION`: with schema 11 this no longer comes from stale open sessions (sessions marked as interrupted or idle for more than 6 hours are ignored); if it still appears, two sessions of the same folder are genuinely alive: pass `sessionId`.
+- `AMBIGUOUS_SESSION`: with schema 11 this no longer comes from stale open sessions (sessions idle for more than 6 hours, or still carrying a mark left by a database that ran 1.7.0, are ignored for inference); if it still appears, two sessions of the same folder are genuinely live and open at once: pass `sessionId`.
 - `ECOSYSTEM_TYPE_NOT_ALLOWED`: the memory for the ecosystem board is not `decision`, `procedure`, or `warning` (the status note also admits `fact`). The board is for rules and contracts: change the type or leave the memory in the project.
 - `ECOSYSTEM_AFFECTS_REQUIRED`: the effective `affects` (the ones sent or, if none, the ones already stored) are fewer than 2. Send at least 2 names of projects in the group (CLI: `--affects project-a,project-b`); when moving with `memory-move`, the memory must already have them stored.
 - `ECOSYSTEM_AFFECTS_UNKNOWN`: some name in `affects` is not the exact name of a project that is a member of the group; the message names the unknown ones and the valid ones. Fix the names.
 - `ECOSYSTEM_BOARD_FULL`: the board already has 40 active memories (the status note and session summaries do not count); the message carries the count and the titles. Consolidate memories or demote one with `memory-demote`. It only appears when a new memory is added, never when updating an existing one.
 - `ECOSYSTEM_STATUS_FORBIDDEN`: the status note (topic `ecosystem/estado-actual`) is written only by the group's source project, which must still be a member; a memory with that topic cannot be moved into a group either. Set the source project with `group-source-set` and save through MCP or the SDK with `fromProjectId`; through the CLI it always answers this code.
 - `ECOSYSTEM_STATUS_TOO_LONG`: the status note content exceeds 600 characters. Shorten it.
+
+**Another session appears as left open (`previous`) while it is still working.** It has gone more than 30 minutes without going through Engram (starting or replaying, saving or confirming with a runtime session, updating its summary, or closing); chat messages do not count. It is not closed, and it stops appearing as soon as it saves something or updates its summary (since 1.7.1).
 
 ## AI integrations
 

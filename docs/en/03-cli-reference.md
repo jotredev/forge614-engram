@@ -136,7 +136,7 @@ context --scope ecosystem --group <name|id> [--compact] [--max-bytes <1024..6553
 
 `context --project-id` for a project that belongs to a group adds an `ecosystem` key to the result (`{ "status": "member", "group": { "id", "name" }, "context": <ContextResult> }`) with its own byte ceiling; for any other project the result is unchanged.
 
-With schema 11, `session-start` adds `previous` (`{ sessionId, interruptedAt, summary }`) when the call creates the session and the project has an interrupted previous session; a repeated start with the same `session-id` never adds it.
+With schema 11, `session-start` adds `previous` (`{ sessionId, interruptedAt, summary }`) when the call creates the session and the project has a runtime session left open (no activity for more than 30 minutes), and `parallel` (`[{ sessionId, lastActivityAt }]`, up to 3, most recent first) when other open sessions of the project had activity in the last 30 minutes; both only when the call creates the session, and a repeated start with the same `session-id` never adds either.
 
 Run `forge614-engram help` for the executable's exact current syntax.
 

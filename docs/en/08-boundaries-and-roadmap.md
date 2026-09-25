@@ -37,6 +37,14 @@ Limits of this delivery: `ecosystem` memories are not replicated yet: the Postgr
 
 Limit of this delivery: group replication (format 4) will arrive in 1.8.0.
 
+## Capabilities added in v1.7.1
+
+- Sessions open in parallel by time: `parallel` reports the project's other open sessions with activity in the last 30 minutes; `previous` is now reported only once a session has gone more than 30 minutes without activity, and nobody is marked at session start any more.
+- Startup block text: the "Previous session" section now says a session "was left open".
+- Protocol v4 manual: it now asks the agent to say another session is open now (`parallel`) as distinct from one left open (`previous`), and to tell the person why a similar save is kept apart.
+
+Limits of this delivery: (1) a session that works more than 30 minutes without saving anything through Engram will look "left open" from another session; (2) after compaction, if the own session has had no Engram activity for more than 30 minutes, the startup block may name it as "left open" (it is data, and repeating `memory_session_start` does not return `previous`).
+
 ## Explicit non-goals
 
 - No Engram TUI or full-screen terminal control center.
