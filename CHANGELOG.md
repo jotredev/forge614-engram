@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.1
+
+Sesiones abiertas en paralelo se avisan según la hora, no al abrir: `previous` solo tras 30 minutos sin actividad, `parallel` nuevo, y el manual v4 pide explicar por qué se deja aparte un parecido.
+
+- **Sesiones en paralelo según la hora:** con el esquema 11, abrir una sesión runtime ya no marca a nadie (`startRuntimeSession` deja de interrumpir a las demás; las marcas `interruptedAt` que dejó 1.7.0 se ignoran por completo al clasificar). `store.previousInterrupted(projectId)` reporta como `previous` la sesión abierta del proyecto cuya última actividad quedó estrictamente antes de ahora menos 30 minutos (`PARALLEL_MINUTES`), con `interruptedAt` igual a esa última actividad. Campo y método nuevos: `store.parallelSessions(projectId, sessionId)` devuelve hasta 3 `ParallelSession { sessionId, lastActivityAt }`, la más reciente primero, con las otras sesiones abiertas con actividad en los últimos 30 minutos (a los 30:00 exactos todavía cuenta como paralela). `memory_session_start` (MCP) y `session-start` (CLI) añaden `parallel` después de `previous`, solo con el esquema 11, solo cuando la llamada crea la sesión y solo si hay alguna. La inferencia de sesión no cambia: dos sesiones vivas en la misma carpeta y un guardado sin `sessionId` siguen devolviendo `AMBIGUOUS_SESSION`.
+- **Bloque de arranque:** la sección `## Previous session (interrupted)` cambia su texto a «Session \<id\> was left open; its last activity was at \<fecha ISO\>; …»; sigue sin listar sesiones en paralelo.
+- **Manual v4:** la regla 3 ahora dice «If it returns parallel, say another session is open now; if previous, say it was left open and when, and offer to continue from its summary, without inventing what it did.»; la regla 5 pasa a «keep yours apart telling the person why,». Medido: `instructions` 2 326 → 2 381 caracteres (tope 2 500) y `mcpInstructions` 1 937 → 1 992 caracteres (tope menos de 2 000). Las versiones 1 a 3 quedan byte a byte iguales; `startup-context --format 1` no cambia. Tipo nuevo del SDK: `ParallelSession`.
+- **Límites conocidos:** (1) una sesión que trabaja más de 30 minutos sin guardar nada en Engram se verá «sin cerrar» desde otra sesión; (2) tras compactar, si la propia sesión lleva más de 30 minutos sin actividad en Engram, el bloque puede nombrarla como «left open» (es dato, y `memory_session_start` al repetirse no devuelve `previous`).
+
 ## 1.7.0
 
 Memoria inteligente: esquema 11, búsqueda híbrida, parecidos y secretos al guardar, sesiones interrumpidas, reglas del tablero, bloque de arranque y protocolo v4.
