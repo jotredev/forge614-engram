@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,17 +27,27 @@ test("explicit binding and session save preserve the selected project and canoni
   } finally { store.close(); rmSync(directory,{recursive:true,force:true}); }
 });
 
-test("a new session reports the project's previously interrupted session only once intelligence is enabled", () => {
+test("a new session reports the project's previous or parallel sessions only once intelligence is enabled", () => {
   const directory = mkdtempSync(join(tmpdir(),"engram-context-previous-"));
   const store = new MemoryStore(":memory:");
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
   try {
     store.enableSessions();
     const first = startProjectSessionWithNotices(store,directory,"first");
     expect(first).not.toHaveProperty("previous");
+    expect(first).not.toHaveProperty("parallel");
     store.enableIntelligence();
+    // Started right after "first": both are open and recent, so "second" reports it as parallel, not previous.
     const second = startProjectSessionWithNotices(store,directory,"second");
-    expect(second.previous).toEqual({sessionId:"first",interruptedAt:expect.any(String),summary:null});
+    expect(second).not.toHaveProperty("previous");
+    expect(second.parallel).toEqual([{sessionId:"first",lastActivityAt:expect.any(String)}]);
     const replay = startProjectSessionWithNotices(store,directory,"second");
     expect(replay).not.toHaveProperty("previous");
-  } finally { store.close(); rmSync(directory,{recursive:true,force:true}); }
+    expect(replay).not.toHaveProperty("parallel");
+    // Once "first"'s activity is over PARALLEL_MINUTES old, a fresh session reports it as previous instead.
+    setSystemTime(new Date("2026-01-01T00:31:00.000Z"));
+    const third = startProjectSessionWithNotices(store,directory,"third");
+    expect(third.previous).toEqual({sessionId:"first",interruptedAt:expect.any(String),summary:null});
+    expect(third).not.toHaveProperty("parallel");
+  } finally { setSystemTime(); store.close(); rmSync(directory,{recursive:true,force:true}); }
 });

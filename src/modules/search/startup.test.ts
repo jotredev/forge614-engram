@@ -21,7 +21,7 @@ test("sections come in order, essentials prefer the short version, one line each
   });
   const [, essentials, previous, index] = block.text.split("\n\n");
   expect(essentials).toBe(`## Essentials (pinned)\n- Every command starts with rtk. · personal · ${item(1).id}\n- Title 2 [verify] · board · ${item(2).id}`);
-  expect(previous).toBe(`## Previous session (interrupted)\nSession s-1 was interrupted at 2026-01-01T06:00:00.000Z; its last summary (${item(9).id} v3):\nGoal:\nT6\nNext steps:`);
+  expect(previous).toBe(`## Previous session (interrupted)\nSession s-1 was left open; its last activity was at 2026-01-01T06:00:00.000Z; its last summary (${item(9).id} v3):\nGoal:\nT6\nNext steps:`);
   expect(index).toBe(`## Index (titles only: open with memory_get)\n- Title 3 · project · ${item(3).id}`);
   expect(block.sections).toEqual({ essentials: points(essentials!), previous: points(previous!), index: points(index!) });
   expect(block.omitted).toBe(0);
@@ -50,7 +50,7 @@ test("a previous session without a summary says so, and a list that cannot fit a
     essentials: [], essentialsTotal: 0,
     previous: { sessionId: "s", interruptedAt: "2026-01-01T00:00:00.000Z", summary: null }, index: [], indexTotal: 0,
   });
-  expect(block.text.split("\n\n")[1]).toBe("## Previous session (interrupted)\nSession s was interrupted at 2026-01-01T00:00:00.000Z; it saved no summary.");
+  expect(block.text.split("\n\n")[1]).toBe("## Previous session (interrupted)\nSession s was left open; its last activity was at 2026-01-01T00:00:00.000Z; it saved no summary.");
   expect(block.sections.essentials).toBe(0);
   expect(block.sections.index).toBe(0);
 });

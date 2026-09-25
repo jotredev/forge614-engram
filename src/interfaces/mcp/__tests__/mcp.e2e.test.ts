@@ -208,15 +208,9 @@ test("MCP accepts the SDK session identifier boundary and reports ambiguous assi
   expect((await call(client,"memory_session_start",{sessionId:"x".repeat(201)})).isError).toBe(true);
   expect((await call(client,"memory_session_start",{sessionId:" chat"})).isError).toBe(true);
   expect((await call(client,"memory_session_start",{sessionId:"chat-two"})).isError).not.toBe(true);
-  // At level 11, starting chat-two marks every other open runtime session (longId) as
-  // interrupted; session inference ignores interrupted sessions, so only chat-two remains a
-  // candidate and this save is not ambiguous.
-  const solo=await call(client,"memory_save",{title:"Not ambiguous yet",content:"Only chat-two is live",type:"fact"});
-  expect(solo.isError).not.toBe(true);
-  expect(data(solo)).toMatchObject({sessionId:"chat-two",sessionSource:"inferred"});
-  // Explicit activity on longId clears its interruption mark (touchSession), so both runtime
-  // sessions are open and live again: assistant inference is genuinely ambiguous once more.
-  expect((await call(client,"memory_save",{title:"Revive",content:"Touch longId",type:"fact",sessionId:longId})).isError).not.toBe(true);
+  // 1.7.1: opening chat-two marks nobody (starting a session no longer interrupts other open
+  // sessions). longId and chat-two are both open runtime sessions live in the same folder, so
+  // a save with no explicit sessionId is genuinely ambiguous between the two right away.
   const result=await call(client,"memory_save",{title:"Ambiguous",content:"Two chats",type:"fact"});
   expect(result.isError).toBe(true);expect(data(result)).toMatchObject({code:"AMBIGUOUS_SESSION"});
 }, 40000);

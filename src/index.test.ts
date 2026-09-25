@@ -30,13 +30,15 @@ const ECOSYSTEM_STORE_METHODS = [
 ];
 // Added in 1.7.0 with memory intelligence. The lists above only ever grow.
 const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted", "setGroupSource", "groupSource", "demoteMemory", "startupBlock"];
+// Added in 1.7.1: the parallel-session notice ("notice by time" instead of marking at start). The lists above only ever grow.
+const PARALLEL_SESSIONS_STORE_METHODS = ["parallelSessions"];
 
 describe("public SDK contract", () => {
   test("keeps literal runtime exports and public store methods", () => {
     expect(Object.keys(sdk).sort()).toEqual(RUNTIME_EXPORTS.sort());
     expect(Object.getOwnPropertyNames(sdk.MemoryStore.prototype)
       .filter(name => name !== "constructor").sort())
-      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS, ...INTELLIGENCE_STORE_METHODS].sort());
+      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS, ...INTELLIGENCE_STORE_METHODS, ...PARALLEL_SESSIONS_STORE_METHODS].sort());
   });
 
   test("exports the nonvisual initialization API needed by Forge614 Shell", () => {

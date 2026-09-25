@@ -17,8 +17,12 @@ type Row = { id: string; scope: StartupItem["scope"]; title: string };
  * Essentials: active pinned memories (shared, then the group's board with its status note first, then the project).
  * Index: active unpinned memories of the board and the project, alternating one of each (newest first within each),
  * so neither drawer can crowd the other out; session summaries are left out.
- * At level 11 superseded memories are left out, `short` replaces the title in essentials and an interrupted
- * previous session is included; below level 11 the block is built from the same sources without those extras.
+ * At level 11 superseded memories are left out, `short` replaces the title in essentials and the previous
+ * session left open for PARALLEL_MINUTES or more is included; below level 11 the block is built from the
+ * same sources without those extras.
+ * The block never lists sessions open right now in parallel: it is built before the new session exists (there
+ * is nothing yet to compare activity against) and is injected again after compaction, where a parallel line
+ * would just name the current session itself; memory_session_start reports parallel sessions instead (1.7.1).
  */
 export function startupBlock(db: Database, projectId: string | null, now: string = new Date().toISOString()): StartupBlock {
   const project = projectId === null ? null : projectIdentity(projectId);

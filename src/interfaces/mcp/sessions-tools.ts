@@ -11,7 +11,7 @@ export function registerSessionTools(tools:ToolContext):void {
     inputSchema:toolSchemas.memory_session_start,
   }, safely(async ({directory,sessionId}) => {
     const started=startProjectSessionWithNotices(memoryStore(),await projectDirectory(directory),sessionId);
-    return {...started.session,...(started.previous?{previous:started.previous}:{}),...(started.notices.length?{notices:started.notices}:{})};
+    return {...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{})};
   }));
 
   register("memory_session_end", {

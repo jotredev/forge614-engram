@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { withDatabase } from "../__test-support__/fixtures";
 import { setGroupSource } from "./board";
 import { bindProjectToGroup, createGroup } from "./ecosystem-groups";
@@ -11,7 +11,7 @@ const section = (text: string, heading: string) => text.split("\n\n").find(part 
 const lines = (text: string, heading: string) => section(text, heading).split("\n").slice(1);
 const fields = { goal: "Build T6", instructions: "", discoveries: "", accomplishments: "", nextSteps: "", files: [] };
 
-test("at level 11 the block orders essentials, uses short versions, reports the interrupted session and indexes only live titles", () => withDatabase(db => {
+test("at level 11 the block orders essentials, uses short versions, reports the previous session left open and indexes only live titles", () => withDatabase(db => { try {
   enableIntelligence(db);
   const ai = createProject(db, "forge614-ai").projectId, engram = createProject(db, "forge614-engram").projectId;
   const other = createProject(db, "other").projectId, group = createGroup(db, "forge614").id;
@@ -30,8 +30,13 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
   save(db, { scope: "project", projectId: other, title: "Other project note", content: "Elsewhere", type: "fact" });
   // Saves in the same millisecond tie on updated_at (then id decides): make the project order explicit.
   db.run("UPDATE memories SET updated_at=? WHERE id=?", ["2026-01-01T00:00:00.000Z", language.id]);
+  // The clock is frozen only from here: frozen earlier, every save above would tie on updated_at.
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
   startSession(db, ai, "first", "/ai");
   const summary = saveSessionSummary(db, ai, "first", fields, { requestKey: "summary-1" });
+  // "first" must be left open for over PARALLEL_MINUTES before starting "second" for previousInterrupted
+  // to report it (1.7.1: nobody is marked at session start any more).
+  setSystemTime(new Date("2026-01-01T00:31:00.000Z"));
   startSession(db, ai, "second", "/ai");
 
   const block = startupBlock(db, ai);
@@ -43,7 +48,7 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
     `- Project pinned · project · ${pinned.id}`,
   ]);
   expect(section(block.text, "## Previous session")).toStartWith(
-    `## Previous session (interrupted)\nSession first was interrupted at `);
+    `## Previous session (interrupted)\nSession first was left open; its last activity was at `);
   expect(section(block.text, "## Previous session")).toContain(`its last summary (${summary.memory.id} v${summary.memory.version}):\n`);
   // The board note is the oldest memory, yet it leads the index: board and project titles alternate.
   expect(lines(block.text, "## Index")).toEqual([
@@ -54,7 +59,21 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
   expect(block.text.split("\n\n")).toHaveLength(4);
   expect(block).toMatchObject({ format: 2, omitted: 0 });
   expect(block.chars).toBe(Array.from(block.text).length);
-}));
+} finally { setSystemTime(); } }));
+
+test("a session left open less than PARALLEL_MINUTES does not produce a Previous section", () => withDatabase(db => { setSystemTime(new Date("2026-01-01T00:00:00.000Z")); try {
+  enableIntelligence(db);
+  const project = createProject(db, "P").projectId;
+  save(db, { scope: "project", projectId: project, title: "Project note", content: "Body", type: "fact" });
+  startSession(db, project, "first", "/p");
+  setSystemTime(new Date("2026-01-01T00:05:00.000Z")); // only 5 minutes idle: still parallel, not previous
+  startSession(db, project, "second", "/p");
+
+  const block = startupBlock(db, project);
+
+  expect(section(block.text, "## Previous session")).toBe("");
+  expect(block.sections.previous).toBe(0);
+} finally { setSystemTime(); } }));
 
 test("below level 11 the block uses titles, has no previous session and still reads the project and shared drawers", () => withDatabase(db => {
   enableSearchReinforcement(db);

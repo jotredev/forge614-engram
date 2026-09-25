@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -176,8 +176,9 @@ test("project.source tells whether the identity came from the file or from the r
   } finally { store.close(); }
 });
 
-test("format 2 fits a base shaped like the owner's (107 memories) in 5000 characters, with the occupancy header and the interrupted session", () => {
+test("format 2 fits a base shaped like the owner's (107 memories) in 5000 characters, with the occupancy header and the previous session left open", () => {
   const store = new MemoryStore(":memory:");
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
   try {
     store.enableProjectBindings();
     const project = store.createProject("forge614-ai");
@@ -199,6 +200,9 @@ test("format 2 fits a base shaped like the owner's (107 memories) in 5000 charac
     store.startSession(project.projectId, "first", directory);
     store.saveSessionSummary(project.projectId, "first",
       { goal: "Prepare T6", instructions: "", discoveries: "", accomplishments: "", nextSteps: "Write the plan", files: [] }, { requestKey: "summary" });
+    // "first" must be left open for over PARALLEL_MINUTES before "second" starts for previousInterrupted
+    // to report it (1.7.1: nobody is marked at session start any more).
+    setSystemTime(new Date("2026-01-01T00:31:00.000Z"));
     store.startSession(project.projectId, "second", directory);
 
     const block = readStartupBlock(store, directory);
@@ -209,12 +213,33 @@ test("format 2 fits a base shaped like the owner's (107 memories) in 5000 charac
     expect(block.text.split("\n")[1]).toBe(`${block.chars}/5000 chars · ${block.omitted} titles did not fit: find them with memory_search.`);
     expect(block.omitted).toBeGreaterThan(0);
     expect(block.text).toContain("- Short rule 0 · personal · ");
-    expect(block.text).toContain("## Previous session (interrupted)\nSession first was interrupted at ");
+    expect(block.text).toContain("## Previous session (interrupted)\nSession first was left open; its last activity was at ");
     expect(block.text).toContain("Goal:\nPrepare T6\n");
     expect(block.text).toContain("- Board rule · board · ");
     expect(block.text).not.toContain("ccccc");
     expect(readStartupContext(store, directory).format).toBe(1);
-  } finally { store.close(); }
+  } finally { setSystemTime(); store.close(); }
+});
+
+test("a session left open less than PARALLEL_MINUTES does not produce a Previous section in format 2", () => {
+  const store = new MemoryStore(":memory:");
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+  try {
+    store.enableProjectBindings();
+    const project = store.createProject("Recent");
+    const directory = temporary();
+    bindProjectContext(store, directory, project.projectId);
+    store.enableIntelligence();
+    store.save({ scope: "project", projectId: project.projectId, title: "Project note", content: "Body", type: "fact" });
+    store.startSession(project.projectId, "first", directory);
+    setSystemTime(new Date("2026-01-01T00:05:00.000Z")); // only 5 minutes idle: still parallel, not previous
+    store.startSession(project.projectId, "second", directory);
+
+    const block = readStartupBlock(store, directory);
+
+    expect(block.text).not.toContain("## Previous session");
+    expect(block.sections.previous).toBe(0);
+  } finally { setSystemTime(); store.close(); }
 });
 
 test("format 2 never writes: a readonly connection renders the block for a bound and an unbound directory", () => {

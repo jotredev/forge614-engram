@@ -99,6 +99,21 @@ test("version 4 is one master manual: the MCP output keeps whole rules of the co
   expect(memoryProtocol().version).toBe(1);
 });
 
+// 1.7.1: the session rule now distinguishes a parallel session from one left open, and the
+// writing rule asks for the reason when keeping a save apart from a similar one.
+test("version 4 tells previous and parallel apart, asks for a reason when keeping a save apart, and stays within both limits", () => {
+  const v4 = memoryProtocol(4);
+  const count = (text: string) => Array.from(text).length;
+  expect(v4.instructions).toContain("If it returns parallel, say another session is open now; if previous, say it was left open and when, and offer to continue from its summary, without inventing what it did.");
+  expect(v4.mcpInstructions).toContain("If it returns parallel, say another session is open now; if previous, say it was left open and when, and offer to continue from its summary, without inventing what it did.");
+  expect(v4.instructions).toContain("keep yours apart telling the person why,");
+  expect(v4.mcpInstructions).toContain("keep yours apart telling the person why,");
+  expect(count(v4.instructions)).toBe(2381);
+  expect(count(v4.mcpInstructions)).toBe(1992);
+  expect(count(v4.instructions)).toBeLessThanOrEqual(MANUAL_MAX);
+  expect(count(v4.mcpInstructions)).toBeLessThan(MCP_INSTRUCTIONS_MAX);
+});
+
 test("field descriptions are short, frozen and never name a product", () => {
   expect(Object.isFrozen(FIELD_DESCRIPTIONS)).toBe(true);
   for (const text of Object.values(FIELD_DESCRIPTIONS)) {
