@@ -37,6 +37,14 @@ Límites de esta entrega: las memorias de ámbito `ecosystem` no se replican tod
 
 Límite de esta entrega: la replicación de grupos (formato 4) llegará en 1.8.0.
 
+## Capacidades incorporadas en v1.7.1
+
+- Sesiones en paralelo según la hora: `parallel` reporta las otras sesiones abiertas del proyecto con actividad en los últimos 30 minutos; `previous` ahora solo se reporta cuando una sesión lleva más de 30 minutos sin actividad, y ya nadie queda marcado al abrir una sesión.
+- Texto del bloque de arranque: la sección «Previous session» ahora dice que una sesión «was left open» (se quedó abierta).
+- Manual del protocolo v4: ahora pide decirle a la persona que hay otra sesión abierta ahora (`parallel`), distinguiéndola de una que se quedó abierta (`previous`), y explicarle por qué un guardado parecido se deja aparte.
+
+Límites de esta entrega: (1) una sesión que trabaja más de 30 minutos sin guardar nada a través de Engram se verá «sin cerrar» desde otra sesión; (2) tras compactar, si la propia sesión lleva más de 30 minutos sin actividad en Engram, el bloque de arranque puede nombrarla como «left open» (es dato, y `memory_session_start` al repetirse no devuelve `previous`).
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.
