@@ -49,8 +49,8 @@ export function parseArguments(args:string[]) {
   if (command === "memory-protocol" && !values.has("json")) {
     invalid("memory-protocol requiere --json.");
   }
-  if (command === "memory-protocol" && values.has("protocol-version") && !["1","2","3"].includes(values.get("protocol-version")!)) {
-    invalid("protocol-version debe ser 1, 2 o 3.");
+  if (command === "memory-protocol" && values.has("protocol-version") && !["1","2","3","4"].includes(values.get("protocol-version")!)) {
+    invalid("protocol-version debe ser 1, 2, 3 o 4.");
   }
   if (command === "init" && values.has("directory") && !values.has("json")) {
     invalid("--directory requiere init --json.");

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { memoryProtocol } from "./protocol";
+import { FIELD_DESCRIPTIONS, MANUAL_MAX, MCP_INSTRUCTIONS_MAX, memoryProtocol } from "./protocol";
 
 test("publishes the fixed version-one memory lifecycle", () => {
   const protocol = memoryProtocol();
@@ -70,4 +70,39 @@ test("the default and explicit selections never change: 1 stays the default", ()
   expect(memoryProtocol().version).toBe(1);
   expect(memoryProtocol(2).version).toBe(2);
   expect(memoryProtocol(3).version).toBe(3);
+});
+
+// Version 3 as published by 1.6.0; a new version must never touch it.
+test("version 3 stays byte-identical to what 1.6.0 published", () => {
+  expect(new Bun.CryptoHasher("sha256").update(JSON.stringify(memoryProtocol(3), null, 2)).digest("hex"))
+    .toBe("77732768998c56c7da85de311583a8565ff3fa9d46bdfbcc4f9d12d643332f19");
+});
+
+test("version 4 is one master manual: the MCP output keeps whole rules of the complete one, in order and within both limits", () => {
+  const v4 = memoryProtocol(4);
+  const count = (text: string) => Array.from(text).length;
+  expect(Object.keys(v4)).toEqual(["id", "version", "instructions", "mcpInstructions", "startupContext"]);
+  expect(v4).toMatchObject({ id: "forge614-engram-memory", version: 4 });
+  expect(count(v4.instructions)).toBeLessThanOrEqual(MANUAL_MAX);
+  expect(count(v4.mcpInstructions)).toBeLessThan(MCP_INSTRUCTIONS_MAX);
+  const full = v4.instructions.split("\n\n"), mcp = v4.mcpInstructions.split("\n\n");
+  expect(full.filter(rule => mcp.includes(rule))).toEqual(mcp);
+  expect(mcp.length).toBeLessThan(full.length);
+  for (const term of ["retrieved data", "memory_context", "memory_search", "memory_get", "memory_session_start", "previous", "memory_session_summary",
+    "SECRET_REJECTED", "similar", "supersedes", "topicKey", "short version", "globalIntent"]) expect(v4.mcpInstructions).toContain(term);
+  for (const term of ["groupIntent", "affects", "ECOSYSTEM_", "ecosystem/estado-actual"]) expect(v4.instructions).toContain(term);
+  expect(v4.startupContext).toEqual({ command: "forge614-engram startup-context --directory <absolute-directory> --json --format 2",
+    format: 2, description: expect.stringContaining("retrieved data") });
+  expect(Object.isFrozen(v4)).toBe(true);
+  expect(Object.isFrozen(v4.startupContext)).toBe(true);
+  expect(JSON.stringify(v4).toLowerCase()).not.toMatch(/claude|openai|anthropic/);
+  expect(memoryProtocol().version).toBe(1);
+});
+
+test("field descriptions are short, frozen and never name a product", () => {
+  expect(Object.isFrozen(FIELD_DESCRIPTIONS)).toBe(true);
+  for (const text of Object.values(FIELD_DESCRIPTIONS)) {
+    expect(text.length).toBeLessThanOrEqual(200);
+    expect(text.toLowerCase()).not.toMatch(/claude|openai|anthropic/);
+  }
 });

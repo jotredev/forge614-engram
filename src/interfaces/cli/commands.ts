@@ -26,7 +26,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
   if (command === "init" && !values.has("json")) { await initTerminal(); return; }
   if (command === "memory-protocol") {
     const requested = values.get("protocol-version");
-    console.log(JSON.stringify(memoryProtocol(requested === "3" ? 3 : requested === "2" ? 2 : 1), null, 2));
+    console.log(JSON.stringify(memoryProtocol(requested === "4" ? 4 : requested === "3" ? 3 : requested === "2" ? 2 : 1), null, 2));
     return;
   }
   if (command === "update") {
