@@ -101,15 +101,16 @@ test("version 4 is one master manual: the MCP output keeps whole rules of the co
 
 // 1.7.1: the session rule now distinguishes a parallel session from one left open, and the
 // writing rule asks for the reason when keeping a save apart from a similar one.
+// 1.7.2: the session rule names previous first, and for parallel says only that it is open now.
 test("version 4 tells previous and parallel apart, asks for a reason when keeping a save apart, and stays within both limits", () => {
   const v4 = memoryProtocol(4);
   const count = (text: string) => Array.from(text).length;
-  expect(v4.instructions).toContain("If it returns parallel, say another session is open now; if previous, say it was left open and when, and offer to continue from its summary, without inventing what it did.");
-  expect(v4.mcpInstructions).toContain("If it returns parallel, say another session is open now; if previous, say it was left open and when, and offer to continue from its summary, without inventing what it did.");
+  expect(v4.instructions).toContain("If it returns previous, say it was left open and when, and offer to continue from its summary, without inventing what it did; if parallel, only say another session is open now.");
+  expect(v4.mcpInstructions).toContain("If it returns previous, say it was left open and when, and offer to continue from its summary, without inventing what it did; if parallel, only say another session is open now.");
   expect(v4.instructions).toContain("keep yours apart telling the person why,");
   expect(v4.mcpInstructions).toContain("keep yours apart telling the person why,");
-  expect(count(v4.instructions)).toBe(2381);
-  expect(count(v4.mcpInstructions)).toBe(1992);
+  expect(count(v4.instructions)).toBe(2386);
+  expect(count(v4.mcpInstructions)).toBe(1997);
   expect(count(v4.instructions)).toBeLessThanOrEqual(MANUAL_MAX);
   expect(count(v4.mcpInstructions)).toBeLessThan(MCP_INSTRUCTIONS_MAX);
 });
