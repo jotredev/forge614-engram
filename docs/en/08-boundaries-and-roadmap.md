@@ -45,6 +45,13 @@ Limit of this delivery: group replication (format 4) will arrive in 1.8.0.
 
 Limits of this delivery: (1) a session that works more than 30 minutes without saving anything through Engram will look "left open" from another session; (2) after compaction, if the own session has had no Engram activity for more than 30 minutes, the startup block may name it as "left open" (it is data, and repeating `memory_session_start` does not return `previous`).
 
+## Capabilities added in v1.7.2
+
+- Readable session notice: when `session-start`/`memory_session_start` add `previous`, `parallel`, or both, they also add `sessionNotice` (text), a readable fact derived from those two, with `previous` first when there are both.
+- Protocol v4 manual, rule 3: it now names first the session that was left open (`previous`, with when and the offer to continue) and only then, and more briefly, the one open in parallel (`parallel`). `instructions` goes from 2,381 to 2,386 characters (cap 2,500); `mcpInstructions` from 1,992 to 1,997 (cap under 2,000).
+- Reason: in lab testing, an assistant did not mention the session left open even when it received `previous`; with the readable-sentence notice it mentioned it with its time in every run, and the rule's new order keeps it from offering to continue a session that is still open in parallel.
+- Known limit: the notice does not guarantee that the assistant offers to continue from the summary of the session left open; in those tests, an assistant said it was left open and when, but offered it only in some runs.
+
 ## Explicit non-goals
 
 - No Engram TUI or full-screen terminal control center.

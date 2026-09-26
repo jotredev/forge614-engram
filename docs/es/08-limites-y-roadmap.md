@@ -45,6 +45,13 @@ Límite de esta entrega: la replicación de grupos (formato 4) llegará en 1.8.0
 
 Límites de esta entrega: (1) una sesión que trabaja más de 30 minutos sin guardar nada a través de Engram se verá «sin cerrar» desde otra sesión; (2) tras compactar, si la propia sesión lleva más de 30 minutos sin actividad en Engram, el bloque de arranque puede nombrarla como «left open» (es dato, y `memory_session_start` al repetirse no devuelve `previous`).
 
+## Capacidades incorporadas en v1.7.2
+
+- Aviso de sesión legible: cuando `session-start`/`memory_session_start` agregan `previous`, `parallel` o ambos, agregan además `sessionNotice` (texto), un hecho legible derivado de esos dos, con `previous` primero cuando hay ambos.
+- Manual del protocolo v4, regla 3: ahora nombra primero a la sesión que se quedó abierta (`previous`, con cuándo y la oferta de continuar) y solo después, y de forma más breve, a la que está abierta en paralelo (`parallel`). `instructions` pasa de 2 381 a 2 386 caracteres (tope 2 500); `mcpInstructions` de 1 992 a 1 997 (tope menor a 2 000).
+- Motivo: en pruebas de laboratorio, un asistente no mencionaba la sesión que quedó abierta aunque recibía `previous`; con el aviso en frase legible la mencionó con su hora en todas las corridas, y el nuevo orden de la regla evita que ofrezca continuar una sesión que sigue abierta en paralelo.
+- Límite conocido: el aviso no garantiza que el asistente ofrezca continuar desde el resumen de la sesión que quedó abierta; en esas pruebas, un asistente dijo que quedó abierta y cuándo, pero lo ofreció solo en algunas corridas.
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.
