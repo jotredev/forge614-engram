@@ -1,5 +1,6 @@
 import { readProjectContext, resolveProjectContext, startProjectSessionWithNotices } from "../../app";
 import { MemoryError } from "../../shared/errors";
+import { sessionNotice } from "../../modules/sessions";
 import { toolSchemas } from "./schemas";
 import type { ToolContext } from "./context";
 import { ecosystemTarget } from "./memory-tools";
@@ -11,7 +12,8 @@ export function registerSessionTools(tools:ToolContext):void {
     inputSchema:toolSchemas.memory_session_start,
   }, safely(async ({directory,sessionId}) => {
     const started=startProjectSessionWithNotices(memoryStore(),await projectDirectory(directory),sessionId);
-    return {...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{})};
+    const notice=sessionNotice(started.previous,started.parallel);
+    return {...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{}),...(notice?{sessionNotice:notice}:{})};
   }));
 
   register("memory_session_end", {

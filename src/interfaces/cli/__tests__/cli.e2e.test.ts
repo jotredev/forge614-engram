@@ -334,6 +334,9 @@ test("session-start CLI reports a session opened right before as parallel, not p
   const started=JSON.parse(second.stdout);
   expect(started).not.toHaveProperty("previous");
   expect(started.parallel).toMatchObject([{sessionId:"chat-one"}]);
+  expect(started.sessionNotice).toBe("Another session is open now: chat-one.");
+  expect(JSON.parse(first.stdout)).not.toHaveProperty("sessionNotice");
   const replay=(await run(dir,"session-start","--directory",dir,"--session-id","chat-two"));
   expect(JSON.parse(replay.stdout)).not.toHaveProperty("parallel");
+  expect(JSON.parse(replay.stdout)).not.toHaveProperty("sessionNotice");
 }, 40000);

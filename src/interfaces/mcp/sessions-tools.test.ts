@@ -59,6 +59,24 @@ test("memory_session_start reports a parallel session started right after anothe
   } finally {setSystemTime(); await h.close();}
 });
 
+test("memory_session_start adds a readable sessionNotice fact only when previous or parallel is reported", async () => {
+  const h=await sdkHarness(registerSessionTools);
+  setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+  try {
+    h.store.enableIntelligence();
+    const first=await h.call("memory_session_start",{sessionId:"first"});
+    expect(first.data).not.toHaveProperty("sessionNotice");
+    const second=await h.call("memory_session_start",{sessionId:"second"});
+    expect(second.data.sessionNotice).toBe("Another session is open now: first.");
+    const replay=await h.call("memory_session_start",{sessionId:"second"});
+    expect(replay.data).not.toHaveProperty("sessionNotice");
+    setSystemTime(new Date("2026-01-01T00:31:00.000Z"));
+    const third=await h.call("memory_session_start",{sessionId:"third"});
+    expect(third.data.sessionNotice).toBe("Session first was left open; its last activity was at 2026-01-01T00:00:00.000Z; it saved no summary.");
+    expect(Object.keys(third.data).at(-1)).toBe("sessionNotice");
+  } finally {setSystemTime(); await h.close();}
+});
+
 const both = (context: Parameters<typeof registerMemoryTools>[0]) => { registerMemoryTools(context); registerSessionTools(context); };
 async function member(h: Awaited<ReturnType<typeof sdkHarness>>) {
   const seed = (await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" })).data;
