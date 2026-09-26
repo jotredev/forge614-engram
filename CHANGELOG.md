@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.2
+
+Un aviso de sesión legible en `session-start`/`memory_session_start` y el manual v4 nombrando primero a la sesión que se quedó abierta.
+
+- **Aviso de sesión legible (`sessionNotice`):** con el esquema 11, cuando la llamada crea la sesión y `session-start` (CLI) o `memory_session_start` (MCP) agregan `previous`, `parallel` o ambos, agregan además `sessionNotice` (texto), un hecho legible para el asistente derivado de esos dos, nunca una orden: `Session <id> was left open; its last activity was at <fecha ISO>; its summary is available.` (o `…; it saved no summary.`) y/o `Another session is open now: <id>.` / `Other sessions are open now: <id1>, <id2>.`; con ambos, `previous` va primero, unidos por un espacio. `previous`, `parallel` y `notices` no cambian; la función `sessionNotice` no forma parte del SDK público.
+- **Manual v4, regla 3:** cambia de «If it returns parallel, say another session is open now; if previous, say it was left open and when, and offer to continue from its summary, without inventing what it did.» a «If it returns previous, say it was left open and when, and offer to continue from its summary, without inventing what it did; if parallel, only say another session is open now.». Medido: `instructions` 2 381 → 2 386 caracteres (tope 2 500) y `mcpInstructions` 1 992 → 1 997 caracteres (tope menos de 2 000). El protocolo sigue en v4; las versiones 1 a 3 quedan sin cambios.
+- **Motivo:** en pruebas de laboratorio, un asistente no mencionaba la sesión que quedó abierta aunque recibía `previous`; con el aviso en frase legible la mencionó con su hora en todas las corridas, y el nuevo orden de la regla evita que ofrezca continuar una sesión que sigue abierta en paralelo.
+- **Límite conocido:** el aviso no garantiza que el asistente ofrezca continuar desde el resumen de la sesión que quedó abierta; en esas pruebas lo ofreció solo en algunas corridas.
+
 ## 1.7.1
 
 Sesiones abiertas en paralelo se avisan según la hora, no al abrir: `previous` solo tras 30 minutos sin actividad, `parallel` nuevo, y el manual v4 pide explicar por qué se deja aparte un parecido.
