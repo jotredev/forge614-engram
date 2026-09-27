@@ -1,3 +1,4 @@
+/** Comprueba que `EngramProductHome` migra solo los archivos antiguos conocidos y protege la carpeta de Engram sin tocar la de Forge614. */
 import { expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ function fixture(directory: string) {
   return { parent, product, home: new EngramProductHome(parent, product) };
 }
 
+// La migración debe mover solo los nombres conocidos de Engram y dejar intacto cualquier otro contenido del padre.
 test("migrates only known root-level Engram files and preserves Shell", () => withDirectory(directory => {
   const { parent, product, home } = fixture(directory);
   mkdirSync(join(parent, "shell"), { recursive: true, mode: 0o700 });
@@ -30,6 +32,7 @@ test("migrates only known root-level Engram files and preserves Shell", () => wi
   expect(readFileSync(join(parent, "shell", "keep"), "utf8")).toBe("unchanged");
 }));
 
+// Si el destino ya tiene un archivo con el mismo nombre, debe rechazar antes de mover nada, sin pérdidas ni mezclas.
 test("rejects a destination conflict without moving any legacy file", () => withDirectory(directory => {
   const { parent, product, home } = fixture(directory);
   mkdirSync(product, { recursive: true, mode: 0o700 });
@@ -44,6 +47,7 @@ test("rejects a destination conflict without moving any legacy file", () => with
   expect(readFileSync(join(product, "engram.db"), "utf8")).toBe("different");
 }));
 
+// `prepare` no debe modificar los permisos del padre compartido, solo los de la carpeta propia de Engram.
 test("keeps the shared Forge614 parent permissions unchanged while securing only Engram", () => withDirectory(directory => {
   const { parent, product, home } = fixture(directory);
   mkdirSync(join(parent, "shell"), { recursive: true, mode: 0o755 });
@@ -59,6 +63,7 @@ test("keeps the shared Forge614 parent permissions unchanged while securing only
   expect(readFileSync(join(parent, "shell", "keep"), "utf8")).toBe("unchanged");
 }));
 
+// Un candidato a archivo antiguo que en realidad es un enlace simbólico debe rechazarse sin seguirlo ni moverlo.
 test("rejects a linked legacy candidate without moving it", () => withDirectory(directory => {
   const { parent, home } = fixture(directory);
   mkdirSync(parent, { recursive: true, mode: 0o700 });

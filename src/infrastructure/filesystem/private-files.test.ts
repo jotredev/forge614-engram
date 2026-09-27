@@ -1,3 +1,4 @@
+/** Comprueba que `assertSafePath` no permite atajos por tipos y que `guardedWrite`/`readSafeFile` protegen bytes y respaldos. */
 import { expect, test } from "bun:test";
 import { chmodSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -7,12 +8,14 @@ import { withDirectory } from "../__test-support__/fixtures";
 type Equal<Left,Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Value>() => Value extends Right ? 1 : 2) ? true : false;
 type Expect<Condition extends true> = Condition;
 
+// Comprueba en tiempo de compilación que la firma pública de assertSafePath sigue siendo (path: string), sin parámetros extra que permitan saltarse alguna comprobación.
 test("assertSafePath exposes no checker bypass in its public API", () => {
   type AssertSafePathPublicSignature = Expect<Equal<Parameters<typeof assertSafePath>,[path:string]>>;
   const signature:AssertSafePathPublicSignature=true;
   expect(signature).toBe(true);
 });
 
+// Tras una escritura guardada, el archivo debe quedar con el contenido nuevo, el respaldo debe conservar el contenido anterior exacto, los permisos deben ser privados y no debe quedar ningún archivo temporal.
 test("guarded replacement retains exact backup and private published bytes", () => withDirectory(dir => {
   const path = join(dir, "config"); writeFileSync(path, "old");
   const backups: string[] = [], published: string[] = [];
@@ -23,6 +26,7 @@ test("guarded replacement retains exact backup and private published bytes", () 
   expect(readdirSync(dir).some(p => p.includes("-tmp-"))).toBe(false);
 }));
 
+// Si el archivo ya no tiene el contenido esperado en `before`, o la ruta es un enlace simbólico, la operación debe rechazarse sin tocar los bytes reales del destino.
 test("stale preview and symlink reads fail without changing target bytes", () => withDirectory(dir => {
   const path = join(dir, "config"); writeFileSync(path, "external");
   expect(() => guardedWrite({ path, before: "old", after: "new", kind: "config" }, () => {}, () => {})).toThrow(expect.objectContaining({ code: "CHANGED" }));

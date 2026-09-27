@@ -1,3 +1,4 @@
+/** Comprueba que `removePathPublication` quita solo el bloque exacto de PATH de Engram, en zsh, Fish y con rutas con espacios. */
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ async function withHome(run: (home: string) => Promise<void>): Promise<void> {
   try { await run(home); } finally { rmSync(home, { recursive: true, force: true }); }
 }
 
+// El bloque de Engram debe desaparecer del archivo, dejando intactas las líneas que el usuario agregó alrededor.
 test("removes only the exact Engram PATH block and keeps user shell settings", async () => withHome(async home => {
   const path = join(home, ".zshrc");
   const directory = join(home, ".forge614", "engram", "bin");
@@ -25,6 +27,7 @@ test("removes only the exact Engram PATH block and keeps user shell settings", a
   expect(readFileSync(path, "utf8")).toBe("export KEEP_THIS=1\nexport KEEP_THAT=1\n");
 }));
 
+// Si el cuerpo del bloque fue editado a mano, debe rechazarse con PATH_CONFLICT y dejar el archivo sin tocar.
 test("refuses an edited Engram PATH block without changing it", async () => withHome(async home => {
   const path = join(home, ".zshrc");
   writeFileSync(path, `${start}\nexport PATH=/somewhere-else:$PATH\n${end}\n`);
@@ -32,6 +35,7 @@ test("refuses an edited Engram PATH block without changing it", async () => with
   expect(readFileSync(path, "utf8")).toContain("/somewhere-else");
 }));
 
+// La ruta de Fish usa su propia sintaxis y archivo separado; su ausencia de .zshrc no debe crear ese archivo.
 test("removes the dedicated Fish publication without touching an absent shell file", async () => withHome(async home => {
   const fish = join(home, ".config", "fish", "conf.d", "forge614-engram.fish");
   const directory = join(home, ".forge614", "engram", "bin");
@@ -43,6 +47,7 @@ test("removes the dedicated Fish publication without touching an absent shell fi
   expect(readFileSync(fish, "utf8")).toBe("");
 }));
 
+// Una carpeta de binarios con espacios se escapa al escribir el bloque; la eliminación debe reconocer esa forma escapada.
 test("removes the installer PATH block when the product path contains spaces", async () => {
   const home = mkdtempSync(join(tmpdir(), "engram path publication-"));
   try {

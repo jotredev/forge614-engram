@@ -1,3 +1,9 @@
+/**
+ * Punto de entrada público del paquete (el campo `exports` de `package.json` apunta aquí): reexporta los
+ * tipos y funciones de las capas de dominio (`modules`) y de aplicación (`app`), más algunas piezas de
+ * infraestructura (rutas y configuración del área de trabajo) que un programa que use Engram como
+ * biblioteca necesita para integrarlo, sin exponer el resto de los detalles internos.
+ */
 export { memoryTypes } from "./modules/memory";
 export type { MemoryType,MemoryScope,SearchScope,SaveInput,MemoryVersion,Memory,SearchResult,Confirmation,ConfirmationRequest,MemoryMeta,MemoryMark,SimilarCandidate } from "./modules/memory";
 export { memoryProtocol } from "./modules/memory-protocol";
