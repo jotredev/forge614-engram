@@ -1,6 +1,8 @@
+/** Comprueba `parseArguments`, `integer` y `nonnegative`: qué combinaciones de comando y opciones acepta o rechaza cada una. */
 import { expect, test } from "bun:test";
 import { integer, nonnegative, parseArguments } from "./arguments";
 
+// Los valores de texto se recortan (trim), una bandera booleana no consume el siguiente argumento, y pedir una opción no dada con need() lanza INVALID_INPUT.
 test("parser trims values, consumes boolean switches and requires command-specific values", () => {
   const parsed = parseArguments(["search", "--query", "  durable memory  ", "--preview", "--scope", "shared"]);
   expect(parsed.command).toBe("search");
@@ -9,28 +11,33 @@ test("parser trims values, consumes boolean switches and requires command-specif
   expect(() => parsed.need("project-id")).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// reinforcement-enable no admite ninguna opción; solo existe como el comando exacto, sin argumentos.
 test("parser accepts reinforcement enrollment only as an optionless explicit command", () => {
   expect(parseArguments(["reinforcement-enable"]).command).toBe("reinforcement-enable");
   expect(() => parseArguments(["reinforcement-enable", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// intelligence-enable, igual que reinforcement-enable, tampoco admite ninguna opción.
 test("parser accepts intelligence enrollment only as an optionless explicit command", () => {
   expect(parseArguments(["intelligence-enable"]).command).toBe("intelligence-enable");
   expect(() => parseArguments(["intelligence-enable", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// update acepta --json de forma opcional, y ninguna otra bandera.
 test("parser accepts update with optional JSON output and rejects unknown flags", () => {
   expect(parseArguments(["update"]).command).toBe("update");
   expect(parseArguments(["update", "--json"]).values.get("json")).toBe("true");
   expect(() => parseArguments(["update", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// memory-protocol exige --json siempre, y su --protocol-version (cuando se da) solo puede ser un formato reconocido.
 test("parser requires JSON for the public memory protocol", () => {
   expect(parseArguments(["memory-protocol", "--json"]).values.get("json")).toBe("true");
   expect(() => parseArguments(["memory-protocol"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
   expect(() => parseArguments(["memory-protocol", "--json", "--format", "text"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// --postgres-url de init solo se acepta junto con --json (uso no interactivo); ningún otro comando admite esa opción.
 test("parser accepts an optional PostgreSQL URL only for noninteractive initialization", () => {
   expect(parseArguments(["init", "--json"]).values.get("json")).toBe("true");
   expect(parseArguments(["init", "--json", "--postgres-url", "postgresql://user:secret@host/db"]).values.get("postgres-url")).toBe("postgresql://user:secret@host/db");
@@ -38,18 +45,21 @@ test("parser accepts an optional PostgreSQL URL only for noninteractive initiali
   expect(() => parseArguments(["project-list", "--json"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// Comandos retirados de versiones anteriores (asistente propio, TUI local) ya no existen: cualquier intento de usarlos es un comando desconocido.
 test("parser no longer exposes assistant ownership or a local TUI", () => {
   for (const command of ["tui", "assistant-list", "memory-hook", "integration-enable"]) {
     expect(() => parseArguments([command])).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
   }
 });
 
+// uninstall no exige --confirm para analizarse (la confirmación la pide commands.ts más adelante), pero si se repite la opción, falla.
 test("parser requires one explicit uninstall confirmation", () => {
   expect(parseArguments(["uninstall", "--confirm", "REMOVE FORGE614-ENGRAM"]).need("confirm")).toBe("REMOVE FORGE614-ENGRAM");
   expect(() => parseArguments(["uninstall"])).not.toThrow();
   expect(() => parseArguments(["uninstall", "--confirm", "x", "--confirm", "x"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// Comando inexistente, opción no permitida para ese comando, opción repetida, valor vacío, valor con byte nulo, un valor booleano con texto en vez de bandera, y un argumento que no empieza con "--": todos son entradas mal formadas.
 test.each([
   ["unknown"], ["save", "--query", "x"], ["search", "--query", "x", "--query", "y"],
   ["search", "--query"], ["search", "--query", "  "], ["search", "--query", "x\0y"],
@@ -58,6 +68,7 @@ test.each([
   expect(() => parseArguments(args)).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// integer acepta de 1 al máximo dado (inclusive); nonnegative además acepta 0; ambos rechazan fracciones, signos, y enteros fuera del rango seguro.
 test("numeric options enforce inclusive bounds and reject fractional, signed and unsafe inputs", () => {
   expect(integer("1", "limit", 100)).toBe(1);
   expect(integer("100", "limit", 100)).toBe(100);

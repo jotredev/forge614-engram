@@ -1,3 +1,8 @@
+/**
+ * Despachador central del CLI (interfaz de línea de comandos): a partir del comando y las opciones ya validadas
+ * por `parseArguments`, abre el espacio de trabajo (workspace) que corresponda y llama a la operación de `app`
+ * adecuada, imprimiendo el resultado como JSON. `main.ts` llama a `dispatch` con el resultado de `parseArguments`.
+ */
 import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext } from "../../app";
 import type { EngramUpdateResult } from "../../app";
 import { MemoryError } from "../../shared/errors";
@@ -9,10 +14,12 @@ import { initTerminal } from "../terminal/setup";
 import { watchSync } from "../terminal/sync-watch";
 import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
 
+/** Convierte el resultado de `update` en el JSON exacto que imprime `runUpdateCommand` cuando se pide `--json`. */
 export function updateResultJson(result: EngramUpdateResult): string {
   return JSON.stringify(result);
 }
 
+/** Ejecuta el comando `update`: descarga y aplica la actualización, e imprime el resultado solo si se pidió `--json` (el modo interactivo ya muestra su propio progreso dentro de `updateEngram`). */
 export async function runUpdateCommand(
   json: boolean,
   currentVersion: string,
@@ -23,6 +30,7 @@ export async function runUpdateCommand(
   if (json) print(updateResultJson(result));
 }
 
+/** Ejecuta el comando ya analizado: resuelve los comandos que no necesitan abrir la base primero, luego los que sí, y termina con el grupo save/search/get/history/archive/restore que comparte la validación de scope. */
 export async function dispatch({command,values,need}:ParsedCommand, currentVersion = "0.0.0"):Promise<void> {
   if (command === "init" && !values.has("json")) { await initTerminal(); return; }
   if (command === "memory-protocol") {
@@ -41,10 +49,10 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
   if (command === "sync") {console.log(JSON.stringify(await syncWorkspace(undefined,{upgradeFormat:values.has("upgrade-format")}),null,2));return;}
   if(command==="sync-watch"&&values.has("upgrade-format"))invalid("sync-watch no acepta --upgrade-format.");
   if (command === "sync-watch") {await watchSync(values.has("interval")?integer(need("interval"),"interval",3600):30);return;}
-  // Loaded lazily: the MCP SDK (and zod, including its 64-file locale barrel) has no
-  // reason to be parsed for any command other than "mcp" -- see forge614-ai review of
-  // the v1.5.3 CLI hang investigation, experiment 4 (a hung child was caught mid-load
-  // of a zod locale file for a command that never uses MCP at all).
+  // Cargado de forma perezosa (lazy): el SDK de MCP (y zod, con su barril de 64 archivos de locale) no
+  // tiene por qué analizarse (parse) para ningún comando que no sea "mcp" -- ver la revisión de forge614-ai
+  // de la investigación del bloqueo del CLI en v1.5.3, experimento 4 (un hijo bloqueado se sorprendió a
+  // mitad de cargar un archivo de locale de zod para un comando que nunca usa MCP).
   if (command === "mcp") { const { startMcp } = await import("../mcp/server"); await startMcp(); return; }
   const workspace = new MemoryWorkspace();
   if(command==="sessions-enable"){
@@ -68,6 +76,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
   }
   if (command.startsWith("group-")) {
     let result: Record<string, unknown>;
+    // Los seis subcomandos de grupo comparten el mismo sobre de salida (schemaVersion: 1); "default" cubre group-rename, el único sin `case` propio.
     switch (command) {
       case "group-create": {
         const created = workspace.createGroupWithNotices(need("name"));
@@ -93,6 +102,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     console.log(JSON.stringify({ schemaVersion: 1, ...result }, null, 2)); return;
   }
   if (command === "memory-move") {
+    // memory-move solo sube de project o shared hacia ecosystem (nunca al revés ni entre otros pares); to-scope existe para que el comando lo diga explícitamente.
     const from = values.get("scope") ?? "project";
     if (from !== "project" && from !== "shared") invalid("scope debe ser project o shared (el origen del recuerdo).");
     if (need("to-scope") !== "ecosystem") invalid("to-scope solo acepta ecosystem.");
@@ -118,8 +128,8 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
           let project: unknown;
           try {
             store.enableProjectBindings();
-            // Binding a folder is explicit and non-interactive: it registers the project (by the identity
-            // file when the repository carries one) and writes .forge614/project.json silently.
+            // Vincular una carpeta es explícito y no interactivo: registra el proyecto (por su archivo de
+            // identidad cuando el repositorio ya trae uno) y escribe .forge614/project.json en silencio.
             if (values.has("directory")) project = resolveProjectContext(store, need("directory"), true);
           }
           finally { store.close(); }
@@ -162,26 +172,28 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
   if(command==="startup-context"){
     const directory=need("directory");
     const read=values.get("format")==="2"?readStartupBlock:readStartupContext;
-    // Read-only first: the common case writes nothing to the base, and an untouched base keeps its exact
-    // on-disk footprint. Only when the identity flow must register something (a clone, a group) is it repeated
-    // writable; that flow is idempotent, so running it again is safe.
+    // Primero de solo lectura: el caso común no escribe nada en la base, y una base intacta conserva su huella
+    // exacta en disco. Solo cuando el flujo de identidad debe registrar algo (un clon, un grupo) se repite en
+    // modo escritura; ese flujo es idempotente, así que repetirlo es seguro.
     const readonlyStore=workspace.open(true);
     try{console.log(JSON.stringify(read(readonlyStore,directory),null,2));return;}
     catch(error){if((error as {code?:unknown})?.code!=="SQLITE_READONLY")throw error;}
     finally{readonlyStore.close();}
     const store=workspace.open();try{console.log(JSON.stringify(read(store,directory),null,2));}finally{store.close();}return;
   }
-  // Complete argument validation before reading config or opening any database.
+  // Se completa la validación de argumentos antes de leer la configuración o abrir ninguna base de datos.
   const scope = values.get("scope") ?? (command === "search" ? "all" : "project");
   const projectId = values.has("project-id") ? projectIdentity(need("project-id")) : null;
   const groupReference = values.get("group");
   if (groupReference !== undefined && scope !== "ecosystem") invalid("--group solo se acepta con --scope ecosystem.");
   if (command === "search") {
+    // search es más flexible que el resto: acepta scope all y, en ecosystem, puede resolver el grupo a partir de --project-id sin pedir --group.
     if (!["all","project","shared","ecosystem"].includes(scope)) invalid("scope debe ser all, project, shared o ecosystem.");
     if (scope === "ecosystem") {
       if (groupReference === undefined && projectId === null) invalid("scope ecosystem requiere --group, o --project-id de un proyecto que pertenezca a un grupo.");
     } else if (scope !== "shared" && projectId === null) invalid("Indica --project-id o selecciona --scope shared explícitamente.");
   } else {
+    // save, get, history, archive y restore operan sobre un solo recuerdo: cada scope exige exactamente el identificador que le corresponde (--project-id para project, --group para ecosystem, ninguno para shared).
     if (scope !== "project" && scope !== "shared" && scope !== "ecosystem") invalid("scope debe ser project, shared o ecosystem.");
     if (scope === "shared" && projectId !== null) invalid("scope shared no acepta --project-id en operaciones sobre un recuerdo.");
     if (scope === "ecosystem" && projectId !== null) invalid("scope ecosystem no acepta --project-id en operaciones sobre un recuerdo.");
@@ -206,6 +218,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
       if (!draft.topicKey) invalid("--expected-version requiere --topic.");
       draft.expectedVersion = integer(need("expected-version"),"expected-version");
     }
+    // shared y ecosystem no tienen projectId propio para deducir la sesión; por eso, si llevan --session-id, deben dar también --session-project-id (y viceversa).
     if(values.has("session-project-id")&&(scope==="project"||!values.has("session-id")))invalid("--session-project-id requiere scope shared o ecosystem y --session-id.");
     if(scope!=="project"&&values.has("session-id")&&!values.has("session-project-id"))invalid(`Un save ${scope} con sesión requiere --session-project-id.`);
   } else if (command === "search") {
@@ -215,11 +228,12 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
 
   const store = workspace.open(["search","get","history"].includes(command));
   try {
-    // A group reference is an identifier or a name; resolving it never migrates a database.
+    // Una referencia de grupo es un identificador o un nombre; resolverla nunca migra una base de datos.
     const groupId = groupReference === undefined ? null : store.resolveGroup(groupReference).id;
     let result: unknown;
     switch (command) {
       case "save": {
+        // El destino final se arma según el scope ya validado arriba; con --session-id, se guarda a través de saveWithSession para que quede unido a esa conversación.
         const target: SaveInput = scope === "shared" ? { ...draft!, scope: "shared", projectId: null }
           : scope === "ecosystem" ? { ...draft!, scope: "ecosystem", projectId: null, groupId: groupId! }
           : { ...draft!, scope: "project", projectId: projectId! };

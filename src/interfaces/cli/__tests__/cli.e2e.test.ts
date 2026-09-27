@@ -1,3 +1,4 @@
+/** Prueba de punta a punta del CLI como proceso real: comandos retirados, init, protocolo de memoria, sincronización, identidad, sesiones y concurrencia. */
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -6,10 +7,10 @@ import { join, resolve } from "node:path";
 import { WorkspaceConfig } from "../../../infrastructure/filesystem/workspace-config";
 import { procSnapshot } from "../../../../tests/fixtures/proc-snapshot";
 
-// Raw bytes of a SQLite file are not a safe idempotency check: a newer SQLite build
-// inside Bun can touch header fields (change counter, WAL checkpoint bookkeeping) on an
-// otherwise no-op open, without changing any actual data. Compare logical content
-// instead: the schema plus every row of every table, deterministically ordered.
+// Los bytes crudos de un archivo SQLite no son una comprobación de idempotencia segura: una compilación de
+// SQLite más nueva dentro de Bun puede tocar campos de la cabecera (contador de cambios, contabilidad del
+// checkpoint de WAL) en una apertura que en realidad no hizo nada, sin cambiar ningún dato real. En su lugar
+// se compara el contenido lógico: el esquema más cada fila de cada tabla, en un orden determinista.
 function logicalDump(path: string): unknown {
   const db = new Database(path, { readonly: true });
   try {
@@ -30,10 +31,11 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
 }
 const cli = resolve(import.meta.dir,"../../../cli.ts");
-// Bun.spawnSync has a confirmed, unfixed upstream bug (oven-sh/bun#34069, PR #40078 still
-// open) where the isolated sync-wait loop can lose a child's exit notification under high
-// spawn volume next to sqlite, hanging until an external timeout kills it. Bun.spawn's async
-// path does not use that isolated loop, so every launcher here awaits it instead.
+// Bun.spawnSync tiene un error confirmado y sin corregir en el proyecto (oven-sh/bun#34069, el PR
+// #40078 sigue abierto) donde el bucle aislado de espera síncrona puede perder el aviso de salida
+// de un hijo bajo alto volumen de procesos junto a sqlite, bloqueándose hasta que un tiempo límite
+// externo lo mata. El camino asíncrono de Bun.spawn no usa ese bucle aislado, por eso todos los
+// lanzadores de este archivo lo esperan (await) en su lugar.
 async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
@@ -64,6 +66,7 @@ async function create(dir: string, name = "demo"): Promise<string> {
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
 
+// El comando "setup" (retirado) falla y su mensaje señala a init como reemplazo, sin crear ningún archivo.
 test("retired setup tells the user to use init and leaves storage absent", async () => {
   const dir = workspace();
   const result = (await run(dir, "setup"));
@@ -76,6 +79,7 @@ test("retired setup tells the user to use init and leaves storage absent", async
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
 }, 40000);
 
+// init sin --json exige una terminal interactiva real y falla sin una; init --json nunca pregunta nada.
 test("init requires a terminal while init --json stays noninteractive", async () => {
   const dir = workspace();
   const interactive = (await run(dir, "init"));
@@ -90,6 +94,7 @@ test("init requires a terminal while init --json stays noninteractive", async ()
   expect((await run(dir, "search", "--scope", "shared", "--query", "anything")).code).toBe(0);
 }, 40000);
 
+// Una bandera desconocida en init falla antes de entrar en modo interactivo o crear ningún archivo, y no repite su valor en el error.
 test("init rejects unknown flags without entering prompts or creating files", async () => {
   const dir = workspace();
   const result = (await run(dir, "init", "--db", "PRIVATE_VALUE"));
@@ -99,6 +104,7 @@ test("init rejects unknown flags without entering prompts or creating files", as
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
 }, 40000);
 
+// La ayuda deja claro que startup-context acepta cualquier carpeta legible y no exige Git, a diferencia de la vinculación de proyecto.
 test("help distinguishes read-only startup-context from project binding", async () => {
   const dir = workspace();
   const result = (await run(dir, "help"));
@@ -108,6 +114,7 @@ test("help distinguishes read-only startup-context from project binding", async 
   expect(result.stdout).not.toContain("requiere Git disponible, incluso para carpetas sin Git");
 }, 40000);
 
+// memory-protocol exige --json, no acepta banderas fuera de --protocol-version, cada versión (1, 2, 4) tiene su propia forma, y ninguna llamada crea archivos.
 test("memory-protocol is public, JSON-only, and creates no product files", async () => {
   const dir = workspace();
   const result = (await run(dir, "memory-protocol", "--json"));
@@ -145,6 +152,7 @@ test("memory-protocol is public, JSON-only, and creates no product files", async
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
 }, 40000);
 
+// Sin base creada, sync falla con CONFIG_NOT_FOUND; ya con init pero sin PostgreSQL configurado, falla con SYNC_DISABLED; sync-watch con un intervalo de 0 falla por inválido.
 test("sync without PostgreSQL configuration never creates storage", async () =>{
   const dir=workspace();const result=(await run(dir,"sync"));
   expect(result.code).toBe(1);
@@ -155,6 +163,7 @@ test("sync without PostgreSQL configuration never creates storage", async () =>{
   expect(JSON.parse((await run(dir,"sync-watch","--interval","0")).stderr).code).toBe("INVALID_INPUT");
 }, 40000);
 
+// Todas las carpetas de trabajo comparten una única base y un único .env, sin importar desde qué directorio de proyecto se ejecute el CLI; el .env nunca contiene el UUID de un proyecto.
 test("all projects and working directories share exactly one workspace configuration", async () => {
   const a = workspace(); const b = workspace(); const id = (await create(a));
   (await create(a,"Another")); const user = join(a,"user");
@@ -171,6 +180,7 @@ test("all projects and working directories share exactly one workspace configura
   expect(readFileSync(join(user,".forge614","engram",".env"),"utf8")).not.toContain(id);
 }, 45_000);
 
+// Un proyecto creado desde el SDK (importando MemoryWorkspace directamente) es visible desde el CLI: comparten la misma base y la misma identidad de proyecto.
 test("SDK workspace and CLI share the same identity and database", async () => {
   const dir = workspace(); const index = resolve(import.meta.dir,"../../../index.ts");
   const code = `import { MemoryWorkspace } from ${JSON.stringify(index)};
@@ -189,6 +199,7 @@ test("SDK workspace and CLI share the same identity and database", async () => {
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","SQLite")).stdout)).toHaveLength(1);
 }, 40000);
 
+// Un recuerdo se guarda, se revisa (nueva versión con --expected-version), aparece en la búsqueda, desaparece al archivarlo y vuelve a aparecer al restaurarlo, todo identificado por el UUID del proyecto.
 test("project CLI saves, revises, searches, archives and restores with UUID identity", async () => {
   const dir = workspace(); const id = (await create(dir));
   const first = (await run(dir,"save","--project-id",id,"--title","Base","--content","SQLite","--topic","db","--request-key","first"));
@@ -203,6 +214,7 @@ test("project CLI saves, revises, searches, archives and restores with UUID iden
   expect(JSON.parse((await run(dir,"get","--project-id",id,"--id",saved.id)).stdout).state).toBe("active");
 }, 40000);
 
+// reinforcement-enable se puede repetir sin error; con el reforzamiento activo, guardar el mismo recuerdo desde otro proyecto (b) no lo confunde con el de a, y repetirlo en a lo refuerza sin subir de versión.
 test("explicit reinforcement enrollment is repeatable and exact CLI saves stay owner-scoped without a new version", async () => {
   const dir=workspace();
   for(let attempt=0;attempt<2;attempt++) {
@@ -223,11 +235,12 @@ test("explicit reinforcement enrollment is repeatable and exact CLI saves stay o
   expect(results[0]).toMatchObject({memory:{id:first.id,version:1},explanation:{reinforcement:{duplicateCount:1}}});
 }, 40000);
 
+// La segunda llamada a init --json no cambia ni un byte lógico de la base ni el .env; renombrar un proyecto conserva su UUID y no expone la ruta de la base en project-list.
 test("init is repeatable and rename retains identity without per-project registration", async () => {
   const dir = workspace(); const id = (await create(dir)); const root = join(dir,"user",".forge614","engram");
-  // The very first "init" command call (as opposed to project-create) legitimately
-  // upgrades the schema (enables project bindings), so it is not itself a no-op. Only a
-  // *second* call, once the schema is already at its steady-state version, must be.
+  // La primera llamada al comando "init" (a diferencia de project-create) sí actualiza legítimamente
+  // el esquema (activa los vínculos de proyecto), así que no es en sí misma un no-op. Solo una
+  // *segunda* llamada, con el esquema ya en su versión estable, debe serlo.
   expect((await run(dir,"init","--json")).code).toBe(0);
   const before = logicalDump(join(root,"engram.db")); const config = readFileSync(join(root,".env"));
   expect((await run(dir,"init","--json")).code).toBe(0);
@@ -239,6 +252,7 @@ test("init is repeatable and rename retains identity without per-project registr
   expect((await run(dir,"project-list")).stdout).not.toContain(root);
 }, 40000);
 
+// Dos proyectos con el mismo nombre reciben UUID distintos y sus recuerdos no se mezclan entre sí.
 test("two identical project names stay isolated from each other", async () => {
   const dir = workspace(); const a = (await create(dir,"Same")); const b = (await create(dir,"Same"));
   expect(a).not.toBe(b);
@@ -246,6 +260,7 @@ test("two identical project names stay isolated from each other", async () => {
   expect(JSON.parse((await run(dir,"search","--project-id",b,"--query","SQLite")).stdout)).toEqual([]);
 }, 40000);
 
+// Sin configuración, cualquier comando de lectura falla con CONFIG_NOT_FOUND; si la base configurada se borra del disco, ningún comando la vuelve a crear en silencio.
 test("missing configuration and configured missing database never cause silent reinitialization", async () => {
   const dir = workspace();
   expect(JSON.parse((await run(dir,"search","--scope","shared","--query","SQLite")).stderr).code).toBe("CONFIG_NOT_FOUND");
@@ -258,6 +273,7 @@ test("missing configuration and configured missing database never cause silent r
   }
 }, 40000);
 
+/** Lanza el mismo comando del CLI cuatro veces a la vez, en la misma carpeta, para ejercitar el acceso concurrente a la base. */
 async function parallel(dir: string, args: string[]) {
   return Promise.all(Array.from({length:4},async () => {
     const child = Bun.spawn([process.execPath,cli,...args], {
@@ -267,9 +283,9 @@ async function parallel(dir: string, args: string[]) {
     return {code,stdout,stderr};
   }));
 }
-// Per forge614-ai review: a concurrent-race failure with only "Expected: 0, Received: 1"
-// gives no error envelope to diagnose. Print every non-zero/non-empty result's full
-// stdout+stderr before asserting, so a real CI failure captures the actual error code.
+// Según la revisión de forge614-ai: un fallo de condición de carrera concurrente con solo "Expected: 0,
+// Received: 1" no da ningún sobre de error que diagnosticar. Se imprime el stdout+stderr completo de cada
+// resultado no exitoso o con stderr antes de comprobar, así un fallo real en CI captura el código de error real.
 function assertAllSucceeded(results: {code:number|null;stdout:string;stderr:string}[], label: string): void {
   const bad = results.filter(result => result.code !== 0 || result.stderr !== "");
   if (bad.length > 0) {
@@ -277,6 +293,7 @@ function assertAllSucceeded(results: {code:number|null;stdout:string;stderr:stri
   }
   for (const result of results) { expect(result.code).toBe(0); expect(result.stderr).toBe(""); }
 }
+// Cuatro procesos guardando a la vez con la misma requestKey (en project y en shared) terminan creando un único recuerdo por espacio de nombres (namespace), no cuatro.
 test("concurrent project and shared request replays create one memory per namespace", async () => {
   const dir = workspace(); const id = (await create(dir));
   for (const target of [["--project-id",id],["--scope","shared"]]) {
@@ -287,6 +304,7 @@ test("concurrent project and shared request replays create one memory per namesp
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","parallel")).stdout)).toHaveLength(2);
 }, 40000);
 
+// Cuatro project-create a la vez sobre una carpeta sin inicializar terminan con cuatro proyectos distintos y una sola configuración, sin la vieja carpeta por proyecto ("projects").
 test("concurrent initializers keep a single config and preserve all projects", async () => {
   const dir = workspace(); const results = await parallel(dir,["project-create","--name","parallel"]);
   assertAllSucceeded(results, "concurrent project-create");
@@ -295,6 +313,7 @@ test("concurrent initializers keep a single config and preserve all projects", a
   expect(existsSync(join(dir,"user",".forge614","projects"))).toBe(false);
 }, 40000);
 
+// Cuatro init --json a la vez sobre un espacio de trabajo ya existente no tocan el .env ni pierden el recuerdo ya guardado.
 test("concurrent init of existing workspace leaves existing memories and configuration intact", async () => {
   const dir = workspace(); const id = (await create(dir));
   expect((await run(dir,"save","--project-id",id,"--title","Keep","--content","SQLite")).code).toBe(0);
@@ -305,6 +324,7 @@ test("concurrent init of existing workspace leaves existing memories and configu
   expect(JSON.parse((await run(dir,"search","--project-id",id,"--query","SQLite")).stdout)).toHaveLength(1);
 }, 40000);
 
+// El ciclo completo de una sesión explícita por CLI (arranque, guardado unido a ella, previsualización sin contenido, lectura por versión, línea de tiempo, contexto y resumen) funciona sin preguntar nada.
 test("explicit session CLI lifecycle, previews, version reads, timeline and context stay noninteractive", async () =>{
   const dir=workspace();
   expect((await run(dir,"sessions-enable")).code).toBe(0);
@@ -322,6 +342,7 @@ test("explicit session CLI lifecycle, previews, version reads, timeline and cont
   expect(JSON.parse((await run(dir,"session-end","--project-id",session.projectId,"--session-id","chat-one")).stdout).endedAt).not.toBeNull();
 }, 40000);
 
+// Iniciar una segunda sesión justo después de la primera la reporta como paralela (parallel), no como previa (previous), y no la marca de ninguna otra forma; repetir el mismo sessionId no reporta nada de eso.
 test("session-start CLI reports a session opened right before as parallel, not previous, and never marks it", async () => {
   const dir=workspace();
   expect((await run(dir,"intelligence-enable")).code).toBe(0);

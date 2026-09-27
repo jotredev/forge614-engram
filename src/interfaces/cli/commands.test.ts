@@ -1,3 +1,4 @@
+/** Comprueba `dispatch`, `runUpdateCommand` y `updateResultJson` mediante el CLI real: cada comando, sus validaciones y sus errores. */
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,8 +15,8 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
 }
 const cli = resolve(import.meta.dir,"../../cli.ts");
-// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
-// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+// Ver src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync tiene un error de bloqueo confirmado
+// y sin corregir en Bun (oven-sh/bun#34069), por eso aquí se usa el Bun.spawn asíncrono en su lugar.
 async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
@@ -46,12 +47,14 @@ async function create(dir: string, name = "demo"): Promise<string> {
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
 
+// updateResultJson solo serializa los tres campos del resultado de actualización, sin nada extra.
 test("update JSON output contains only the structured update result", async () => {
   expect(updateResultJson({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" })).toBe(
     '{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}',
   );
 }, 40000);
 
+// runUpdateCommand imprime el resultado solo cuando json es verdadero; sin --json no imprime nada.
 test("update --json prints structured output while plain update remains silent", async () => {
   const output: string[] = [];
   const update = async () => ({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" });
@@ -61,6 +64,7 @@ test("update --json prints structured output while plain update remains silent",
 
   expect(output).toEqual(['{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}']);
 }, 40000);
+// Un recuerdo shared se guarda y se busca sin crear ningún proyecto; archivar o consultar con --project-id en vez de --scope shared falla, porque el scope debe darse explícito.
 test("CLI shared memories work without a project and require explicit scope for mutations", async () => {
   const dir = workspace(); expect((await run(dir,"init","--json")).code).toBe(0);
   const result = (await run(dir,"save","--scope","shared","--title","Idioma","--content","Spanish","--type","preference","--topic","language"));
@@ -79,6 +83,7 @@ test("CLI shared memories work without a project and require explicit scope for 
   expect(JSON.parse((await run(dir,"get","--scope","shared","--id",shared.id)).stdout).state).toBe("active");
 }, 40000);
 
+// Opciones retiradas (--project, --db, --id-project), scope inválido, límites fuera de rango y valores que intentan escapar la ruta del proyecto fallan todos antes de tocar ningún archivo, sin filtrar el valor rechazado.
 test("invalid scope, legacy and per-project connection flags fail before any storage changes", async () => {
   const dir = workspace(); const id = "11111111-1111-4111-8111-111111111111";
   const cases = [
@@ -106,6 +111,7 @@ test("invalid scope, legacy and per-project connection flags fail before any sto
   }
 }, 40000);
 
+// Una bandera booleana con un valor de texto (--preview true), un --summary-json inválido o con un campo de más, --upgrade-format en sync-watch, y un save shared con --session-id sin --session-project-id: todo INVALID_INPUT.
 test("CLI rejects valued boolean flags, malformed summaries, unknown summary keys and watch promotion", async () =>{
   const dir=workspace();
   for(const args of [
@@ -119,12 +125,12 @@ test("CLI rejects valued boolean flags, malformed summaries, unknown summary key
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
 }, 40000);
 
+// init --json no pregunta nada y reporta el estado de inicialización en JSON; no toca ningún archivo de configuración de otros asistentes de IA.
 test("init --json remains noninteractive, reports initialization status and does not configure external clients", async () => {
   const dir = workspace();
   const result = (await run(dir, "init", "--json"));
   expect(result.code).toBe(0);
-  // A brand-new database is born with memory intelligence (schema 11), which already includes
-  // reinforcement.
+  // Una base recién creada nace con la memoria inteligente (esquema 11), que ya incluye el reforzamiento.
   expect(JSON.parse(result.stdout)).toEqual({
     initialized: true,
     storage: "sqlite",
@@ -136,6 +142,7 @@ test("init --json remains noninteractive, reports initialization status and does
   expect(existsSync(join(dir, "user", ".codex", "config.toml"))).toBe(false);
 }, 40000);
 
+// Una base recién creada por init --json ya está en el esquema 11; ejecutar intelligence-enable justo después no migra nada (migrated:false).
 test("intelligence-enable right after init --json on a fresh folder is a no-op that reports schema 11", async () => {
   const dir = workspace();
   expect((await run(dir, "init", "--json")).code).toBe(0);
@@ -144,6 +151,7 @@ test("intelligence-enable right after init --json on a fresh folder is a no-op t
   expect(JSON.parse(result.stdout)).toEqual({ enabled: true, schema: 11, migrated: false, backup: null });
 }, 40000);
 
+// Una URL de PostgreSQL inalcanzable falla con POSTGRES_UNAVAILABLE sin filtrar la contraseña ni crear ningún archivo de la base.
 test("init --json rejects an unavailable PostgreSQL URL without exposing it or creating storage", async () => {
   const dir = workspace();
   const secret = "POSTGRES_SECRET_MARKER";
@@ -155,6 +163,7 @@ test("init --json rejects an unavailable PostgreSQL URL without exposing it or c
   expect(existsSync(join(dir, "user", ".forge614", "engram"))).toBe(false);
 }, 40000);
 
+// Repetir init --json sobre una configuración que ya tiene PostgreSQL no la borra ni la cambia.
 test("repeating init --json preserves an existing PostgreSQL configuration", async () => {
   const dir = workspace();
   const config = new WorkspaceConfig(join(dir, "user", ".forge614", "engram"));
@@ -167,11 +176,12 @@ test("repeating init --json preserves an existing PostgreSQL configuration", asy
   expect(config.read().postgresUrl).toBe("postgresql://user:password@127.0.0.1:5432/engram?sslmode=disable");
 }, 40000);
 
+// reinforcement-enable es explícito y repetible (dos veces seguidas da el mismo resultado); si la base configurada desaparece del disco, no la vuelve a crear (DATABASE_MISSING).
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", async () => {
   const dir=workspace();
   const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
-  // A brand-new database is already born with reinforcement enabled (schema 11); only a
-  // pre-existing, still-configured legacy-level database can observe it being off beforehand.
+  // Una base recién creada ya nace con el reforzamiento activo (esquema 11); solo una base de
+  // nivel viejo (legacy), ya configurada de antes, permite observarlo apagado antes de habilitarlo.
   legacyConfiguredWorkspace(config);
   const memoryWorkspace=new MemoryWorkspace(config);
   let store=memoryWorkspace.open(true);
@@ -200,11 +210,12 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
   expect(existsSync(config.databasePath)).toBe(false);
 }, 40000);
 
+// La primera ejecución de intelligence-enable sobre una base vieja migra de verdad (migrated:true); repetirlo ya no migra nada (migrated:false).
 test("intelligence enrollment is explicit and a second run is a no-op", async () => {
   const dir=workspace();
   const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
-  // A brand-new database is already at schema 11 (no migration to observe); only a pre-existing
-  // legacy-level database exercises an actual migration here.
+  // Una base recién creada ya está en el esquema 11 (no hay migración que observar); solo una base
+  // de nivel viejo (legacy) ejercita aquí una migración real.
   legacyConfiguredWorkspace(config);
   const first=(await run(dir,"intelligence-enable"));
   expect(first.code).toBe(0);
@@ -214,12 +225,13 @@ test("intelligence enrollment is explicit and a second run is a no-op", async ()
   expect(JSON.parse(second.stdout)).toMatchObject({enabled:true,schema:11,migrated:false});
 }, 40000);
 
-// Regression guard for the v1.5.3 hang investigation (experiment 4): commands.ts must
-// keep loading the MCP SDK and zod lazily, only for the "mcp" command. The preload
-// plugin throws if anything under node_modules/zod or node_modules/@modelcontextprotocol
-// is loaded, so a command that must not need them fails loudly on any regression, while
-// "mcp" (which does need them) is expected to fail specifically because of that throw.
+// Guardia de regresión para la investigación del bloqueo de v1.5.3 (experimento 4): commands.ts debe
+// seguir cargando el SDK de MCP y zod de forma perezosa (lazy), solo para el comando "mcp". El plugin de
+// precarga (preload) lanza si algo bajo node_modules/zod o node_modules/@modelcontextprotocol se carga,
+// así que un comando que no debe necesitarlos falla en voz alta ante cualquier regresión, mientras que
+// "mcp" (que sí los necesita) se espera que falle justo por ese lanzamiento.
 const mcpImportGuard = resolve(import.meta.dir,"../../../tests/fixtures/fail-on-mcp-import.ts");
+/** Lanza el CLI con el plugin que detecta cualquier carga de zod o del SDK de MCP y la registra en `marker`. */
 async function runGuarded(cwd: string, userDirectory: string, marker: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,"--preload",mcpImportGuard,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614"), FORGE614_MCP_IMPORT_MARKER: marker },
@@ -231,11 +243,12 @@ async function runGuarded(cwd: string, userDirectory: string, marker: string, ..
     return { code, stdout, stderr };
   } finally { clearTimeout(timer); }
 }
+// Ningún comando salvo "mcp" debe cargar el SDK de MCP ni zod; memory-protocol, sync y project-list se prueban aquí como representantes.
 test("memory-protocol, sync and project-list never load the MCP SDK or zod", async () => {
   const dir = workspace();
   const cases: [string[], number][] = [
     [["memory-protocol","--json"], 0],
-    [["sync"], 1], // CONFIG_NOT_FOUND, unrelated to the guard
+    [["sync"], 1], // CONFIG_NOT_FOUND, sin relación con la guardia
     [["project-list"], 0],
   ];
   for (const [args, expectedCode] of cases) {
@@ -245,6 +258,7 @@ test("memory-protocol, sync and project-list never load the MCP SDK or zod", asy
     expect(result.code).toBe(expectedCode);
   }
 }, 40000);
+// Control positivo: el comando mcp sí debe disparar la guardia (si no lo hiciera, la prueba anterior no probaría nada real).
 test("the mcp command still loads the MCP SDK (the guard itself is not a false negative)", async () => {
   const dir = workspace();
   const marker = join(dir, "marker-mcp.txt");
@@ -254,8 +268,8 @@ test("the mcp command still loads the MCP SDK (the guard itself is not a false n
   expect(hits.includes("zod") || hits.includes("@modelcontextprotocol")).toBe(true);
 }, 40000);
 
-// The identity file boundary is validated with a strict zod schema, loaded on demand: only a repository that
-// actually carries a .forge614/project.json pays for it, and never the common startup path without one.
+// El archivo de identidad se valida con un esquema estricto de zod, cargado bajo demanda: solo un repositorio que
+// de verdad trae un .forge614/project.json paga ese costo, nunca el camino común de arranque sin uno.
 test("startup-context loads zod only when the repository carries an identity file", async () => {
   const dir = workspace();
   expect((await run(dir, "init", "--json")).code).toBe(0);
@@ -266,7 +280,7 @@ test("startup-context loads zod only when the repository carries an identity fil
   const free = await runGuarded(dir, join(dir, "user"), without, "startup-context", "--directory", plain, "--json");
   expect(existsSync(without)).toBe(false);
   expect(free.code).toBe(0);
-  // Positive control: with a file the schema is needed, so the guard must see the load (proves it is not a false negative).
+  // Control positivo: con un archivo de identidad el esquema hace falta, así que la guardia debe ver la carga (prueba que no es un falso negativo).
   const withFile = join(dir, "marker-with.txt");
   await runGuarded(dir, join(dir, "user"), withFile, "startup-context", "--directory", carrying, "--json");
   expect(existsSync(withFile)).toBe(true);

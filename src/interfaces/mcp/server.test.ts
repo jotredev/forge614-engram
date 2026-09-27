@@ -1,3 +1,4 @@
+/** Comprueba el servidor MCP real por stdio (entrada y salida estándar): arranque, lista de herramientas y cierre ordenado, con el CLI en fuente y compilado. */
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,8 +20,8 @@ function environment(userDirectory: string): Record<string, string> {
   return Object.fromEntries(Object.entries({ ...process.env, FORGE614_HOME: join(userDirectory,".forge614") })
     .filter((entry): entry is [string, string] => entry[1] !== undefined));
 }
-// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
-// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+// Ver src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync tiene un error de bloqueo confirmado
+// y sin corregir en Bun (oven-sh/bun#34069), por eso aquí se usa el Bun.spawn asíncrono en su lugar.
 async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath, cli, ...args], {
     cwd, env: environment(userDirectory), stdout:"pipe", stderr:"pipe",
@@ -68,6 +69,7 @@ afterEach(async () => {
   for (const client of clients.splice(0)) await client.close().catch(() => {});
   for (const directory of temporaryDirectories.splice(0).reverse()) rmSync(directory, { recursive: true, force: true });
 });
+// El servidor arranca sin crear ningún archivo de usuario (.forge614) hasta la primera llamada, y anuncia exactamente las diez herramientas.
 test("stdio initializes and advertises exactly the bounded memory tool surface", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   const { client, transport } = await connect({ cwd: root, userDirectory });
@@ -82,6 +84,7 @@ test("stdio initializes and advertises exactly the bounded memory tool surface",
   expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
 }, 40000);
 
+// El mismo protocolo de arranque funciona igual desde el ejecutable compilado (bun build --compile), no solo desde la fuente.
 test("compiled executable completes the official SDK stdio handshake without user storage", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const binary = join(root, "forge614-engram");
   const buildChild = Bun.spawn([
@@ -93,6 +96,7 @@ test("compiled executable completes the official SDK stdio handshake without use
   expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
 }, 40000);
 
+// Sin cliente SDK de por medio: si stdin se cierra mientras la petición roots/list sigue sin respuesta, el proceso igual sale pronto.
 test("raw stdin EOF cancels an unanswered roots request and exits promptly", async () => {
   const root = temporary(); const userDirectory = join(root,"user");
   expect((await runCli(root,userDirectory,"init","--json")).code).toBe(0);

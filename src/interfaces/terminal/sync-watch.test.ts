@@ -1,3 +1,4 @@
+/** Comprueba `forge614 sync-watch` como proceso real: reporta el reintento sin conexión, no bloquea guardados locales y sale limpio con SIGINT. */
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,8 +11,8 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
 }
 const cli = resolve(import.meta.dir,"../../cli.ts");
-// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
-// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+// Ver src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync tiene un error de bloqueo confirmado
+// y sin corregir en Bun (oven-sh/bun#34069), por eso aquí se usa el Bun.spawn asíncrono en su lugar.
 async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
@@ -41,6 +42,7 @@ async function create(dir: string, name = "demo"): Promise<string> {
   return JSON.parse(result.stdout).projectId;
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
+// Con PostgreSQL configurado pero inalcanzable, sync-watch reporta POSTGRES_UNAVAILABLE sin filtrar la credencial, deja seguir guardando en local y sale con 130 al recibir SIGINT.
 test("sync-watch reports offline retry state and exits on SIGINT without blocking local writes",async()=>{
   const dir=workspace();const id=(await create(dir));
   const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));

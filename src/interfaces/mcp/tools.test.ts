@@ -1,7 +1,9 @@
+/** Comprueba que `registerTools` publica las diez herramientas con esquemas ejecutables y manejadores que responden. */
 import { expect, test } from "bun:test";
 import { registerTools } from "./tools";
 import { sdkHarness } from "./__tests__/sdk-harness";
 
+// Las diez herramientas aparecen en tools/list; sus manejadores responden y su esquema de entrada rechaza un límite fuera de rango (51 > 50).
 test("registerTools publishes both handler families with executable schemas and callbacks", async () => {
   const h=await sdkHarness((context,server)=>registerTools(server,context.memoryStore,context.projectDirectory));
   try {

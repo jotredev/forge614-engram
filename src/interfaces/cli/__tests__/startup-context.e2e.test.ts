@@ -1,3 +1,4 @@
+/** Prueba de punta a punta de `startup-context` como proceso real del CLI: validación, vínculo, aislamiento, permisos de solo lectura y los dos formatos de salida. */
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -11,8 +12,8 @@ function temporary(prefix = "forge614-startup-context-"): string {
   return directory;
 }
 const cli = resolve(import.meta.dir, "../../../cli.ts");
-// See cli.e2e.test.ts: Bun.spawnSync has a confirmed, unfixed upstream hang bug
-// (oven-sh/bun#34069), so the CLI launcher uses the async Bun.spawn path instead.
+// Ver cli.e2e.test.ts: Bun.spawnSync tiene un error de bloqueo confirmado y sin corregir en Bun
+// (oven-sh/bun#34069), por eso el lanzador del CLI usa aquí el camino asíncrono Bun.spawn en su lugar.
 async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
   return (await runCliWithEnvironment(cwd, userDirectory, {}, ...args));
 }
@@ -40,6 +41,7 @@ async function runCliWithEnvironment(cwd: string, userDirectory: string, environ
 }
 afterEach(() => { for (const directory of directories.splice(0).reverse()) rmSync(directory, { recursive: true, force: true }); });
 
+// Sin --json o sin --directory, startup-context falla con INVALID_INPUT antes de crear ningún archivo de usuario.
 test("startup-context requires --json and --directory before touching storage", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   const missingJson = (await runCli(root, userDirectory, "startup-context", "--directory", temporary()));
@@ -54,6 +56,7 @@ test("startup-context requires --json and --directory before touching storage", 
   expect(existsSync(join(root, "user", ".forge614"))).toBe(false);
 }, 40000);
 
+// Sin haber ejecutado init antes, startup-context falla con CONFIG_NOT_FOUND; no lo confunde con un proyecto simplemente sin vincular.
 test("startup-context on a never-initialized workspace is a real error, not an unbound project", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   const result = (await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json"));
@@ -63,6 +66,7 @@ test("startup-context on a never-initialized workspace is a real error, not an u
   expect(existsSync(join(root, "user", ".forge614"))).toBe(false);
 }, 40000);
 
+// Con FORGE614_HOME apuntando a otra carpeta, init, save y startup-context escriben y leen ahí, nunca en la carpeta de usuario real del proceso.
 test("FORGE614_HOME isolates init, save, and startup-context from the process home", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const forgeHome = join(root, "forge614");
   const environment = { FORGE614_HOME: forgeHome };
@@ -80,6 +84,7 @@ test("FORGE614_HOME isolates init, save, and startup-context from the process ho
   expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
 }, 40000);
 
+// Un FORGE614_HOME vacío o relativo falla con INVALID_FORGE614_HOME antes de crear siquiera la carpeta histórica ~/.forge614.
 test("empty or relative FORGE614_HOME fails before creating the historic home", async () => {
   for (const value of ["", "relative/forge614"]) {
     const root = temporary(); const userDirectory = join(root, "user");
@@ -91,6 +96,7 @@ test("empty or relative FORGE614_HOME fails before creating the historic home", 
   }
 }, 40000);
 
+// Para una carpeta ya vinculada, startup-context devuelve el contexto del proyecto junto con shared (con previsualizaciones) y no cambia la lista de proyectos.
 test("startup-context returns the bound project's context alongside shared, previews included, and creates nothing new", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -114,6 +120,7 @@ test("startup-context returns the bound project's context alongside shared, prev
   expect(after).toEqual(before);
 }, 40000);
 
+// Una carpeta sin vincular no es un error (status unbound); consultarla no la vincula, y repetir la misma consulta da exactamente la misma salida.
 test("startup-context reports an unbound directory without an error and without binding it, and is idempotent", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -130,6 +137,7 @@ test("startup-context reports an unbound directory without an error and without 
   expect(JSON.parse((await runCli(root, userDirectory, "project-list")).stdout)).toEqual([]);
 }, 40000);
 
+// La carpeta personal (home) y la raíz del sistema de archivos también reportan status unbound y devuelven igual el bloque shared; ninguna de las dos se vincula.
 test("startup-context returns shared favorite-color for home and filesystem root without binding either", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -148,6 +156,7 @@ test("startup-context returns shared favorite-color for home and filesystem root
   expect(JSON.parse((await runCli(root, userDirectory, "project-list")).stdout)).toEqual([]);
 }, 40000);
 
+// Que una carpeta tenga Git no la hace un proyecto por sí sola: solo la que se vinculó explícitamente devuelve status bound con su propio contexto.
 test("startup-context distinguishes an unbound Git directory from a bound Git directory", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   const unboundDirectory = temporary(); const boundDirectory = temporary();
@@ -169,6 +178,7 @@ test("startup-context distinguishes an unbound Git directory from a bound Git di
   expect(JSON.parse(bound.stdout).project.context.recent.map((row: { title: string }) => row.title).sort()).toEqual(["Project", "Shared"]);
 }, 40000);
 
+// Con el archivo de la base marcado de solo lectura a nivel de sistema de archivos (0o400), startup-context igual funciona, porque no necesita escribir.
 test("startup-context succeeds against a database file made read-only at the filesystem level", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -183,6 +193,7 @@ test("startup-context succeeds against a database file made read-only at the fil
   } finally { chmodSync(dbPath, originalMode); }
 }, 40000);
 
+// Cuando falla, el error nunca repite la ruta de directorio pedida ni ningún otro dato sensible en su mensaje.
 test("startup-context never leaks the requested directory or other secrets on failure", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -196,6 +207,7 @@ test("startup-context never leaks the requested directory or other secrets on fa
   expect(result.stdout).toBe("");
 }, 40000);
 
+// Una ruta inexistente, un archivo regular en vez de carpeta, y una carpeta sin permiso de lectura fallan igual con INVALID_DIRECTORY, sin filtrar la ruta en el error.
 test("startup-context rejects missing, regular-file, and unreadable paths with safe JSON", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -213,6 +225,7 @@ test("startup-context rejects missing, regular-file, and unreadable paths with s
   } finally { chmodSync(unreadable, 0o700); }
 }, 40000);
 
+// Después de init, ejecutar startup-context no agrega ni quita ningún archivo bajo la carpeta del espacio de trabajo.
 test("startup-context creates no files under the workspace root beyond what init already created", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -223,11 +236,12 @@ test("startup-context creates no files under the workspace root beyond what init
   expect(after).toEqual(before);
 }, 40000);
 
+// startup-context abre la base en modo solo lectura cuando no tiene nada que escribir, así que los archivos WAL (log de escritura anticipada de SQLite) que ya existían quedan exactamente igual.
 test("startup-context opens the base read-only when nothing has to be written, so an existing WAL footprint is left exactly as found", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   const engramDirectory = join(userDirectory, ".forge614", "engram");
-  // Leave real WAL sidecars behind, as a crashed or still-running client would (Linux always keeps them).
+  // Deja archivos WAL reales, como los dejaría un cliente que se cayó sin cerrar la base o uno aún en ejecución (Linux siempre los conserva).
   const holder = Bun.spawn([process.execPath, "-e",
     'const {Database}=require("bun:sqlite");const d=new Database(process.argv[1]);d.query("select count(*) from projects").get();console.log("ready");setInterval(()=>{},1000)',
     join(engramDirectory, "engram.db")], { stdout: "pipe", stderr: "pipe" });
@@ -242,6 +256,7 @@ test("startup-context opens the base read-only when nothing has to be written, s
   } finally { holder.kill(9); }
 }, 40000);
 
+// --format 2 imprime el bloque de texto listo para inyectar; --format 1 coincide byte a byte con el valor por defecto (sin --format); cualquier otro valor falla con INVALID_INPUT.
 test("startup-context --format 2 prints the ready-to-inject block, --format 1 matches the default byte for byte and other formats fail", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);

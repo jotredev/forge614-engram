@@ -1,3 +1,4 @@
+/** Prueba de punta a punta de `project-bind` como proceso real del CLI: recuperar un vínculo cuando el nombre del proyecto ya está en uso. */
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -34,8 +35,8 @@ function repository(): string {
   return directory;
 }
 const cli = resolve(import.meta.dir,"../../../cli.ts");
-// See cli.e2e.test.ts: Bun.spawnSync has a confirmed, unfixed upstream hang bug
-// (oven-sh/bun#34069), so the CLI launcher uses the async Bun.spawn path instead.
+// Ver cli.e2e.test.ts: Bun.spawnSync tiene un error de bloqueo confirmado y sin corregir en Bun
+// (oven-sh/bun#34069), por eso el lanzador del CLI usa aquí el camino asíncrono Bun.spawn en su lugar.
 async function runCli(cwd:string,userDirectory:string,...args:string[]) {
   const child = Bun.spawn([process.execPath,cli,...args],{
     cwd,env:{...process.env,FORGE614_HOME:join(userDirectory,".forge614")},stdout:"pipe",stderr:"pipe",
@@ -64,6 +65,7 @@ afterEach(() => {
 });
 
 
+// Cuando ya existe un proyecto con el nombre de la carpeta, project-bind permite vincularla igual pasando el projectId ya creado, en vez de fallar sin salida.
 test("project-bind is scriptable recovery for a colliding existing project name", async () => {
   const root = temporary(); const userDirectory = join(root,"user"); const directory = temporary();
   expect((await runCli(root,userDirectory,"init","--json")).code).toBe(0);

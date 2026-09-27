@@ -1,3 +1,4 @@
+/** Texto completo de `forge614 help`; `main.ts` lo imprime tal cual, sin crear ningún archivo. */
 export const HELP = `Forge614 Engram — una base, recuerdos por proyecto y compartidos
 
 Uso: forge614-engram <comando> [opciones]
