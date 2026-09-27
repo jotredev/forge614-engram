@@ -1,3 +1,9 @@
+/**
+ * Comprueba MemoryStore de punta a punta sobre SQLite real: aislamiento entre proyectos,
+ * versiones e historial, control de concurrencia optimista (versión esperada), repetición
+ * de peticiones, archivar/restaurar, búsqueda de texto (acentos, subcadenas, símbolos,
+ * relevancia), rollback de una escritura fallida, y rechazo de bases ajenas o demasiado nuevas.
+ */
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,7 +34,9 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true });
 });
 
+// Agrupa las pruebas de la fachada MemoryStore sobre almacenamiento local (SQLite).
 describe("memoria local", () => {
+  // Verifica que el contenido guardado sobrevive a cerrar el archivo y reabrirlo desde cero.
   test("preserves content after closing and opening a real file", () => {
     const path = database();
     const first = open(path);
@@ -37,6 +45,7 @@ describe("memoria local", () => {
     expect(open(path).get(demoId, saved.id)?.content).toBe("Use SQLite locally");
   });
 
+  // Verifica que leer, ver historial, buscar y archivar desde otro proyecto no alcanza una memoria que no le pertenece.
   test("isolates reads, history, search and archive by project", () => {
     const store = open();
     const saved = store.save(input);
@@ -47,6 +56,7 @@ describe("memoria local", () => {
     expect(store.get(demoId, saved.id)?.state).toBe("active");
   });
 
+  // Verifica que la misma clave temática puede reutilizarse en dos proyectos distintos sin chocar, cada una con su propia memoria.
   test("keeps topic keys scoped to registered project identities", () => {
     const store = open();
     const a = store.save({ ...input, projectId: demoId, topicKey: "architecture/db" });
@@ -56,6 +66,7 @@ describe("memoria local", () => {
     expect(store.search(demoId, "SQLite")).toHaveLength(1);
   });
 
+  // Verifica que una revisión conserva el historial completo y que la búsqueda de texto ya no encuentra el contenido viejo, solo el nuevo.
   test("preserves revisions and replaces old FTS content", () => {
     const store = open();
     const saved = store.save({ ...input, topicKey: "architecture/db" });
@@ -67,6 +78,7 @@ describe("memoria local", () => {
     expect(store.search(demoId, "PostgreSQL")[0]?.memory.id).toBe(saved.id);
   });
 
+  // Verifica el control de concurrencia optimista: una revisión basada en una versión ya superada por otra conexión se rechaza, sin perder el cambio que sí se aplicó.
   test("rejects stale revisions from another connection without losing data", () => {
     const path = database();
     const one = open(path);
@@ -78,6 +90,7 @@ describe("memoria local", () => {
     expect(one.history(demoId, saved.id)).toHaveLength(2);
   });
 
+  // Verifica que reemplazar el contenido de un tema ya existente exige dar expectedVersion; sin ella, o con una versión inventada sin memoria previa, falla.
   test("requires a revision when replacing a topic", () => {
     const store = open();
     store.save({ ...input, topicKey: "database" });
@@ -85,6 +98,7 @@ describe("memoria local", () => {
     expect(() => store.save({ ...input, expectedVersion: 1 })).toThrow();
   });
 
+  // Verifica que repetir la misma petición (requestKey) devuelve su resultado original aunque haya habido una actualización después, pero un contenido distinto con la misma clave falla.
   test("replayed request returns its original version even after an update", () => {
     const store = open();
     const request = { ...input, topicKey: "database", requestKey: "req-1" };
@@ -95,6 +109,7 @@ describe("memoria local", () => {
     expect(() => store.save({ ...request, content: "Different request" })).toThrow();
   });
 
+  // Verifica que archivar oculta de la búsqueda sin borrar el historial, que no se puede reemplazar en silencio una memoria archivada, y que restaurar la devuelve a la búsqueda.
   test("archives reversibly without erasing versions or allowing silent replacement", () => {
     const store = open();
     const saved = store.save({ ...input, topicKey: "database" });
@@ -107,6 +122,7 @@ describe("memoria local", () => {
     expect(store.search(demoId, "SQLite")).toHaveLength(1);
   });
 
+  // Verifica que archivar y restaurar aceptan un id con espacios sobrantes, igual que get.
   test("archive and restore accept the same trimmed IDs as get", () => {
     const store = open();
     const saved = store.save(input);
@@ -114,6 +130,7 @@ describe("memoria local", () => {
     expect(store.restore(demoId,` ${saved.id} `).state).toBe("active");
   });
 
+  // Verifica que buscar sin acentos y en minúsculas encuentra un término guardado con acentos y mayúsculas.
   test("a short term does not break accented case-insensitive search", () => {
     const store = open();
     store.save({ ...input, title: "ÁRBOL", content: "UI de navegación" });
@@ -121,6 +138,7 @@ describe("memoria local", () => {
     expect(store.search(demoId,"UI árbol")).toHaveLength(1);
   });
 
+  // Verifica que una búsqueda con límite (LIMIT) libera su consulta preparada correctamente: se puede repetir y no bloquea guardados posteriores.
   test("limited literal searches release their statements for reuse and writes", () => {
     const store = open();
     store.save({ ...input, title: "UI first" });
@@ -131,6 +149,7 @@ describe("memoria local", () => {
     expect(store.search(demoId,"UI",10)).toHaveLength(3);
   });
 
+  // Verifica que la búsqueda encuentra subcadenas y términos cortos (incluidos "%" y "_field") tratándolos como texto literal, sin que se interpreten como comodines de FTS ni inyecten sintaxis de búsqueda.
   test("searches substrings and short words as literals", () => {
     const store = open();
     store.save({ ...input, title: "UI uploadHandler", content: "Discount 10% _field" });
@@ -143,6 +162,7 @@ describe("memoria local", () => {
     expect(store.search(demoId, '" OR *')).toEqual([]);
   });
 
+  // Verifica que la búsqueda exige que aparezcan todos los términos (no solo alguno), y que un resultado con la coincidencia en el título puntúa mejor (bm25 más negativo) que uno con la coincidencia solo en el contenido.
   test("requires every search term and gives title matches higher relevance", () => {
     const store = open();
     const title = store.save({ ...input, title: "retry upload", content: "Resolved safely" });
@@ -154,6 +174,7 @@ describe("memoria local", () => {
     expect(results[0]?.explanation.bm25).toBeLessThan(0);
   });
 
+  // Verifica que se rechazan campos en blanco, un tipo de memoria inválido, una búsqueda en blanco, y límites de búsqueda fuera de rango (0, negativo, mayor a 100, decimal, NaN).
   test("rejects empty text, invalid types and invalid limits", () => {
     const store = open();
     for (const key of ["projectId", "title", "content"] as const) {
@@ -165,6 +186,7 @@ describe("memoria local", () => {
     expect(store.search(demoId, "SQLite")).toEqual([]);
   });
 
+  // Verifica que si falla la escritura de una nueva versión (aquí, forzado con un disparador), el contenido, el historial y la búsqueda de texto se deshacen juntos, como si nunca se hubiera intentado.
   test("rolls back content, history and FTS together if a revision write fails", () => {
     const path = database();
     const store = open(path);
@@ -180,6 +202,7 @@ describe("memoria local", () => {
     expect(store.search(demoId,"PostgreSQL")).toEqual([]);
   });
 
+  // Verifica que un archivo SQLite ajeno (con sus propias tablas, sin nada de Engram) se rechaza sin tocar sus datos ni agregarle las tablas de memoria.
   test("refuses an unrelated SQLite database without adding memory tables", () => {
     const path = database();
     const connection = new Database(path);
@@ -190,6 +213,7 @@ describe("memoria local", () => {
     connection.close();
   });
 
+  // Verifica que abrir una base cuyo nivel de esquema es más nuevo que el que este programa entiende se rechaza, sin tocar el archivo.
   test("refuses a future database version", () => {
     const path = database();
     const store = open(path);

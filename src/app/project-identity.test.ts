@@ -1,3 +1,9 @@
+/**
+ * Comprueba la sincronización de identidad entre la base y .forge614/project.json: quién
+ * gana entre archivo de nodo y archivo de identidad, qué pasa al quitar o cambiar el grupo,
+ * degradación ante una carpeta sin permiso de escritura, y a qué carpetas llega una
+ * actualización de nombre o grupo (solo a las que declaran el mismo proyecto).
+ */
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,6 +23,7 @@ afterEach(() => {
 const identity = (folder: string, content: unknown) => { mkdirSync(join(folder, ".forge614"), { recursive: true }); writeFileSync(join(folder, ".forge614", "project.json"), JSON.stringify(content)); };
 const file = (folder: string) => JSON.parse(readFileSync(join(folder, ".forge614", "project.json"), "utf8"));
 
+// Verifica que sin carpeta raíz o sin archivo de identidad no se resuelve ningún proyecto ni se escribe nada en disco.
 test("without a root or a file nothing is resolved and nothing is written", () => {
   const db = store(), folder = root();
   expect(applyIdentityFile(db, "/key", null)).toEqual({ projectId: null, notices: [] });
@@ -25,6 +32,7 @@ test("without a root or a file nothing is resolved and nothing is written", () =
   expect(existsSync(join(folder, ".forge614"))).toBe(false);
 });
 
+// Verifica que un archivo sin sección "ecosystem" se completa con null (sin inventar un grupo) y conserva la identidad del proyecto.
 test("a file without an ecosystem section is completed with null and keeps its identity", () => {
   const db = store(), folder = root(), id = crypto.randomUUID();
   identity(folder, { schemaVersion: 1, project: { id, name: "viejo" } });
@@ -32,6 +40,7 @@ test("a file without an ecosystem section is completed with null and keeps its i
   expect(file(folder)).toEqual({ schemaVersion: 1, project: { id, name: "viejo" }, ecosystem: null });
 });
 
+// Verifica que el grupo declarado en el archivo de nodo (forge614.node.json) gana sobre uno distinto declarado en el archivo de identidad, sin reescribir este último.
 test("the node file's group wins over a different group in the identity file", () => {
   const db = store(), folder = root(), id = crypto.randomUUID(), other = crypto.randomUUID();
   writeFileSync(join(folder, "forge614.node.json"), JSON.stringify({ ecosystem: "forge614" }));
@@ -43,6 +52,7 @@ test("the node file's group wins over a different group in the identity file", (
   expect(db.identityEvents(id).map(event => event.action)).toEqual(["GROUP_BOUND"]);
 });
 
+// Verifica que quitar el grupo de un archivo que había establecido la membresía la quita también en la base, pero una membresía hecha por comando explícito sobrevive a un archivo que aún no se puso al día.
 test("removing the group from a file that established the membership removes the membership, a command's membership survives", () => {
   const db = store(), folder = root(), id = crypto.randomUUID(), group = { id: crypto.randomUUID(), name: "tienda" };
   identity(folder, { schemaVersion: 1, project: { id, name: "front" }, ecosystem: group });
@@ -52,12 +62,13 @@ test("removing the group from a file that established the membership removes the
   applyIdentityFile(db, "/key", folder);
   expect(groupOf(db, id)).toBeUndefined();
   expect(db.identityEvents(id).map(event => event.action)).toEqual(["GROUP_BOUND", "GROUP_UNBOUND"]);
-  // A membership made by a command is not undone by a file that has not caught up yet.
+  // Una membresía hecha por comando no la deshace un archivo que todavía no se ha puesto al día.
   db.bindProjectToGroup(id, db.ensureGroup(group.id, group.name).group.id, "command");
   applyIdentityFile(db, "/key", folder);
   expect(groupOf(db, id)).toEqual(group);
 });
 
+// Verifica que una carpeta sin permiso de escritura no rompe la operación: solo genera un aviso PROJECT_FILE_NOT_WRITTEN.
 test("an unwritable folder degrades to a notice instead of failing the operation", () => {
   if (typeof process.getuid === "function" && process.getuid() === 0) return;
   const db = store(), folder = root(), project = db.createProject("Solo lectura");
@@ -66,6 +77,7 @@ test("an unwritable folder degrades to a notice instead of failing the operation
   expect(notices).toEqual([expect.objectContaining({ code: "PROJECT_FILE_NOT_WRITTEN" })]);
 });
 
+// Verifica que el aviso de proyecto heredado (legacy) que recibe su primer archivo se informa una sola vez, y que sin carpeta no hay aviso.
 test("publishing reports the legacy upgrade once and stays quiet afterwards", () => {
   const db = store(), folder = root(), project = db.createProject("Legado");
   expect(publishIdentity(db, project, folder, true)).toEqual([expect.objectContaining({ code: "PROJECT_FILE_CREATED" })]);
@@ -75,6 +87,7 @@ test("publishing reports the legacy upgrade once and stays quiet afterwards", ()
 
 import { updateIdentityFiles } from "./project-identity";
 
+// Verifica que un cambio de nombre o de grupo llega al archivo de identidad de cada carpeta ligada que declara este proyecto, incluidos cambios repetidos (sin volver a marcar "updated" si no cambió nada).
 test("renames and group changes reach the identity file of every bound folder that carries this project", () => {
   const db = store(), folder = root(), other = root(), project = db.createProject("Viejo");
   db.enableEcosystem();
@@ -89,7 +102,7 @@ test("renames and group changes reach the identity file of every bound folder th
   expect(updateIdentityFiles(db, project.projectId, { group: { id: group.id, name: "mi-tienda" } }).updated).toBe(0);
   expect(updateIdentityFiles(db, project.projectId, { group: null }).updated).toBe(1);
   expect(file(folder)).toEqual({ schemaVersion: 1, project: { id: project.projectId, name: "Nuevo" }, ecosystem: null });
-  // A folder whose file declares a different project is not ours to change.
+  // Una carpeta cuyo archivo declara un proyecto distinto no es nuestra para cambiarla.
   const stranger = crypto.randomUUID();
   db.bindProjectDirectory(other, project.projectId);
   identity(other, { schemaVersion: 1, project: { id: stranger, name: "ajeno" }, ecosystem: null });
@@ -98,6 +111,7 @@ test("renames and group changes reach the identity file of every bound folder th
   expect(file(other).project.name).toBe("ajeno");
 });
 
+// Verifica que un archivo dañado (JSON inválido) se salta y se cuenta como tal, y que un archivo ausente solo se crea cuando el cambio es de grupo, no de nombre.
 test("a broken file is skipped and reported, and a missing file is created only for a group change", () => {
   const db = store(), broken = root(), missing = root(), project = db.createProject("P");
   db.enableEcosystem();
@@ -111,6 +125,7 @@ test("a broken file is skipped and reported, and a missing file is created only 
   expect(readFileSync(join(broken, ".forge614", "project.json"), "utf8")).toBe("{");
 });
 
+// Verifica que un vínculo hecho sobre la carpeta .git de un checkout resuelve la raíz de identidad en el checkout, mientras que un repositorio bare (sin árbol de trabajo) no tiene ninguna carpeta de identidad que actualizar.
 test("a Git binding key resolves to its checkout, a bare repository to none", () => {
   const db = store(), checkout = root(), bare = root(), project = db.createProject("Git");
   mkdirSync(join(checkout, ".git"));

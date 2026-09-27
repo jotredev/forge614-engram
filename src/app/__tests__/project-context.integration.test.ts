@@ -1,3 +1,10 @@
+/**
+ * Comprueba la resolución de proyecto a partir de carpetas Git reales: los directorios
+ * Git anidados y los árboles de trabajo (worktrees) enlazados comparten identidad, las
+ * sesiones comparten proyecto pero no raíz en tiempo de ejecución, nunca se adivina una
+ * identidad ni se crean identidades duplicadas ante un Git roto, inalcanzable o lento, y la
+ * primera resolución concurrente desde varios procesos crea un único proyecto y vínculo.
+ */
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -38,6 +45,7 @@ afterEach(() => {
 });
 
 
+// Verifica que activar los vínculos de proyecto sube la base al nivel de esquema exacto 5, creando la tabla project_bindings (y sync_checkpoints si sync ya estaba activado), y que repetir la activación no falla.
 test("project-binding enrollment explicitly upgrades schema 3 or 4 to exact schema 5", async () => {
   for (const enableSync of [false, true]) {
     const path = join(temporary(), "engram.db");
@@ -54,6 +62,7 @@ test("project-binding enrollment explicitly upgrades schema 3 or 4 to exact sche
 });
 
 
+// Verifica que resolver con create=false sobre una carpeta sin proyecto no crea nada: devuelve "unbound" y la lista de proyectos sigue vacía.
 test("read-only resolution never creates a project or binding", async () => {
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
@@ -64,6 +73,7 @@ test("read-only resolution never creates a project or binding", async () => {
 });
 
 
+// Verifica que una subcarpeta dentro de un repositorio y un árbol de trabajo (worktree) enlazado a él resuelven al mismo proyecto, porque ambos comparten la carpeta común de Git (.git).
 test("nested Git directories and linked worktrees share the Git common-directory binding", async () => {
   const value = store(); value.enableProjectBindings();
   const repo = repository(); const child = join(repo, "src", "nested"); mkdirSync(child, { recursive: true });
@@ -78,6 +88,7 @@ test("nested Git directories and linked worktrees share the Git common-directory
 });
 
 
+// Verifica que iniciar la misma sesión desde distintos worktrees del mismo repositorio comparte el proyecto, pero cada raíz de ejecución (runtime) queda registrada por separado en local_session_bindings.
 test("sessions share project identity across worktrees but retain distinct runtime roots", async () => {
   const path = join(temporary(),"sessions.db"); const value = store(path); value.enableSessions();
   const repo = repository(); const child = join(repo,"src"); mkdirSync(child);
@@ -98,6 +109,7 @@ test("sessions share project identity across worktrees but retain distinct runti
 });
 
 
+// Verifica que una carpeta sin Git necesita un id de sesión explícito no ocupado, que un intento fallido (id ya usado por otro proyecto) deshace el proyecto y el vínculo que se hubieran creado, y que repetir con éxito y desde una ruta equivalente (con ".") da el mismo resultado.
 test("non-Git session roots are explicit and a failed start rolls back project and binding", async () => {
   const value = store(); value.enableSessions();
   const owner = value.createProject("Owner"); value.startSession(owner.projectId,"occupied");
@@ -110,6 +122,7 @@ test("non-Git session roots are explicit and a failed start rolls back project a
 });
 
 
+// Verifica que las variables de entorno de redirección de Git (GIT_DIR, GIT_WORK_TREE, GIT_COMMON_DIR) heredadas de otro repositorio no pueden sustituir al repositorio real de la carpeta que se está resolviendo.
 test("inherited Git redirection variables cannot replace the explicit repository", async () => {
   const value = store(); value.enableProjectBindings();
   const expected = repository(); const redirected = repository();
@@ -124,6 +137,7 @@ test("inherited Git redirection variables cannot replace the explicit repository
 });
 
 
+// Verifica que si el repositorio Git que envuelve a una subcarpeta está roto (versión de formato desconocida), la resolución falla en vez de crear una segunda identidad para esa subcarpeta.
 test("a broken enclosing Git repository fails closed without creating a second identity", async () => {
   const value = store(); value.enableProjectBindings();
   const repo = repository(); const child = join(repo,"src"); mkdirSync(child);
@@ -136,6 +150,7 @@ test("a broken enclosing Git repository fails closed without creating a second i
 });
 
 
+// Verifica que si el ejecutable "git" no está disponible (PATH vacío), eso se trata como un fallo de Git, no como si la carpeta simplemente no tuviera Git.
 test("an unavailable Git executable is not mistaken for a non-Git project", async () => {
   const value = store(); value.enableProjectBindings(); const directory = temporary();
   const original = process.env.PATH; process.env.PATH = "";
@@ -145,6 +160,7 @@ test("an unavailable Git executable is not mistaken for a non-Git project", asyn
 });
 
 
+// Verifica que descubrir el repositorio Git tiene un tiempo límite: si la lectura de su configuración se bloquea (aquí, con un FIFO), la operación falla con PROJECT_IDENTITY_UNAVAILABLE en vez de colgarse, y no crea ningún proyecto.
 test("Git discovery has a finite timeout and leaves storage unchanged when config input blocks", async () => {
   const path = join(temporary(),"engram.db"); const value = store(path); value.enableProjectBindings(); value.close();
   const repo = repository(); const fifo = join(repo,".git","blocking-config");
@@ -175,6 +191,7 @@ test("Git discovery has a finite timeout and leaves storage unchanged when confi
 },4000);
 
 
+// Verifica que si ya existe un proyecto con el mismo nombre que la carpeta, la resolución automática no adivina que es ese: exige un vínculo explícito.
 test("same-name existing projects require an explicit binding instead of identity guessing", async () => {
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
@@ -186,12 +203,13 @@ test("same-name existing projects require an explicit binding instead of identit
 });
 
 
+// Verifica, con y sin Git, que renombrar una carpeta sin archivo de identidad (o que lo perdió) no reconoce el proyecto por accidente: exige un vínculo explícito, y una vez ligada de nuevo conserva la identidad de las memorias ya guardadas.
 test.each([false,true])("renaming a %s Git directory without an identity file requires explicit binding and preserves memory identity", (withGit) => {
   const value=store();value.enableProjectBindings();
   const root=temporary(),old=join(root,"old-name"),moved=join(root,"new-name");mkdirSync(old);
   if(withGit)git(old,"init","--quiet");
   const saved=saveProjectMemory(value,old,{title:"Before",content:"Keep identity",type:"fact"});
-  // A folder that predates the portable identity file (or lost it) still needs an explicit binding.
+  // Una carpeta anterior al archivo de identidad portátil (o que lo perdió) sigue necesitando un vínculo explícito.
   rmSync(join(old,".forge614"),{recursive:true});
   renameSync(old,moved);
   expect(resolveProjectContext(value,moved,false).projectId).toBeNull();
@@ -208,6 +226,7 @@ test.each([false,true])("renaming a %s Git directory without an identity file re
 });
 
 
+// Verifica, con y sin Git, que renombrar una carpeta que sí lleva su archivo de identidad conserva el proyecto automáticamente, sin necesitar ninguna acción manual.
 test.each([false,true])("renaming a %s Git directory that carries its identity file keeps the project with no action", (withGit) => {
   const value=store();value.enableProjectBindings();
   const root=temporary(),old=join(root,"old-name"),moved=join(root,"new-name");mkdirSync(old);
@@ -220,16 +239,18 @@ test.each([false,true])("renaming a %s Git directory that carries its identity f
 });
 
 
+// Verifica que un vínculo ya registrado pero inaccesible en disco (una ruta cuyo padre es un archivo, no una carpeta) falla cerrado en vez de dar error confuso, mientras que otros vínculos sintéticos de la base siguen funcionando con normalidad.
 test("an inaccessible recorded binding fails closed but synthetic store bindings remain usable", async () =>{
   const value=store();value.enableProjectBindings();const root=temporary();
   const notDirectory=join(root,"file");writeFileSync(notDirectory,"fixture");
   value.resolveProjectDirectory(join(notDirectory,"child"),"Synthetic",true);
-  // stat fails with ENOTDIR, which must be treated as unavailable, never as evidence of a live project.
+  // stat falla con ENOTDIR, y eso debe tratarse como "no disponible", nunca como prueba de que hay un proyecto vivo ahí.
   expect(()=>resolveProjectContext(value,temporary(),true)).toThrow("vinculación explícita");
   expect(value.resolveProjectDirectory("synthetic/second","Second",true).created).toBe(true);
 });
 
 
+// Verifica que una carpeta inexistente, la carpeta personal (home) y la raíz del sistema de archivos se rechazan como carpetas de proyecto, sin crear nada.
 test("missing, home and filesystem-root directories are rejected without writes", async () => {
   const value = store(); value.enableProjectBindings();
   for (const directory of [join(temporary(), "missing"), homedir(), realpathSync("/")]) {
@@ -239,6 +260,7 @@ test("missing, home and filesystem-root directories are rejected without writes"
 });
 
 
+// Verifica que un guardado inválido no crea nada, y que el primer guardado válido en una carpeta nueva crea a la vez la identidad del proyecto, su vínculo y la memoria, todo consistente entre sí.
 test("first project save creates identity, binding and memory atomically", async () => {
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
@@ -258,6 +280,7 @@ test("first project save creates identity, binding and memory atomically", async
 });
 
 
+// Verifica que la fotografía (snapshot) de sincronización conserva el id del proyecto pero nunca incluye la ruta de la carpeta local ni un campo de vínculos de carpeta, porque eso es propio de cada máquina.
 test("sync snapshots preserve project UUIDs but exclude machine-local path bindings", async () => {
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
@@ -270,6 +293,7 @@ test("sync snapshots preserve project UUIDs but exclude machine-local path bindi
 });
 
 
+// Verifica que cuatro procesos que resuelven a la vez la misma carpeta sin proyecto previo crean un único proyecto y un único vínculo, no cuatro proyectos distintos por una condición de carrera.
 test("concurrent first resolution creates one project identity and one binding", async () => {
   const path = join(temporary(),"engram.db"); const value = store(path); value.enableProjectBindings(); value.close();
   const directory = temporary(); const storeModule = resolve(import.meta.dir,"../memory-store.ts");

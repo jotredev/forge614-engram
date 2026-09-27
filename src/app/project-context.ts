@@ -1,3 +1,9 @@
+/**
+ * Resuelve, liga y usa el proyecto asociado a una carpeta de trabajo: identifica el
+ * proyecto (por archivo de identidad o por vínculo de carpeta), lo crea si hace falta y
+ * se pidió, y ofrece las variantes de guardar memoria e iniciar sesión que además hacen
+ * esa resolución. Mantiene sincronizado `.forge614/project.json` con la base local.
+ */
 import { MemoryError } from "../shared/errors";
 import type { MemoryVersion, SaveInput } from "../modules/memory";
 import type { ParallelSession, PreviousSession, Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";
@@ -7,29 +13,54 @@ import { readProjectFile } from "../infrastructure/filesystem/project-identity-f
 import { canonicalProject, canonicalProjectForRead, identityRoot, runtimeProjectDirectory, bindingAvailable } from "../infrastructure/git/project-directory";
 export { assertGitProjectDirectory } from "../infrastructure/git/project-directory";
 
+/** Resultado de identificar el proyecto de una carpeta. */
 export interface ProjectContext {
+  /** Identificador del proyecto identificado, o `null` si no se identificó ninguno. */
   projectId: string | null;
+  /** Carpeta en su forma canónica (resuelta, por ejemplo, con `realpath`). */
   directory: string;
+  /** Cómo se identificó: `"file"` (archivo de identidad), `"binding"` (vínculo ya registrado), `"created"` (proyecto nuevo) o `"unbound"` (no se identificó). */
   source: string;
+  /** Grupo (ecosistema) al que pertenece el proyecto, si pertenece a alguno. */
   group?: { id: string; name: string };
+  /** Avisos generados al registrar, ligar o publicar la identidad, si los hubo. */
   notices?: IdentityNotice[];
 }
 
+/** Campos de una memoria de proyecto sin `projectId` ni `scope`, que estas funciones resuelven a partir de la carpeta. */
 type ProjectMemoryInput = Omit<SaveInput,"projectId"|"scope">;
+/** Forma normalizada de una carpeta (ruta canónica y nombre) tal como la produce `canonicalProject`. */
 type Canonical = ReturnType<typeof canonicalProject>;
 
+/**
+ * Resuelve el proyecto de una carpeta, creando uno nuevo si no existe y `create` es `true`.
+ * @param store Base abierta desde la que se lee y, si aplica, se escribe.
+ * @param directory Carpeta de trabajo cuyo proyecto se quiere resolver.
+ * @param create Si se permite crear un proyecto nuevo cuando la carpeta no está ligada a ninguno.
+ * @returns El contexto del proyecto resuelto (o creado).
+ * @throws MemoryError con código `INVALID_INPUT` si `create` no es un valor booleano.
+ */
 export function resolveProjectContext(store: MemoryStore, directory: string, create: boolean): ProjectContext {
   if (typeof create !== "boolean") throw new MemoryError("INVALID_INPUT","create debe ser booleano.");
   const canonical = canonicalProject(directory);
   return resolveCanonicalProjectContext(store, canonical, create, identityRoot(directory, canonical), create);
 }
 
-/** Read-mostly preload: never creates a project for an unbound folder, but keeps identity files in step. */
+/** Precarga de solo lectura en su mayoría: nunca crea un proyecto para una carpeta sin vínculo, pero mantiene los archivos de identidad al día. */
 export function resolveStartupProjectContext(store: MemoryStore, directory: string): ProjectContext {
   const canonical = canonicalProjectForRead(directory);
   return resolveCanonicalProjectContext(store, canonical, false, identityRoot(directory, canonical), true);
 }
 
+/**
+ * Núcleo común de la resolución: primero intenta identificar el proyecto por su archivo
+ * de identidad; si no hay archivo (o no declara proyecto), cae al vínculo de carpeta
+ * registrado en la base (creando el proyecto si `create` lo permite).
+ * @param canonical Carpeta ya normalizada, con su nombre canónico.
+ * @param create Si se permite crear un proyecto nuevo al caer al vínculo de carpeta.
+ * @param root Carpeta desde la que se busca el archivo de identidad, o `null` si no aplica.
+ * @param publish Si se debe reescribir el archivo de identidad tras resolver por vínculo de carpeta.
+ */
 function resolveCanonicalProjectContext(store: MemoryStore, canonical: Canonical, create: boolean, root: string | null, publish: boolean): ProjectContext {
   const fromFile = applyIdentityFile(store, canonical.directory, root);
   const notices = [...fromFile.notices];
@@ -39,12 +70,22 @@ function resolveCanonicalProjectContext(store: MemoryStore, canonical: Canonical
     const resolved = store.resolveProjectDirectory(canonical.directory,canonical.name,create,bindingAvailable);
     projectId = resolved.project?.projectId ?? null;
     source = resolved.created ? "created" : resolved.project ? "binding" : "unbound";
+    // Solo se publica (reescribe) el archivo de identidad cuando se pidió y de verdad se resolvió un proyecto por vínculo de carpeta.
     if (publish && resolved.project) notices.push(...publishIdentity(store, resolved.project, root, !resolved.created));
   }
   const group = groupOf(store, projectId);
   return { projectId, directory:canonical.directory, source, ...(group ? { group } : {}), ...(notices.length ? { notices } : {}) };
 }
 
+/**
+ * Liga explícitamente una carpeta a un proyecto ya existente y publica su identidad.
+ * @param store Base abierta desde la que se lee y a la que se escribe el vínculo.
+ * @param directory Carpeta a ligar.
+ * @param projectId Identificador del proyecto al que se liga la carpeta.
+ * @returns El contexto resultante, con `source` siempre `"binding"`.
+ * @throws MemoryError con código `PROJECT_FILE_CONFLICT` si la carpeta ya tiene un archivo
+ * de identidad que declara un proyecto distinto al pedido.
+ */
 export function bindProjectContext(store: MemoryStore, directory: string, projectId: string): ProjectContext {
   const canonical = canonicalProject(directory);
   const root = identityRoot(directory, canonical);
@@ -58,6 +99,14 @@ export function bindProjectContext(store: MemoryStore, directory: string, projec
   return { projectId:project.projectId,directory:canonical.directory,source:"binding",...(group ? { group } : {}),...(notices.length ? { notices } : {}) };
 }
 
+/**
+ * Guarda una memoria de proyecto resolviendo el proyecto a partir de la carpeta (lo crea
+ * si hace falta) y publicando su identidad después.
+ * @param store Base abierta a la que se guarda.
+ * @param directory Carpeta cuyo proyecto recibe la memoria.
+ * @param input Campos de la memoria a guardar (sin `projectId` ni `scope`, que se resuelven aquí).
+ * @returns La versión de la memoria recién guardada.
+ */
 export function saveProjectMemory(store: MemoryStore, directory: string, input: ProjectMemoryInput): MemoryVersion {
   const canonical = canonicalProject(directory);
   const root = identityRoot(directory, canonical);
@@ -68,7 +117,15 @@ export function saveProjectMemory(store: MemoryStore, directory: string, input: 
   return saved;
 }
 
-/** Like saveProjectMemoryWithSession, also reporting the identity notices (for example a base upgrade). */
+/**
+ * Como `saveProjectMemoryWithSession`, pero además informa los avisos de identidad
+ * (por ejemplo, una migración de la base) que se produjeron al resolver el proyecto.
+ * @param store Base abierta a la que se guarda.
+ * @param directory Carpeta cuyo proyecto recibe la memoria.
+ * @param input Campos de la memoria a guardar.
+ * @param options Opciones de guardado ligado a la sesión (por ejemplo, `sessionId`).
+ * @returns El resultado del guardado y los avisos de identidad generados.
+ */
 export function saveProjectMemoryWithSessionAndNotices(store: MemoryStore, directory: string,
     input: ProjectMemoryInput, options: SessionSaveOptions = {}): { saved: SessionSaveResult; notices: IdentityNotice[] } {
   const canonical = canonicalProject(directory);
@@ -81,22 +138,38 @@ export function saveProjectMemoryWithSessionAndNotices(store: MemoryStore, direc
   return { saved, notices };
 }
 
+/**
+ * Como `saveProjectMemoryWithSessionAndNotices`, pero devuelve solo el resultado del
+ * guardado, sin los avisos de identidad.
+ * @param store Base abierta a la que se guarda.
+ * @param directory Carpeta cuyo proyecto recibe la memoria.
+ * @param input Campos de la memoria a guardar.
+ * @param options Opciones de guardado ligado a la sesión.
+ * @returns El resultado del guardado (memoria y, si aplica, datos de la sesión).
+ */
 export function saveProjectMemoryWithSession(store: MemoryStore, directory: string,
     input: ProjectMemoryInput, options: SessionSaveOptions = {}): SessionSaveResult {
   return saveProjectMemoryWithSessionAndNotices(store, directory, input, options).saved;
 }
 
-/** Like startProjectSession, also reporting the identity notices (for example the file just written) and,
- * for a session created by this call (never on replay): the project's previous session left open for
- * PARALLEL_MINUTES or more (if any), and any of its other open runtime sessions still open in parallel
- * with this one (if any, at most PARALLEL_LIMIT, 1.7.1). */
+/**
+ * Como `startProjectSession`, pero además informa los avisos de identidad (por ejemplo, el
+ * archivo que se acaba de escribir) y, solo para una sesión creada por esta llamada (nunca
+ * en una repetición con el mismo id): la sesión previa del proyecto que quedó abierta
+ * durante PARALLEL_MINUTES o más (si la hay), y cualquier otra de sus sesiones en tiempo de
+ * ejecución que siga abierta en paralelo con esta (si las hay, como máximo PARALLEL_LIMIT, 1.7.1).
+ * @param store Base abierta desde la que se lee y a la que se escribe la sesión.
+ * @param directory Carpeta cuyo proyecto inicia la sesión.
+ * @param sessionId Identificador de la sesión a iniciar (o repetir, si ya existía).
+ * @returns La sesión iniciada, los avisos de identidad y, cuando aplica, `previous` y `parallel`.
+ */
 export function startProjectSessionWithNotices(store: MemoryStore, directory: string, sessionId: string): { session: Session; notices: IdentityNotice[]; previous?: PreviousSession; parallel?: ParallelSession[] } {
   const canonical = canonicalProject(directory);
   const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
   const root = identityRoot(directory, canonical);
   const identity = applyIdentityFile(store, canonical.directory, root);
   const notices = [...identity.notices];
-  // Level 11 only: whether this id already names a session, read before starting (a replay never reports `previous`/`parallel`).
+  // Solo con el nivel 11: si este id ya nombra una sesión, se comprueba antes de iniciarla (una repetición nunca informa `previous`/`parallel`).
   const known = store.intelligenceEnabled() ? (identity.projectId ?? store.projectForDirectory(canonical.directory)?.projectId ?? null) : null;
   const existed = known !== null && store.getSession(known, sessionId) !== null;
   const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable);
@@ -107,6 +180,14 @@ export function startProjectSessionWithNotices(store: MemoryStore, directory: st
   return { session, notices, ...(previous ? { previous } : {}), ...(parallel && parallel.length ? { parallel } : {}) };
 }
 
+/**
+ * Como `startProjectSessionWithNotices`, pero devuelve solo la sesión, sin avisos ni datos
+ * de sesión previa o paralela.
+ * @param store Base abierta desde la que se lee y a la que se escribe la sesión.
+ * @param directory Carpeta cuyo proyecto inicia la sesión.
+ * @param sessionId Identificador de la sesión a iniciar.
+ * @returns La sesión iniciada (o la existente, si `sessionId` ya se había usado).
+ */
 export function startProjectSession(store: MemoryStore, directory: string, sessionId: string): Session {
   return startProjectSessionWithNotices(store, directory, sessionId).session;
 }

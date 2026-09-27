@@ -1,3 +1,9 @@
+/**
+ * Punto de entrada público de la capa de aplicación: reexporta las clases, funciones
+ * y tipos que el resto del programa (interfaz de línea de comandos, servidor MCP) usa
+ * para leer y escribir memorias, gestionar proyectos, sincronizar con la nube,
+ * instalar, actualizar y desinstalar Engram.
+ */
 export { MemoryStore } from "./memory-store";
 export { MemoryWorkspace } from "./workspace";
 export type { GroupBinding, GroupRename, GroupUnbinding, IdentityFilesResult, MemoryMove } from "./workspace";

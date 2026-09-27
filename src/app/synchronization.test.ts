@@ -1,3 +1,8 @@
+/**
+ * Comprueba la sincronización entre la base local y una réplica remota simulada:
+ * publicación de cambios, no repetir publicaciones sin cambios, y los rechazos por
+ * formato (nivel de sincronización) cuando falta consentimiento o capacidad local.
+ */
 import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,7 +13,8 @@ import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 import { PostgresReplica } from "../infrastructure/postgres/replica";
 import { emptySnapshot, snapshotHash, type SyncSnapshot } from "../modules/synchronization";
 
-// An instance-local replica boundary; no network or module replacement.
+// Sustituto de PostgresReplica que guarda la fotografía (snapshot) en memoria, sin red
+// ni sustitución de módulos, para poder observar cuántas veces se publica.
 class InMemoryReplica {
   readonly id = "test-replica";
   snapshot: SyncSnapshot = emptySnapshot();
@@ -21,6 +27,8 @@ class InMemoryReplica {
     return snapshotHash(next);
   }
 }
+// Verifica que un proyecto creado localmente se publica en la réplica y queda anotado
+// como punto de encuentro (checkpoint), y que sincronizar de nuevo sin cambios no vuelve a publicar.
 test("synchronization publishes local additions and checkpoints them without republishing unchanged state", async () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -34,6 +42,8 @@ test("synchronization publishes local additions and checkpoints them without rep
     expect(replica.publications).toBe(1);
   } finally { store.close(); }
 });
+// Verifica que syncWorkspace falla con SYNC_DISABLED cuando el espacio de trabajo no
+// tiene una URL de PostgreSQL configurada, sin llegar a abrir la base local.
 test("workspace synchronization rejects disabled PostgreSQL before opening storage", async () => {
   const directory = mkdtempSync(join(tmpdir(),"engram-sync-own-"));
   try {
@@ -43,6 +53,8 @@ test("workspace synchronization rejects disabled PostgreSQL before opening stora
   } finally { rmSync(directory,{recursive:true,force:true}); }
 });
 
+// Verifica que subir la réplica al formato 3 (refuerzo) exige la opción upgradeFormat:
+// sin ella, se rechaza sin tocar ni la réplica ni la base local; con ella, se publica.
 test("format 3 promotion requires consent before remote publication and leaves both sides unchanged on refusal", async () => {
   const store=new MemoryStore(":memory:");
   try {
@@ -63,6 +75,8 @@ test("format 3 promotion requires consent before remote publication and leaves b
   } finally {store.close();}
 });
 
+// Verifica que si la réplica remota ya está en formato 3 pero la base local no tiene el
+// refuerzo activado, se rechaza con REINFORCEMENT_REQUIRED sin publicar ni cambiar nada local.
 test("format 3 remote data is rejected by an unenrolled local store before remote publication", async () => {
   const enrolled=new MemoryStore(":memory:");
   const local=new MemoryStore(":memory:");
@@ -81,6 +95,8 @@ test("format 3 remote data is rejected by an unenrolled local store before remot
   } finally {enrolled.close();local.close();}
 });
 
+// Verifica que subir directamente de formato 2 a formato 3 también exige upgradeFormat,
+// igual que subir desde el formato inicial.
 test("promoting a format 2 remote to format 3 also requires explicit consent", async () => {
   const store=new MemoryStore(":memory:");
   try {

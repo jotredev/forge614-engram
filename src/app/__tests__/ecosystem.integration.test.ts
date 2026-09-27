@@ -1,12 +1,20 @@
+/**
+ * Comprueba el nivel de ecosistema (grupos) sobre MemoryStore: exposición de grupos,
+ * membresía y eventos de identidad; los métodos con alcance de grupo leen y escriben sin
+ * romper los métodos existentes; y una base sin el ecosistema activado responde vacío en
+ * vez de fallar al leer, pero rechaza escribir.
+ */
 import { expect, test } from "bun:test";
 import { MemoryStore } from "../memory-store";
 
+/** Base en memoria con vínculos de proyecto y ecosistema ya activados, lista para las pruebas de grupos. */
 function enrolled(): MemoryStore {
   const store = new MemoryStore(":memory:");
   store.enableProjectBindings(); store.enableEcosystem();
   return store;
 }
 
+// Verifica el ciclo completo de un grupo: crear, ligar, listar, buscar por nombre, renombrar, desligar, y que cada paso queda anotado en los eventos de identidad.
 test("the store exposes groups, membership and identity events", () => {
   const store = enrolled();
   try {
@@ -24,6 +32,7 @@ test("the store exposes groups, membership and identity events", () => {
   } finally { store.close(); }
 });
 
+// Verifica que los métodos con sufijo "InGroup" (lectura, búsqueda, versión, archivar, restaurar) funcionan sobre una memoria de ecosistema, y que los métodos de proyecto ya existentes también la alcanzan a través del grupo del proyecto.
 test("group-scoped methods read and write ecosystem memories without touching existing signatures", () => {
   const store = enrolled();
   try {
@@ -38,7 +47,7 @@ test("group-scoped methods read and write ecosystem memories without touching ex
     expect(store.searchInGroup(group.id, "contrato").map(result => result.memory.id)).toEqual([saved.id]);
     expect(store.searchPreviewsInGroup(group.id, "contrato")[0]!.memory.scope).toBe("ecosystem");
     expect(store.contextForGroup(group.id).recent.map(row => row.title)).toEqual(["Contrato"]);
-    // The existing project-scoped methods reach it through the group of the project.
+    // Los métodos de proyecto ya existentes la alcanzan a través del grupo del proyecto.
     expect(store.search(project.projectId, "contrato", 10, "all").map(result => result.memory.id)).toEqual([saved.id]);
     expect(store.search(project.projectId, "contrato", 10, "ecosystem").map(result => result.memory.id)).toEqual([saved.id]);
     expect(store.get(null, saved.id)).toBeNull();
@@ -48,6 +57,7 @@ test("group-scoped methods read and write ecosystem memories without touching ex
   } finally { store.close(); }
 });
 
+// Verifica que una base sin el nivel de ecosistema activado responde con listas vacías al leer grupos, pero rechaza con MIGRATION_REQUIRED al intentar crear uno.
 test("a store without the ecosystem level answers groups as empty and refuses to write them", () => {
   const store = new MemoryStore(":memory:");
   try {

@@ -1,3 +1,9 @@
+/**
+ * Comprueba MemoryWorkspace: una única base compartida por todos los proyectos, la garantía
+ * de nunca migrar ni recrear una base ya existente sin permiso, el rechazo de enlaces
+ * simbólicos o duros peligrosos, permisos de archivo privados, y las operaciones de grupo
+ * (ecosistema) sin exponer SQLite directamente.
+ */
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -15,6 +21,7 @@ function fixture() {
 }
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true }); });
 
+// Verifica que dos proyectos distintos comparten el mismo archivo de configuración y la misma base, sin mezclar sus memorias.
 test("all projects share one config and one database", () => {
   const f = fixture(); const a = f.workspace.createProject("Same");
   const b = f.workspace.createProject("Same");
@@ -29,6 +36,7 @@ test("all projects share one config and one database", () => {
   expect(f.config.read()).toEqual({ storage:"sqlite" });
 });
 
+// Verifica que reabrir el espacio de trabajo desde otra instancia lista los mismos proyectos con los mismos ids, sin volver a registrarlos, y que un cambio hecho desde ahí se ve en la instancia original.
 test("reopening lists all stored projects with the same IDs without project registration", () => {
   const f = fixture(); const a = f.workspace.createProject("Before");
   const before = readFileSync(f.db); const env = readFileSync(join(f.root,".env"));
@@ -39,11 +47,13 @@ test("reopening lists all stored projects with the same IDs without project regi
   expect(f.workspace.listProjects()[0]?.name).toBe("After");
 });
 
+// Verifica que listar un espacio de trabajo sin inicializar no crea nada, y que abrirlo directamente (sin init) falla en vez de crear la base.
 test("listing an uninitialized workspace is read-only and opening cannot create storage", () => {
   const f = fixture(); expect(f.workspace.listProjects()).toEqual([]);
   expect(() => f.workspace.open()).toThrow(); expect(existsSync(f.root)).toBe(false);
 });
 
+// Verifica que si la configuración existe pero el archivo de base de datos falta, ninguna operación (init, open, list, createProject) lo recrea: todas fallan en su lugar.
 test("configured missing database is not recreated by init, save, list or project creation", () => {
   const f = fixture(); f.workspace.init(); rmSync(f.db);
   for (const action of [() => f.workspace.init(), () => f.workspace.open(), () => f.workspace.listProjects(), () => f.workspace.createProject("No")]) {
@@ -51,6 +61,7 @@ test("configured missing database is not recreated by init, save, list or projec
   }
 });
 
+// Verifica que init() puede adjuntar una base ya existente y compatible (creada fuera del workspace) sin reescribirla ni perder sus proyectos.
 test("init can attach existing compatible database without rewriting or losing projects", () => {
   const f = fixture(); const store = new MemoryStore(f.db); const project = store.createProject("Keep"); store.close();
   const before = readFileSync(f.db); f.workspace.init();
@@ -64,6 +75,7 @@ function userVersion(path: string): number {
   finally { db.close(); }
 }
 
+// Verifica que una base creada desde cero queda en el nivel de esquema 11 y no genera ningún archivo de respaldo (.bak), porque no había nada que respaldar.
 test("init on a folder with no database leaves PRAGMA user_version at 11 and creates no .bak file", () => {
   const f = fixture();
   f.workspace.init();
@@ -71,6 +83,7 @@ test("init on a folder with no database leaves PRAGMA user_version at 11 and cre
   expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
 });
 
+// GARANTÍA AL DUEÑO: verifica que una base ya poblada por debajo del nivel 11 atraviesa init() sin que cambie ni su nivel de esquema ni una sola fila de memorias, y sin generar respaldo.
 test("OWNER GUARANTEE: an existing populated database below level 11 passes through init() unchanged", () => {
   const f = fixture();
   const store = new MemoryStore(f.db);
@@ -95,6 +108,7 @@ test("OWNER GUARANTEE: an existing populated database below level 11 passes thro
   expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
 });
 
+// GARANTÍA AL DUEÑO: verifica que una base real de la versión 1.6.0 (nivel de esquema 10) sobrevive intacta a dos llamadas seguidas de init(): la primera la adjunta, la segunda es el caso normal de todos los días.
 test("OWNER GUARANTEE: a configured 1.6.0 database at level 10 passes through init() twice untouched", () => {
   const f = fixture();
   mkdirSync(f.root, { mode: 0o700 });
@@ -106,13 +120,14 @@ test("OWNER GUARANTEE: a configured 1.6.0 database at level 10 passes through in
   };
   const before = rows();
   expect(before.length).toBeGreaterThan(0);
-  f.workspace.init(); // attaches the existing database and writes the config
-  f.workspace.init(); // the everyday case: config and database already there
+  f.workspace.init(); // Adjunta la base existente y escribe la configuración.
+  f.workspace.init(); // El caso de todos los días: configuración y base ya presentes.
   expect(userVersion(f.db)).toBe(10);
   expect(rows()).toEqual(before);
   expect(readdirSync(f.root).filter(name => name.endsWith(".bak"))).toEqual([]);
 });
 
+// Verifica que un archivo SQLite ajeno (otro application_id) o con un nivel de esquema demasiado antiguo se rechaza antes de escribir ninguna configuración, y que no pierde sus datos propios.
 test("foreign and old databases are refused before config publication", () => {
   for (const version of [0,1,2]) {
     const f = fixture(); mkdirSync(f.root, {mode:0o700});
@@ -124,6 +139,7 @@ test("foreign and old databases are refused before config publication", () => {
   }
 });
 
+// Verifica que una carpeta raíz insegura (un enlace simbólico que la redirige) o una configuración heredada nunca hacen que init() siga ese redirección ni cree una base donde no debería.
 test("unsafe root and legacy config never redirect or trigger database initialization", () => {
   const f = fixture(); const outside = join(f.dir,"outside"); mkdirSync(outside);
   symlinkSync(outside,f.root);
@@ -134,6 +150,7 @@ test("unsafe root and legacy config never redirect or trigger database initializ
   expect(readFileSync(join(g.root,"projects","keep"),"utf8")).toBe("KEEP");
 });
 
+// Verifica que se puede guardar una memoria compartida (shared) tras init() sin que eso cree ningún proyecto.
 test("shared memory can be stored after init without creating a project", () => {
   const f = fixture(); f.workspace.init(); const store = f.workspace.open();
   try {
@@ -143,6 +160,7 @@ test("shared memory can be stored after init without creating a project", () => 
   expect(f.workspace.listProjects()).toEqual([]);
 });
 
+// Verifica que si el archivo de base de datos es un enlace simbólico a otro archivo, init() lo rechaza sin tocar el archivo al que apunta.
 test("initialization rejects a symlinked database without modifying its target", () => {
   const f = fixture(); mkdirSync(f.root,{mode:0o700});
   const outside = join(f.dir,"outside.db"); writeFileSync(outside,"");
@@ -152,6 +170,7 @@ test("initialization rejects a symlinked database without modifying its target",
   expect(existsSync(join(f.root,".env"))).toBe(false);
 });
 
+// Verifica que, con la configuración ya existente, abrir, inicializar o crear un proyecto se rechaza si el archivo de base de datos es un enlace (simbólico o duro), sin tocar las memorias del archivo real al que apunta.
 test("configured opens reject database links and keep target memories unchanged", () => {
   for (const link of [symlinkSync, linkSync]) {
     const f = fixture(); f.workspace.init(); rmSync(f.db);
@@ -167,6 +186,7 @@ test("configured opens reject database links and keep target memories unchanged"
   }
 });
 
+// Verifica que un enlace simbólico en cualquiera de los archivos auxiliares de SQLite (-wal, -shm, -journal) se rechaza antes de inicializar, sin tocar el archivo al que apunta.
 test("SQLite auxiliary file links are rejected before initialization", () => {
   for (const suffix of ["-wal","-shm","-journal"]) {
     const f = fixture(); mkdirSync(f.root,{mode:0o700});
@@ -178,11 +198,13 @@ test("SQLite auxiliary file links are rejected before initialization", () => {
   }
 });
 
+// Verifica que el archivo de base de datos nuevo se crea con permisos privados (0o600), legible y escribible solo por su dueño.
 test("new workspace database is created with private file permissions", () => {
   const f = fixture(); f.workspace.init();
   expect(statSync(f.db).mode & 0o777).toBe(0o600);
 });
 
+// Verifica el ciclo completo de grupos a través del workspace: crear, listar, ligar (dos veces, detectando si cambió), renombrar y desligar, además de los nombres inválidos o duplicados.
 test("groups are created, listed and bound through the workspace without exposing SQLite", () => {
   const f = fixture();
   expect(f.workspace.listGroups()).toEqual([]);
@@ -204,6 +226,7 @@ test("groups are created, listed and bound through the workspace without exposin
   expect(f.workspace.unbindProject(project.projectId).unbound).toBe(false);
 });
 
+// Verifica que las operaciones de grupo sobre un grupo inexistente fallan sin migrar la base solo para reportar que no lo encontraron (la base sigue byte a byte igual).
 test("group operations fail cleanly and never migrate a database only to report a missing group", () => {
   const f = fixture();
   const project = f.workspace.createProject("Frontend");
@@ -216,11 +239,12 @@ test("group operations fail cleanly and never migrate a database only to report 
   expect(() => f.workspace.bindProjectToGroup(crypto.randomUUID(), "tienda")).toThrow(expect.objectContaining({ code: "PROJECT_NOT_FOUND" }));
 });
 
+// Verifica que activar el ecosistema respalda una base que ya tenía datos por debajo del nivel
+// 8, pero no genera respaldo para una base vacía (nada que perder). Aquí las dos bases se crean
+// con `new MemoryStore(...)` directamente, sin pasar por `workspace.init()` (que ya adjuntaría
+// una base existente sin migrarla, como en la prueba "init can attach..." de arriba): por eso es
+// precisamente `createGroup`, más abajo, quien de verdad dispara la migración de ecosistema.
 test("enrolling the ecosystem level backs up a database that holds data and skips an empty one", () => {
-  // A brand-new workspace is now born at level 11 (ecosystem already included), so it never
-  // exercises this migration. It still applies to a database that already existed below level 8;
-  // init() attaches such a database without migrating it (see the "init can attach..." test above),
-  // and only the explicit createGroup enrollment below performs the ecosystem migration.
   const empty = fixture(); new MemoryStore(empty.db).close();
   empty.workspace.createGroup("primero");
   expect(readdirSync(empty.root).filter(name => name.includes("pre-ecosystem"))).toEqual([]);
@@ -230,6 +254,7 @@ test("enrolling the ecosystem level backs up a database that holds data and skip
   expect(readdirSync(used.root).filter(name => name.includes("pre-ecosystem"))).toHaveLength(1);
 });
 
+// Verifica que renombrar un proyecto desde el workspace actualiza el nombre en el archivo de identidad de una carpeta ligada a él.
 test("renaming a project keeps every bound identity file in step", () => {
   const f = fixture(); const folder = mkdtempSync(join(tmpdir(), "forge614-ws-id-")); dirs.push(folder);
   const project = f.workspace.createProject("Antes");
