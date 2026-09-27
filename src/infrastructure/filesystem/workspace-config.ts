@@ -74,11 +74,15 @@ export class WorkspaceConfig {
       const values = new Map<string, string>();
       for (const line of readFileSync(fd, "utf8").split(/\r?\n/)) {
         if (!line.trim() || line.trimStart().startsWith("#")) continue;
-        const match = /^([A-Z_]+)=(".*")$/.exec(line);
+        const match = /^([A-Z0-9_]+)=(".*")$/.exec(line);
         if (!match || values.has(match[1]!)) failure();
         const value: unknown = JSON.parse(match[2]!);
         if (typeof value !== "string") failure();
         values.set(match[1]!, value);
+      }
+      if(values.size===4 && values.get("FORMAT_VERSION")==="3" && values.get("STORAGE")==="sqlite" && values.has("POSTGRES_URL") && values.has("FORGE614_ENGRAM_INSTALLATION_ID")) {
+        const postgresUrl=values.get("POSTGRES_URL")!;postgresOptions(postgresUrl);
+        return {storage:"sqlite",postgresUrl,installationId:values.get("FORGE614_ENGRAM_INSTALLATION_ID")!};
       }
       if(values.size===3 && values.get("FORMAT_VERSION")==="3" && values.get("STORAGE")==="sqlite" && values.has("POSTGRES_URL")) {
         const postgresUrl=values.get("POSTGRES_URL")!;postgresOptions(postgresUrl);return {storage:"sqlite",postgresUrl};

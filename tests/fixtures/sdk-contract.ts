@@ -12,7 +12,7 @@ type Assert<T extends true> = T;
 type _MemoryScope = Assert<Equal<MemoryScope, "project" | "shared" | "ecosystem">>;
 type _SearchScope = Assert<Equal<SearchScope, MemoryScope | "all">>;
 type _MemoryType = Assert<Equal<MemoryType, "fact" | "decision" | "procedure" | "warning" | "preference">>;
-type _WorkspaceSettings = Assert<Equal<WorkspaceSettings, {storage:"sqlite";postgresUrl?:string}>>;
+type _WorkspaceSettings = Assert<Equal<WorkspaceSettings, {storage:"sqlite";postgresUrl?:string;installationId?:string}>>;
 interface ExpectedStore {
   createProject(name:string):Project;getProject(projectId:string):Project|null;listProjects():Project[];renameProject(projectId:string,name:string):Project;
   sessionsEnabled():boolean;reinforcementEnabled():boolean;enableSessions():void;enableSearchReinforcement():void;startSession(projectId:string,sessionId:string,runtimeDirectory?:string):Session;endSession(projectId:string,sessionId:string):Session;getSession(projectId:string,sessionId:string):Session|null;

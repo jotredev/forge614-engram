@@ -259,17 +259,20 @@ END;
 `;
 
 type Base = 3 | 4 | 5 | 6 | 7;
-export interface SchemaState { readonly base: Base; readonly ecosystem: boolean; readonly intelligence: boolean }
+export interface SchemaState { readonly base: Base; readonly ecosystem: boolean; readonly intelligence: boolean; readonly cloud: boolean }
 // Levels 3-7 are the linear feature chain. 8-10 are levels 5-7 with the ecosystem structure,
 // so enabling ecosystem never silently enables sessions or search reinforcement.
-// 11 is the only intelligence level: it requires base 7 and the ecosystem structure.
+// 11 is the intelligence level (requires base 7 and the ecosystem structure); 12 additionally
+// enables the cloud outbox (level 12, D1): only reachable through enableCloud, never on open.
 function decode(version: number): SchemaState | null {
-  if (version >= 3 && version <= 7) return { base: version as Base, ecosystem: false, intelligence: false };
-  if (version >= 8 && version <= 10) return { base: (version - 3) as Base, ecosystem: true, intelligence: false };
-  if (version === 11) return { base: 7, ecosystem: true, intelligence: true };
+  if (version >= 3 && version <= 7) return { base: version as Base, ecosystem: false, intelligence: false, cloud: false };
+  if (version >= 8 && version <= 10) return { base: (version - 3) as Base, ecosystem: true, intelligence: false, cloud: false };
+  if (version === 11) return { base: 7, ecosystem: true, intelligence: true, cloud: false };
+  if (version === 12) return { base: 7, ecosystem: true, intelligence: true, cloud: true };
   return null;
 }
 function encode(state: SchemaState): number {
+  if (state.cloud) return 12;
   if (state.intelligence) return 11;
   return state.base + (state.ecosystem ? 3 : 0);
 }
@@ -303,6 +306,7 @@ function validate(db: Database, version: number): void {
       reference.exec(schemaFor(state.base));
       if (state.ecosystem) applyEcosystemStructure(reference);
       if (state.intelligence) reference.exec(INTELLIGENCE_SCHEMA);
+      if (state.cloud) reference.exec(CLOUD_SCHEMA);
       expectedDefinitions.set(version,definition(reference));
     } finally { reference.close(); }
   }
@@ -320,7 +324,7 @@ function upgradeTo(db: Database, target: 4 | 5 | 6 | 7, unsupported: string): vo
     validate(db, version);
     if (state.base >= target) return;
     db.exec(featureSql(state.base, target));
-    db.exec(`PRAGMA user_version=${encode({ base: target, ecosystem: state.ecosystem, intelligence: state.intelligence })}`);
+    db.exec(`PRAGMA user_version=${encode({ base: target, ecosystem: state.ecosystem, intelligence: state.intelligence, cloud: false })}`);
   }).immediate();
 }
 
@@ -376,7 +380,7 @@ function verificationFailed(): never {
 }
 
 // VACUUM INTO writes a complete, consistent copy even while the database is in WAL mode.
-function backupBeforeMigration(db: Database, version: number, label: "ecosystem" | "intelligence"): string | null {
+function backupBeforeMigration(db: Database, version: number, label: "ecosystem" | "intelligence" | "cloud"): string | null {
   const main = (db.query("PRAGMA database_list").all() as { name: string; file: string }[]).find(entry => entry.name === "main");
   if (!main?.file) return null;
   // Nothing to lose in a database that holds no projects and no memories yet.
@@ -433,7 +437,7 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
         || requestsAfter.count !== requestsBefore.count || requestsAfter.digest !== requestsBefore.digest
         || foreignKeyViolations(db) > violationsBefore) verificationFailed();
       try { db.exec("INSERT INTO memories_fts(memories_fts) VALUES('integrity-check')"); } catch { verificationFailed(); }
-      db.exec(`PRAGMA user_version=${encode({ base: insideState.base, ecosystem: true, intelligence: false })}`);
+      db.exec(`PRAGMA user_version=${encode({ base: insideState.base, ecosystem: true, intelligence: false, cloud: false })}`);
       migrated = true;
     }).immediate();
   } finally {
@@ -485,11 +489,160 @@ export function enableIntelligence(db: Database): IntelligenceEnrolment {
       || requestsAfter.count !== requestsBefore.count || requestsAfter.digest !== requestsBefore.digest) verificationFailed();
     ftsIntegrity(db, "memories_fts");
     ftsIntegrity(db, "memories_words");
-    db.exec(`PRAGMA user_version=${encode({ base: 7, ecosystem: true, intelligence: true })}`);
+    db.exec(`PRAGMA user_version=${encode({ base: 7, ecosystem: true, intelligence: true, cloud: false })}`);
     migrated = true;
   }).immediate();
   return { migrated, backup: migrated ? backup : null };
 }
+
+// Cloud enrollment (schema level 12, D1). Additive only: a pending-change outbox fed by
+// AFTER INSERT/UPDATE/DELETE triggers on every table that travels (design section 5), a
+// single-row apply state (D2's apply_guard, last_applied_id and the remote fingerprint of
+// D14) and a notices table. Never reached by a normal open; only `enableCloud` writes it.
+const CLOUD_TABLES_SCHEMA = `CREATE TABLE cloud_outbox (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  change_id TEXT NOT NULL UNIQUE DEFAULT (lower(hex(randomblob(16)))),
+  kind TEXT NOT NULL,
+  op TEXT NOT NULL CHECK (op IN ('insert','update','delete')),
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE TABLE cloud_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_applied_id INTEGER NOT NULL DEFAULT 0,
+  apply_guard INTEGER NOT NULL DEFAULT 0,
+  remote_fingerprint TEXT
+);
+CREATE TABLE cloud_notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  shown INTEGER NOT NULL DEFAULT 0
+);
+`;
+// Every table that travels (design section 5), in dependency order (D14): projects and the
+// ecosystem structure first, then memories and their side tables, then sessions, then confirmations.
+// Column lists match schema.ts exactly (verified against the real DDL above, not the plan's line numbers).
+const TRAVELING_TABLES: readonly (readonly [string, readonly string[]])[] = [
+  ["projects", ["projectId", "name", "createdAt", "updatedAt"]],
+  ["ecosystem_groups", ["id", "name", "createdAt"]],
+  ["ecosystem_memberships", ["projectId", "groupId", "boundAt", "source"]],
+  ["ecosystem_sources", ["groupId", "projectId", "setAt"]],
+  ["memories", ["id", "projectId", "scope", "topic_key", "type", "title", "content", "pinned", "version", "state", "created_at", "updated_at", "groupId"]],
+  ["memory_versions", ["memory_id", "version", "snapshot"]],
+  ["memory_meta", ["memory_id", "short", "review_after", "superseded_by", "affects", "updated_at"]],
+  ["sessions", ["sessionId", "projectId", "kind", "startedAt", "endedAt"]],
+  ["session_entries", ["sessionId", "memoryId", "version", "recordedAt"]],
+  ["session_summaries", ["sessionId", "memoryId", "version"]],
+  ["confirmations", ["confirmationId", "memoryId", "version", "recordedAt", "sessionId"]],
+  ["confirmation_requests", ["memoryId", "requestKey", "payloadHash", "expectedVersion", "confirmationId", "response"]],
+];
+function jsonObject(columns: readonly string[], row: "new" | "old"): string {
+  return `json_object(${columns.map(column => `'${column}',${row}.${column}`).join(",")})`;
+}
+function cloudTriggersSql(): string {
+  let sql = "";
+  for (const [table, columns] of TRAVELING_TABLES) {
+    sql += `CREATE TRIGGER cloud_outbox_${table}_insert AFTER INSERT ON ${table}
+WHEN (SELECT apply_guard FROM cloud_state) = 0
+BEGIN
+  INSERT INTO cloud_outbox(kind,op,payload) VALUES('${table}','insert',${jsonObject(columns, "new")});
+END;
+CREATE TRIGGER cloud_outbox_${table}_update AFTER UPDATE ON ${table}
+WHEN (SELECT apply_guard FROM cloud_state) = 0
+BEGIN
+  INSERT INTO cloud_outbox(kind,op,payload) VALUES('${table}','update',${jsonObject(columns, "new")});
+END;
+CREATE TRIGGER cloud_outbox_${table}_delete AFTER DELETE ON ${table}
+WHEN (SELECT apply_guard FROM cloud_state) = 0
+BEGIN
+  INSERT INTO cloud_outbox(kind,op,payload) VALUES('${table}','delete',${jsonObject(columns, "old")});
+END;
+`;
+  }
+  return sql;
+}
+const CLOUD_SCHEMA = CLOUD_TABLES_SCHEMA + cloudTriggersSql();
+
+/** Read-only view of which columns travel per table, for tests to check against `PRAGMA table_info`. */
+export function travelingTableColumns(): ReadonlyMap<string, readonly string[]> {
+  return new Map(TRAVELING_TABLES);
+}
+
+function jsonObjectFromColumns(columns: readonly string[]): string {
+  return `json_object(${columns.map(column => `'${column}',${column}`).join(",")})`;
+}
+/** Queues every existing row of every traveling table, in dependency order (D14 first sync). */
+function enqueueAllExisting(db: Database): void {
+  for (const [table, columns] of TRAVELING_TABLES) {
+    db.exec(`INSERT INTO cloud_outbox(kind,op,payload) SELECT '${table}','insert',${jsonObjectFromColumns(columns)} FROM ${table}`);
+  }
+}
+
+export interface CloudEnrolment { readonly migrated: boolean; readonly backup: string | null }
+
+function setFingerprint(db: Database, fingerprint: string | null): void {
+  db.query("UPDATE cloud_state SET remote_fingerprint=? WHERE id=1").run(fingerprint);
+}
+
+/**
+ * Explicit, additive enrollment for the cloud outbox (level 12, D1). Chains the prerequisite
+ * intelligence level, then adds the outbox/state/notices tables and their triggers in one
+ * transaction, queuing every existing traveling row in dependency order (D14). Calling it again
+ * with the same remote fingerprint (or none) is a no-op; a different, non-null fingerprint means
+ * a different remote database (D14): the queue is rebuilt from the current local rows and
+ * `last_applied_id` restarts at 0, exactly as a first sync would.
+ *
+ * Deviation from the plan: `enableCloud(db)` in the plan's interface takes no fingerprint, but a
+ * required test ("con otra huella remota vuelve a encolar todo") needs one to compare against.
+ * The minimal signature that allows it is this optional second parameter.
+ */
+export function enableCloud(db: Database, remoteFingerprint?: string | null): CloudEnrolment {
+  const fingerprint = remoteFingerprint ?? null;
+  const seen = db.transaction(() => {
+    const current = currentVersion(db), decoded = decode(current);
+    if (!decoded) throw new MemoryError("MIGRATION_REQUIRED", "No se puede habilitar la nube en este formato.");
+    validate(db, current);
+    return decoded;
+  }).deferred();
+  if (!seen.intelligence) enableIntelligence(db);
+  if (seen.cloud) {
+    if (fingerprint === null) return { migrated: false, backup: null };
+    const stored = (db.query("SELECT remote_fingerprint FROM cloud_state WHERE id=1").get() as { remote_fingerprint: string | null }).remote_fingerprint;
+    if (fingerprint === stored) return { migrated: false, backup: null };
+    let migrated = false;
+    db.transaction(() => {
+      db.exec("DELETE FROM cloud_outbox");
+      db.query("UPDATE cloud_state SET last_applied_id=0, apply_guard=0 WHERE id=1").run();
+      setFingerprint(db, fingerprint);
+      enqueueAllExisting(db);
+      migrated = true;
+    }).immediate();
+    return { migrated, backup: null };
+  }
+  const version = currentVersion(db);
+  // A connection that cannot write must fail before it leaves a useless backup behind.
+  db.exec("BEGIN IMMEDIATE");
+  try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
+  const backup = backupBeforeMigration(db, version, "cloud");
+  let migrated = false;
+  db.transaction(() => {
+    const inside = currentVersion(db);
+    const insideState = decode(inside)!;
+    validate(db, inside);
+    if (insideState.cloud) return;
+    db.exec(CLOUD_SCHEMA);
+    db.query("INSERT INTO cloud_state(id,last_applied_id,apply_guard,remote_fingerprint) VALUES (1,0,0,?)").run(fingerprint);
+    enqueueAllExisting(db);
+    db.exec(`PRAGMA user_version=${encode({ base: insideState.base, ecosystem: true, intelligence: true, cloud: true })}`);
+    migrated = true;
+  }).immediate();
+  return { migrated, backup: migrated ? backup : null };
+}
+
+/** True when the database is at the cloud level (12): the outbox and its triggers are active. */
+export function cloudEnabled(db: Database): boolean { return schemaFeatures(db)?.cloud === true; }
 
 export function initialize(db: Database, allowCreate = true, readonly = false): void {
   db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");

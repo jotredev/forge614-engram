@@ -32,6 +32,15 @@ test("PostgreSQL synchronization config stays global and rejects stale replaceme
   expect(readFileSync(f.path,"utf8")).not.toContain("SECRET");
 });
 
+test("installationId is exposed from FORGE614_ENGRAM_INSTALLATION_ID and absent otherwise", () => {
+  const f=fixture();f.config.save();
+  const revision=f.config.revision();
+  f.config.configurePostgres("postgresql://u:SECRET@127.0.0.1/db?sslmode=disable",revision);
+  expect(f.config.read()).toEqual({storage:"sqlite",postgresUrl:"postgresql://u:SECRET@127.0.0.1/db?sslmode=disable"});
+  writeFileSync(f.path,'FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u:SECRET@127.0.0.1/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n',{mode:0o600});
+  expect(f.config.read()).toEqual({storage:"sqlite",postgresUrl:"postgresql://u:SECRET@127.0.0.1/db?sslmode=disable",installationId:"3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"});
+});
+
 test("one private config contains no project identity or project-specific database path", () => {
   const f = fixture(); f.config.save();
   expect(f.config.read()).toEqual({ storage: "sqlite" });

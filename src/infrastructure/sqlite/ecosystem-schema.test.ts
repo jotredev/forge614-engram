@@ -48,17 +48,17 @@ const version = (db: Database) => (db.query("PRAGMA user_version").get() as { us
 test("schema state decodes ecosystem variants without implying sessions or reinforcement", () => {
   const { db } = fixture("schema-5.db");
   try {
-    expect(schemaState(db)).toEqual({ base: 5, ecosystem: false, intelligence: false });
+    expect(schemaState(db)).toEqual({ base: 5, ecosystem: false, intelligence: false, cloud: false });
     enableEcosystem(db);
     expect(version(db)).toBe(8);
-    expect(schemaState(db)).toEqual({ base: 5, ecosystem: true, intelligence: false });
+    expect(schemaState(db)).toEqual({ base: 5, ecosystem: true, intelligence: false, cloud: false });
     // The chosen level never gains sessions or reinforcement just because ecosystem was enabled.
     expect(db.query("SELECT name FROM sqlite_master WHERE name IN ('sessions','confirmations')").all()).toEqual([]);
     enableSessionLifecycle(db);
     expect(version(db)).toBe(9);
     enableSearchReinforcement(db);
     expect(version(db)).toBe(10);
-    expect(schemaState(db)).toEqual({ base: 7, ecosystem: true, intelligence: false });
+    expect(schemaState(db)).toEqual({ base: 7, ecosystem: true, intelligence: false, cloud: false });
   } finally { db.close(); }
 });
 
@@ -188,7 +188,8 @@ test("initialization validates every ecosystem level exactly and rejects future 
     enableSearchReinforcement(db); initialize(db);
     db.exec("DROP INDEX memories_ecosystem_topic");
     expect(() => initialize(db)).toThrow(expect.objectContaining({ code: "DATABASE_SCHEMA" }));
-    db.exec("PRAGMA user_version=12");
+    // 12 is now the cloud level (T1); 13 is the next unknown future version.
+    db.exec("PRAGMA user_version=13");
     expect(() => initialize(db)).toThrow(expect.objectContaining({ code: "DATABASE_VERSION" }));
   } finally { db.close(); }
   expect(existsSync(file)).toBe(true);
