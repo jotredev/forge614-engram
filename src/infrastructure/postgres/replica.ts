@@ -22,6 +22,10 @@ export function postgresOptions(input:string): SQL.PostgresOrMySQLOptions {
   } catch { throw new MemoryError("POSTGRES_URL","POSTGRES_URL: conexión inválida. Usa una URL PostgreSQL completa; TLS verificado es obligatorio fuera de loopback."); }
 }
 
+const CHANGES_DDL=`CREATE TABLE forge614_sync.changes (
+ id bigserial PRIMARY KEY, change_id text NOT NULL UNIQUE, installation_id uuid NOT NULL, kind text NOT NULL,
+ op text NOT NULL CHECK (op IN ('insert','update','delete')), payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+);`;
 // state.format versions this replica schema, not payload.format. Snapshot 2
 // promotion changes only the head payload; historical revisions remain intact.
 const DDL=`CREATE SCHEMA forge614_sync;
@@ -31,7 +35,9 @@ CREATE TABLE forge614_sync.revisions (
 CREATE TABLE forge614_sync.state (
  id integer PRIMARY KEY CHECK (id = 1), format integer NOT NULL CHECK (format = 1),
  replica uuid NOT NULL, head text NOT NULL REFERENCES forge614_sync.revisions(hash)
-);`;
+);
+${CHANGES_DDL}`;
+export interface ChangeRow { readonly id:number; readonly changeId:string; readonly installationId:string; readonly kind:string; readonly op:"insert"|"update"|"delete"; readonly payload:unknown; readonly createdAt:string }
 type Head={hash:string;snapshot:SyncSnapshot};
 async function validate(db:SQL|Bun.TransactionSQL):Promise<void> {
   const columns=await db.unsafe(`SELECT c.relname,a.attname,format_type(a.atttypid,a.atttypmod) AS type,a.attnotnull
@@ -39,6 +45,8 @@ async function validate(db:SQL|Bun.TransactionSQL):Promise<void> {
     JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid WHERE n.nspname='forge614_sync' AND c.relkind='r'
     AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.relname,a.attnum`);
   const expected=[
+    ["changes","id","bigint",true],["changes","change_id","text",true],["changes","installation_id","uuid",true],
+    ["changes","kind","text",true],["changes","op","text",true],["changes","payload","jsonb",true],["changes","created_at","timestamp with time zone",true],
     ["revisions","hash","text",true],["revisions","payload","text",true],
     ["state","id","integer",true],["state","format","integer",true],["state","replica","uuid",true],["state","head","text",true],
   ];
@@ -46,6 +54,7 @@ async function validate(db:SQL|Bun.TransactionSQL):Promise<void> {
   const constraints=await db.unsafe(`SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_catalog.pg_constraint
     WHERE connamespace='forge614_sync'::regnamespace ORDER BY conname`);
   const wanted=[
+    ["changes_change_id_key","UNIQUE (change_id)"],["changes_op_check","CHECK ((op = ANY (ARRAY['insert'::text, 'update'::text, 'delete'::text])))"],["changes_pkey","PRIMARY KEY (id)"],
     ["revisions_hash_check","CHECK ((length(hash) = 64))"],["revisions_pkey","PRIMARY KEY (hash)"],
     ["state_format_check","CHECK ((format = 1))"],["state_head_fkey","FOREIGN KEY (head) REFERENCES forge614_sync.revisions(hash)"],
     ["state_id_check","CHECK ((id = 1))"],["state_pkey","PRIMARY KEY (id)"],
@@ -53,6 +62,7 @@ async function validate(db:SQL|Bun.TransactionSQL):Promise<void> {
   if(canonical(constraints.map((r:any)=>[r.conname,r.definition]))!==canonical(wanted)) syncError("POSTGRES_SCHEMA");
   const objects=await db.unsafe(`SELECT relname,relkind,relrowsecurity FROM pg_catalog.pg_class WHERE relnamespace='forge614_sync'::regnamespace ORDER BY relname`);
   if(canonical(objects.map((r:any)=>[r.relname,r.relkind,r.relrowsecurity]))!==canonical([
+    ["changes","r",false],["changes_change_id_key","i",false],["changes_id_seq","S",false],["changes_pkey","i",false],
     ["revisions","r",false],["revisions_pkey","i",false],["state","r",false],["state_pkey","i",false],
   ])) syncError("POSTGRES_SCHEMA");
   const extras=await db.unsafe(`SELECT
@@ -79,6 +89,12 @@ export class PostgresReplica {
           const initial=emptySnapshot();const hash=snapshotHash(initial);
           await tx.unsafe("INSERT INTO forge614_sync.revisions(hash,payload) VALUES($1,$2)",[hash,canonical(initial)]);
           await tx.unsafe("INSERT INTO forge614_sync.state(id,format,replica,head) VALUES(1,1,$1,$2)",[crypto.randomUUID(),hash]);
+        } else {
+          const changes=await tx.unsafe("SELECT to_regclass('forge614_sync.changes') AS t");
+          if(!changes[0].t) {
+            if(!create) syncError("POSTGRES_UNINITIALIZED");
+            await tx.unsafe(CHANGES_DDL).simple();
+          }
         }
         await validate(tx);
         const state=await tx.unsafe("SELECT replica::text,format FROM forge614_sync.state WHERE id=1");
@@ -110,6 +126,38 @@ export class PostgresReplica {
         await tx.unsafe("UPDATE forge614_sync.state SET head=$1 WHERE id=1",[hash]);
       });return hash;
     } catch(error) {return safe(error);}
+  }
+  async pushChanges(installationId:string,rows:{changeId:string;kind:string;op:"insert"|"update"|"delete";payload:unknown}[]):Promise<{ids:number[]}> {
+    if(!rows.length) return {ids:[]};
+    try {
+      const ids=await this.db.begin(async tx=>{
+        await tx.unsafe("SELECT pg_advisory_xact_lock(1177956660,8)");
+        const out:number[]=[];
+        for(const row of rows) {
+          const inserted=await tx.unsafe(
+            "INSERT INTO forge614_sync.changes(change_id,installation_id,kind,op,payload) VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT (change_id) DO NOTHING RETURNING id",
+            [row.changeId,installationId,row.kind,row.op,JSON.stringify(row.payload)]);
+          if(inserted.length) out.push(Number(inserted[0].id));
+          else {
+            const existing=await tx.unsafe("SELECT id FROM forge614_sync.changes WHERE change_id=$1",[row.changeId]);
+            out.push(Number(existing[0].id));
+          }
+        }
+        return out;
+      });
+      return {ids};
+    } catch(error) { return safe(error); }
+  }
+  async pullChanges(since:number,limit=1000):Promise<ChangeRow[]> {
+    if(!Number.isInteger(since)||since<0||!Number.isInteger(limit)||limit<1||limit>1000) syncError("SYNC_INVALID");
+    try {
+      const rows=await this.db.unsafe(
+        `SELECT id,change_id,installation_id,kind,op,payload,
+          to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+         FROM forge614_sync.changes WHERE id>$1 ORDER BY id LIMIT $2`,[since,limit]);
+      return rows.map((r:any):ChangeRow=>({id:Number(r.id),changeId:r.change_id,installationId:r.installation_id,kind:r.kind,
+        op:r.op,payload:typeof r.payload==="string"?JSON.parse(r.payload):r.payload,createdAt:r.created_at}));
+    } catch(error) { return safe(error); }
   }
   async close():Promise<void> {await this.db.close();}
 }
