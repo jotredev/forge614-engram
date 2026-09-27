@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { required } from "./memory";
 import { initialize } from "./schema";
 export { defaultDatabasePath } from "../filesystem/paths";
+export type { Database } from "bun:sqlite";
 
 export function openDatabase(path: string, options: {create?: boolean; readonly?: boolean}): Database {
   required(path, "path");

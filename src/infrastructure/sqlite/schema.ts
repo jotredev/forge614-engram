@@ -520,6 +520,13 @@ CREATE TABLE cloud_notices (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   shown INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE cloud_version_map (
+  memory_id TEXT NOT NULL,
+  installation_id TEXT NOT NULL,
+  remote_version INTEGER NOT NULL,
+  local_version INTEGER NOT NULL,
+  PRIMARY KEY (memory_id, installation_id, remote_version)
+);
 `;
 // Every table that travels (design section 5), in dependency order (D14): projects and the
 // ecosystem structure first, then memories and their side tables, then sessions, then confirmations.
