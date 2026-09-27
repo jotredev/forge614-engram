@@ -1,3 +1,10 @@
+/**
+ * Comprueba la identidad de proyecto sobre repositorios Git reales: un clon con archivo de
+ * identidad se registra sin preguntar, el archivo de nodo liga el grupo fijo del ecosistema,
+ * un archivo dañado detiene toda operación sin cambiar nada, activar el ecosistema por un
+ * archivo hace un respaldo la primera vez y calla después, y un vínculo local en conflicto
+ * con el archivo cede ante este último dejando registro del cambio.
+ */
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -33,6 +40,7 @@ const writeIdentity = (root: string, content: unknown) => { mkdirSync(join(root,
 const sha = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const read = (root: string) => JSON.parse(readFileSync(filePath(root), "utf8"));
 
+// Verifica que un clon con su propio archivo de identidad se registra por su id sin preguntar, sin unirse a ningún grupo, y que resolver de nuevo devuelve el mismo id sin duplicar el proyecto.
 test("a clone carrying its identity file is registered by id without asking and without a group", () => {
   const db = store(), root = repository(), id = crypto.randomUUID();
   writeIdentity(root, { schemaVersion: 1, project: { id, name: "frontend" }, ecosystem: null });
@@ -45,6 +53,7 @@ test("a clone carrying its identity file is registered by id without asking and 
   expect(db.listProjects()).toHaveLength(1);
 });
 
+// Verifica que el grupo declarado en el archivo de identidad se resuelve por id, no por nombre: el clon se une al grupo correcto aunque ya exista otro grupo distinto con el mismo nombre.
 test("the identity file declares its group and the clone joins it by id, even when another group has the same name", () => {
   const db = store(), root = repository(), id = crypto.randomUUID(), groupId = crypto.randomUUID();
   db.enableEcosystem(); db.createGroup("tienda");
@@ -55,6 +64,7 @@ test("the identity file declares its group and the clone joins it by id, even wh
   expect(db.listGroups().map(group => group.name)).toEqual(["tienda", "tienda"]);
 });
 
+// Verifica que un grupo declarado en el archivo de identidad activa por sí solo el nivel de ecosistema en una base que aún no lo tenía, dejando un camino de migración con respaldo.
 test("a group in the file enrols the ecosystem level by itself, leaving a backup-safe upgrade path", () => {
   const db = store(), root = repository(), groupId = crypto.randomUUID();
   writeIdentity(root, { schemaVersion: 1, project: { id: crypto.randomUUID(), name: "api" }, ecosystem: { id: groupId, name: "mi-tienda" } });
@@ -63,6 +73,7 @@ test("a group in the file enrols the ecosystem level by itself, leaving a backup
   expect(db.ecosystemEnabled()).toBe(true);
 });
 
+// Verifica que un archivo de nodo que declara el ecosistema "forge614" liga el grupo fijo correspondiente (por id conocido), y que eso completa la sección "ecosystem" del archivo de identidad, que estaba en null.
 test("a node file declaring the forge614 ecosystem binds the fixed group and completes the identity file", () => {
   const db = store(), root = repository(), id = crypto.randomUUID();
   writeFileSync(join(root, "forge614.node.json"), JSON.stringify({ schemaVersion: 1, node: "engram", kind: "product", ecosystem: "forge614" }));
@@ -74,6 +85,7 @@ test("a node file declaring the forge614 ecosystem binds the fixed group and com
   expect(read(root).project.id).toBe(id);
 });
 
+// Verifica que crear un proyecto para una carpeta le escribe su archivo de identidad sin avisos, sin grupo si nada lo declara, y que repetir la resolución no vuelve a tocar el archivo (mismo hash).
 test("creating a project for a folder writes its identity file silently, loose when nothing declares a group", () => {
   const db = store(), root = repository();
   const context = resolveProjectContext(db, root, true);
@@ -86,6 +98,7 @@ test("creating a project for a folder writes its identity file silently, loose w
   expect(db.listProjects()).toHaveLength(1);
 });
 
+// Verifica que un proyecto ya ligado por ruta (sin archivo) recibe su archivo de identidad al arrancar, con un aviso en el resultado la primera vez y sin aviso las siguientes.
 test("a project already bound by path receives its file on startup, with a notice in the result", () => {
   const db = store(), root = repository();
   const created = resolveProjectContext(db, root, true);
@@ -97,6 +110,7 @@ test("a project already bound by path receives its file on startup, with a notic
   expect(resolveStartupProjectContext(db, root).notices).toBeUndefined();
 });
 
+// Verifica que una carpeta sin vínculo y sin archivo se queda "unbound" de verdad: no se crea ningún proyecto ni se escribe ningún archivo.
 test("an unbound folder without a file stays unbound: nothing is created or written", () => {
   const db = store(), root = repository();
   const context = resolveStartupProjectContext(db, root);
@@ -105,6 +119,7 @@ test("an unbound folder without a file stays unbound: nothing is created or writ
   expect(db.listProjects()).toEqual([]);
 });
 
+// Verifica que cuando el vínculo local no coincide con lo que declara el archivo de identidad, gana el archivo: la carpeta se religa, queda el evento PROJECT_REBOUND_FROM_FILE registrado, y el archivo en sí no se modifica.
 test("when the local binding disagrees with the file, the file wins, the event is recorded and the file is untouched", () => {
   const db = store(), root = repository();
   const local = resolveProjectContext(db, root, true);
@@ -121,6 +136,7 @@ test("when the local binding disagrees with the file, the file wins, the event i
   expect(resolveProjectContext(db, root, false).notices).toBeUndefined();
 });
 
+// Verifica, para tres formas distintas de archivo inválido (JSON corrupto, versión de esquema desconocida, campos extra), que toda operación (resolver, guardar, iniciar sesión) se detiene con PROJECT_FILE_INVALID sin cambiar el archivo ni crear ningún proyecto.
 test.each([
   ["corrupt JSON", "{"],
   ["an unknown schema version", { schemaVersion: 2, project: { id: crypto.randomUUID(), name: "x" }, ecosystem: null }],
@@ -136,6 +152,7 @@ test.each([
   expect(db.listProjects()).toEqual([]);
 });
 
+// Verifica que guardar una memoria resuelve el proyecto a través del archivo de identidad cuando existe, y que una carpeta distinta sin archivo recibe uno propio con un proyecto distinto.
 test("saving and starting sessions resolve through the file and publish it", () => {
   const db = store(), root = repository(), id = crypto.randomUUID();
   writeIdentity(root, { schemaVersion: 1, project: { id, name: "frontend" }, ecosystem: null });
@@ -147,6 +164,7 @@ test("saving and starting sessions resolve through the file and publish it", () 
   expect(existsSync(filePath(other))).toBe(true);
 });
 
+// Verifica que ligar explícitamente una carpeta a un proyecto le escribe su identidad, que repetir el vínculo no vuelve a tocar el archivo, y que ligarla a otro proyecto se rechaza porque el archivo ya declara uno distinto.
 test("an explicit binding writes the identity and refuses a folder that already declares another project", () => {
   const db = store(), root = repository(), project = db.createProject("Manual");
   expect(bindProjectContext(db, root, project.projectId).projectId).toBe(project.projectId);
@@ -159,6 +177,7 @@ test("an explicit binding writes the identity and refuses a folder that already 
   expect(read(root).project.id).toBe(project.projectId);
 });
 
+// Verifica que una base sin los vínculos de carpeta activados rechaza con MIGRATION_REQUIRED antes de registrar nada, aunque la carpeta traiga un archivo de identidad válido.
 test("a base without folder bindings refuses before registering anything from the identity file", () => {
   const value = new MemoryStore(join(temporary("engram-id-db-"), "engram.db")); stores.push(value);
   const root = repository();
@@ -167,6 +186,7 @@ test("a base without folder bindings refuses before registering anything from th
   expect(value.listProjects()).toEqual([]);
 });
 
+// Verifica que la primera lectura que obliga a migrar la base (por un archivo de nodo con datos previos que respaldar) lo informa una sola vez, nombrando el respaldo, y que las lecturas siguientes ya no lo repiten.
 test("the first read that has to upgrade the base says so, once, and names the backup", () => {
   const dbPath = join(temporary("engram-id-db-"), "engram.db");
   const value = new MemoryStore(dbPath); stores.push(value); value.enableProjectBindings();

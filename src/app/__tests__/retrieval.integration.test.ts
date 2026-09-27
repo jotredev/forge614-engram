@@ -1,3 +1,11 @@
+/**
+ * Comprueba la recuperación de memorias: previsualizaciones acotadas por punto de código
+ * (nunca partiendo un emoji), coincidencia y orden idénticos entre búsqueda literal y
+ * previsualización, ranking de refuerzo (fijado, recencia, estabilidad, fuerza) sin mutar el
+ * estado guardado, lectura de versiones concretas, línea de tiempo (timeline) acotada y
+ * consciente de sesión y archivado, y contexto respetando límites de bytes, resúmenes y
+ * duplicados.
+ */
 import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -16,6 +24,7 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
+// Verifica que la previsualización corta en 300 puntos de código Unicode exactos (sin partir un emoji), marca truncated solo cuando de verdad se recortó, y que la lectura completa (getVersion) conserva el contenido íntegro.
 test("preview is code-point bounded and full read remains exact", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -36,6 +45,7 @@ test("preview is code-point bounded and full read remains exact", () => {
   } finally { store.close(); }
 });
 
+// Verifica que buscar con previsualizaciones (searchPreviews) encuentra las mismas memorias, en el mismo orden, que la búsqueda completa, incluso con texto Unicode y coincidencias literales.
 test("literal previews preserve Unicode matching and full-search order", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -49,6 +59,7 @@ test("literal previews preserve Unicode matching and full-search order", () => {
   } finally { store.close(); }
 });
 
+// Verifica que, para una búsqueda con coincidencias de texto (FTS), searchPreviews devuelve el mismo orden y la misma explicación de puntuación (modo, bm25, multiplicador, orderScore) que la búsqueda completa.
 test("FTS preview ordering and explanations exactly match full search", () => {
   setSystemTime(new Date("2026-09-17T12:00:00.000Z"));
   const store = new MemoryStore(":memory:");
@@ -68,6 +79,7 @@ test("FTS preview ordering and explanations exactly match full search", () => {
   } finally { store.close(); }
 });
 
+// Prueba extensa del refuerzo de búsqueda: fijadas (pinned) antes que no fijadas, recientes antes que viejas, estables (poco reafirmadas) antes que las reafirmadas muchas veces, fuertes (con más apariciones del término) antes que débiles, aislamiento entre proyectos, una memoria de proyecto eclipsando a la compartida con el mismo tema, memorias archivadas ausentes de la búsqueda, coincidencia literal exacta con Unicode, coherencia entre búsqueda y previsualización, y que nada de esto modifica el estado guardado (la fotografía de sincronización queda igual).
 test("schema 7 search ranks pin, recency, and stability without mutating persisted state", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -143,6 +155,7 @@ test("schema 7 search ranks pin, recency, and stability without mutating persist
   } finally { store.close(); }
 });
 
+// Verifica que el orden de relevancia respeta el peso de cada columna: título antes que tema (topicKey), y tema antes que contenido, para un mismo término buscado.
 test("schema 7 preserves title, topic, and content BM25 weights", () => {
   setSystemTime(new Date("2026-09-17T12:00:00.000Z"));
   const store = new MemoryStore(":memory:");
@@ -157,6 +170,7 @@ test("schema 7 preserves title, topic, and content BM25 weights", () => {
   } finally { store.close(); }
 });
 
+// Verifica que leer una versión concreta (con id recortado de espacios) trae el contenido exacto de esa versión junto con el estado y la versión actuales, y que ni otro proyecto ni un número de versión inexistente pueden leerla.
 test("version reads are exact, report current state, and enforce ownership", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -172,6 +186,7 @@ test("version reads are exact, report current state, and enforce ownership", () 
   } finally { store.close(); }
 });
 
+// Verifica que la línea de tiempo (timeline) centra la versión histórica exacta pedida (no la actual), y que cuando varias entradas comparten la misma marca de tiempo, el orden entre ellas es determinista (por id y versión).
 test("timeline keeps the exact historical focus and deterministic same-time neighbors", () => {
   const path = database(); const store = new MemoryStore(path);
   try {
@@ -194,6 +209,7 @@ test("timeline keeps the exact historical focus and deterministic same-time neig
   } finally { store.close(); }
 });
 
+// Verifica que la línea de tiempo exige tener sesiones activadas, que sin contexto de sesión para esa memoria falla (NO_SESSION_CONTEXT), y que nunca expone la línea de tiempo de una memoria de otro proyecto.
 test("timeline requires session enrollment and never exposes another owner or an unassociated memory", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -206,6 +222,7 @@ test("timeline requires session enrollment and never exposes another owner or an
   } finally { store.close(); }
 });
 
+// Verifica que el contexto respeta que una memoria de proyecto eclipse a la compartida con el mismo tema, que las secciones "pinned" y "recent" se limitan a 20 elementos contando lo omitido, que el modo compacto quita las previsualizaciones, y que el JSON completo respeta el límite de bytes pedido.
 test("context honors overrides, section caps, compact mode, and whole-JSON byte budgets", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -226,6 +243,7 @@ test("context honors overrides, section caps, compact mode, and whole-JSON byte 
   } finally { store.close(); }
 });
 
+// Verifica que el contexto compartido (projectId null) solo trae memorias compartidas, y nunca los resúmenes de sesión privados de ningún proyecto.
 test("shared context is shared-only and excludes private summaries", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -238,6 +256,7 @@ test("shared context is shared-only and excludes private summaries", () => {
   } finally { store.close(); }
 });
 
+// Verifica que buscar, leer una versión y pedir contexto a través de una conexión de solo lectura no genera ningún evento nuevo ni cambia nada en la base.
 test("retrieval through a readonly facade does not mutate timestamps or events", () => {
   const path = database(); const writer = new MemoryStore(path);
   const { projectId } = writer.createProject("Readonly");
@@ -254,6 +273,7 @@ test("retrieval through a readonly facade does not mutate timestamps or events",
   expect(after.query("SELECT * FROM events ORDER BY id").all()).toEqual(events); after.close();
 });
 
+// Verifica que las memorias fijadas (pinned) que superan el límite de 20 no se pierden: pasan a la lista de recientes en vez de duplicarse ni desaparecer, y se cuentan bien como omitidas de "pinned".
 test("pinned overflow remains eligible for the recent stream without duplicate counting", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -267,6 +287,7 @@ test("pinned overflow remains eligible for the recent stream without duplicate c
   } finally { store.close(); }
 });
 
+// Verifica los límites de vecinos en la línea de tiempo: pedir cero trae ninguno, sin pedir nada trae cinco por lado por defecto, los vecinos archivados no aparecen, y si la propia memoria enfocada está archivada, falla con NO_SESSION_CONTEXT.
 test("timeline honors zero neighbors, default five-per-side, and archive visibility", () => {
   const path = database(); const store = new MemoryStore(path);
   try {
@@ -293,6 +314,7 @@ test("timeline honors zero neighbors, default five-per-side, and archive visibil
   } finally { store.close(); }
 });
 
+// Verifica que la línea de tiempo de una memoria compartida solo se puede ver a través de la sesión del proyecto que la creó; un proyecto ajeno con la misma sesión no puede verla.
 test("timeline permits a shared focus only through its private owner session", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -305,6 +327,7 @@ test("timeline permits a shared focus only through its private owner session", (
   } finally { store.close(); }
 });
 
+// Verifica que los resúmenes de sesión en el contexto se ordenan por cuándo empezó cada sesión (más reciente primero), y que ninguna fila aparece dos veces entre pinned/recent/summaries.
 test("context orders summaries by session start and de-duplicates earlier exact rows", () => {
   const path = database(); const store = new MemoryStore(path);
   try {
@@ -326,6 +349,7 @@ test("context orders summaries by session start and de-duplicates earlier exact 
   } finally { store.close(); }
 });
 
+// Verifica que un resumen de sesión que también aparece en "recent" (por ser una memoria reciente) no se repite en "summaries", y que esa exclusión intencional no se cuenta como algo omitido.
 test("context excludes an intentional summary duplicate without counting it as omitted", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -344,6 +368,7 @@ test("context excludes an intentional summary duplicate without counting it as o
   } finally { store.close(); }
 });
 
+// Verifica que archivar quita una memoria fijada del contexto y restaurarla la devuelve, sin que su contenido cambie en ningún momento.
 test("context archive and restore update active candidates without changing content", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -356,6 +381,7 @@ test("context archive and restore update active candidates without changing cont
   } finally { store.close(); }
 });
 
+// Verifica que un título enorme se omite por completo cuando no cabe en el límite de bytes, y que incluso fuera del modo compacto una previsualización multibyte (emojis) se recorta para que el JSON completo respete el límite.
 test("context drops huge titles and noncompact multibyte previews to fit the complete JSON budget", () => {
   const store = new MemoryStore(":memory:");
   try {

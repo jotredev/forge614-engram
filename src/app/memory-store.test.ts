@@ -1,6 +1,11 @@
+/**
+ * Comprueba la fachada pública de MemoryStore: búsqueda combinando alcance compartido y de
+ * proyecto, cierre idempotente, activar refuerzo e inteligencia, y búsqueda por topicKey.
+ */
 import { expect, test } from "bun:test";
 import { MemoryStore } from "./memory-store";
 
+  // Verifica que buscar sin alcance trae memorias compartidas y de proyecto, y que pedir "project" solo trae las del proyecto (y respeta archivar/restaurar).
   test("store facade searches shared and project memories by default and honors a project-only scope", () => {
     const store = new MemoryStore(":memory:");
     try {
@@ -16,6 +21,7 @@ import { MemoryStore } from "./memory-store";
     } finally { store.close(); }
   });
 
+// Verifica que cerrar dos veces no lanza error, pero usar la base tras cerrarla sí falla.
 test("closing a store is idempotent and prevents subsequent operations", () => {
   const store = new MemoryStore(":memory:");
   store.createProject("Before close");
@@ -24,6 +30,7 @@ test("closing a store is idempotent and prevents subsequent operations", () => {
   expect(() => store.listProjects()).toThrow();
 });
 
+// Verifica que el refuerzo de búsqueda empieza desactivado y que activarlo lo deja activo.
 test("store facade explicitly reports and enables search reinforcement", () => {
   const store=new MemoryStore(":memory:");
   try {
@@ -33,6 +40,7 @@ test("store facade explicitly reports and enables search reinforcement", () => {
   } finally { store.close(); }
 });
 
+// Verifica que activar inteligencia migra la base (backup null porque ya estaba al día) y queda activada.
 test("memory store enrolls intelligence explicitly", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -42,6 +50,7 @@ test("memory store enrolls intelligence explicitly", () => {
   } finally { store.close(); }
 });
 
+// Verifica que buscar por topicKey encuentra la memoria del proyecto dueño y no la ve un scope distinto (null).
 test("store facade exposes owner-scoped topic lookups for resumable work", () => {
   const store = new MemoryStore(":memory:");
   try {

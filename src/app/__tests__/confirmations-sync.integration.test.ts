@@ -1,3 +1,8 @@
+/**
+ * Comprueba que dos instalaciones que confirman de forma independiente el mismo recuerdo (con
+ * el formato 3, refuerzo) convergen a un único estado tras sincronizar repetidamente, sin que
+ * las confirmaciones se dupliquen.
+ */
 import { expect, test } from "bun:test";
 import { MemoryStore } from "../memory-store";
 import { synchronize } from "../synchronization";
@@ -15,6 +20,7 @@ class Replica {
   }
 }
 
+// Verifica que dos confirmaciones hechas por separado (A y B) sobre el mismo recuerdo terminan en las dos instalaciones y en la réplica, y que sincronizar de más no crea confirmaciones ni versiones repetidas.
 test("independent confirmations converge once and repeated synchronization does not multiply them",async()=>{
   const a=new MemoryStore(":memory:"),b=new MemoryStore(":memory:");
   const replica=new Replica();

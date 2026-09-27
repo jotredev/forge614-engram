@@ -1,3 +1,10 @@
+/**
+ * Comprueba el módulo de sincronización a bajo nivel (`reconcile`, `validateSnapshot`,
+ * `applySnapshot`, `checkpoint`): las reglas de cada formato (validación exacta de campos,
+ * fusión de sesiones y resúmenes, rechazo de retrocesos de historial y de tamaños
+ * excesivos), la migración de un punto de encuentro (checkpoint) al activar sesiones, y que
+ * una importación fallida deshace la transacción completa sin perder el punto de encuentro anterior.
+ */
 import { expect, test } from "bun:test";
 import { MemoryStore } from "../../app/memory-store";
 import { assertExtension, emptySnapshot, normalizeSnapshot, reconcile, snapshotHash, validateSnapshot } from "../../modules/synchronization";
@@ -17,6 +24,7 @@ function sessionFixture() {
 }
 
 
+// Verifica que exportar desde el esquema 6 incluye sesiones y sus orígenes en tiempo de ejecución (sin filtrar la ruta local), que el validador antiguo (formato 1) rechaza el formato 2, y que agregar una memoria compartida ligada a la sesión sigue validando bien.
 test("schema6 exports sessions and immutable origins while the old validator rejects format2",()=>{
   const {store}=sessionFixture();
   try {
@@ -37,6 +45,7 @@ test("schema6 exports sessions and immutable origins while the old validator rej
 });
 
 
+// Verifica, con una batería de mutaciones inválidas (campo extra, id opaco alterado, fecha imposible, dueño ajeno, referencia de resumen cruzada, etc.), que validateSnapshot rechaza cada una de ellas, además de un campo demasiado grande.
 test("format2 validates exact fields, opaque IDs, canonical dates, owners, origins and summary references",()=>{
   const {store}=sessionFixture();
   try {
@@ -61,6 +70,7 @@ test("format2 validates exact fields, opaque IDs, canonical dates, owners, origi
 });
 
 
+// Verifica que reconcile fusiona sesiones independientes y conserva el avance de un cierre, pero rechaza un cierre divergente, perder sesiones o entradas de sesión al fusionar, y un origen (session del que depende un resumen) que desaparece.
 test("format2 merges independent sessions and close advances but rejects lost origins or divergent closes",()=>{
   const {store,project}=sessionFixture();
   try {
@@ -88,6 +98,7 @@ test("format2 merges independent sessions and close advances but rejects lost or
 });
 
 
+// Verifica que importar sesiones remotas conserva el registro y los vínculos de carpeta locales, sin adoptar como propias las sesiones manuales remotas (siguen resolviéndose por su origen real en tiempo de ejecución).
 test("session import preserves local registry and bindings without adopting remote manual sessions",()=>{
   const {store:a,project}=sessionFixture();const b=new MemoryStore(":memory:");
   try {
@@ -112,6 +123,7 @@ test("session import preserves local registry and bindings without adopting remo
 });
 
 
+// Verifica que el puntero de versión de un resumen de sesión avanza junto con su historial, que entradas de sesión no relacionadas se unen sin conflicto, y que dos revisiones de resumen que compiten desde la misma base sí generan un conflicto.
 test("summary pointers advance with history, union unrelated entries, and reject competing summary revisions",()=>{
   const {store:a,project}=sessionFixture(),b=new MemoryStore(":memory:");
   const fields={goal:"updated",instructions:"",discoveries:"",accomplishments:"",nextSteps:"",files:[]};
@@ -136,6 +148,7 @@ test("summary pointers advance with history, union unrelated entries, and reject
 });
 
 
+// Verifica que una base local que aún no tiene sesiones rechaza aplicar un formato 2 (SESSIONS_REQUIRED) sin tocar su punto de encuentro en formato 1, y que tras activar sesiones sí puede aplicarlo y su punto de encuentro sube de formato.
 test("pre-session local schema refuses format2 apply before changing its format1 checkpoint",()=>{
   const a=new MemoryStore(":memory:"),b=new MemoryStore(":memory:");
   try {
@@ -153,6 +166,7 @@ test("pre-session local schema refuses format2 apply before changing its format1
 });
 
 
+// Verifica que el punto de encuentro (checkpoint) guardado en bytes sobrevive a activar sesiones (sigue en formato 1 hasta que se aplica algo nuevo), que una importación que falla a mitad de camino deshace todo, y que un punto de encuentro demasiado grande se rechaza antes de analizarlo (parsearlo).
 test("checkpoint bytes survive enabling sessions and failed transactional import; oversized checkpoints reject before parsing",()=>{
   const db=new Database(":memory:");const {store}=sessionFixture();
   try {
@@ -162,7 +176,7 @@ test("checkpoint bytes survive enabling sessions and failed transactional import
     db.query("INSERT INTO sync_checkpoints(replica,snapshot) VALUES(?,?)").run("replica",raw);
     enableSessionLifecycle(db);expect(checkpoint(db,"replica").format).toBe(1);
     const before=exportSnapshot(db);
-    // Failure after project/memory/version writes must roll back the entire import.
+    // Un fallo después de escribir proyecto/memoria/versión debe deshacer la importación completa.
     db.exec("CREATE TEMP TRIGGER fail_session BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT,'interrupted'); END");
     expect(()=>applySnapshot(db,before,store.syncSnapshot(),"replica")).toThrow("interrupted");
     expect(exportSnapshot(db)).toEqual(before);
@@ -176,6 +190,7 @@ test("checkpoint bytes survive enabling sessions and failed transactional import
 });
 
 
+// Verifica que dos fotografías (snapshots) válidas por separado pueden superar el límite de tamaño al combinarse, y que reconcile lo detecta en vez de dejar pasar un resultado demasiado grande.
 test("individually valid snapshots cannot merge past the size limit",()=>{
   const a=new MemoryStore(":memory:"),b=new MemoryStore(":memory:");
   try {
@@ -187,6 +202,7 @@ test("individually valid snapshots cannot merge past the size limit",()=>{
 });
 
 
+// Verifica que sincronizar en el esquema 5 actualiza el historial de la memoria y la búsqueda de texto (FTS) en la instalación B, pero conserva los vínculos de carpeta de cada máquina como algo propio de esa máquina (no se copian entre instalaciones).
 test('schema5 sync updates memory history and FTS while preserving only local machine bindings',()=>{
   const a=new MemoryStore(':memory:'),b=new MemoryStore(':memory:');
   try{
@@ -207,6 +223,7 @@ test('schema5 sync updates memory history and FTS while preserving only local ma
 });
 
 
+// Verifica que sincronizar dos instalaciones con proyectos independientes los combina a ambos, y que el historial completo de una memoria remota (todas sus versiones) llega y queda buscable por texto en local.
 test("sync merges independent projects and imports memory history into local FTS", () => {
   const a = new MemoryStore(":memory:"); const b = new MemoryStore(":memory:");
   try {
@@ -228,6 +245,7 @@ test("sync merges independent projects and imports memory history into local FTS
 });
 
 
+// Verifica que validateSnapshot rechaza un hash de petición alterado, un historial de eventos vaciado, y un estado de memoria (archivada) que no coincide con lo que dice su propio historial.
 test("sync rejects corrupted request hashes and event histories",()=>{
   const store=new MemoryStore(":memory:");
   try {
@@ -243,6 +261,7 @@ test("sync rejects corrupted request hashes and event histories",()=>{
 });
 
 
+// Verifica que reconcile rechaza un remoto que retrocede en el historial de una memoria (una versión anterior a la que ya se conocía), incluso cuando lo local solo trae cambios sin relación con esa memoria.
 test("reconciliation rejects a remote history rollback before publishing unrelated local changes",()=>{
   const store=new MemoryStore(":memory:");
   try {
@@ -256,6 +275,7 @@ test("reconciliation rejects a remote history rollback before publishing unrelat
 });
 
 
+// Verifica que dos ediciones divergentes desde la misma base generan conflicto al reconciliar, que aplicar una fotografía (snapshot) sobre un estado local ya obsoleto falla, que asignarle dueño ajeno a una memoria (projectId null) falla, y que ninguno de los dos lados pierde su propio contenido.
 test("sync rejects divergent edits, foreign ownership and stale local snapshot without losing data", () => {
   const a = new MemoryStore(":memory:"); const b = new MemoryStore(":memory:");
   try {
@@ -275,6 +295,7 @@ test("sync rejects divergent edits, foreign ownership and stale local snapshot w
 });
 
 
+// Verifica que sincronizar conserva el alcance compartido (shared) de una memoria frente a una de proyecto con el mismo tema, y que archivar/restaurar en A se refleja en la búsqueda de B tras sincronizar.
 test("sync preserves shared scope and archive/restore overrides", () => {
   const a=new MemoryStore(":memory:"); const b=new MemoryStore(":memory:");
   try {

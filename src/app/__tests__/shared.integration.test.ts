@@ -1,3 +1,10 @@
+/**
+ * Comprueba las memorias compartidas (scope "shared"): aparecen junto a las del proyecto en
+ * la búsqueda por defecto sin filtrar entre proyectos, no necesitan ningún proyecto, sus
+ * claves temáticas y de petición son independientes de las de cada proyecto, una memoria de
+ * proyecto con el mismo tema eclipsa a la compartida solo en la búsqueda combinada, y la
+ * base de datos rechaza a nivel de esquema cualquier combinación inválida de alcance y dueño.
+ */
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -19,6 +26,7 @@ afterEach(() => {
 });
 const content = { title: "SQLite UI", content: "Learning", type: "fact" as const };
 
+// Verifica que la búsqueda por defecto trae las memorias propias y las compartidas, nunca las de otro proyecto, tanto sin filtro como con "project"/"shared" explícitos.
 test("default search includes own and shared matches but never another project in either search path", () => {
   const { store, a, b } = fixture();
   const own = store.save({ ...content, projectId: a });
@@ -35,6 +43,7 @@ test("default search includes own and shared matches but never another project i
   expect(shared.projectId).toBeNull(); expect(shared.scope).toBe("shared");
 });
 
+// Verifica que una memoria compartida existe sin que haya ningún proyecto, que un proyecto no puede leerla ni tocarla por su cuenta (projectId no null), y que archivar/restaurar afecta a su búsqueda con scope "shared".
 test("shared memory needs no projects and is explicitly selected for direct reads and mutations", () => {
   const store = new MemoryStore(":memory:"); stores.push(store);
   const shared = store.save({ ...content, scope: "shared", projectId: null });
@@ -52,6 +61,7 @@ test("shared memory needs no projects and is explicitly selected for direct read
   expect(store.search(a, "SQLite")).toHaveLength(1);
 });
 
+// Verifica que la misma clave temática y la misma clave de petición pueden reutilizarse sin chocar entre lo compartido y cada proyecto, pero sí chocan dentro del mismo espacio (compartido con compartido).
 test("identical topic and request keys stay independent in shared and project namespaces", () => {
   const { store, a, b } = fixture();
   const input = { ...content, topicKey: "runtime", requestKey: "first" };
@@ -69,12 +79,13 @@ test("identical topic and request keys stay independent in shared and project na
   expect(store.get(a, one.id)?.version).toBe(1);
 });
 
+// Verifica que una memoria de proyecto activa con el mismo tema eclipsa a la compartida solo en la búsqueda combinada del proyecto (no en la de "shared" ni en la de otro proyecto), y que archivarla restaura la visibilidad de la compartida.
 test("an active exact project topic overrides shared only in combined search and archive restores shared visibility", () => {
   const { store, a, b } = fixture();
   const shared = store.save({ ...content, scope: "shared", projectId: null, topicKey: "runtime" });
   const own = store.save({ projectId: a, topicKey: "runtime", title: "Node exception", content: "Use Node", type: "decision" });
   for (const query of ["SQLite", "UI"]) {
-    // Shadowing is by topic identity, not by whether the override matches query.
+    // El eclipse es por identidad de tema, no por si el contenido que lo eclipsa coincide con la búsqueda.
     expect(store.search(a, query)).toEqual([]);
     expect(store.search(b, query).map(r => r.memory.id)).toEqual([shared.id]);
     expect(store.search(a, query, 10, "shared").map(r => r.memory.id)).toEqual([shared.id]);
@@ -86,6 +97,7 @@ test("an active exact project topic overrides shared only in combined search and
   expect(store.get(null, shared.id)?.state).toBe("active");
 });
 
+// Verifica que dos memorias con texto coincidente pero sin la misma clave temática no se fusionan: la búsqueda las trae como dos resultados distintos.
 test("matching text without a matching topic does not silently merge project and shared memories", () => {
   const { store, a } = fixture();
   store.save({ ...content, scope: "shared", projectId: null });
@@ -93,6 +105,7 @@ test("matching text without a matching topic does not silently merge project and
   expect(store.search(a, "SQLite")).toHaveLength(2);
 });
 
+// Verifica que cualquier combinación inválida de scope/projectId al guardar se rechaza, y que buscar sin scope o con "project" sobre projectId null también falla en vez de adivinar.
 test("invalid scope/identity pairs and ambiguous shared access fail closed", () => {
   const { store, a } = fixture();
   const invalid = [
@@ -109,6 +122,7 @@ test("invalid scope/identity pairs and ambiguous shared access fail closed", () 
   expect(store.search(null, "SQLite", 10, "shared")).toEqual([]);
 });
 
+// Verifica que el esquema de la base rechaza a nivel de SQL (no solo desde el SDK) las combinaciones inválidas de dueño y alcance, aunque se intenten con UPDATE directos.
 test("schema prevents invalid ownership and duplicate shared topics even outside the SDK", () => {
   const dir = mkdtempSync(join(tmpdir(), "forge614-shared-")); dirs.push(dir);
   const path = join(dir, "memory.sqlite"); const { store, a } = fixture(path);

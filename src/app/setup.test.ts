@@ -1,3 +1,9 @@
+/**
+ * Comprueba la configuración guiada de extremo a extremo: cancelación en cualquier punto sin
+ * dejar rastro, permisos restringidos automáticamente, la base nueva nace ya con refuerzo
+ * (sin preguntar por él), no se filtra ninguna credencial, y solo se aplica algo tras la
+ * confirmación final.
+ */
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,6 +31,7 @@ function conversation(answers: (string | null)[], beforeAnswer?: () => void) {
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
+// Verifica que cancelar con cualquiera de las respuestas reconocidas como "no"/"cancelar" no deja rastro de un espacio de trabajo nuevo.
 test("setup cancellation leaves a fresh workspace absent", async () => {
   for (const answer of [null, "q", "cancelar", "", "no", "n"]) {
     const { config } = fixture();
@@ -34,6 +41,7 @@ test("setup cancellation leaves a fresh workspace absent", async () => {
   }
 });
 
+// Verifica que una carpeta de espacio de trabajo ya existente con permisos abiertos se restringe a 0o700 antes de preguntar nada, sin crear ni configuración ni base.
 test("setup automatically restricts an existing user-owned workspace directory before prompting", async () => {
   const { config } = fixture();
   mkdirSync(config.root, { mode: 0o755 });
@@ -46,10 +54,10 @@ test("setup automatically restricts an existing user-owned workspace directory b
   expect(existsSync(config.databasePath)).toBe(false);
 });
 
+// Verifica que sin elegir PostgreSQL se inicializa el almacenamiento global sin crear ningún proyecto, y que la base nueva ya reporta el refuerzo activado sin haber preguntado por él.
 test("setup defaults to no PostgreSQL and initializes global storage without a project", async () => {
   const { config, workspace } = fixture();
-  // The new database is born already at schema 11: no reinforcement question is asked, and it
-  // reports enabled from the start.
+  // La base nueva nace ya en el esquema 11: no se pregunta por el refuerzo, y lo reporta activado desde el principio.
   const { io, output, questions } = conversation(["", "sí"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
   expect(questions).toHaveLength(2);
@@ -62,16 +70,18 @@ test("setup defaults to no PostgreSQL and initializes global storage without a p
   finally { store.close(); }
 });
 
+// Verifica que en una base completamente nueva se muestra la frase sobre memoria inteligente y nunca se pregunta por el refuerzo.
 test("setup on a brand-new database writes the intelligence phrase and never asks about reinforcement", async () => {
   const { config } = fixture();
   const { io, output, questions } = conversation(["", "sí"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
   expect(output.join("\n")).toContain("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
   expect(output.join("\n")).not.toContain("¿Quieres habilitar el refuerzo de recuerdos?");
-  // Only the PostgreSQL question and the final confirmation: no reinforcement question in between.
+  // Solo la pregunta de PostgreSQL y la confirmación final: ninguna pregunta de refuerzo en medio.
   expect(questions).toHaveLength(2);
 });
 
+// Verifica que ejecutar setup sobre un espacio ya en uso conserva proyectos y memorias existentes, sin preguntar por ningún proyecto ni mencionar su nombre o id en la salida.
 test("setup preserves existing projects and memories without asking which project to use", async () => {
   const { config, workspace } = fixture();
   const project = workspace.createProject("PRIVATE_PROJECT_NAME");
@@ -80,9 +90,8 @@ test("setup preserves existing projects and memories without asking which projec
   try { id = store.save({ projectId: project.projectId, title: "Keep", content: "SQLite", type: "fact" }).id; }
   finally { store.close(); }
   const before = readFileSync(join(config.root, ".env"));
-  // The project was created through workspace.createProject(), which already births the
-  // database at schema 11 (memory intelligence): reinforcement is already enabled, so setup
-  // reports it instead of asking.
+  // El proyecto se creó a través de workspace.createProject(), que ya hace nacer la base en el
+  // esquema 11 (memoria inteligente): el refuerzo ya está activado, así que setup lo reporta en vez de preguntar.
   const { io, output, questions } = conversation(["no", "yes"]);
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
   expect(questions).toHaveLength(2);
@@ -95,16 +104,17 @@ test("setup preserves existing projects and memories without asking which projec
   expect(output.join("\n")).not.toContain(project.projectId);
 });
 
+// Verifica que respuestas inválidas o que parecen opciones de un menú de proyectos ya retirado no confunden el bucle de confirmación, que sigue pidiendo hasta obtener si/no.
 test("setup retries invalid confirmation without interpreting old project menu choices", async () => {
   const { config, workspace } = fixture();
-  // Brand new: no reinforcement question is asked, so the confirmation loop starts right after
-  // the PostgreSQL question.
+  // Base completamente nueva: no se pregunta por el refuerzo, así que el bucle de confirmación empieza justo después de la pregunta de PostgreSQL.
   const { io, questions } = conversation(["no", "1", "Demo", "2", "3", "maybe", "si"], () => expect(existsSync(config.root)).toBe(false));
   expect(await runSetup(io, config)).toEqual({ cancelled: false, storage: "sqlite" });
   expect(questions).toHaveLength(7);
   expect(workspace.listProjects()).toEqual([]);
 });
 
+// Verifica que cancelar tras escribir una URL de PostgreSQL con credenciales no llega a conectarse ni filtra la contraseña en ningún mensaje mostrado.
 test("setup cancels PostgreSQL before connecting or publishing credentials", async()=>{
   const {config}=fixture();
   const {io,output}=conversation(["si","postgresql://u:SECRET@127.0.0.1:1/db?sslmode=disable","no"]);
@@ -113,6 +123,7 @@ test("setup cancels PostgreSQL before connecting or publishing credentials", asy
   expect(output.join("\n")).not.toContain("SECRET");
 });
 
+// Verifica que cancelar setup no borra ni modifica un proyecto que ya existía antes de ejecutarlo.
 test("setup cancellation preserves existing project records", async () => {
   const { config, workspace } = fixture();
   const project = workspace.createProject("Original");
@@ -120,6 +131,7 @@ test("setup cancellation preserves existing project records", async () => {
   expect(workspace.listProjects()).toEqual([project]);
 });
 
+// Verifica que si la configuración existe pero el archivo de base de datos falta, setup se rechaza antes de preguntar nada y sin recrear el archivo.
 test("setup refuses a missing configured database before prompting without recreating it", async () => {
   const { config, workspace } = fixture();
   workspace.init(); rmSync(config.databasePath);
@@ -129,10 +141,11 @@ test("setup refuses a missing configured database before prompting without recre
   expect(existsSync(config.databasePath)).toBe(false);
 });
 
+// Verifica los tres desenlaces de la pregunta de refuerzo sobre una base heredada (legada): rechazarla la deja desactivada, cancelar después no aplica nada, y aceptarla la activa y muestra las advertencias correspondientes.
 test("setup only enrolls reinforcement after the final confirmation", async () => {
-  // The reinforcement question is only ever asked for a database that already exists below
-  // level 7: a brand-new workspace is born with it enabled already (see the tests above), so
-  // each scenario here starts from a pre-existing, still-configured legacy-level database.
+  // La pregunta de refuerzo solo se hace para una base que ya existe por debajo del nivel 7: un
+  // espacio de trabajo completamente nuevo nace con él ya activado (ver las pruebas de arriba),
+  // así que cada escenario aquí parte de una base heredada, ya configurada de antemano.
   const declined = fixture();
   legacyConfiguredWorkspace(declined.config);
   const declinedConfig = readFileSync(join(declined.config.root, ".env"));
@@ -167,6 +180,7 @@ test("setup only enrolls reinforcement after the final confirmation", async () =
   expect(output.join("\n")).toContain("sync --upgrade-format");
 });
 
+// Verifica que si el refuerzo ya estaba activado, setup lo informa sin ofrecer nunca la opción de desactivarlo.
 test("setup reports existing reinforcement without offering a downgrade", async () => {
   const { config, workspace } = fixture();
   workspace.init();

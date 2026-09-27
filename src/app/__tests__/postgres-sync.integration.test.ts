@@ -1,3 +1,12 @@
+/**
+ * Comprueba la sincronización contra un PostgreSQL real y desechable (nunca una base
+ * ambiente): subir de formato exige consentimiento explícito y conserva los hashes
+ * históricos, dos subidas simultáneas dejan un solo ganador (comparar-y-cambiar, CAS), el
+ * tamaño de la fotografía (snapshot) remota se limita antes de analizarla (parsearla) y
+ * antes de publicarla, las confirmaciones del formato 3 sobreviven a reintentos y
+ * conflictos, y dos instalaciones SQLite convergen sin perder datos aunque haya
+ * publicaciones interrumpidas o carreras.
+ */
 import { afterAll, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -12,7 +21,7 @@ import { syncWorkspace } from "../../app/synchronization";
 import { canonical, normalizeSnapshot, snapshotHash } from "../../modules/synchronization";
 import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../../infrastructure/__test-support__/postgres";
 
-// Explicit disposable loopback fixture only: never use an ambient database.
+// Solo un servidor de prueba (fixture) desechable y en loopback (127.0.0.1), explícito: nunca se usa una base ambiente ya existente.
 const cluster=startPostgresCluster();
 const integration=cluster.available?test:test.skip;
 let directory="",url="",admin!:SQL;
@@ -25,6 +34,7 @@ afterAll(async()=>{
 },postgresTestTimeoutMs);
 
 
+// Verifica que subir de formato exige la opción upgradeFormat, que los hashes de comparar-y-cambiar (CAS) de revisiones anteriores no se tocan, y que un cliente sin la capacidad necesaria (sesiones) se rechaza antes de publicar.
 integration("format promotion requires explicit consent, preserves historical CAS hashes and rejects incapable clients before publication",async()=>{
   await admin.unsafe("CREATE DATABASE session_promotion");
   const testUrl=url.replace("/postgres?","/session_promotion?");
@@ -56,7 +66,7 @@ integration("format promotion requires explicit consent, preserves historical CA
     b.enableSessions();await synchronize(b,replica);
     expect(b.get(project.projectId,entry.memory.id)!.content).toBe("new body");expect(b.getSession(project.projectId,"runtime")).not.toBeNull();
     expect(b.syncCheckpoint(replica.id).format).toBe(2);
-    // Publication committed but application/checkpoint was interrupted. Retry keeps the old checkpoint valid.
+    // La publicación se confirmó, pero la aplicación/el punto de encuentro (checkpoint) se interrumpió. Reintentar mantiene válido el punto de encuentro anterior.
     a.saveWithSession({projectId:project.projectId,title:"Interrupted",content:"retry",type:"fact"},{sessionId:"runtime"});
     const checkpoint=a.syncCheckpoint(replica.id);const head=await replica.read();
     await replica.publish(head.hash,a.syncSnapshot());
@@ -67,6 +77,7 @@ integration("format promotion requires explicit consent, preserves historical CA
 },postgresTestTimeoutMs);
 
 
+// Verifica que dos subidas de formato simultáneas contra PostgreSQL tienen un único ganador por comparar-y-cambiar (CAS): la que pierde no se aplica y el almacenamiento se queda en formato 1.
 integration("simultaneous format promotions have one CAS winner, leave loser unapplied and retain storage format1",async()=>{
   await admin.unsafe("CREATE DATABASE session_race");
   const testUrl=url.replace("/postgres?","/session_race?");
@@ -74,7 +85,7 @@ integration("simultaneous format promotions have one CAS winner, leave loser una
   const a=new MemoryStore(":memory:"),b=new MemoryStore(":memory:");
   try {
     a.enableSessions();b.enableSessions();a.createProject("A");b.createProject("B");
-    // Both readers receive the real initial head before either coordinator may publish.
+    // Ambos lectores reciben el encabezado inicial real antes de que cualquiera de los dos coordinadores pueda publicar.
     let readers=0;let release!:()=>void;const barrier=new Promise<void>(resolve=>release=resolve);
     for(const replica of [left,right]) {const read=replica.read.bind(replica);replica.read=async()=>{const head=await read();if(++readers===2) release();await barrier;return head;};}
     const result=await Promise.allSettled([synchronize(a,left,{upgradeFormat:true}),synchronize(b,right,{upgradeFormat:true})]);
@@ -90,6 +101,7 @@ integration("simultaneous format promotions have one CAS winner, leave loser una
 },postgresTestTimeoutMs);
 
 
+// Verifica que el tamaño de la fotografía (snapshot) remota se comprueba antes de analizarla (parsearla) y antes de publicarla, incluso si el contenido guardado ya no es JSON válido.
 integration("remote snapshot size is bounded before parsing and before publishing",async()=>{
   await admin.unsafe("CREATE DATABASE snapshot_limits");
   const testUrl=url.replace("/postgres?","/snapshot_limits?");
@@ -100,7 +112,7 @@ integration("remote snapshot size is bounded before parsing and before publishin
     huge.projects.push({projectId:crypto.randomUUID(),name:"x".repeat(8*1024*1024),createdAt:"2026-09-17T00:00:00.000Z",updatedAt:"2026-09-17T00:00:00.000Z"});
     await expect(replica.publish(head.hash,huge)).rejects.toMatchObject({code:"SYNC_TOO_LARGE"});
     expect((await replica.read()).hash).toBe(head.hash);
-    // Invalid JSON must produce the size error first, proving it was not parsed.
+    // Un JSON inválido debe producir primero el error de tamaño, lo que demuestra que nunca se intentó analizar (parsear) su contenido.
     await inspect.unsafe("UPDATE forge614_sync.revisions SET payload=$1 WHERE hash=$2",["x".repeat(8*1024*1024+1),head.hash]);
     await expect(replica.read()).rejects.toMatchObject({code:"SYNC_TOO_LARGE"});
     const restored=await inspect.unsafe("UPDATE forge614_sync.revisions SET payload=$1 WHERE hash=$2 RETURNING length(payload)::int AS n",[canonical(head.snapshot),head.hash]);
@@ -118,6 +130,7 @@ integration("remote snapshot size is bounded before parsing and before publishin
 },postgresTestTimeoutMs);
 
 
+// Verifica el ciclo completo de las confirmaciones en formato 3 contra PostgreSQL real: convergencia entre instalaciones, reintentos tras un acuse perdido, referencias falsificadas o colgantes rechazadas, conflictos de escritura y fallo por PostgreSQL inalcanzable.
 integration("format 3 confirmations survive PostgreSQL convergence, retries, conflicts, and offline failures",async()=>{
   await admin.unsafe("CREATE DATABASE reinforcement_transport");
   const testUrl=url.replace("/postgres?","/reinforcement_transport?");
@@ -151,7 +164,7 @@ integration("format 3 confirmations survive PostgreSQL convergence, retries, con
       expect(snapshot.memories[0]!.versions).toHaveLength(1);
     }
 
-    // Publication committed but its acknowledgment/checkpoint was lost.
+    // La publicación se confirmó, pero se perdió su acuse de recibo/punto de encuentro (checkpoint).
     a.save({projectId:project.projectId,title:memory.title,content:memory.content,type:memory.type,topicKey:memory.topicKey!,expectedVersion:1,requestKey:"lost-ack"});
     const lostCheckpoint=a.syncCheckpoint(replica.id),head=await replica.read();
     await replica.publish(head.hash,a.syncSnapshot());
@@ -162,7 +175,7 @@ integration("format 3 confirmations survive PostgreSQL convergence, retries, con
     if(converged.format!==3) throw new Error("expected format 3");
     expect(converged.confirmations).toHaveLength(3);
 
-    // A request cannot point at a real confirmation belonging to another owner.
+    // Una petición no puede apuntar a una confirmación real que pertenece a otro dueño.
     const otherProject=a.createProject("Foreign owner");
     const otherMemory=a.save({projectId:otherProject.projectId,title:"Foreign",content:"separate",type:"fact",topicKey:"foreign"});
     a.save({projectId:otherProject.projectId,title:otherMemory.title,content:otherMemory.content,type:otherMemory.type,
@@ -177,7 +190,7 @@ integration("format 3 confirmations survive PostgreSQL convergence, retries, con
     await expect(replica.publish(published.hash,forged)).rejects.toMatchObject({code:"SYNC_INVALID"});
     expect((await replica.read()).hash).toBe(published.hash);
 
-    // A dangling confirmation reference is independently rejected as malformed.
+    // Una referencia de confirmación colgante (a nada) se rechaza también, de forma independiente, por estar mal formada.
     const dangling=structuredClone(published.snapshot);
     if(dangling.format!==3) throw new Error("expected format 3");
     dangling.confirmations[0]!.memoryId=crypto.randomUUID();
@@ -216,6 +229,7 @@ integration("format 3 confirmations survive PostgreSQL convergence, retries, con
 },postgresTestTimeoutMs);
 
 
+// Verifica que dos instalaciones SQLite reales sincronizan entre sí a través de un PostgreSQL real, sin perder datos ante una repetición de publicación, una escritura local que compite con una ronda ya publicada, o un conflicto de versiones.
 integration("two SQLite installations synchronize via real PostgreSQL, replays and conflicts preserve data",async()=>{
   const replica=await PostgresReplica.connect(url,true);
   const a=new MemoryStore(":memory:"),b=new MemoryStore(":memory:");
@@ -227,12 +241,12 @@ integration("two SQLite installations synchronize via real PostgreSQL, replays a
     expect(b.search(p.projectId,"SQLite")).toHaveLength(1);
     await synchronize(a,replica);await synchronize(b,replica);
     expect(b.history(p.projectId,m.id)).toHaveLength(1);
-    // Simulate a committed publication whose response/local checkpoint was lost.
+    // Simula una publicación confirmada cuya respuesta/punto de encuentro local se perdió.
     a.save({scope:"shared",projectId:null,title:"Replay",content:"survives retry",type:"fact"});
     const before=await replica.read();await replica.publish(before.hash,a.syncSnapshot());
     await synchronize(a,replica);await synchronize(b,replica);
     expect(b.search(null,"survives",10,"shared")).toHaveLength(1);
-    // A local writer races with a published round: do not apply its stale snapshot.
+    // Un escritor local compite con una ronda ya publicada: no debe aplicarse su fotografía (snapshot) desactualizada.
     const captured=a.syncSnapshot();const head=await replica.read();
     await replica.publish(head.hash,captured);a.createProject("Concurrent local writer");
     expect(()=>a.applySync(captured,captured,replica.id)).toThrow("SYNC_LOCAL_CHANGED");
@@ -249,6 +263,7 @@ integration("two SQLite installations synchronize via real PostgreSQL, replays a
 },postgresTestTimeoutMs);
 
 
+// Verifica que PostgreSQL solo acepta una de dos publicaciones concurrentes sobre el mismo encabezado, y que un esquema alterado a mano (columna extra) hace que una conexión nueva se rechace.
 integration("PostgreSQL publishes only one winner for a concurrent head and rejects altered schema",async()=>{
   const replica=await PostgresReplica.connect(url,false);
   try {
@@ -268,6 +283,7 @@ integration("PostgreSQL publishes only one winner for a concurrent head and reje
 },postgresTestTimeoutMs);
 
 
+// Verifica que la configuración guiada (setup) rechaza un esquema de PostgreSQL incompatible sin escribir configuración ni crear la base SQLite local.
 integration("setup refuses an incompatible PostgreSQL schema without publishing config or creating SQLite",async()=>{
   const config=new WorkspaceConfig(join(directory,"refused-user",".forge614"));
   const answers=["si",url,"si"];

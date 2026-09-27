@@ -1,21 +1,44 @@
+/**
+ * Configuraci\u00f3n guiada (comando `init`): pregunta por consola si se quiere sincronizar con
+ * PostgreSQL y si se quiere activar el refuerzo de recuerdos, valida las respuestas y solo
+ * al final aplica los cambios; nunca borra ni reemplaza una base ya existente.
+ */
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 import { MemoryWorkspace } from "./workspace";
 import { PostgresReplica, postgresOptions } from "../infrastructure/postgres/replica";
 import { MemoryError } from "../shared/errors";
 
+/** Entrada y salida por las que `runSetup` habla con la persona, para poder sustituirlas en las pruebas. */
 export interface SetupIO {
+  /** Muestra un mensaje informativo; no espera respuesta. */
   write(message: string): void;
+  /** Hace una pregunta y espera la respuesta; `secret` oculta lo escrito (para contrase\u00f1as o URLs con credenciales). Devuelve `null` si la persona cancel\u00f3 (por ejemplo, con Ctrl+C). */
   ask(question: string, options?: {secret:boolean}): Promise<string | null>;
 }
+/** Resultado de ejecutar la configuraci\u00f3n guiada: cancelada, o completada con el motor de almacenamiento usado. */
 export type SetupResult = { cancelled: true } | { cancelled: false; storage: "sqlite" };
 
+/** Se\u00f1al interna de que la persona pidi\u00f3 cancelar (escribiendo "cancelar"/"q" o cerrando la entrada); se atrapa al final de `runSetup`. */
 class Cancelled extends Error {}
-// Escape paths before displaying them in the terminal.
+/**
+ * Escapa las rutas antes de mostrarlas en la terminal, para que un nombre de archivo con
+ * caracteres de control o de cambio de direcci\u00f3n de texto no pueda falsear lo que se ve en pantalla.
+ */
 function display(text: string): string {
   return JSON.stringify(text).replace(/[\x7f-\x9f\u2028-\u202e\u2066-\u2069]/g,
     character => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 
+/**
+ * Ejecuta la configuraci\u00f3n guiada completa: explica qu\u00e9 se va a crear, pregunta por
+ * PostgreSQL y por el refuerzo de recuerdos, pide confirmaci\u00f3n final y solo entonces aplica
+ * los cambios (o cancela sin tocar nada si la persona se arrepiente en cualquier punto).
+ * @param io Entrada y salida a usar para hablar con la persona.
+ * @param config Configuraci\u00f3n del espacio de trabajo a leer y, si se confirma, modificar.
+ * @returns Si se cancel\u00f3, o el resultado con el motor de almacenamiento usado.
+ * @throws MemoryError con c\u00f3digo `CONFIG_CHANGED` si la configuraci\u00f3n cambi\u00f3 entre el
+ * momento en que se ley\u00f3 y el momento en que se confirm\u00f3 (otra sesi\u00f3n la modific\u00f3 a la vez).
+ */
 export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Promise<SetupResult> {
   const workspace = new MemoryWorkspace(config);
   const ask = async (question: string, secret=false): Promise<string> => {
@@ -32,7 +55,7 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     const revision=config.revision();
     let reinforcementEnabled=false;
     if (configured) {
-      const store = workspace.open(true); // Validate existing storage without listing projects.
+      const store = workspace.open(true); // Valida el almacenamiento existente sin llegar a listar proyectos.
       try { reinforcementEnabled=store.reinforcementEnabled(); }
       finally { store.close(); }
     }
@@ -43,10 +66,12 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     if(current) io.write('La sincronización PostgreSQL está configurada. Elegir «No» la desactiva sin borrar ninguna copia; «Sí» permite conservar o cambiar la conexión.');
     io.write("¿Quieres habilitar la sincronización con una base de datos PostgreSQL?\nNo\nSí, configurar PostgreSQL");
     let postgresUrl:string|null=null;
+    // Repite la pregunta hasta obtener una respuesta reconocida (vacío/no o sí).
     while(true) {
       const answer=(await ask("Elige [si/NO]: ")).toLowerCase();
       if(["","no","n"].includes(answer)) break;
       if(["si","sí","s","yes","y"].includes(answer)) {
+        // Repite la petición de URL hasta que sea válida; Enter en vacío conserva la URL ya configurada, si la había.
         while(true) {
           const url=await ask(current?"URL PostgreSQL (oculta; Enter conserva la actual): ":"URL PostgreSQL (entrada oculta): ",true);
           if(!url&&current) {postgresUrl=current;break;}
@@ -60,6 +85,7 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
     if(postgresUrl) io.write("Se sincronizará el espacio completo: todos los proyectos, recuerdos shared e historial. Usa una base PostgreSQL dedicada, vacía o ya compatible. Los equipos con acceso a esa base podrán recibir estos datos. No se transmite nada antes de confirmar.");
     else io.write("Sincronización PostgreSQL desactivada; se conservarán todas las copias existentes.");
     let enableReinforcement=reinforcementEnabled;
+    // Tres casos: ya estaba activado (se mantiene, sin poder desactivarlo aquí); es una base nueva (se crea directamente con refuerzo); o hay que preguntar.
     if(reinforcementEnabled) {
       io.write("El refuerzo de recuerdos ya está habilitado. Se conservará habilitado; esta configuración no ofrece una degradación.");
     } else if(!configured) {
@@ -82,13 +108,14 @@ export async function runSetup(io: SetupIO, config = new WorkspaceConfig()): Pro
       if (["si", "sí", "s", "yes", "y"].includes(confirmation)) break;
       io.write("Responde si para confirmar o no para cancelar.");
     }
+    // Se comprueba dos veces que la configuración no cambió mientras se conversaba: antes de validar PostgreSQL (para no conectarse con una URL ya obsoleta) y otra vez después (por si esa validación tardó).
     if(config.revision()!==revision) throw new MemoryError("CONFIG_CHANGED","La configuración cambió; ejecuta init de nuevo.");
     if(postgresUrl) {
       const replica=await PostgresReplica.connect(postgresUrl,true);
       try {await replica.read();} finally {await replica.close();}
     }
     if(config.revision()!==revision) throw new MemoryError("CONFIG_CHANGED","La configuración cambió; ejecuta init de nuevo.");
-    workspace.init(); // Revalidate after confirmation; never replace a missing configured database.
+    workspace.init(); // Revalida tras la confirmación; nunca reemplaza una base ya configurada que faltara en disco.
     const initializedStore=workspace.open();
     try { initializedStore.enableProjectBindings(); }
     finally { initializedStore.close(); }

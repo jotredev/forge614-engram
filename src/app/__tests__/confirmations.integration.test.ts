@@ -1,3 +1,11 @@
+/**
+ * Comprueba el refuerzo de búsqueda (confirmaciones, formato 3): un guardado exacto repetido
+ * confirma en vez de duplicar, el reemplazo de una petición (requestKey) precede a la
+ * verificación de versión y de archivado, la ventana de tiempo de confirmación de 900000 ms,
+ * el aislamiento de las claves de petición por dueño, las sesiones deben estar abiertas y ser
+ * las correctas, una memoria compartida no expone a qué proyecto pertenece su sesión, y dos
+ * procesos que piden lo mismo a la vez crean una sola confirmación.
+ */
 import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -9,6 +17,7 @@ const directories:string[]=[];
 function fixture():string {const dir=mkdtempSync(join(tmpdir(),"engram-confirmations-"));directories.push(dir);return join(dir,"engram.db");}
 afterEach(()=>{setSystemTime();for(const directory of directories.splice(0))rmSync(directory,{recursive:true,force:true});});
 
+// Verifica que con el refuerzo activado, repetir un guardado exacto (por contenido o por requestKey) confirma la memoria existente en vez de crear una versión nueva, dejando exactamente una fila de confirmación, un evento y una entrada de sesión.
 test("enrollment turns an exact save into one immutable confirmation", () => {
   const path=fixture();const store=new MemoryStore(path);
   try {
@@ -33,6 +42,7 @@ test("enrollment turns an exact save into one immutable confirmation", () => {
   } finally {store.close();}
 });
 
+// Verifica que sin el refuerzo activado (esquema heredado), guardar el mismo contenido dos veces crea dos memorias independientes, cada una con su propio historial de una versión.
 test("legacy schemas keep duplicate saves as independent records", () => {
   const store=new MemoryStore(":memory:");
   try {
@@ -45,6 +55,7 @@ test("legacy schemas keep duplicate saves as independent records", () => {
   } finally {store.close();}
 });
 
+// Verifica que repetir una petición de confirmación (mismo requestKey) devuelve el resultado guardado antes de comprobar la versión o el archivado, pero un contenido distinto con el mismo requestKey sí choca (REQUEST_CONFLICT), incluso tras archivar la memoria.
 test("confirmation replay precedes later revision and archive checks", () => {
   const path=fixture(),store=new MemoryStore(path);
   try {
@@ -67,6 +78,7 @@ test("confirmation replay precedes later revision and archive checks", () => {
   } finally {store.close();}
 });
 
+// Verifica que confirmar por tema (topicKey) exige indicar la versión actual exacta (VERSION_CONFLICT si no coincide), y que intentar confirmar una versión archivada falla con ARCHIVED en vez de revivirla.
 test("topic confirmation requires the current version and never revives archives", () => {
   const store=new MemoryStore(":memory:");
   try {
@@ -82,6 +94,7 @@ test("topic confirmation requires the current version and never revives archives
   } finally {store.close();}
 });
 
+// Verifica que confirmar con un reloj más antiguo que la fecha ya confirmada se rechaza con CLOCK_SKEW sin escribir nada (ni confirmación, ni petición, ni versión nueva).
 test("topic confirmation rejects a clock older than the confirmed version without writes", () => {
   setSystemTime(new Date("2026-09-17T12:00:00.000Z"));
   const path=fixture(),store=new MemoryStore(path);
@@ -100,6 +113,7 @@ test("topic confirmation rejects a clock older than the confirmed version withou
   } finally {store.close();}
 });
 
+// Verifica que una misma requestKey choca si se reutiliza con contenido distinto dentro del mismo dueño, pero está aislada entre proyectos distintos y entre proyecto y compartido (cada dueño tiene su propio espacio de claves).
 test("request keys are unique across save branches but remain isolated by owner", () => {
   const path=fixture(),store=new MemoryStore(path);
   try {
@@ -114,6 +128,7 @@ test("request keys are unique across save branches but remain isolated by owner"
   } finally {store.close();}
 });
 
+// Verifica los bordes exactos de la ventana de confirmación (900000 ms = 15 minutos): un candidato justo dentro de la ventana confirma, uno justo antes o después de ella no (se guarda como memoria nueva).
 test("confirmation window includes exactly 900000 ms and excludes older or future candidates", () => {
   setSystemTime(new Date("2026-09-17T11:45:00.000Z"));
   const store=new MemoryStore(":memory:");
@@ -131,6 +146,7 @@ test("confirmation window includes exactly 900000 ms and excludes older or futur
   } finally {store.close();}
 });
 
+// Verifica que confirmar con sesión exige que la sesión pertenezca al proyecto correcto (SESSION_NOT_FOUND si no) y que siga abierta (SESSION_CLOSED tras cerrarla), y que una confirmación no agrega una entrada nueva a la línea de tiempo de la sesión.
 test("confirmation sessions validate ownership and closure without adding timeline entries", () => {
   const path=fixture(),store=new MemoryStore(path);
   try {
@@ -152,6 +168,7 @@ test("confirmation sessions validate ownership and closure without adding timeli
   } finally {store.close();}
 });
 
+// Verifica que una memoria compartida puede confirmarse sin ninguna sesión, y que la confirmación no expone (ni necesita) ningún proyecto dueño: sessionId queda en null en la base.
 test("shared confirmations work without a session and do not expose project ownership", () => {
   const path=fixture(),store=new MemoryStore(path);
   try {
@@ -164,6 +181,7 @@ test("shared confirmations work without a session and do not expose project owne
   } finally {store.close();}
 });
 
+// Verifica que repetir la confirmación de una memoria compartida solo revela su sesión a quien pase el proyecto asociado correcto; sin él, o con otro, se ve como si no tuviera sesión.
 test("shared confirmation replay reveals its session only to the associated project", () => {
   const store=new MemoryStore(":memory:");
   try {
@@ -177,6 +195,7 @@ test("shared confirmation replay reveals its session only to the associated proj
   } finally {store.close();}
 });
 
+// Verifica que repetir el mismo resumen de sesión confirma sin mover el puntero de versión de session_summaries, incluso tras cerrar la sesión, mientras que un contenido distinto sí avanza la versión.
 test("repeated session summaries confirm without moving their version pointer", () => {
   const path=fixture(),store=new MemoryStore(path);
   try {
@@ -197,6 +216,7 @@ test("repeated session summaries confirm without moving their version pointer", 
   } finally {store.close();}
 });
 
+// Verifica que el refuerzo de búsqueda, una vez activado, sigue activo al reabrir la base desde otra instancia (no es un estado solo en memoria).
 test("reinforcement remains enabled after reopening", () => {
   const path=fixture();let store=new MemoryStore(path);const projectId=store.createProject("Reopen").projectId;
   store.enableSearchReinforcement();const first=store.save({projectId,title:"Queue",content:"Use jobs",type:"decision"});store.close();
@@ -204,6 +224,7 @@ test("reinforcement remains enabled after reopening", () => {
   try {expect(store.reinforcementEnabled()).toBe(true);expect(store.save({projectId,title:"Queue",content:"Use jobs",type:"decision"})).toEqual(first);} finally {store.close();}
 });
 
+// Verifica que dos procesos separados que piden lo mismo (misma requestKey) al mismo tiempo, sobre conexiones distintas a la misma base, terminan creando una sola confirmación y devuelven el mismo resultado.
 test("simultaneous same-key requests across connections create one confirmation", async () => {
   const path=fixture(),setup=new MemoryStore(path);const projectId=setup.createProject("Race").projectId;setup.enableSearchReinforcement();
   setup.save({projectId,title:"Queue",content:"Use jobs",type:"decision"});setup.close();

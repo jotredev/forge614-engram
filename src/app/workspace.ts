@@ -1,3 +1,8 @@
+/**
+ * Espacio de trabajo global: crea, abre y prepara la única base SQLite que comparten todos
+ * los proyectos y las memorias compartidas, y ofrece las operaciones de proyectos y grupos
+ * (ecosistema) que necesitan abrir esa base antes de actuar.
+ */
 import { existsSync } from "node:fs";
 import { MemoryError } from "../shared/errors";
 import { groupName,type Group,type GroupSource,type GroupSummary } from "../modules/ecosystem";
@@ -9,17 +14,29 @@ import { MemoryStore } from "./memory-store";
 import { openWorkspaceDatabase } from "../infrastructure/sqlite/workspace-database";
 import { enrollEcosystem, updateIdentityFiles, type IdentityNotice } from "./project-identity";
 
+/** Cuántos archivos de identidad se actualizaron y cuántos se saltaron por estar dañados, tras una operación que pudo tocar varios. */
 export interface IdentityFilesResult { updated: number; skipped: number }
+/** Resultado de ligar un proyecto a un grupo: el grupo, si el vínculo cambió de verdad, y qué pasó con sus archivos de identidad. */
 export interface GroupBinding { group: Group; changed: boolean; identityFiles: IdentityFilesResult }
+/** Resultado de quitar a un proyecto de su grupo: si estaba ligado de verdad, y qué pasó con sus archivos de identidad. */
 export interface GroupUnbinding { unbound: boolean; identityFiles: IdentityFilesResult }
+/** Resultado de renombrar un grupo: el grupo con su nombre nuevo, y qué pasó con los archivos de identidad de sus miembros. */
 export interface GroupRename { group: Group; identityFiles: IdentityFilesResult }
+/** Resultado de mover una memoria a un grupo: la memoria, de dónde salió y a qué grupo entró. */
 export interface MemoryMove { memory: Memory; from: { scope: "project" | "shared"; projectId: string | null }; to: { scope: "ecosystem"; groupId: string } }
+/** Resultado a devolver cuando no había archivos de identidad que tocar (por ejemplo, el proyecto no estaba ligado a ningún grupo). */
 const NO_FILES: IdentityFilesResult = { updated: 0, skipped: 0 };
 
-/** All projects and shared memories use this one workspace database. */
+/** Todos los proyectos y las memorias compartidas usan esta única base de espacio de trabajo. */
 export class MemoryWorkspace {
+  /** @param config Configuración del espacio de trabajo a usar; por defecto, la del disco. */
   constructor(private readonly config = new WorkspaceConfig()) {}
 
+  /**
+   * Prepara el espacio de trabajo para usarse: repara una configuración a medio escribir,
+   * y si no existe la crea (con la base nueva ya en memoria inteligente, esquema 11, porque
+   * no tiene nada que respaldar); si ya existe, solo la valida abriéndola y cerrándola.
+   */
   init(): void {
     this.config.repairExistingRoot();
     if (this.config.exists()) {
@@ -28,19 +45,29 @@ export class MemoryWorkspace {
       return;
     }
     this.config.prepare();
-    // Only a database file created right here starts with memory intelligence (schema 11): it holds nothing to
-    // back up. One already on disk, even without its config, is never migrated here; intelligence-enable does it.
+    // Solo un archivo de base de datos creado justo aquí arranca con memoria inteligente (esquema 11): no tiene
+    // nada que respaldar. Uno que ya estuviera en disco, aunque le faltara su configuración, nunca se migra aquí;
+    // eso lo hace `enableIntelligence` por separado, de forma explícita.
     const brandNew = !existsSync(this.config.databasePath);
     const store = openWorkspaceDatabase(this.config.databasePath, true, false, (path, options) => new MemoryStore(path, options));
     try { if (brandNew) store.enableIntelligence(); this.config.save(); }
     finally { store.close(); }
   }
 
+  /**
+   * Abre la base del espacio de trabajo ya preparada.
+   * @param readonly Si se abre sin permiso de escritura.
+   * @returns La base abierta; quien llama es responsable de cerrarla.
+   */
   open(readonly = false): MemoryStore {
     this.config.read();
     return openWorkspaceDatabase(this.config.databasePath, false, readonly, (path, options) => new MemoryStore(path, options));
   }
 
+  /**
+   * Prepara el espacio de trabajo si hacía falta y crea un proyecto nuevo con el nombre dado.
+   * @throws MemoryError con código `INVALID_INPUT` si el nombre está vacío, no es texto o contiene un carácter nulo.
+   */
   createProject(name: string): Project {
     if (typeof name !== "string" || !name.trim() || name.includes("\0")) {
       throw new MemoryError("INVALID_INPUT", "El nombre del proyecto no puede estar vacío.");
@@ -50,12 +77,18 @@ export class MemoryWorkspace {
     try { return store.createProject(name); } finally { store.close(); }
   }
 
+  /** Lista los proyectos del espacio de trabajo; una lista vacía si el espacio de trabajo ni siquiera existe todavía. */
   listProjects(): Project[] {
     if (!this.config.exists()) return [];
     const store = this.open(true);
     try { return store.listProjects(); } finally { store.close(); }
   }
 
+  /**
+   * Cambia el nombre de un proyecto y actualiza sus archivos de identidad para que coincidan.
+   * @throws MemoryError con código `INVALID_INPUT` si `projectId` no es un UUID válido de
+   * proyecto, o si el nombre nuevo está vacío, no es texto o contiene un carácter nulo.
+   */
   renameProject(projectId: string, name: string): Project {
     projectIdentity(projectId);
     if (typeof name !== "string" || !name.trim() || name.includes("\0")) {
@@ -69,10 +102,10 @@ export class MemoryWorkspace {
     } finally { store.close(); }
   }
 
-  /** Ecosystem groups: related repositories that share memory. Creating the first one enrols the base. */
+  /** Grupos de ecosistema: repositorios relacionados que comparten memoria. Crear el primero activa el nivel de ecosistema en la base. */
   createGroup(name: string): Group { return this.createGroupWithNotices(name).group; }
 
-  /** Like createGroup; the notices say when creating the first group upgraded the base, and where its backup is. */
+  /** Como `createGroup`; los avisos dicen si crear el primer grupo migró la base, y dónde quedó su respaldo. */
   createGroupWithNotices(name: string): { group: Group; notices: IdentityNotice[] } {
     const label = groupName(name);
     this.init();
@@ -84,13 +117,19 @@ export class MemoryWorkspace {
     } finally { store.close(); }
   }
 
+  /** Lista los grupos con un resumen de cada uno; una lista vacía si el espacio de trabajo ni siquiera existe todavía. */
   listGroups(): GroupSummary[] {
     if (!this.config.exists()) return [];
     const store = this.open(true);
     try { return store.listGroups(); } finally { store.close(); }
   }
 
-  /** `group` is a group identifier or a name that identifies exactly one group. */
+  /**
+   * Liga un proyecto a un grupo por comando explícito, actualizando su archivo de identidad.
+   * @param projectId Identificador (UUID) del proyecto a ligar.
+   * @param group Identificador del grupo, o un nombre que identifique exactamente uno.
+   * @throws MemoryError con código `GROUP_NOT_FOUND` si el ecosistema no está activado en esta base.
+   */
   bindProjectToGroup(projectId: string, group: string): GroupBinding {
     const identity = projectIdentity(projectId);
     const store = this.open();
@@ -103,6 +142,7 @@ export class MemoryWorkspace {
     } finally { store.close(); }
   }
 
+  /** Quita a un proyecto de su grupo, si tenía uno; sin efecto (y sin avisos) si el ecosistema no está activado en esta base. */
   unbindProject(projectId: string): GroupUnbinding {
     const identity = projectIdentity(projectId);
     const store = this.open();
@@ -113,6 +153,10 @@ export class MemoryWorkspace {
     } finally { store.close(); }
   }
 
+  /**
+   * Cambia el nombre de un grupo y actualiza el archivo de identidad de cada uno de sus proyectos miembro.
+   * @throws MemoryError con código `GROUP_NOT_FOUND` si el ecosistema no está activado en esta base.
+   */
   renameGroup(group: string, name: string): GroupRename {
     const label = groupName(name);
     const store = this.open();
@@ -120,6 +164,7 @@ export class MemoryWorkspace {
       if (!store.ecosystemEnabled()) throw new MemoryError("GROUP_NOT_FOUND", "Grupo no encontrado en esta base.");
       const renamed = store.renameGroup(store.resolveGroup(group).id, label);
       const identityFiles = { updated: 0, skipped: 0 };
+      // Se recorren todos los proyectos que hoy son miembros del grupo renombrado, sumando cuántos archivos se actualizaron o se saltaron en cada uno.
       for (const summary of store.listGroups().filter(item => item.id === renamed.id)) {
         for (const member of summary.projects) {
           const result = updateIdentityFiles(store, member.projectId, { group: { id: renamed.id, name: renamed.name } });
@@ -130,7 +175,13 @@ export class MemoryWorkspace {
     } finally { store.close(); }
   }
 
-  /** Explicit, recorded migration of one memory into a group. `from` is its project id, or null for shared. */
+  /**
+   * Migración explícita y registrada de una memoria a un grupo.
+   * @param id Identificador de la memoria a mover.
+   * @param from Id del proyecto dueño de la memoria, o `null` si era compartida (shared).
+   * @param group Identificador del grupo destino, o un nombre que identifique exactamente uno.
+   * @throws MemoryError con código `GROUP_NOT_FOUND` si el ecosistema no está activado en esta base.
+   */
   moveMemory(id: string, from: string | null, group: string): MemoryMove {
     const source = from === null ? null : projectIdentity(from);
     const store = this.open();
@@ -142,10 +193,12 @@ export class MemoryWorkspace {
     } finally { store.close(); }
   }
 
+  /** Marca a un proyecto como la fuente (origen) de las reglas comunes de un grupo. */
   setGroupSource(group: string, projectId: string): GroupSource {
     const store = this.open(); try { return store.setGroupSource(store.resolveGroup(group).id, projectId); } finally { store.close(); }
   }
 
+  /** Mueve una memoria de ecosistema (grupo) de vuelta a un proyecto concreto del grupo. */
   demoteMemory(id: string, projectId: string): { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } } {
     const store = this.open(); try { return store.demoteMemory(projectId, id); } finally { store.close(); }
   }

@@ -1,3 +1,9 @@
+/**
+ * Comprueba readStartupContext (formato 1) y readStartupBlock (formato 2): combinan lo
+ * compartido, lo del ecosistema y lo del proyecto, nunca escriben en una conexión de solo
+ * lectura, se quedan dentro de sus límites de bytes/caracteres incluso con mucha carga, y
+ * reportan bien de dónde salió la identidad y cuándo hay una sesión previa o paralela.
+ */
 import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,6 +20,7 @@ function temporary(prefix = "engram-startup-context-"): string {
 }
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }); });
 
+// Verifica que el contexto de arranque trae tanto lo compartido como lo del proyecto ligado, ambos con previsualización, y que las memorias de proyecto se ven junto a las compartidas dentro del bloque del proyecto.
 test("startup-context returns shared and the bound project's context, both with previews", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -38,6 +45,7 @@ test("startup-context returns shared and the bound project's context, both with 
   } finally { store.close(); }
 });
 
+// Verifica que una carpeta sin proyecto se reporta como "unbound" sin crear ningún proyecto, y que igual se devuelve el contexto compartido.
 test("startup-context reports an unbound directory without creating a project, and still returns shared", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -54,6 +62,7 @@ test("startup-context reports an unbound directory without creating a project, a
   } finally { store.close(); }
 });
 
+// Verifica que una memoria de proyecto con la misma clave temática reemplaza a la compartida dentro del bloque del proyecto, pero la sección compartida de primer nivel no se ve afectada.
 test("a project memory on the same topic supersedes the shared entry inside project.context, but the top-level shared section is unaffected", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -71,6 +80,7 @@ test("a project memory on the same topic supersedes the shared entry inside proj
   } finally { store.close(); }
 });
 
+// Verifica que readStartupContext nunca escribe: funciona sobre una conexión de solo lectura, tanto para una carpeta ligada como para una sin ligar.
 test("startup-context never writes: a readonly connection succeeds for both a bound and an unbound directory", () => {
   const directory = temporary();
   const dbPath = join(temporary(), "engram.db");
@@ -93,6 +103,7 @@ test("startup-context never writes: a readonly connection succeeds for both a bo
   } finally { readonlyStore.close(); }
 });
 
+// Verifica que, aunque se llenen ambos bloques hasta truncarse, el tamaño combinado del resultado se queda dentro del límite documentado (cada bloque limitado por su propio límite de bytes).
 test("startup-context keeps the combined payload within a documented byte ceiling even under heavy seeding", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -110,11 +121,12 @@ test("startup-context keeps the combined payload within a documented byte ceilin
 
     expect(result.shared.truncated).toBe(true);
     expect(result.project.context!.truncated).toBe(true);
-    // Each section is independently bounded by context()'s own default 16384-byte ceiling.
+    // Cada sección está limitada de forma independiente por el propio límite por defecto de context(), 16384 bytes.
     expect(size).toBeLessThanOrEqual(2 * 16384 + 4096);
   } finally { store.close(); }
 });
 
+// Verifica que un proyecto que pertenece a un grupo obtiene un tercer bloque de ecosistema, en el orden shared/ecosystem/project, cada uno dentro de su propio límite de bytes.
 test("a project in a group gets a third block, ordered shared, ecosystem, project, each within its own byte ceiling", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -146,6 +158,7 @@ test("a project in a group gets a third block, ordered shared, ecosystem, projec
   } finally { store.close(); }
 });
 
+// Verifica que un proyecto fuera de cualquier grupo, o una base por debajo del nivel de ecosistema, reportan siempre { status: "none" }.
 test("a project outside any group, or a database below the ecosystem level, reports ecosystem none", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -159,6 +172,7 @@ test("a project outside any group, or a database below the ecosystem level, repo
   } finally { store.close(); }
 });
 
+// Verifica que project.source distingue si la identidad vino del archivo o del vínculo por ruta ya registrado, y que borrar el archivo hace que se reescriba en la siguiente lectura.
 test("project.source tells whether the identity came from the file or from the recorded path", () => {
   const store = new MemoryStore(":memory:");
   try {
@@ -176,6 +190,7 @@ test("project.source tells whether the identity came from the file or from the r
   } finally { store.close(); }
 });
 
+// Verifica, con una base con la forma de la del propietario (107 memorias), que el formato 2 cabe en 5000 caracteres, con su encabezado de ocupación y la sección de sesión previa interrumpida.
 test("format 2 fits a base shaped like the owner's (107 memories) in 5000 characters, with the occupancy header and the previous session left open", () => {
   const store = new MemoryStore(":memory:");
   setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
@@ -200,8 +215,8 @@ test("format 2 fits a base shaped like the owner's (107 memories) in 5000 charac
     store.startSession(project.projectId, "first", directory);
     store.saveSessionSummary(project.projectId, "first",
       { goal: "Prepare T6", instructions: "", discoveries: "", accomplishments: "", nextSteps: "Write the plan", files: [] }, { requestKey: "summary" });
-    // "first" must be left open for over PARALLEL_MINUTES before "second" starts for previousInterrupted
-    // to report it (1.7.1: nobody is marked at session start any more).
+    // "first" debe quedar abierta más de PARALLEL_MINUTES antes de que arranque "second" para que
+    // previousInterrupted la reporte (1.7.1: ya no se marca a nadie al iniciar sesión).
     setSystemTime(new Date("2026-01-01T00:31:00.000Z"));
     store.startSession(project.projectId, "second", directory);
 
@@ -221,6 +236,7 @@ test("format 2 fits a base shaped like the owner's (107 memories) in 5000 charac
   } finally { setSystemTime(); store.close(); }
 });
 
+// Verifica que una sesión abierta menos de PARALLEL_MINUTES no produce sección "Previous" en el formato 2 (todavía cuenta como paralela).
 test("a session left open less than PARALLEL_MINUTES does not produce a Previous section in format 2", () => {
   const store = new MemoryStore(":memory:");
   setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
@@ -232,7 +248,7 @@ test("a session left open less than PARALLEL_MINUTES does not produce a Previous
     store.enableIntelligence();
     store.save({ scope: "project", projectId: project.projectId, title: "Project note", content: "Body", type: "fact" });
     store.startSession(project.projectId, "first", directory);
-    setSystemTime(new Date("2026-01-01T00:05:00.000Z")); // only 5 minutes idle: still parallel, not previous
+    setSystemTime(new Date("2026-01-01T00:05:00.000Z")); // Solo 5 minutos inactiva: todavía paralela, no previa.
     store.startSession(project.projectId, "second", directory);
 
     const block = readStartupBlock(store, directory);
@@ -242,6 +258,7 @@ test("a session left open less than PARALLEL_MINUTES does not produce a Previous
   } finally { setSystemTime(); store.close(); }
 });
 
+// Verifica que readStartupBlock nunca escribe: renderiza el bloque de formato 2 sobre una conexión de solo lectura, tanto para una carpeta ligada como para una sin ligar.
 test("format 2 never writes: a readonly connection renders the block for a bound and an unbound directory", () => {
   const dbPath = join(temporary(), "engram.db");
   const boundDirectory = temporary();
