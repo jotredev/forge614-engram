@@ -1,3 +1,4 @@
+/** Comprueba `similarTo`: qué memorias cuentan como parecidas y cuáles quedan fuera. */
 import { expect, test } from "bun:test";
 import { withDatabase } from "../__test-support__/fixtures";
 import { createProject } from "./projects";
@@ -8,6 +9,7 @@ import { archive, save, saveWithSession } from "./writes";
 const cause = { type: "decision" as const, title: "Bun 1.3.8 se atora en Linux", content: "La causa del cuelgue de CI es Bun 1.3.8 al cargar módulos en Linux; Bun 1.3.9 pasa." };
 const fix = { type: "decision" as const, title: "Bun 1.4.2 fijado como versión única", content: "Todos los nodos fijan Bun 1.4.2; la 1.3.8 se atoraba en Linux al cargar módulos." };
 
+// Solo debe salir el parecido activo del mismo proyecto: nunca la propia memoria consultada, la archivada ni el resumen de sesión, y nunca uno de otro proyecto.
 test("look-alikes: same scope and owner only, never itself, archived memories or session summaries", () => withDatabase(db => {
   enableIntelligence(db);
   const mine = createProject(db, "Mine"), other = createProject(db, "Other");
@@ -24,6 +26,7 @@ test("look-alikes: same scope and owner only, never itself, archived memories or
   expect(found[0]).toEqual({ id: kept.id, title: cause.title, version: 1, score: found[0]!.score });
 }));
 
+// Guardar sin tema (topic) reporta parecidos; guardar con tema, con texto idéntico repetido, o en un esquema anterior sin inteligencia, no reporta ninguno.
 test("a new memory without a topic reports look-alikes; topics, identical text and older levels do not", () => {
   withDatabase(db => {
     enableIntelligence(db);

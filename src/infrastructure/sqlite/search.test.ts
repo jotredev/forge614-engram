@@ -1,3 +1,4 @@
+/** Comprueba `search`, `searchPreviews`, `getVersion` y `context`: visibilidad, recorte y los distintos modos de puntaje. */
 import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { search, searchPreviews, getVersion, context } from "./search";
 import { createProject } from "./projects";
@@ -8,6 +9,7 @@ import { rankingFactors } from "../../modules/memory";
 
 afterEach(() => setSystemTime());
 
+// Un tema (topic_key) activo en el proyecto tapa el compartido con el mismo tema; al archivar la versión del proyecto, el compartido vuelve a verse.
 test("active project topics shadow shared results and archived overrides reveal them", () => withDatabase(db => {
   const p = createProject(db, "Owner");
   const shared = save(db, { projectId: null, scope: "shared", type: "fact", title: "needle", content: "global", topicKey: "topic" });
@@ -19,6 +21,7 @@ test("active project topics shadow shared results and archived overrides reveal 
   expect(getVersion(db, p.projectId, local.id, 1)).toMatchObject({ state: "archived", currentVersion: 1, memory: { content: "local" } });
 }));
 
+// La vista previa recorta el contenido a 300 caracteres; el contexto con maxBytes chico recorta filas y avisa cuántas quedaron fuera.
 test("preview truncates content while bounded context reports omitted rows", () => withDatabase(db => {
   const p = createProject(db, "Owner");
   for (let i = 0; i < 4; i++) save(db, { projectId: p.projectId, type: "fact", title: "needle", content: "x".repeat(400), pinned: true });
@@ -29,6 +32,7 @@ test("preview truncates content while bounded context reports omitted rows", () 
   expect(result.omitted.pinned).toBeGreaterThan(0);
 }));
 
+// Con el mismo bm25, el multiplicador de refuerzo (pinneado, recencia y estabilidad) desempata el orden y también decide qué entra dentro del límite.
 test("schema 7 ranks equal BM25 candidates with derived reinforcement before limit", () => withDatabase(db => {
   setSystemTime(new Date("2026-09-17T12:00:00.000Z"));
   const project = createProject(db, "Rank");
@@ -71,6 +75,7 @@ test("schema 7 ranks equal BM25 candidates with derived reinforcement before lim
   expect(previews.map(row => row.explanation)).toEqual(all.map(row => row.explanation));
 }));
 
+// Sin refuerzo activado la explicación no lleva el campo "reinforcement"; el modo literal exacto (por ejemplo con acentos) mantiene su forma propia de explicación.
 test("legacy and literal searches retain their prior explanation shape", () => withDatabase(db => {
   const project = createProject(db, "Compatibility");
   save(db, { projectId: project.projectId, title: "legacy searchable", content: "body", type: "fact" });
@@ -86,6 +91,7 @@ test("legacy and literal searches retain their prior explanation shape", () => w
   });
 }));
 
+// Con un reloj fijo y una diferencia de menos de un día, el multiplicador que calcula SQL debe coincidir exacto con el que calcula `rankingFactors` en JavaScript.
 test("schema 7 reports the exact SQL multiplier for a fixed subday clock", () => withDatabase(db => {
   const lastSeenAt = "2026-09-16T23:59:59.123Z";
   const now = "2026-09-17T12:34:56.789Z";

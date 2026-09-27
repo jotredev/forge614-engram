@@ -1,3 +1,4 @@
+/** Prueba que openWorkspaceDatabase cree la base del área de trabajo con permisos privados sin inventar una base ausente, y que rechace archivos auxiliares inseguros antes de que SQLite los toque. */
 import { expect, test } from "bun:test";
 import { existsSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -5,6 +6,7 @@ import { openWorkspaceDatabase } from "./workspace-database";
 import { openDatabase } from "./connection";
 import { withDirectory } from "../__test-support__/fixtures";
 
+// Comprueba que sin permiso de crear falle en vez de inventar la base, y que al crearla quede con permisos 0o600 (solo el dueño lee y escribe).
 test("workspace creation produces private SQLite storage and never replaces a missing configured database", () => withDirectory(dir => {
   const path = join(dir, "db");
   expect(() => openWorkspaceDatabase(path, false, false, openDatabase)).toThrow(expect.objectContaining({ code: "DATABASE_MISSING" }));
@@ -15,6 +17,7 @@ test("workspace creation produces private SQLite storage and never replaces a mi
   expect(statSync(path).mode & 0o777).toBe(0o600);
 }));
 
+// Comprueba que un enlace simbólico (symlink) puesto como archivo auxiliar (-wal) se rechace antes de crear la base principal.
 test("unsafe sidecars are rejected before SQLite can touch their targets", () => withDirectory(dir => {
   const target = join(dir, "target"), path = join(dir, "db");
   writeFileSync(target, "private"); symlinkSync(target, path + "-wal");

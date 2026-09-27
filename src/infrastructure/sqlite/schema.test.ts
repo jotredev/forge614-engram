@@ -1,9 +1,11 @@
+/** Comprueba `initialize` y las migraciones aditivas `enable*` de schema.ts: que no pierdan datos, que validen la estructura y que rechacen bases incompatibles o ajenas. */
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { initialize, enableSynchronization, enableProjectBindings, enableSessionLifecycle, enableSearchReinforcement } from "./schema";
 import { createProject } from "./projects";
 import { save } from "./writes";
 
+// Activar las cuatro migraciones aditivas conserva las filas existentes y llamar dos veces la misma no hace nada extra; una estructura alterada a mano sí se detecta.
 test("explicit additive enrollment preserves rows and validates repeated enrollment", () => {
   const db = new Database(":memory:");
   try {
@@ -17,6 +19,7 @@ test("explicit additive enrollment preserves rows and validates repeated enrollm
   } finally { db.close(); }
 });
 
+// Una base con tablas propias de otra aplicación se rechaza sin tocarla, para no dañar datos que no son de Engram.
 test("initialization refuses foreign structures without mutating them", () => {
   const db = new Database(":memory:");
   try {
@@ -26,6 +29,7 @@ test("initialization refuses foreign structures without mutating them", () => {
   } finally { db.close(); }
 });
 
+// Desde cualquier versión de partida (3 a 6), activar el refuerzo de búsqueda completa la cadena hasta 7 de un solo golpe, sin perder el historial de versiones de los recuerdos.
 test("reinforcement enrollment upgrades schemas 3 through 6 atomically and preserves history", () => {
   for (const version of [3,4,5,6] as const) {
     const db = new Database(":memory:");
@@ -49,6 +53,7 @@ test("reinforcement enrollment upgrades schemas 3 through 6 atomically and prese
   }
 });
 
+// Si el SQL de creación de una tabla del refuerzo falla a medio camino, la transacción deshace tanto esa tabla como los requisitos previos que ya se habían aplicado en la misma llamada.
 test("failed reinforcement DDL rolls back prerequisites and version bump", () => {
   const db=new Database(":memory:");
   try {
@@ -62,13 +67,14 @@ test("failed reinforcement DDL rolls back prerequisites and version bump", () =>
   } finally {db.close();}
 });
 
+// Abrir dos veces en el nivel 7 no cambia nada, pero un índice borrado a mano sí se detecta; y una versión futura desconocida se rechaza en vez de aceptarse a ciegas.
 test("schema 7 initialization validates exact definitions and future versions remain incompatible", () => {
   const db=new Database(":memory:");
   try {
     initialize(db); enableSearchReinforcement(db); initialize(db);
     db.exec("DROP INDEX confirmations_memory_time");
     expect(()=>initialize(db)).toThrow(expect.objectContaining({code:"DATABASE_SCHEMA"}));
-    // 12 is now the cloud level (T1); 13 is the next unknown future version.
+    // El 12 ya es el nivel de la nube (T1); el 13 es la siguiente versión futura desconocida.
     db.exec("PRAGMA user_version=13");
     expect(()=>initialize(db)).toThrow(expect.objectContaining({code:"DATABASE_VERSION"}));
   } finally { db.close(); }

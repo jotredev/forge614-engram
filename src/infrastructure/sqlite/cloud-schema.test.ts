@@ -1,3 +1,8 @@
+/**
+ * Prueba la migración que activa la nube (enableCloud, nivel de esquema 12): que encadene los
+ * niveles previos que le faltan, sea repetible sin volver a migrar, encole en la bandeja de salida
+ * (cloud_outbox) cada cambio nuevo y cada fila que ya existía, y respete el apagador de aplicación (apply_guard).
+ */
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { createProject } from "./projects";
@@ -9,7 +14,7 @@ const outbox = (db: Database) => db.query("SELECT kind,op,payload FROM cloud_out
 const cloudState = (db: Database) => db.query("SELECT last_applied_id,apply_guard,remote_fingerprint FROM cloud_state WHERE id=1").get() as
   { last_applied_id: number; apply_guard: number; remote_fingerprint: string | null };
 
-/** A plain base-7 database (no ecosystem/intelligence/cloud yet): enableCloud must chain the rest. */
+/** Una base en el nivel 7 simple (todavía sin ecosistema, memoria inteligente ni nube): enableCloud debe encadenar el resto. */
 function fresh(): Database {
   const db = new Database(":memory:");
   initialize(db);
@@ -17,9 +22,11 @@ function fresh(): Database {
   return db;
 }
 
+// Comprueba que si enableCloud no logra encadenar el nivel 11 (memoria inteligente), la base no queda
+// a medias: no escribe nada y la versión del esquema se queda en 10.
 test("enableCloud rechaza si no puede encadenar el nivel 11 sin escribir nada", () => {
   const db = fresh();
-  enableEcosystem(db); enableSessionLifecycle(db); enableSearchReinforcement(db); // reach level 10, one step short of intelligence
+  enableEcosystem(db); enableSessionLifecycle(db); enableSearchReinforcement(db); // llega al nivel 10, un paso antes de la memoria inteligente
   try {
     const execute = db.exec.bind(db);
     Object.defineProperty(db, "exec", { value: (sql: string) => execute(sql.includes("CREATE TABLE ecosystem_sources")
@@ -29,6 +36,7 @@ test("enableCloud rechaza si no puede encadenar el nivel 11 sin escribir nada", 
   } finally { db.close(); }
 });
 
+// Comprueba que llamar enableCloud una segunda vez no vuelve a migrar ni duplica la fila única de estado de la nube (cloud_state).
 test("enableCloud es idempotente", () => {
   const db = fresh();
   try {
@@ -38,6 +46,7 @@ test("enableCloud es idempotente", () => {
   } finally { db.close(); }
 });
 
+// Comprueba que enableCloud active primero la memoria inteligente (nivel 11) cuando falta, antes de llegar al nivel 12 de la nube.
 test("enableCloud encadena enableIntelligence si falta el nivel 11", () => {
   const db = fresh();
   try {
@@ -48,6 +57,7 @@ test("enableCloud encadena enableIntelligence si falta el nivel 11", () => {
   } finally { db.close(); }
 });
 
+// Comprueba los valores iniciales de la fila única de estado de la nube (cloud_state) justo después de activarla.
 test("cloud_state arranca con last_applied_id=0 y apply_guard=0 tras enableCloud", () => {
   const db = fresh();
   try {
@@ -56,11 +66,12 @@ test("cloud_state arranca con last_applied_id=0 y apply_guard=0 tras enableCloud
   } finally { db.close(); }
 });
 
+// Comprueba que si la conexión no puede escribir, enableCloud falla y no deja ninguna tabla de la nube a medio crear.
 test("readonly connection fails without leaving cloud tables behind", () => {
   const db = fresh();
   try {
-    // Simulate a read-only failure the same way enableIntelligence's own test does: force the
-    // pre-check PRAGMA write to fail by using a transaction that cannot go IMMEDIATE twice.
+    // Simula una conexión que no puede escribir, igual que la propia prueba de enableIntelligence:
+    // fuerza que la escritura de comprobación previa (PRAGMA) falle, usando una transacción que no puede volver a abrirse en modo IMMEDIATE dos veces.
     db.exec("BEGIN IMMEDIATE");
     try {
       expect(() => enableCloud(db)).toThrow();
@@ -70,6 +81,8 @@ test("readonly connection fails without leaving cloud tables behind", () => {
   } finally { db.close(); }
 });
 
+// Comprueba que insertar una fila en cada tabla que viaja a la nube (mientras el apagador apply_guard esté en 0)
+// encola exactamente una fila nueva en la bandeja de salida (cloud_outbox), tabla por tabla.
 test("un INSERT en cada tabla que viaja con apply_guard=0 encola una fila en cloud_outbox", () => {
   const db = fresh();
   enableCloud(db);
@@ -89,14 +102,14 @@ test("un INSERT en cada tabla que viaja con apply_guard=0 encola una fila en clo
     db.query("INSERT INTO memory_meta(memory_id,short,updated_at) VALUES(?,?,?)").run(saved.id, "short", "now");
     expect(countOf("memory_meta")).toBe(metaBefore + 1);
 
-    // save() with sessions enabled already opened a manual session (writes.ts:264); this is a second one.
+    // save() con las sesiones activadas ya abrió una sesión manual (writes.ts:264); esta es una segunda.
     const sessionsBefore = countOf("sessions");
     db.query("INSERT INTO sessions(sessionId,projectId,kind,startedAt) VALUES(?,?,?,?)").run("s1", project.projectId, "runtime", "now");
     expect(countOf("sessions")).toBe(sessionsBefore + 1);
 
-    // save() with sessions enabled already inserted a session_entries/confirmation row for
-    // (saved.id, version 1) via its own manual session; a bare memory_versions row for version 2
-    // lets the rest of this test use a version untouched by that side effect.
+    // save() con las sesiones activadas ya insertó una fila de session_entries/confirmación para
+    // (saved.id, versión 1) a través de su propia sesión manual; una fila simple en memory_versions
+    // para la versión 2 deja que el resto de esta prueba use una versión no tocada por ese efecto secundario.
     db.query("INSERT INTO memory_versions(memory_id,version,snapshot) VALUES(?,2,'{}')").run(saved.id);
 
     const entriesBefore = countOf("session_entries");
@@ -123,7 +136,7 @@ test("un INSERT en cada tabla que viaja con apply_guard=0 encola una fila en clo
     db.query("INSERT INTO ecosystem_groups(id,name,createdAt) VALUES(?,?,?)").run(group, group, "now");
     expect(countOf("ecosystem_groups")).toBe(groupsBefore + 1);
 
-    // ecosystem_memberships requires a project without an existing group; reuse project.
+    // ecosystem_memberships exige un proyecto que todavía no tenga grupo asignado; se reutiliza el mismo proyecto.
     db.exec("PRAGMA foreign_keys=OFF");
     const membershipsBefore = countOf("ecosystem_memberships");
     db.query("INSERT INTO ecosystem_memberships(projectId,groupId,boundAt,source) VALUES(?,?,?,?)").run(project.projectId, group, "now", "command");
@@ -136,6 +149,8 @@ test("un INSERT en cada tabla que viaja con apply_guard=0 encola una fila en clo
   } finally { db.close(); }
 });
 
+// Comprueba que el disparador (trigger: código de la base que se ejecuta solo al escribir) de la
+// bandeja de salida respeta el apagador apply_guard: con 1 no encola nada, con 0 vuelve a encolar.
 test("un UPDATE con apply_guard=1 no encola nada", () => {
   const db = fresh();
   enableCloud(db);
@@ -151,6 +166,7 @@ test("un UPDATE con apply_guard=1 no encola nada", () => {
   } finally { db.close(); }
 });
 
+// Comprueba que cada fila encolada recibe un identificador de cambio (change_id) propio, de 32 caracteres, y distinto del de las demás filas.
 test("un INSERT hecho por un disparador genera change_id distintos y no vacíos", () => {
   const db = fresh();
   enableCloud(db);
@@ -164,9 +180,11 @@ test("un INSERT hecho por un disparador genera change_id distintos y no vacíos"
   } finally { db.close(); }
 });
 
+// Comprueba que al activar la nube se encola cada fila que ya existía de cada tabla que viaja,
+// respetando el orden de dependencias entre tablas (D14): primero proyectos y ecosistema, luego recuerdos y sesiones.
 test("enableCloud encola toda la memoria local existente en orden de dependencias (D14)", () => {
   const db = fresh();
-  enableIntelligence(db); // reach the ecosystem/session tables first; enableCloud must not re-chain a migration
+  enableIntelligence(db); // llega primero a las tablas de ecosistema y sesiones; enableCloud no debe volver a encadenar una migración
   try {
     const p1 = createProject(db, "P1");
     const p2 = createProject(db, "P2");
@@ -174,8 +192,8 @@ test("enableCloud encola toda la memoria local existente en orden de dependencia
     db.exec("PRAGMA foreign_keys=OFF");
     db.query("INSERT INTO ecosystem_memberships(projectId,groupId,boundAt,source) VALUES(?,?,?,?)").run(p1.projectId, "g1", "now", "command");
     db.exec("PRAGMA foreign_keys=ON");
-    // save() with sessions enabled opens its own manual session automatically (writes.ts:264);
-    // that session, plus this explicit runtime one, are both traveling "sessions" rows.
+    // save() con las sesiones activadas abre automáticamente su propia sesión manual (writes.ts:264);
+    // esa sesión, más esta otra de tipo runtime creada aquí, son ambas filas de "sessions" que viajan a la nube.
     const m1 = save(db, { projectId: p2.projectId, title: "M1", content: "C1", type: "fact", topicKey: "p2/m1" });
     save(db, { projectId: p2.projectId, title: "M1b", content: "C1b", type: "fact", topicKey: "p2/m1", expectedVersion: 1 });
     db.query("INSERT INTO sessions(sessionId,projectId,kind,startedAt) VALUES(?,?,?,?)").run("s1", p2.projectId, "runtime", "now");
@@ -186,7 +204,7 @@ test("enableCloud encola toda la memoria local existente en orden de dependencia
     const result = enableCloud(db);
     expect(result.migrated).toBe(true);
     const rows = outbox(db);
-    // one queued row per traveling row that existed before enrollment
+    // una fila encolada por cada fila que viaja y ya existía antes de activar la nube
     expect(rows.filter(r => r.kind === "projects").length).toBe(2);
     expect(rows.filter(r => r.kind === "ecosystem_groups").length).toBe(1);
     expect(rows.filter(r => r.kind === "ecosystem_memberships").length).toBe(1);
@@ -202,6 +220,8 @@ test("enableCloud encola toda la memoria local existente en orden de dependencia
   } finally { db.close(); }
 });
 
+// Comprueba que una huella remota (fingerprint: identificador de con qué base remota se sincroniza)
+// distinta a la guardada hace que enableCloud vuelva a encolar todo y reinicie last_applied_id, mientras que la misma huella no cambia nada.
 test("enableCloud con otra huella remota vuelve a encolar todo y pone last_applied_id=0; con la misma huella no encola nada nuevo", () => {
   const db = fresh();
   try {
@@ -210,14 +230,14 @@ test("enableCloud con otra huella remota vuelve a encolar todo y pone last_appli
     db.exec("UPDATE cloud_state SET last_applied_id=42 WHERE id=1");
     expect(cloudState(db).remote_fingerprint).toBe("neon-host-a/db-a");
 
-    // same fingerprint: no-op
+    // misma huella: no hace nada
     const before = outbox(db).length;
     const same = enableCloud(db, "neon-host-a/db-a");
     expect(same.migrated).toBe(false);
     expect(outbox(db).length).toBe(before);
     expect(cloudState(db).last_applied_id).toBe(42);
 
-    // different fingerprint: re-enqueue everything, reset last_applied_id
+    // huella distinta: vuelve a encolar todo y reinicia last_applied_id
     const changed = enableCloud(db, "neon-host-b/db-b");
     expect(changed.migrated).toBe(true);
     expect(cloudState(db).last_applied_id).toBe(0);
@@ -226,6 +246,7 @@ test("enableCloud con otra huella remota vuelve a encolar todo y pone last_appli
   } finally { db.close(); }
 });
 
+// Comprueba que cloudEnabled solo devuelve verdadero cuando la base ya llegó al nivel 12 (la nube), no antes.
 test("readWorkspaceSettings-style: cloudEnabled reports the cloud level accurately", () => {
   const db = fresh();
   try {
@@ -237,6 +258,8 @@ test("readWorkspaceSettings-style: cloudEnabled reports the cloud level accurate
   } finally { db.close(); }
 });
 
+// Comprueba que la lista de columnas declarada para cada tabla que viaja (travelingTableColumns) coincide
+// exactamente con las columnas reales de esa tabla en la base, sin que falte ni sobre ninguna.
 test("las columnas de TRAVELING_TABLES coinciden exactamente con PRAGMA table_info de cada tabla en nivel 12", () => {
   const db = fresh();
   enableCloud(db);
@@ -251,6 +274,8 @@ test("las columnas de TRAVELING_TABLES coinciden exactamente con PRAGMA table_in
   } finally { db.close(); }
 });
 
+// Comprueba que un recuerdo de ámbito ecosystem conserva su groupId (identificador del grupo dueño)
+// al encolarse, tanto en el encolado inicial de lo que ya existía como en el que hace el disparador para una fila nueva.
 test("un recuerdo de tablero (scope ecosystem) encola su groupId, por disparador y en la primera subida", () => {
   const db = fresh();
   enableIntelligence(db);
@@ -259,7 +284,7 @@ test("un recuerdo de tablero (scope ecosystem) encola su groupId, por disparador
     db.query(`INSERT INTO memories(id,projectId,scope,topic_key,type,title,content,pinned,version,state,created_at,updated_at,groupId)
       VALUES(?,NULL,'ecosystem',?,?,?,?,0,1,'active','now','now',?)`).run("m-existing", "g1/existing", "fact", "Existing", "Content", "g1");
 
-    const result = enableCloud(db); // first sync: enqueueAllExisting must carry groupId too
+    const result = enableCloud(db); // primera sincronización: enqueueAllExisting también debe llevar el groupId
     expect(result.migrated).toBe(true);
     const existingRow = db.query("SELECT payload FROM cloud_outbox WHERE kind='memories' AND payload LIKE '%m-existing%'").get() as { payload: string };
     expect(JSON.parse(existingRow.payload).groupId).toBe("g1");
@@ -271,6 +296,8 @@ test("un recuerdo de tablero (scope ecosystem) encola su groupId, por disparador
   } finally { db.close(); }
 });
 
+// Comprueba que mientras no se active la nube, ni crear la base ni guardar un proyecto agregan las
+// tablas de la nube ni cambian el número de versión del esquema (PRAGMA user_version).
 test("M5: sin nube, una base nueva no tiene ninguna tabla nueva ni cambia user_version", () => {
   const db = fresh();
   try {

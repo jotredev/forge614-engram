@@ -1,3 +1,7 @@
+/**
+ * Prueba `startupBlock`: el bloque de arranque armado a partir de las memorias esenciales (pinned), el
+ * índice y la sesión previa interrumpida, en nivel 11, por debajo de nivel 11 y para una carpeta sin proyecto.
+ */
 import { expect, setSystemTime, test } from "bun:test";
 import { withDatabase } from "../__test-support__/fixtures";
 import { setGroupSource } from "./board";
@@ -11,6 +15,8 @@ const section = (text: string, heading: string) => text.split("\n\n").find(part 
 const lines = (text: string, heading: string) => section(text, heading).split("\n").slice(1);
 const fields = { goal: "Build T6", instructions: "", discoveries: "", accomplishments: "", nextSteps: "", files: [] };
 
+// Comprueba, en nivel 11, el orden de esenciales (compartida, ecosistema, proyecto), el uso de `short`
+// cuando existe, el aviso de sesión previa dejada abierta, y que el índice solo liste memorias vivas.
 test("at level 11 the block orders essentials, uses short versions, reports the previous session left open and indexes only live titles", () => withDatabase(db => { try {
   enableIntelligence(db);
   const ai = createProject(db, "forge614-ai").projectId, engram = createProject(db, "forge614-engram").projectId;
@@ -28,14 +34,14 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
   const old = save(db, { scope: "project", projectId: ai, title: "Old note", content: "Replaced", type: "fact" });
   const fresh = save(db, { scope: "project", projectId: ai, title: "New note", content: "Replaces the old one", type: "fact", supersedes: old.id });
   save(db, { scope: "project", projectId: other, title: "Other project note", content: "Elsewhere", type: "fact" });
-  // Saves in the same millisecond tie on updated_at (then id decides): make the project order explicit.
+  // Los guardados del mismo milisegundo empatan en updated_at (y luego decide el id): se fija el orden del proyecto a mano.
   db.run("UPDATE memories SET updated_at=? WHERE id=?", ["2026-01-01T00:00:00.000Z", language.id]);
-  // The clock is frozen only from here: frozen earlier, every save above would tie on updated_at.
+  // El reloj se congela recién aquí: si se congelara antes, todos los guardados de arriba empatarían en updated_at.
   setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
   startSession(db, ai, "first", "/ai");
   const summary = saveSessionSummary(db, ai, "first", fields, { requestKey: "summary-1" });
-  // "first" must be left open for over PARALLEL_MINUTES before starting "second" for previousInterrupted
-  // to report it (1.7.1: nobody is marked at session start any more).
+  // "first" debe quedar abierta por más de PARALLEL_MINUTES antes de arrancar "second" para que
+  // previousInterrupted la reporte (desde 1.7.1 ya nadie se marca al arrancar la sesión).
   setSystemTime(new Date("2026-01-01T00:31:00.000Z"));
   startSession(db, ai, "second", "/ai");
 
@@ -50,7 +56,7 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
   expect(section(block.text, "## Previous session")).toStartWith(
     `## Previous session (interrupted)\nSession first was left open; its last activity was at `);
   expect(section(block.text, "## Previous session")).toContain(`its last summary (${summary.memory.id} v${summary.memory.version}):\n`);
-  // The board note is the oldest memory, yet it leads the index: board and project titles alternate.
+  // La nota del tablero es la memoria más antigua, pero encabeza el índice: tablero y proyecto alternan sus títulos.
   expect(lines(block.text, "## Index")).toEqual([
     `- Board note · board · ${boardNote.id}`,
     `- New note · project · ${fresh.id}`,
@@ -61,12 +67,13 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
   expect(block.chars).toBe(Array.from(block.text).length);
 } finally { setSystemTime(); } }));
 
+// Comprueba que una sesión dejada abierta por menos de PARALLEL_MINUTES no cuenta como "previa interrumpida".
 test("a session left open less than PARALLEL_MINUTES does not produce a Previous section", () => withDatabase(db => { setSystemTime(new Date("2026-01-01T00:00:00.000Z")); try {
   enableIntelligence(db);
   const project = createProject(db, "P").projectId;
   save(db, { scope: "project", projectId: project, title: "Project note", content: "Body", type: "fact" });
   startSession(db, project, "first", "/p");
-  setSystemTime(new Date("2026-01-01T00:05:00.000Z")); // only 5 minutes idle: still parallel, not previous
+  setSystemTime(new Date("2026-01-01T00:05:00.000Z")); // 5 minutos de inactividad: todavía en paralelo, no es "previa"
   startSession(db, project, "second", "/p");
 
   const block = startupBlock(db, project);
@@ -75,6 +82,8 @@ test("a session left open less than PARALLEL_MINUTES does not produce a Previous
   expect(block.sections.previous).toBe(0);
 } finally { setSystemTime(); } }));
 
+// Comprueba que, por debajo de nivel 11, el bloque muestra títulos completos (sin `short`), no reporta
+// sesión previa, y sigue leyendo tanto el cajón compartido como el del proyecto.
 test("below level 11 the block uses titles, has no previous session and still reads the project and shared drawers", () => withDatabase(db => {
   enableSearchReinforcement(db);
   const project = createProject(db, "Pre11").projectId;
@@ -91,6 +100,8 @@ test("below level 11 the block uses titles, has no previous session and still re
   expect(block.sections.previous).toBe(0);
 }));
 
+// Comprueba que una carpeta sin proyecto ligado solo recibe las esenciales compartidas, y que el
+// encabezado cuenta correctamente cuántos títulos no cupieron.
 test("an unbound directory gets the shared essentials only, and the header counts every title left out", () => withDatabase(db => {
   enableIntelligence(db);
   for (let n = 0; n < 60; n++) save(db, { scope: "shared", projectId: null, title: `Shared rule ${n} ${"x".repeat(60)}`, content: "Body", type: "preference", pinned: true });
