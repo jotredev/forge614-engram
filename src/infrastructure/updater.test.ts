@@ -1,3 +1,4 @@
+/** Comprueba que `updateInstalledEngram` descarga, ejecuta y limpia el instalador correctamente, y que reporta la versión resultante sin cambiar nada si ya coincide. */
 import { expect, test } from "bun:test";
 import { installedEngramCommand, updateInstalledEngram } from "./updater";
 
@@ -13,10 +14,12 @@ function withForge614Home(value: string | undefined, run: () => void): void {
   }
 }
 
+// El comando instalado debe derivarse de FORGE614_HOME, no de una ruta fija.
 test("updater derives its installed command from FORGE614_HOME", () => withForge614Home("/tmp/forge614-update", () => {
   expect(installedEngramCommand()).toBe("/tmp/forge614-update/engram/bin/forge614-engram");
 }));
 
+// Una actualización exitosa debe descargar el instalador estable, ejecutarlo con --force, limpiar el archivo y reportar la nueva versión.
 test("update downloads the stable installer and explicitly replaces only the installed command", async () => {
   const calls: string[] = [];
   let cleaned = false;
@@ -41,6 +44,7 @@ test("update downloads the stable installer and explicitly replaces only the ins
   expect(result).toEqual({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" });
 });
 
+// Si el instalador falla, el comando instalado no debe darse por reemplazado y el archivo descargado debe limpiarse igual.
 test("update preserves the installed command when the verified installer fails", async () => {
   let cleaned = false;
 
@@ -52,6 +56,7 @@ test("update preserves the installed command when the verified installer fails",
   expect(cleaned).toBe(true);
 });
 
+// Si la versión instalada tras ejecutar el instalador coincide con la anterior, debe reportarse como no actualizada.
 test("update reports unchanged when the installed release already matches", async () => {
   const result = await updateInstalledEngram("1.3.0", {
     download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => {} }),
@@ -62,6 +67,7 @@ test("update reports unchanged when the installed release already matches", asyn
   expect(result).toEqual({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0" });
 });
 
+// Con quiet, la salida del instalador no debe heredarse a la terminal actual.
 test("quiet updates do not inherit installer output", async () => {
   let spawnOptions: { stdio: "inherit" } | undefined;
 
@@ -78,6 +84,7 @@ test("quiet updates do not inherit installer output", async () => {
   expect(spawnOptions).toBeUndefined();
 });
 
+// Sin quiet, la salida del instalador sí debe heredarse a la terminal actual.
 test("interactive updates retain installer output", async () => {
   let spawnOptions: { stdio: "inherit" } | undefined;
 

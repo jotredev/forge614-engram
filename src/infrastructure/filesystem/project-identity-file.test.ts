@@ -1,3 +1,4 @@
+/** Comprueba que `project.json` se crea, completa y actualiza sin tocar sus ids, y que rechaza cualquier forma inválida o insegura sin sobrescribirla. */
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -12,6 +13,7 @@ const sha = (path: string) => createHash("sha256").update(readFileSync(path)).di
 const wanted = () => ({ projectId: crypto.randomUUID(), name: "frontend", ecosystem: null });
 const write = (root: string, content: string) => { mkdirSync(join(root, ".forge614"), { recursive: true }); writeFileSync(projectFilePath(root), content); };
 
+// Sin archivo previo, la lectura debe dar null y la creación debe quedar completa y legible de vuelta tal cual se pidió.
 test("a missing file reads as null and creating it is silent, complete and readable back", () => {
   const root = repository();
   expect(readProjectFile(root)).toBeNull();
@@ -23,12 +25,14 @@ test("a missing file reads as null and creating it is silent, complete and reada
   expect(readFileSync(projectFilePath(root), "utf8")).toBe(`${JSON.stringify({ schemaVersion: 1, project: { id: input.projectId, name: "frontend" }, ecosystem: group }, null, 2)}\n`);
 });
 
+// Un proyecto sin grupo debe guardar `ecosystem` como `null` explícito, no omitirlo.
 test("a loose project is written with an explicit null ecosystem", () => {
   const root = repository(); const input = wanted();
   ensureProjectFile(root, input);
   expect(JSON.parse(readFileSync(projectFilePath(root), "utf8"))).toEqual({ schemaVersion: 1, project: { id: input.projectId, name: "frontend" }, ecosystem: null });
 });
 
+// Repetir la operación no debe cambiar el archivo ni sus identificadores, aunque se pida otro nombre.
 test("repeating the write changes nothing and never replaces the ids", () => {
   const root = repository(); const first = wanted();
   ensureProjectFile(root, first);
@@ -39,6 +43,7 @@ test("repeating the write changes nothing and never replaces the ids", () => {
   expect(sha(projectFilePath(root))).toBe(digest);
 });
 
+// Un archivo existente al que solo le falta `ecosystem` debe completarse sin tocar el id ni el nombre ya guardados.
 test("an existing file missing only the ecosystem field is completed without touching the ids", () => {
   const root = repository(); const id = crypto.randomUUID();
   write(root, JSON.stringify({ schemaVersion: 1, project: { id, name: "clon" } }));
@@ -47,6 +52,7 @@ test("an existing file missing only the ecosystem field is completed without tou
   expect(readProjectFile(root)).toEqual({ schemaVersion: 1, project: { id, name: "clon" }, ecosystem: null });
 });
 
+// Un `ecosystem` guardado como `null` explícito solo debe completarse si quien llama lo permite con `fillGroup`.
 test("an explicit null ecosystem is only filled when the caller allows it", () => {
   const root = repository(); const input = wanted(); const group = { id: crypto.randomUUID(), name: "tienda" };
   ensureProjectFile(root, input);
@@ -55,6 +61,7 @@ test("an explicit null ecosystem is only filled when the caller allows it", () =
   expect(readProjectFile(root)?.ecosystem).toEqual(group);
 });
 
+// Cada forma inválida del archivo (JSON roto, versión desconocida, campos extra, id no UUID, nombre vacío o mal formado) debe rechazarse sin modificar el archivo original.
 test.each([
   ["not json", "{"],
   ["a JSON array", "[]"],
@@ -73,6 +80,7 @@ test.each([
   expect(readFileSync(projectFilePath(root), "utf8")).toBe(content);
 });
 
+// Una carpeta, un enlace simbólico o un archivo demasiado grande en el lugar del archivo de identidad deben rechazarse sin seguirlos ni leerlos.
 test("a directory, a symbolic link or an oversized file in its place is refused", () => {
   const directory = repository(); mkdirSync(projectFilePath(directory), { recursive: true });
   expect(() => readProjectFile(directory)).toThrow(expect.objectContaining({ code: "PROJECT_FILE_INVALID" }));
@@ -88,6 +96,7 @@ test("a directory, a symbolic link or an oversized file in its place is refused"
   expect(existsSync(join(outside, "project.json"))).toBe(false);
 });
 
+// Renombrar el proyecto o cambiar su grupo debe conservar los identificadores y no dejar archivos temporales sueltos.
 test("renames and group changes keep the identifiers and leave no temporary files behind", () => {
   const root = repository(); const input = wanted(); const group = { id: crypto.randomUUID(), name: "tienda" };
   ensureProjectFile(root, input);
@@ -99,6 +108,7 @@ test("renames and group changes keep the identifiers and leave no temporary file
   expect(readdirSync(join(root, ".forge614"))).toEqual(["project.json"]);
 });
 
+// Escribir el archivo de identidad no debe tocar ningún otro archivo que ya viva dentro de `.forge614`.
 test("nothing else inside .forge614 is ever touched", () => {
   const root = repository(); mkdirSync(join(root, ".forge614"));
   writeFileSync(join(root, ".forge614", "lock.json"), "{\"hub\":true}");

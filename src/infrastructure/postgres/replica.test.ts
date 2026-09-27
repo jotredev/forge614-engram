@@ -1,8 +1,10 @@
+/** Comprueba `postgresOptions` sin base de datos, y contra un clúster real: publicación, historial, cola de cambios y validación de esquema. */
 import { afterAll, expect, test } from "bun:test";
 import { SQL } from "bun";
 import { PostgresReplica, postgresOptions } from "./replica";
 import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../__test-support__/postgres";
 
+// URLs ambiguas o con TLS inseguro fuera de loopback deben rechazarse, y el error nunca debe repetir la credencial recibida.
 test("PostgreSQL URL parsing rejects ambiguous URLs and insecure remote TLS without leaking input",()=>{
   for(const input of ["mysql://host/db","postgresql://host/db","postgresql://u:SECRET@remote/db?sslmode=disable","postgresql://u:SECRET@remote/db?options=bad"]) {
     try { postgresOptions(input); throw new Error("accepted"); } catch(error) { expect(String(error)).not.toContain("SECRET");expect(String(error)).toContain("POSTGRES_URL"); }
@@ -23,7 +25,7 @@ async function freshDatabase(name: string): Promise<string> {
   return cluster.available ? cluster.url.replace("/postgres?", `/${name}?`) : "";
 }
 
-// Mirrors the DDL PostgresReplica used before the `changes` table existed (v1.7.x replicas).
+// Refleja el DDL que usaba PostgresReplica antes de que existiera la tabla `changes` (réplicas de la v1.7.x).
 const LEGACY_DDL = `CREATE SCHEMA forge614_sync;
 CREATE TABLE forge614_sync.revisions (
  hash text PRIMARY KEY CHECK (length(hash) = 64), payload text NOT NULL
@@ -39,6 +41,7 @@ async function seedLegacySchema(db: SQL) {
   await db.unsafe("INSERT INTO forge614_sync.state(id,format,replica,head) VALUES(1,1,$1,$2)", [crypto.randomUUID(), hash]);
 }
 
+// Publicar debe guardar la instantánea en el historial y rechazar un compare-and-swap que ya no coincide con la instantánea vigente.
 integration("replica publication persists history and refuses a stale compare-and-swap", async () => {
   if (!cluster.available) return;
   const replica = await PostgresReplica.connect(cluster.url, true);
@@ -55,6 +58,7 @@ integration("replica publication persists history and refuses a stale compare-an
   } finally { await replica.close(); }
 }, postgresTestTimeoutMs);
 
+// Los identificadores asignados por pushChanges deben quedar consecutivos y en el mismo orden que las filas enviadas.
 integration("pushChanges inserta en orden y devuelve ids consecutivos", async () => {
   const url = await freshDatabase("push_order");
   const replica = await PostgresReplica.connect(url, true);
@@ -71,6 +75,7 @@ integration("pushChanges inserta en orden y devuelve ids consecutivos", async ()
   } finally { await replica.close(); }
 }, postgresTestTimeoutMs);
 
+// pullChanges debe traer solo las filas con id mayor al pedido, en orden, y respetar el límite dado.
 integration("pullChanges(since) solo trae filas con id>since, ordenadas, y respeta limit", async () => {
   const url = await freshDatabase("pull_since");
   const replica = await PostgresReplica.connect(url, true);
@@ -86,6 +91,7 @@ integration("pullChanges(since) solo trae filas con id>since, ordenadas, y respe
   } finally { await replica.close(); }
 }, postgresTestTimeoutMs);
 
+// Cada fila devuelta por pullChanges debe traer su payload ya como objeto y su fecha en ISO 8601 con sufijo Z.
 integration("pullChanges devuelve ChangeRow completo con payload objeto y createdAt ISO con Z", async () => {
   const url = await freshDatabase("pull_shape");
   const replica = await PostgresReplica.connect(url, true);
@@ -104,6 +110,7 @@ integration("pullChanges devuelve ChangeRow completo con payload objeto y create
   } finally { await replica.close(); }
 }, postgresTestTimeoutMs);
 
+// Una réplica antigua sin la tabla `changes` debe recibirla al conectar con create=true, sin tocar las revisiones ni el estado ya guardados.
 integration("forge614_sync.changes se crea si falta y no se toca si ya existe", async () => {
   const url = await freshDatabase("changes_missing");
   const db = new SQL(url);
@@ -130,6 +137,7 @@ integration("forge614_sync.changes se crea si falta y no se toca si ya existe", 
   } finally { await db.close(); }
 }, postgresTestTimeoutMs);
 
+// Enviar un lote vacío no debe fallar ni insertar nada.
 integration("pushChanges de un lote vacío no falla y no inserta nada", async () => {
   const url = await freshDatabase("push_empty");
   const replica = await PostgresReplica.connect(url, true);
@@ -140,6 +148,7 @@ integration("pushChanges de un lote vacío no falla y no inserta nada", async ()
   } finally { await replica.close(); }
 }, postgresTestTimeoutMs);
 
+// Repetir un envío (respuesta perdida) no debe duplicar filas, y un lote con cambios viejos y uno nuevo debe devolver todos los ids en orden sin repetirlos.
 integration("pushChanges repetido (respuesta perdida) no duplica y un lote mezclado devuelve viejos+nuevo en orden", async () => {
   const url = await freshDatabase("push_repeat");
   const replica = await PostgresReplica.connect(url, true);
@@ -159,8 +168,8 @@ integration("pushChanges repetido (respuesta perdida) no duplica y un lote mezcl
       { changeId: "r2", kind: "memory", op: "insert" as const, payload: { a: 2 } },
       { changeId: "r3", kind: "memory", op: "insert" as const, payload: { a: 3 } },
     ]);
-    // bigserial advances on every attempted insert, even one skipped by ON CONFLICT DO NOTHING,
-    // so the new row's id is only guaranteed to be unseen and greater than the earlier ones.
+    // bigserial avanza en cada intento de inserción, incluso el que ON CONFLICT DO NOTHING descarta,
+    // así que del nuevo id solo se garantiza que es inédito y mayor que los anteriores.
     expect(mixed.ids.slice(0, 2)).toEqual(first.ids);
     expect(mixed.ids[2]).toBeGreaterThan(Math.max(...first.ids));
     expect(new Set(mixed.ids).size).toBe(3);
@@ -169,6 +178,7 @@ integration("pushChanges repetido (respuesta perdida) no duplica y un lote mezcl
   } finally { await replica.close(); }
 }, postgresTestTimeoutMs);
 
+// Dos envíos concurrentes deben terminar sin error, sin ids repetidos entre sí, y pullChanges(0) debe traer ambos lotes completos.
 integration("dos pushChanges concurrentes terminan sin error, sin ids repetidos, y pullChanges(0) trae todas", async () => {
   const url = await freshDatabase("push_concurrent");
   const left = await PostgresReplica.connect(url, true);
@@ -183,7 +193,7 @@ integration("dos pushChanges concurrentes terminan sin error, sin ids repetidos,
     ]);
     const combined = [...leftResult.ids, ...rightResult.ids];
     expect(new Set(combined).size).toBe(combined.length);
-    // The advisory lock serializes batches: one batch's ids all precede the other's, never interleaved.
+    // El bloqueo consultivo serializa los lotes: los ids de uno preceden siempre por completo a los del otro, nunca se intercalan.
     expect(Math.max(...leftResult.ids) < Math.min(...rightResult.ids) || Math.max(...rightResult.ids) < Math.min(...leftResult.ids)).toBe(true);
     const all = await left.pullChanges(0, 1000);
     expect(all).toHaveLength(8);
@@ -191,6 +201,7 @@ integration("dos pushChanges concurrentes terminan sin error, sin ids repetidos,
   } finally { await left.close(); await right.close(); }
 }, postgresTestTimeoutMs);
 
+// Una tabla `changes` con forma distinta a la esperada (aquí, sin la restricción sobre `op`) debe rechazar la conexión con POSTGRES_SCHEMA.
 integration("validate rechaza una tabla changes con forma distinta (sin restricción de op) con POSTGRES_SCHEMA", async () => {
   const url = await freshDatabase("changes_malformed");
   const db = new SQL(url);
@@ -204,6 +215,7 @@ integration("validate rechaza una tabla changes con forma distinta (sin restricc
   } finally { await db.close(); }
 }, postgresTestTimeoutMs);
 
+// Un `since` o `limit` fuera de sus rangos válidos debe rechazarse con SYNC_INVALID sin llegar a consultar la base.
 integration("pullChanges con since o limit inválidos rechaza con SYNC_INVALID", async () => {
   const url = await freshDatabase("pull_invalid");
   const replica = await PostgresReplica.connect(url, true);

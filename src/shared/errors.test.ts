@@ -1,6 +1,8 @@
+/** Comprueba que `MemoryError` conserva su código de máquina y que oculta URLs de PostgreSQL en el mensaje. */
 import { expect, test } from "bun:test";
 import { MemoryError } from "./errors";
 
+// Un `MemoryError` sigue siendo un `Error` normal (con pila de llamadas) pero además expone `code`.
 test("domain failures retain machine-readable codes and Error diagnostics", () => {
   const error = new MemoryError("INVALID_INPUT", "Invalid project");
   expect(error).toBeInstanceOf(Error);
@@ -9,6 +11,7 @@ test("domain failures retain machine-readable codes and Error diagnostics", () =
   expect(error.stack).toContain("Invalid project");
 });
 
+// El mensaje no debe filtrar ni la URL completa ni sus partes sensibles (usuario y contraseña).
 test("domain failures redact PostgreSQL connection strings", () => {
   const url = "postgresql://engram_user:POSTGRES_SECRET_MARKER@db.example.test:5432/engram?sslmode=require";
   const error = new MemoryError("POSTGRES_UNAVAILABLE", `No se pudo conectar a ${url}`);
