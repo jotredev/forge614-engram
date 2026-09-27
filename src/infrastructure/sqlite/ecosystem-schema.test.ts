@@ -1,3 +1,8 @@
+/**
+ * Prueba la migración que activa el ámbito de ecosistema (enableEcosystem, niveles de esquema 8-10):
+ * que conserve cada fila y el buscador de texto, respalde y verifique antes de confirmar, deshaga todo
+ * si algo falla, y active las reglas de propiedad y de nombres de los grupos que comparte varios proyectos.
+ */
 import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -33,7 +38,7 @@ const ORIGINAL_COLUMNS: Record<string, string> = {
   sessions: "*", session_entries: "*", session_summaries: "*", local_session_bindings: "*", local_manual_sessions: "*",
   confirmations: "*", confirmation_requests: "*", sync_checkpoints: "*",
 };
-// Logical content of every pre-existing table, restricted to the columns that existed before.
+// Contenido lógico de cada tabla ya existente, limitado a las columnas que ya existían antes de migrar.
 function logicalDump(db: Database): Record<string, unknown[]> {
   const result: Record<string, unknown[]> = {};
   for (const [table, columns] of Object.entries(ORIGINAL_COLUMNS)) {
@@ -45,6 +50,8 @@ function logicalDump(db: Database): Record<string, unknown[]> {
 }
 const version = (db: Database) => (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
 
+// Comprueba que activar el ecosistema en cada nivel base (5, 6 o 7) suma solo la estructura de
+// ecosistema, sin activar de regalo las sesiones ni el refuerzo de búsqueda.
 test("schema state decodes ecosystem variants without implying sessions or reinforcement", () => {
   const { db } = fixture("schema-5.db");
   try {
@@ -52,7 +59,7 @@ test("schema state decodes ecosystem variants without implying sessions or reinf
     enableEcosystem(db);
     expect(version(db)).toBe(8);
     expect(schemaState(db)).toEqual({ base: 5, ecosystem: true, intelligence: false, cloud: false });
-    // The chosen level never gains sessions or reinforcement just because ecosystem was enabled.
+    // El nivel elegido nunca gana sesiones ni refuerzo de búsqueda solo por activar el ecosistema.
     expect(db.query("SELECT name FROM sqlite_master WHERE name IN ('sessions','confirmations')").all()).toEqual([]);
     enableSessionLifecycle(db);
     expect(version(db)).toBe(9);
@@ -62,6 +69,8 @@ test("schema state decodes ecosystem variants without implying sessions or reinf
   } finally { db.close(); }
 });
 
+// Comprueba que migrar una base real ya existente (fijada, o "fixture") conserva cada fila, el buscador
+// de texto completo (FTS, por sus siglas en inglés) y su integridad, y que las tablas recreadas siguen indexando filas nuevas.
 test("migrating a v1.5.3 schema-7 database preserves every row and search", () => {
   const { db } = fixture("schema-7.db");
   try {
@@ -75,13 +84,15 @@ test("migrating a v1.5.3 schema-7 database preserves every row and search", () =
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
     expect(db.query("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
     db.exec("INSERT INTO memories_fts(memories_fts) VALUES('integrity-check')");
-    // New rows go through the recreated triggers into the FTS index.
+    // Las filas nuevas pasan por los disparadores recreados hacia el índice de texto completo (FTS).
     db.exec("INSERT INTO projects VALUES ('p-new','New','now','now')");
     db.exec("INSERT INTO memories(id,projectId,scope,topic_key,type,title,content,pinned,version,state,created_at,updated_at) VALUES ('m-new','p-new','project',NULL,'fact','Nuevo','zanahoria única',0,1,'active','now','now')");
     expect(db.query("SELECT id FROM memories m JOIN memories_fts f ON f.rowid=m.rowid WHERE memories_fts MATCH 'zanahoria'").all()).toEqual([{ id: "m-new" }]);
   } finally { db.close(); }
 });
 
+// Comprueba que la restricción de ámbito ampliada acepta filas de ecosistema y sigue exigiendo que
+// cada recuerdo tenga un solo dueño (proyecto o grupo, nunca los dos ni ninguno) y un tema (topic) único dentro de ese ámbito.
 test("the widened scope check accepts ecosystem rows and keeps the ownership invariants", () => {
   const { db } = fixture("schema-5.db");
   try {
@@ -95,12 +106,14 @@ test("the widened scope check accepts ecosystem rows and keeps the ownership inv
     expect(() => insert("ecosystem", "does-not-matter", "g1", "eco-with-project")).toThrow();
     expect(() => insert("shared", null, "g1", "shared-with-group")).toThrow();
     expect(() => insert("galaxy", null, "g1", "unknown-scope")).toThrow();
-    // One topic per group, independent from the shared and project namespaces.
+    // Un tema por grupo, independiente de los espacios de nombres de proyecto y compartido (shared).
     expect(() => insert("ecosystem", null, "g1", "eco-ok")).toThrow();
     insert("shared", null, null, "eco-ok");
   } finally { db.close(); }
 });
 
+// Comprueba el patrón fijo de nombres de grupo (minúsculas, dígitos y guiones simples), que el nombre
+// no es único (solo el id lo es) y que un proyecto no puede pertenecer a dos grupos a la vez.
 test("group names follow the stable pattern and a project belongs to at most one group", () => {
   const { db } = fixture("schema-5.db");
   try {
@@ -108,7 +121,7 @@ test("group names follow the stable pattern and a project belongs to at most one
     const group = (id: string, name: string) => db.query("INSERT INTO ecosystem_groups(id,name,createdAt) VALUES (?,?,'now')").run(id, name);
     group("g1", "forge614"); group("g2", "mi-tienda-2");
     for (const bad of ["", "Forge", "a b", "a_b", "-a", "a-", "a--b", "ñu", "x".repeat(65)]) expect(() => group(`bad-${bad.length}`, bad)).toThrow();
-    // Names are for people: two groups may share one, identity is the id.
+    // Los nombres son para las personas: dos grupos pueden compartir uno, la identidad es el id.
     group("g3", "forge614");
     expect(() => group("g1", "otro")).toThrow();
     const project = db.query("SELECT projectId FROM projects LIMIT 1").get() as { projectId: string };
@@ -119,6 +132,8 @@ test("group names follow the stable pattern and a project belongs to at most one
   } finally { db.close(); }
 });
 
+// Comprueba que activar el ecosistema dos veces seguidas no cambia nada más y que solo se escribe
+// una copia de respaldo (backup) la primera vez, no en las repeticiones.
 test("enabling ecosystem twice changes nothing and writes a single backup", () => {
   const { db, directory } = fixture("schema-7.db");
   try {
@@ -136,6 +151,8 @@ test("enabling ecosystem twice changes nothing and writes a single backup", () =
   } finally { db.close(); }
 });
 
+// Comprueba que la copia de respaldo automática sea completa (igual a la base antes de migrar), esté
+// marcada con la versión de origen y solo pueda leerla su dueño (permisos restringidos).
 test("the automatic backup is a private, complete copy of the pre-migration database", () => {
   const { db, directory } = fixture("schema-7.db");
   try {
@@ -153,6 +170,8 @@ test("the automatic backup is a private, complete copy of the pre-migration data
   } finally { db.close(); }
 });
 
+// Comprueba que si la copia de filas durante la migración pierde alguna, la comprobación posterior lo
+// detecta y deshace (rollback) todos los cambios, dejando la base exactamente como estaba y el respaldo intacto.
 test("a migration whose copy loses a row fails verification and rolls everything back", () => {
   const { db, directory } = fixture("schema-7.db");
   try {
@@ -165,12 +184,15 @@ test("a migration whose copy loses a row fails verification and rolls everything
     expect(version(db)).toBe(7);
     expect(logicalDump(db)).toEqual(before);
     expect(JSON.stringify(db.query("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").all())).toBe(definitions);
-    // Foreign keys are restored even when the migration fails, and the backup taken before it remains.
+    // Las llaves foráneas (foreign keys: la restricción que exige que una fila referida exista) se
+    // restauran incluso cuando la migración falla, y el respaldo tomado antes sigue ahí.
     expect(db.query("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
     expect(readdirSync(directory).some(entry => entry.includes("pre-ecosystem"))).toBe(true);
   } finally { db.close(); }
 });
 
+// Comprueba que una base con la estructura dañada (por ejemplo, un índice esperado que falta) se
+// rechaza con un error de estructura en vez de intentar repararla.
 test("a database with foreign objects or a damaged structure is refused, not repaired", () => {
   const { db } = fixture("schema-7.db");
   try {
@@ -180,6 +202,8 @@ test("a database with foreign objects or a damaged structure is refused, not rep
   } finally { db.close(); }
 });
 
+// Comprueba que abrir la base (initialize) valida la estructura exacta de cada nivel de ecosistema
+// que se va alcanzando, y que rechaza un número de versión futuro que esta compilación todavía no conoce.
 test("initialization validates every ecosystem level exactly and rejects future versions", () => {
   const { db, file } = fixture("schema-5.db");
   try {
@@ -188,13 +212,14 @@ test("initialization validates every ecosystem level exactly and rejects future 
     enableSearchReinforcement(db); initialize(db);
     db.exec("DROP INDEX memories_ecosystem_topic");
     expect(() => initialize(db)).toThrow(expect.objectContaining({ code: "DATABASE_SCHEMA" }));
-    // 12 is now the cloud level (T1); 13 is the next unknown future version.
+    // El 12 ahora es el nivel de la nube (T1); el 13 es la siguiente versión futura desconocida.
     db.exec("PRAGMA user_version=13");
     expect(() => initialize(db)).toThrow(expect.objectContaining({ code: "DATABASE_VERSION" }));
   } finally { db.close(); }
   expect(existsSync(file)).toBe(true);
 });
 
+// Comprueba que sobre una base con ecosistema, activar la sincronización o los vínculos de proyecto no hace nada (son requisitos ya cubiertos).
 test("synchronization and binding enrolment are no-ops on ecosystem databases", () => {
   const { db } = fixture("schema-5.db");
   try {
@@ -204,6 +229,8 @@ test("synchronization and binding enrolment are no-ops on ecosystem databases", 
   } finally { db.close(); }
 });
 
+// Comprueba que una base muy antigua llega al ecosistema pasando por el paso de vínculos de proyecto
+// (project bindings), sin activar de paso las sesiones.
 test("older schemas reach ecosystem through the binding step without enabling sessions", () => {
   const db = new Database(":memory:", { strict: true });
   try {
@@ -215,6 +242,8 @@ test("older schemas reach ecosystem through the binding step without enabling se
   } finally { db.close(); }
 });
 
+// Comprueba que migrar una base grande (50,000 recuerdos) sigue siendo rápida y que el respaldo y la
+// verificación de contenido no pierden ni cambian ninguna fila.
 test("migrates 50,000 memories quickly and verifies the whole content", () => {
   const directory = mkdtempSync(join(tmpdir(), "engram-eco-perf-"));
   temporary.push(directory);
@@ -244,6 +273,8 @@ test("migrates 50,000 memories quickly and verifies the whole content", () => {
   } finally { db.close(); }
 }, 60_000);
 
+// Comprueba que las funciones que solo leen (gates: comprobaciones de si una función está activa) se
+// fijan según el nivel de funciones, no según el número crudo de versión.
 test("feature gates follow the feature level, not the raw version number", () => {
   const { db } = fixture("schema-5.db");
   try {
@@ -261,6 +292,7 @@ test("feature gates follow the feature level, not the raw version number", () =>
   } finally { db.close(); }
 });
 
+// Comprueba que una conexión de solo lectura se rechaza antes de tomar ningún respaldo, sin cambiar la versión.
 test("a read-only connection is refused before any backup is taken", () => {
   const { file, directory, db } = fixture("schema-7.db");
   db.close();
@@ -272,6 +304,8 @@ test("a read-only connection is refused before any backup is taken", () => {
   } finally { readonly.close(); }
 });
 
+// Comprueba que el resultado de activar el ecosistema informa si migró de verdad y dónde quedó el
+// respaldo, y que una base ya en ese nivel (o una vacía sin nada que perder) no genera uno.
 test("enrolment reports whether it migrated and where the backup went", () => {
   const { db, directory } = fixture("schema-7.db");
   try {

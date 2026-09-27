@@ -1,3 +1,5 @@
+/** Prueba las memorias del ámbito ecosystem: su versión y su historial, que no se mezclen con las de
+ * proyecto o compartidas, la precedencia en la búsqueda y su comportamiento por debajo de ese nivel. */
 import type { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { withDatabase } from "../__test-support__/fixtures";
@@ -8,21 +10,33 @@ import { enableEcosystem, enableProjectBindings, enableSearchReinforcement, enab
 import { context, getVersion, search, searchPreviews } from "./search";
 import { archive, restore, save, saveWithSession } from "./writes";
 
+/** Nivel adicional a habilitar antes del ámbito ecosystem, según lo que necesite cada prueba. */
 type Level = "bindings" | "sessions" | "reinforcement";
+/**
+ * Prepara una base con el ámbito ecosystem habilitado (y, según `level`, sesiones o refuerzo de
+ * búsqueda), crea un proyecto dentro de un grupo y otro fuera de cualquier grupo, más un segundo
+ * grupo vacío, y ejecuta `run` con esa base y esos identificadores.
+ * @param run prueba a ejecutar sobre la base ya preparada.
+ * @param level nivel adicional a habilitar antes de ecosystem; por defecto solo los vínculos de proyecto.
+ */
 function ecosystem(run: (db: Database, x: { project: string; other: string; group: string; second: string }) => void, level: Level = "bindings"): void {
   withDatabase(db => {
     enableProjectBindings(db);
+    // Solo se habilita lo que la prueba pida: sesiones o refuerzo de búsqueda, nunca ambos a la vez.
     if (level === "sessions") enableSessionLifecycle(db);
     if (level === "reinforcement") enableSearchReinforcement(db);
     enableEcosystem(db);
-    const project = createProject(db, "Frontend").projectId, other = createProject(db, "Loose").projectId;
-    const group = createGroup(db, "tienda").id, second = createGroup(db, "otra").id;
+    const project = createProject(db, "Frontend").projectId, other = createProject(db, "Loose").projectId; // "project" queda dentro del grupo; "other" queda fuera
+    const group = createGroup(db, "tienda").id, second = createGroup(db, "otra").id; // dos grupos distintos, para comprobar que sus memorias no se mezclan
     bindProjectToGroup(db, project, group, "command");
     run(db, { project, other, group, second });
   });
 }
+/** Arma los campos comunes de una memoria de ámbito ecosystem para el grupo dado, permitiendo sobreescribir campos puntuales. */
 const eco = (group: string, extra: Record<string, unknown> = {}) => ({ scope: "ecosystem" as const, projectId: null, groupId: group, title: "Regla", content: "contenido compartido", type: "decision" as const, ...extra });
 
+// Una memoria del ecosistema debe llevar el mismo comportamiento de tema, versión, historial, archivo
+// y restauración que las memorias de proyecto o compartidas.
 test("an ecosystem memory keeps topic, version, history, archive and restore semantics", () => ecosystem((db, { group }) => {
   const first = save(db, eco(group, { topicKey: "api/contrato" }));
   expect(first).toMatchObject({ scope: "ecosystem", groupId: group, projectId: null, version: 1, topicKey: "api/contrato" });
@@ -39,6 +53,8 @@ test("an ecosystem memory keeps topic, version, history, archive and restore sem
   expect(getVersion(db, { groupId: group }, first.id, 1)?.memory.content).toBe("contenido compartido");
 }));
 
+// Las memorias del ecosistema no deben aparecer al consultarlas desde el ámbito de proyecto ni desde
+// el compartido, ni al revés, aunque compartan el mismo tema.
 test("ecosystem memories never leak into the project or shared namespaces", () => ecosystem((db, { project, group, second }) => {
   const shared = save(db, { scope: "shared", projectId: null, title: "S", content: "c", type: "fact", topicKey: "t" });
   const mine = save(db, { scope: "project", projectId: project, title: "P", content: "c", type: "fact", topicKey: "t" });
@@ -55,6 +71,8 @@ test("ecosystem memories never leak into the project or shared namespaces", () =
   expect(() => archive(db, null, group1.id)).toThrow(expect.objectContaining({ code: "NOT_FOUND" }));
 }));
 
+// Guardar una memoria del ecosistema exige un grupo que exista y una base que tenga ese nivel de
+// esquema habilitado; si falta cualquiera de los dos, debe fallar con un código claro.
 test("saving needs an existing group and a database enrolled in the ecosystem level", () => {
   ecosystem((db, { group }) => {
     expect(() => save(db, eco(crypto.randomUUID()))).toThrow(expect.objectContaining({ code: "GROUP_NOT_FOUND" }));
@@ -67,6 +85,8 @@ test("saving needs an existing group and a database enrolled in the ecosystem le
   });
 });
 
+// Para un mismo tema, la búsqueda "all" debe preferir la memoria de proyecto sobre la del ecosistema,
+// y la del ecosistema sobre la compartida, y volver a la siguiente si la preferida se archiva.
 test("search precedence is project over ecosystem over shared for a repeated topic", () => ecosystem((db, { project, other, group }) => {
   const shared = save(db, { scope: "shared", projectId: null, title: "Deploy", content: "compartida despliegue", type: "procedure", topicKey: "deploy" });
   const ecosystemMemory = save(db, eco(group, { title: "Deploy", content: "ecosistema despliegue", topicKey: "deploy" }));
@@ -80,7 +100,7 @@ test("search precedence is project over ecosystem over shared for a repeated top
   archive(db, { groupId: group }, ecosystemMemory.id);
   expect(ids("all")).toEqual([shared.id]);
   restore(db, { groupId: group }, ecosystemMemory.id);
-  // A project outside the group keeps today's behavior: it only sees shared.
+  // Un proyecto fuera del grupo conserva el comportamiento de siempre: solo ve la memoria compartida.
   expect(ids("all", other)).toEqual([shared.id]);
   expect(ids("shared", null)).toEqual([shared.id]);
   expect(ids("ecosystem")).toEqual([ecosystemMemory.id]);
@@ -90,6 +110,8 @@ test("search precedence is project over ecosystem over shared for a repeated top
   expect(searchPreviews(db, project, "despliegue", 10, "ecosystem")[0]!.memory).toMatchObject({ scope: "ecosystem", groupId: group });
 }));
 
+// En cuanto un proyecto se une a un grupo, la búsqueda "all" debe empezar a mostrarle las memorias de
+// ese grupo, sin duplicarlas.
 test("a project that joins a group starts seeing its memories in all-scope search, without duplicates", () => ecosystem((db, { other, group }) => {
   const memory = save(db, eco(group, { title: "Convención", content: "usa kebab-case en rutas", topicKey: "estilo" }));
   expect(search(db, other, "kebab-case", 10, "all")).toEqual([]);
@@ -97,6 +119,8 @@ test("a project that joins a group starts seeing its memories in all-scope searc
   expect(search(db, other, "kebab-case", 10, "all").map(result => result.memory.id)).toEqual([memory.id]);
 }));
 
+// El bloque de contexto puede orientarse hacia un grupo del ecosistema sin alterar los bloques de
+// proyecto ni el compartido.
 test("context can orient on the ecosystem block and leaves project and shared blocks unchanged", () => ecosystem((db, { project, group }) => {
   save(db, eco(group, { title: "Anclada", content: "importante", pinned: true }));
   save(db, eco(group, { title: "Reciente", content: "otra" }));
@@ -109,6 +133,8 @@ test("context can orient on the ecosystem block and leaves project and shared bl
   expect(context(db, null).recent).toEqual([]);
 }));
 
+// Una clave de solicitud (requestKey) repetida debe reproducir el mismo resultado dentro del mismo
+// grupo, sin colisionar entre grupos distintos ni con los ámbitos de proyecto o compartido.
 test("request keys replay per group and never collide across scopes", () => ecosystem((db, { project, group, second }) => {
   const first = save(db, eco(group, { requestKey: "k", topicKey: "a" }));
   expect(save(db, eco(group, { requestKey: "k", topicKey: "a" })).id).toBe(first.id);
@@ -118,6 +144,8 @@ test("request keys replay per group and never collide across scopes", () => ecos
   expect(save(db, { scope: "shared", projectId: null, title: "S", content: "c", type: "fact", requestKey: "k" }).scope).toBe("shared");
 }));
 
+// Con el refuerzo activo, repetir sin cambios una memoria del ecosistema sin tema debe registrarse
+// como confirmación en vez de crear una versión nueva.
 test("repeating an identical untopiced ecosystem memory is a confirmation when reinforcement is on", () => ecosystem((db, { group, second }) => {
   const first = save(db, eco(group));
   const again = save(db, eco(group));
@@ -126,16 +154,20 @@ test("repeating an identical untopiced ecosystem memory is a confirmation when r
   expect(save(db, eco(second)).id).not.toBe(first.id);
 }, "reinforcement"));
 
+// Una memoria del ecosistema puede vincularse a una sesión explícita igual que una compartida, pero
+// no se vincula sola a la sesión manual del proyecto.
 test("ecosystem memories can be tied to an explicit session like shared ones", () => ecosystem((db, { project, group }) => {
   db.query("INSERT INTO sessions(sessionId,projectId,kind,startedAt,endedAt) VALUES('s1',?,'runtime','now',NULL)").run(project);
   expect(() => saveWithSession(db, eco(group), { sessionId: "s1" })).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
   const saved = saveWithSession(db, eco(group), { sessionId: "s1", projectId: project });
   expect(saved).toMatchObject({ sessionId: "s1", sessionSource: "explicit" });
   expect(db.query("SELECT sessionId FROM session_entries WHERE memoryId=?").get(saved.memory.id)).toEqual({ sessionId: "s1" });
-  // Without an explicit session an ecosystem save is not attached to the manual project session.
+  // Sin una sesión explícita, guardar en el ecosistema no se vincula a la sesión manual del proyecto.
   expect(saveWithSession(db, eco(group, { title: "Otra" }), {}).sessionId).toBeNull();
 }, "sessions"));
 
+// Sin el nivel de esquema del ecosistema, el comportamiento de proyecto y compartido debe seguir
+// exactamente igual que antes de que existiera ese ámbito.
 test("databases below the ecosystem level keep project and shared behavior untouched", () => withDatabase(db => {
   enableProjectBindings(db);
   const project = createProject(db, "Old").projectId;

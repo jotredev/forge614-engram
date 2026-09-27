@@ -1,3 +1,5 @@
+/** Prueba la creación, el nombrado, la membresía y la resolución de grupos del ecosistema, y que cada
+ * cambio quede registrado como evento de identidad. */
 import type { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { FORGE614_GROUP_ID, declaredGroupId } from "../../modules/ecosystem";
@@ -10,6 +12,8 @@ function enabled(run: (db: Database) => void): void {
   withDatabase(db => { enableProjectBindings(db); enableEcosystem(db); run(db); });
 }
 
+// Sin el nivel de esquema del ecosistema, las lecturas se degradan a "sin grupo" y las escrituras
+// deben rechazarse, no fallar de forma inesperada.
 test("groups need the ecosystem level; reads degrade to no group without it", () => withDatabase(db => {
   enableProjectBindings(db);
   const project = createProject(db, "Loose");
@@ -20,6 +24,8 @@ test("groups need the ecosystem level; reads degrade to no group without it", ()
   expect(() => bindProjectToGroup(db, project.projectId, crypto.randomUUID(), "command")).toThrow(expect.objectContaining({ code: "MIGRATION_REQUIRED" }));
 }));
 
+// Crear un grupo debe validar el nombre, generarle un identificador propio y rechazar un nombre
+// repetido, sin importar mayúsculas ni espacios.
 test("creating a group validates the name, generates an identity and refuses duplicates by hand", () => enabled(db => {
   const group = createGroup(db, "mi-tienda");
   expect(group.name).toBe("mi-tienda");
@@ -30,17 +36,21 @@ test("creating a group validates the name, generates an identity and refuses dup
   expect(identityEvents(db).map(event => event.action)).toEqual(["GROUP_CREATED"]);
 }));
 
+// Un grupo que llega con su propia identidad (de un clon, por ejemplo) se registra una sola vez,
+// aunque se repita la llamada; la identidad manda sobre el nombre.
 test("a group arriving with its own identity is registered once and never duplicated", () => enabled(db => {
   const id = crypto.randomUUID();
   const first = ensureGroup(db, id, "tienda");
   expect(first.created).toBe(true);
   expect(ensureGroup(db, id, "tienda").created).toBe(false);
-  // A different identity may carry the same name: identity wins over name.
+  // Una identidad distinta puede llevar el mismo nombre: la identidad manda sobre el nombre.
   const other = ensureGroup(db, crypto.randomUUID(), "tienda");
   expect(other.created).toBe(true);
   expect(listGroups(db).map(group => group.name)).toEqual(["tienda", "tienda"]);
 }));
 
+// Unir, cambiar y quitar el grupo de un proyecto debe registrar cada paso como evento y ser
+// idempotente (repetir la misma llamada no debe generar un cambio ni un evento de más).
 test("binding, changing and removing a group are recorded events and stay idempotent", () => enabled(db => {
   const project = createProject(db, "Frontend");
   const a = createGroup(db, "grupo-a"), b = createGroup(db, "grupo-b");
@@ -58,12 +68,14 @@ test("binding, changing and removing a group are recorded events and stay idempo
   expect(events[2]).toMatchObject({ previousGroupId: b.id });
 }));
 
+// Unir un proyecto a un grupo exige que ambos existan de verdad.
 test("binding needs an existing project and group", () => enabled(db => {
   const project = createProject(db, "P"), group = createGroup(db, "g");
   expect(() => bindProjectToGroup(db, crypto.randomUUID(), group.id, "command")).toThrow(expect.objectContaining({ code: "PROJECT_NOT_FOUND" }));
   expect(() => bindProjectToGroup(db, project.projectId, crypto.randomUUID(), "command")).toThrow(expect.objectContaining({ code: "GROUP_NOT_FOUND" }));
 }));
 
+// Al listar los grupos, cada uno debe traer sus proyectos miembro (o una lista vacía si no tiene).
 test("listing shows each group with the projects it contains", () => enabled(db => {
   const front = createProject(db, "Frontend"), back = createProject(db, "Backend"); createProject(db, "Loose");
   const group = createGroup(db, "tienda"); createGroup(db, "vacio");
@@ -74,6 +86,8 @@ test("listing shows each group with the projects it contains", () => enabled(db 
   expect(listed[1]!.projects).toEqual([]);
 }));
 
+// Renombrar un grupo debe conservar su identificador y registrar el cambio; un nombre inválido o un
+// grupo inexistente deben rechazarse.
 test("renaming keeps the identity and records the event", () => enabled(db => {
   const group = createGroup(db, "viejo");
   const renamed = renameGroup(db, group.id, "nuevo");
@@ -83,6 +97,8 @@ test("renaming keeps the identity and records the event", () => enabled(db => {
   expect(identityEvents(db).map(event => event.action)).toEqual(["GROUP_CREATED", "GROUP_RENAMED"]);
 }));
 
+// Resolver una referencia debe probar primero el identificador exacto y, si no coincide, aceptar un
+// nombre solo cuando identifica a un único grupo.
 test("a group reference resolves by identity first, then by a unique name", () => enabled(db => {
   const a = createGroup(db, "unico");
   const id = crypto.randomUUID();
@@ -95,6 +111,8 @@ test("a group reference resolves by identity first, then by a unique name", () =
   expect(() => resolveGroup(db, "Mal Nombre")).toThrow(expect.objectContaining({ code: "GROUP_NAME_INVALID" }));
 }));
 
+// El grupo reservado "forge614" siempre debe tener el mismo identificador fijo, sin importar si se
+// crea por nombre o llega con su propia identidad.
 test("the reserved forge614 group always has its fixed identity, however it is created", () => enabled(db => {
   const created = createGroup(db, "forge614");
   expect(created.id).toBe(FORGE614_GROUP_ID);

@@ -1,9 +1,11 @@
+/** Prueba las reglas clave de writes.ts: idempotencia de peticiones repetidas, reversión (rollback) de un guardado inválido con proyecto recién creado, y el refuerzo de confirmaciones. */
 import { expect, test } from "bun:test";
 import { save, archive, restore, saveForProjectDirectory } from "./writes";
 import { createProject, listProjects } from "./projects";
 import { enableProjectBindings,enableSearchReinforcement } from "./schema";
 import { withDatabase } from "../__test-support__/fixtures";
 
+// Comprueba que repetir la misma petición (requestKey) no cree una segunda versión, que un contenido distinto con la misma clave se rechace, y que archivar/restaurar deje su rastro en events.
 test("idempotent replay retains the original version and conflicts leave history untouched", () => withDatabase(db => {
   const project = createProject(db, "Owner");
   const input = { projectId: project.projectId, type: "fact" as const, title: "A", content: "body", requestKey: "request" };
@@ -17,6 +19,7 @@ test("idempotent replay retains the original version and conflicts leave history
   expect(db.query("SELECT action FROM events ORDER BY id").all()).toEqual([{ action: "save" }, { action: "archive" }, { action: "restore" }]);
 }));
 
+// Comprueba que, si el guardado falla (título vacío), el proyecto y el vínculo de carpeta que se habían creado para intentarlo también se deshacen (misma transacción).
 test("invalid directory save rolls back newly created project and binding", () => withDatabase(db => {
   enableProjectBindings(db);
   expect(() => saveForProjectDirectory(db, "/new", "New", { type: "fact", title: "", content: "body" })).toThrow();
@@ -24,6 +27,7 @@ test("invalid directory save rolls back newly created project and binding", () =
   expect(db.query("SELECT * FROM project_bindings").all()).toEqual([]);
 }));
 
+// Comprueba que confirmar el mismo contenido con una petición nueva devuelva la versión original sin duplicarla, que repetir esa confirmación sea estable, y que el mismo requestKey con otro contenido choque.
 test("confirmation request replay is stable and cross-table request reuse conflicts", () => withDatabase(db => {
   const project=createProject(db,"Owner");enableSearchReinforcement(db);
   const input={projectId:project.projectId,title:"Queue",content:"Use jobs",type:"decision" as const};

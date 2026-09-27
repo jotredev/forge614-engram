@@ -1,9 +1,12 @@
+/** Comprueba las lecturas de memory.ts: que respetan el dueño (ownership), que el historial de
+ * versiones queda en orden y que required() valida bien los textos. */
 import { expect, test } from "bun:test";
 import { get, getByTopic, history, required } from "./memory";
 import { createProject } from "./projects";
 import { save } from "./writes";
 import { withDatabase } from "../__test-support__/fixtures";
 
+// Un proyecto no debe poder leer memorias de otro, y el historial debe conservar cada versión en orden.
 test("reads enforce ownership and preserve historical snapshots in version order", () => withDatabase(db => {
   const p = createProject(db, "Owner"), other = createProject(db, "Other");
   const input = { projectId: p.projectId, type: "fact" as const, title: "First", content: "original", topicKey: "topic", pinned: true };
@@ -14,6 +17,7 @@ test("reads enforce ownership and preserve historical snapshots in version order
   expect(history(db, null, first.id)).toEqual([]);
 }));
 
+// getByTopic debe encontrar la memoria correcta según el dueño, y no cruzar temas entre dueños distintos.
 test("reads a memory by topic within its owner scope", () => withDatabase(db => {
   const project = createProject(db, "Topic owner");
   const local = save(db, { projectId: project.projectId, type: "decision", title: "Module", content: "analyzed", topicKey: "atlas:module" });
@@ -24,6 +28,7 @@ test("reads a memory by topic within its owner scope", () => withDatabase(db => 
   expect(getByTopic(db, null, "atlas:module")).toBeNull();
 }));
 
+// required() es la primera línea de defensa contra textos vacíos o con caracteres nulos antes de tocar el SQL.
 test("required trims text and rejects blank or null-containing identifiers", () => {
   expect(required(" value ", "id")).toBe("value");
   for (const value of [null, "", "  ", "a\0b"]) expect(() => required(value, "id")).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));

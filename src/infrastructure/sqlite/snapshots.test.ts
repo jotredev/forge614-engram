@@ -1,3 +1,9 @@
+/**
+ * Pruebas de snapshots.ts: comprueban que exportSnapshot, checkpoint y applySnapshot elijan el formato
+ * correcto según el nivel de esquema habilitado, mantengan un orden determinista, apliquen los datos
+ * remotos de forma atómica e idempotente, y rechacen con claridad los casos que no pueden sincronizarse
+ * (estado local cambiado mientras tanto, esquema insuficiente o memorias de ámbito "ecosystem").
+ */
 import { expect, test } from "bun:test";
 import { applySnapshot, checkpoint, exportSnapshot } from "./snapshots";
 import { createProject } from "./projects";
@@ -6,6 +12,7 @@ import { enableEcosystem, enableProjectBindings, enableSearchReinforcement, enab
 import { save, saveWithSession, startSession } from "./writes";
 import { withDatabase } from "../__test-support__/fixtures";
 
+// Aplicar un snapshot guarda datos y checkpoint de forma atómica, y rechaza si el estado local cambió mientras tanto (SYNC_LOCAL_CHANGED).
 test("snapshot application persists data and checkpoint atomically and refuses stale local state", () => withDatabase(db => {
   enableSynchronization(db);
   const empty = { format: 1 as const, projects: [], memories: [] };
@@ -20,6 +27,7 @@ test("snapshot application persists data and checkpoint atomically and refuses s
   expect(checkpoint(db, "remote")).toEqual(next);
 }));
 
+// El formato exportado depende de qué funciones de esquema están habilitadas de forma explícita, sin subir de formato solo porque una tabla ya exista.
 test("snapshot format follows explicit SQLite capabilities without silently upgrading older schemas", () => {
   withDatabase(db => {
     expect(exportSnapshot(db).format).toBe(1);
@@ -44,6 +52,7 @@ test("snapshot format follows explicit SQLite capabilities without silently upgr
   });
 });
 
+// En formato 3, el response de cada solicitud de confirmación se reconstruye como objeto y las solicitudes quedan ordenadas por espacio de nombres del propietario (owner) y clave, no por orden de inserción.
 test("format 3 export parses stable responses and orders requests by owner namespace and key", () => withDatabase(db => {
   enableSearchReinforcement(db);
   const project = createProject(db, "Ordering");
@@ -72,6 +81,7 @@ test("format 3 export parses stable responses and orders requests by owner names
   );
 }));
 
+// En formato 3, sesiones y entradas se ordenan por una identidad estable incluso con sessionId en caracteres Unicode fuera del plano básico y con números de versión de más de un dígito.
 test("format 3 export uses reconciliation identity order for Unicode sessions and multi-digit entry versions", () => withDatabase(db => {
   enableSearchReinforcement(db);
   const project=createProject(db,"Identity order");
@@ -90,6 +100,7 @@ test("format 3 export uses reconciliation identity order for Unicode sessions an
   expect(snapshot.sessionEntries.map(entry=>entry.version)).toEqual([10,1,2,3,4,5,6,7,8,9]);
 }));
 
+// Aplicar un snapshot formato 3 exige que el esquema local ya soporte confirmaciones (si no, rechaza sin tocar nada), y aplicarlo dos veces o ante un conflicto real no corrompe ni pierde lo ya guardado.
 test("format 3 apply is enrolled-only, transactional, and idempotent", () => {
   let next!: ReturnType<typeof exportSnapshot>;
   withDatabase(source => {
@@ -126,6 +137,7 @@ test("format 3 apply is enrolled-only, transactional, and idempotent", () => {
   });
 });
 
+// La sincronización sigue funcionando con el ecosistema (ecosystem: reglas compartidas por varios proyectos de un grupo) habilitado mientras no haya memorias de ese ámbito, pero se detiene explícitamente en cuanto aparece una, sin escribir nada a medias.
 test("synchronization keeps working below and at the ecosystem level, and stops explicitly once ecosystem memories exist", () => withDatabase(db => {
   enableSynchronization(db); enableProjectBindings(db);
   const project = createProject(db, "Frontend");
@@ -141,6 +153,6 @@ test("synchronization keeps working below and at the ecosystem level, and stops 
   expect(() => exportSnapshot(db)).toThrow(expect.objectContaining({ code: "SYNC_ECOSYSTEM_UNSUPPORTED" }));
   const empty = { format: 1 as const, projects: [], memories: [] };
   expect(() => applySnapshot(db, empty, empty, "remote")).toThrow(expect.objectContaining({ code: "SYNC_ECOSYSTEM_UNSUPPORTED" }));
-  // Nothing was written by the refused attempt.
+  // El intento rechazado no escribió nada.
   expect(db.query("SELECT count(*) AS n FROM sync_checkpoints").get()).toEqual({ n: 0 });
 }));

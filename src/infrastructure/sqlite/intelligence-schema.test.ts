@@ -1,3 +1,8 @@
+/**
+ * Prueba la migración que activa la memoria inteligente (enableIntelligence, nivel de esquema 11):
+ * que encadene los niveles previos que le faltan, conserve cada fila, cree un buscador por palabra
+ * insensible a acentos que se mantiene al día con las escrituras, y respalde, verifique y deshaga si algo falla.
+ */
 import { Database } from "bun:sqlite";
 import { afterEach, expect, test } from "bun:test";
 import { copyFileSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from "node:fs";
@@ -12,7 +17,7 @@ const temporary: string[] = [];
 afterEach(() => { while (temporary.length) rmSync(temporary.pop()!, { recursive: true, force: true }); });
 
 function fixture(path: string, options: { readonly?: boolean } = {}): { db: Database; file: string; directory: string } {
-  // SQLite reports the real path; on macOS tmpdir() is under /var, a symlink to /private/var.
+  // SQLite reporta la ruta real; en macOS, tmpdir() está bajo /var, un enlace simbólico a /private/var.
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "engram-intel-")));
   temporary.push(directory);
   const file = join(directory, "engram.db");
@@ -37,6 +42,7 @@ const version = (db: Database) => (db.query("PRAGMA user_version").get() as { us
 const words = (db: Database, match: string) =>
   (db.query("SELECT m.title FROM memories_words w JOIN memories m ON m.rowid = w.rowid WHERE memories_words MATCH ? ORDER BY m.title").all(match) as { title: string }[]).map(r => r.title);
 
+// Migrar del nivel 10 al 11 conserva cada fila, escribe un respaldo y deja las tablas nuevas vacías pero válidas.
 test("level 10 base migrates to 11: every row kept, backup written, new structure empty and valid", () => {
   const { db, file, directory } = fixture("v1.6.0/schema-10.db");
   try {
@@ -52,10 +58,11 @@ test("level 10 base migrates to 11: every row kept, backup written, new structur
       expect(db.query(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
     }
     expect(readdirSync(directory).filter(name => name.endsWith(".bak"))).toHaveLength(1);
-    initialize(db, false, false); // exact-schema validation of level 11 passes
+    initialize(db, false, false); // la validación exacta de estructura del nivel 11 pasa
   } finally { db.close(); }
 });
 
+// El índice por palabra no distingue acentos y ya cubre las filas que existían antes de migrar.
 test("the word index is accent-insensitive and covers existing rows after migration", () => {
   const { db } = fixture("v1.6.0/schema-10.db");
   try {
@@ -66,6 +73,7 @@ test("the word index is accent-insensitive and covers existing rows after migrat
   } finally { db.close(); }
 });
 
+// El índice por palabra sigue cada inserción, actualización y borrado a través de sus disparadores (triggers).
 test("the word index follows inserts, updates and deletes through its triggers", () => {
   const { db } = fixture("v1.6.0/schema-10.db");
   try {
@@ -76,13 +84,14 @@ test("the word index follows inserts, updates and deletes through its triggers",
     save(db, { projectId: project.projectId, type: "fact", title: "Configuración del índice", content: "palabra única pepino", topicKey: "gamma/index", expectedVersion: 1 });
     expect(words(db, "zanahoria")).toEqual([]);
     expect(words(db, "pepino")).toEqual(["Configuración del índice"]);
-    // Raw delete only to exercise the trigger; versions and events reference the row, so relax foreign keys here.
+    // Borrado directo solo para ejercitar el disparador; versions y events referencian la fila, así que aquí se relajan las llaves foráneas.
     db.exec("PRAGMA foreign_keys=OFF");
     db.query("DELETE FROM memories WHERE id = ?").run(saved.id);
     expect(words(db, "pepino")).toEqual([]);
   } finally { db.close(); }
 });
 
+// Activarla dos veces no hace nada la segunda vez y nunca escribe un segundo respaldo.
 test("enrolling twice is a no-op and never writes a second backup", () => {
   const { db, directory } = fixture("v1.6.0/schema-10.db");
   try {
@@ -92,10 +101,11 @@ test("enrolling twice is a no-op and never writes a second backup", () => {
   } finally { db.close(); }
 });
 
+// Un nivel más viejo encadena cada prerrequisito y termina en 11 con sus datos intactos.
 test("an older level chains every prerequisite and ends at 11 with its data", () => {
   const { db } = fixture("v1.5.3/schema-5.db");
   try {
-    // Level 5 has no ecosystem column yet: compare counts and the original memory columns, not whole rows.
+    // El nivel 5 todavía no tiene la columna de ecosistema: se comparan los conteos y las columnas originales de memories, no filas completas.
     const counts = (d: Database) => Object.fromEntries(TABLES.filter(t => d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t))
       .map(t => [t, (d.query(`SELECT count(*) AS n FROM ${t}`).get() as { n: number }).n]));
     const memories = (d: Database) => d.query("SELECT id,projectId,scope,topic_key,type,title,content,pinned,version,state,created_at,updated_at FROM memories ORDER BY rowid").all();
@@ -108,6 +118,7 @@ test("an older level chains every prerequisite and ends at 11 with its data", ()
   } finally { db.close(); }
 });
 
+// Una base recién creada y vacía llega al nivel 11 sin escribir ningún respaldo, porque no hay nada que perder.
 test("a fresh empty base reaches 11 without writing a backup", () => {
   const db = new Database(":memory:");
   try {
@@ -117,6 +128,7 @@ test("a fresh empty base reaches 11 without writing a backup", () => {
   } finally { db.close(); }
 });
 
+// Una conexión de solo lectura falla antes de dejar ningún respaldo a medias.
 test("a read-only connection fails before leaving any backup behind", () => {
   const { db, directory } = fixture("v1.6.0/schema-10.db", { readonly: true });
   try {
@@ -126,6 +138,7 @@ test("a read-only connection fails before leaving any backup behind", () => {
   } finally { db.close(); }
 });
 
+// Una falla dentro de la migración deshace todo hasta el nivel 10, sin dejar ningún objeto nuevo.
 test("a failure inside the migration rolls back to level 10 with no new objects", () => {
   const { db } = fixture("v1.6.0/schema-10.db");
   try {
@@ -138,6 +151,7 @@ test("a failure inside the migration rolls back to level 10 with no new objects"
   } finally { db.close(); }
 });
 
+// El nivel 11 valida su estructura exacta (por ejemplo, rechaza que falte un disparador), y el 13 sigue siendo una versión futura desconocida.
 test("level 11 validates its exact structure and 13 stays an unknown future version", () => {
   const { db } = fixture("v1.6.0/schema-10.db");
   try {
@@ -148,7 +162,7 @@ test("level 11 validates its exact structure and 13 stays an unknown future vers
   const fresh = new Database(":memory:");
   try {
     initialize(fresh); enableIntelligence(fresh);
-    // 12 is now the cloud level (T1); 13 is the next unknown future version.
+    // El 12 ya es el nivel de la nube (T1); el 13 es la siguiente versión futura desconocida.
     fresh.exec("PRAGMA user_version=13");
     expect(() => initialize(fresh)).toThrow(expect.objectContaining({ code: "DATABASE_VERSION" }));
   } finally { fresh.close(); }

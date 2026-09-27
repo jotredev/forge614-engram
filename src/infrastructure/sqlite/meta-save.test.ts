@@ -1,3 +1,7 @@
+/** Comprueba cómo save() trata la metadata (metadatos) de una memoria al guardarla: que rechaza
+ * secretos sin filtrarlos ni siquiera en el mensaje de error, que exige el nivel de esquema correcto
+ * para usar los campos de metadata, y que calcula bien la fecha de revisión (reviewAfter), el
+ * resumen corto (short) y las supersesiones (supersedes, marcar una memoria como reemplazada). */
 import { expect, setSystemTime, test } from "bun:test";
 import { withDatabase } from "../__test-support__/fixtures";
 import { createProject } from "./projects";
@@ -6,8 +10,10 @@ import { enableIntelligence, enableSearchReinforcement } from "./schema";
 import { getVersion, searchPreviews } from "./search";
 import { save } from "./writes";
 
+// Texto de ejemplo armado a propósito en partes para que no aparezca literal en el archivo, y así no disparar un escaneo de secretos sobre el propio código de la prueba.
 const secretText = ["pass", "word = ", "hunter2hunter2"].join("");
 
+// Ningún nivel de esquema debe permitir guardar un secreto, y el error nunca debe filtrar el valor real.
 test("secrets are rejected at every schema level, naming the kind and never the value", () => {
   for (const level of ["base", "intelligence"] as const) withDatabase(db => {
     if (level === "intelligence") enableIntelligence(db);
@@ -20,6 +26,7 @@ test("secrets are rejected at every schema level, naming the kind and never the 
   });
 });
 
+// La revisión de secretos también debe alcanzar a los campos de metadata (short, affects), no solo al contenido principal.
 test("secrets in short or affects are rejected too, and nothing is stored", () => withDatabase(db => {
   enableIntelligence(db);
   const project = createProject(db, "Secrets");
@@ -33,6 +40,7 @@ test("secrets in short or affects are rejected too, and nothing is stored", () =
   expect(db.query("SELECT count(*) AS n FROM memory_meta").get()).toEqual({ n: 0 });
 }));
 
+// Sin el nivel de esquema 11 (intelligence), un campo de metadata debe rechazarse con un error claro, nunca ignorarse en silencio.
 test("metadata fields below level 11 are rejected, never dropped", () => withDatabase(db => {
   enableSearchReinforcement(db);
   const project = createProject(db, "Old");
@@ -40,6 +48,7 @@ test("metadata fields below level 11 are rejected, never dropped", () => withDat
     .toThrow(expect.objectContaining({ code: "INTELLIGENCE_REQUIRED" }));
 }));
 
+// Una decisión (decision) debe recibir fecha de revisión automática; el resumen corto (short) debe sobrevivir si el contenido no cambia, borrarse si cambia sin uno nuevo, y poder agregarse después.
 test("decisions get a review date; short survives same content, is cleared on new content, and can be added by confirmation", () => withDatabase(db => {
   enableIntelligence(db);
   setSystemTime(new Date("2026-09-24T12:00:00.000Z"));
@@ -55,6 +64,7 @@ test("decisions get a review date; short survives same content, is cleared on ne
   } finally { setSystemTime(); }
 }));
 
+// supersedes solo debe poder marcar una memoria reemplazada dentro del mismo ámbito y dueño, y debe fallar con claridad si el id no existe o pertenece a otro proyecto.
 test("supersedes marks the replaced memory in the same scope and owner only", () => withDatabase(db => {
   enableIntelligence(db);
   const project = createProject(db, "Meta"), other = createProject(db, "Other");
@@ -71,6 +81,7 @@ test("supersedes marks the replaced memory in the same scope and owner only", ()
     .toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
 }));
 
+// getVersion y searchPreviews solo deben mostrar metadata y marcas (marks, como "verify") a partir del nivel 11; antes de eso, esos campos ni deben aparecer.
 test("get and search expose meta and marks at level 11 only, including verify after the review date", () => {
   withDatabase(db => {
     enableIntelligence(db);

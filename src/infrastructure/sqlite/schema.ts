@@ -1,3 +1,15 @@
+/**
+ * Define y aplica el esquema (la estructura de tablas, índices y disparadores) de la base SQLite
+ * de Engram, y las migraciones aditivas que la llevan de un nivel de funciones a otro sin perder datos.
+ * Cada nivel agrega tablas nuevas o amplía una restricción existente; nunca borra ni reescribe filas,
+ * salvo para copiarlas a una tabla ampliada dentro de la misma migración. Lo usa `connection.ts` al
+ * abrir la base, y los módulos que activan una función opcional (sincronización, vínculos de proyecto,
+ * sesiones, ecosistema, memoria inteligente, la nube).
+ * Piezas principales: las cadenas SQL de cada nivel; `decode`/`encode`, que traducen el número de
+ * versión de SQLite (`PRAGMA user_version`) a las funciones activas; `validate`, que compara la
+ * estructura real contra la esperada; y las funciones `enable*`, que migran de forma explícita,
+ * respaldada y verificada.
+ */
 import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync } from "node:fs";
@@ -138,8 +150,9 @@ CREATE TRIGGER memory_update AFTER UPDATE OF title,content,topic_key ON memories
 END;
 `;
 
-// Ecosystem groups (schema levels 8-10 are levels 5-7 plus this structure). New tables
-// only; the two ownership-bearing tables are recreated below to widen their scope check.
+// Grupos de ecosistema (los niveles de esquema 8-10 son los niveles 5-7 más esta estructura).
+// Solo agrega tablas nuevas; las dos tablas que llevan la propiedad (dueño) se recrean más abajo
+// para ampliar su restricción CHECK de ámbito (scope).
 const ECOSYSTEM_SCHEMA = `CREATE TABLE ecosystem_groups (
   id TEXT PRIMARY KEY NOT NULL,
   name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 64 AND name NOT GLOB '*[^a-z0-9-]*'
@@ -220,8 +233,9 @@ CREATE TRIGGER memory_update AFTER UPDATE OF title,content,topic_key ON memories
   INSERT INTO memories_fts(rowid,title,content,topic_key) VALUES(new.rowid,new.title,new.content,new.topic_key);
 END;`;
 
-// Memory intelligence (schema level 11 = base 7 + ecosystem + this structure). Additive only:
-// side tables keep new data out of memory_versions, whose snapshot keys replication validates exactly.
+// Memoria inteligente (el nivel de esquema 11 = base 7 + ecosistema + esta estructura). Solo agrega:
+// las tablas auxiliares guardan datos nuevos fuera de memory_versions, cuyas claves de foto (snapshot)
+// la réplica (sincronización con la nube) valida de forma exacta.
 const INTELLIGENCE_SCHEMA = `CREATE TABLE memory_meta (
   memory_id TEXT PRIMARY KEY NOT NULL REFERENCES memories(id),
   short TEXT CHECK(short IS NULL OR length(short) BETWEEN 1 AND 300),
@@ -258,12 +272,26 @@ CREATE TRIGGER memory_words_update AFTER UPDATE OF title,content,topic_key ON me
 END;
 `;
 
+/** Nivel base del esquema (la cadena lineal 3-7, antes de sumar ecosistema, inteligencia o nube). */
 type Base = 3 | 4 | 5 | 6 | 7;
+/**
+ * Qué funciones opcionales tiene activas la base, traducidas desde el número de `PRAGMA user_version`.
+ * `base`: nivel de la cadena lineal (3 a 7) que ya tiene aplicado, sin importar las funciones opcionales.
+ * `ecosystem`: si tiene la estructura de grupos de ecosistema (ámbito compartido entre varios proyectos).
+ * `intelligence`: si tiene la memoria inteligente (nivel 11: metadatos de recuerdo y búsqueda por palabra).
+ * `cloud`: si tiene la cola de la nube (nivel 12: bandeja de cambios pendientes de subir).
+ */
 export interface SchemaState { readonly base: Base; readonly ecosystem: boolean; readonly intelligence: boolean; readonly cloud: boolean }
-// Levels 3-7 are the linear feature chain. 8-10 are levels 5-7 with the ecosystem structure,
-// so enabling ecosystem never silently enables sessions or search reinforcement.
-// 11 is the intelligence level (requires base 7 and the ecosystem structure); 12 additionally
-// enables the cloud outbox (level 12, D1): only reachable through enableCloud, never on open.
+// Los niveles 3-7 son la cadena lineal de funciones. Los niveles 8-10 son los niveles 5-7 con la
+// estructura de ecosistema, así que activar ecosistema nunca activa en silencio sesiones ni el
+// refuerzo de búsqueda. El 11 es el nivel de memoria inteligente (exige base 7 y la estructura de
+// ecosistema); el 12 además activa la cola de la nube (nivel 12, D1): solo se llega a él por
+// `enableCloud`, nunca al simplemente abrir la base.
+/**
+ * Traduce el número de `PRAGMA user_version` a las funciones opcionales activas.
+ * @param version número guardado en `PRAGMA user_version` de la base.
+ * @returns el estado correspondiente, o `null` si esta versión de Engram no conoce ese número.
+ */
 function decode(version: number): SchemaState | null {
   if (version >= 3 && version <= 7) return { base: version as Base, ecosystem: false, intelligence: false, cloud: false };
   if (version >= 8 && version <= 10) return { base: (version - 3) as Base, ecosystem: true, intelligence: false, cloud: false };
@@ -271,33 +299,75 @@ function decode(version: number): SchemaState | null {
   if (version === 12) return { base: 7, ecosystem: true, intelligence: true, cloud: true };
   return null;
 }
+/**
+ * Traduce un estado de funciones activas al número que se debe guardar en `PRAGMA user_version`.
+ * @param state funciones activas que se quieren codificar.
+ * @returns el número de versión correspondiente.
+ */
 function encode(state: SchemaState): number {
   if (state.cloud) return 12;
   if (state.intelligence) return 11;
   return state.base + (state.ecosystem ? 3 : 0);
 }
+/**
+ * Lee el número de versión del esquema que la base tiene guardado ahora mismo.
+ * @param db conexión abierta a la base.
+ * @returns el valor actual de `PRAGMA user_version`.
+ */
 function currentVersion(db: Database): number { return (db.query("PRAGMA user_version").get() as { user_version: number }).user_version; }
-/** Feature level of the database, or null for a version this build does not know. Gates read this. */
+/** Nivel de funciones de la base, o `null` para una versión que esta compilación no conoce. Las funciones que solo leen (gates) usan esto. */
 export function schemaFeatures(db: Database): SchemaState | null { return decode(currentVersion(db)); }
+/**
+ * Igual que `schemaFeatures`, pero exige que la versión sea reconocida.
+ * @param db conexión abierta a la base.
+ * @returns el estado de funciones activas.
+ * @throws MemoryError con código `DATABASE_VERSION` si la versión guardada no es una que esta compilación conozca.
+ */
 export function schemaState(db: Database): SchemaState {
   const state = schemaFeatures(db);
   if (!state) throw new MemoryError("DATABASE_VERSION", "Base incompatible: no se puede abrir con esta versión.");
   return state;
 }
 
-// Compare SQLite's canonical schema, including constraints, triggers and indexes.
-// Unknown objects are rejected, never repaired. This is not an integrity audit.
+// Compara el esquema canónico (la forma exacta) de SQLite, incluyendo restricciones, disparadores
+// e índices. Los objetos desconocidos se rechazan, nunca se reparan: esto no es una auditoría de
+// integridad, es una comparación de estructura contra lo que este nivel debería tener.
+/**
+ * Toma una foto textual de toda la estructura de la base (tablas, índices, disparadores y su SQL),
+ * para poder compararla contra la estructura que se espera en un nivel dado.
+ * @param db conexión abierta a la base.
+ * @returns la estructura completa, en JSON, ordenada por tipo y nombre.
+ */
 function definition(db: Database): string {
   return JSON.stringify(db.query("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' ORDER BY type,name").all());
 }
 const expectedDefinitions = new Map<number,string>();
 const FEATURE_SQL: Record<5 | 6 | 7 | 4, string> = { 4: SYNC_SCHEMA, 5: BINDING_SCHEMA, 6: SESSION_SCHEMA, 7: CONFIRMATION_SCHEMA };
+/**
+ * Junta el SQL de cada nivel de la cadena lineal que falta por aplicar entre dos niveles base.
+ * @param from nivel base del que se parte (ya aplicado).
+ * @param to nivel base al que se quiere llegar.
+ * @returns el SQL de los niveles entre `from` (sin incluir) y `to` (incluido), en orden.
+ */
 function featureSql(from: number, to: number): string {
   let sql = "";
   for (const level of [4, 5, 6, 7] as const) if (level > from && level <= to) sql += FEATURE_SQL[level];
   return sql;
 }
+/**
+ * Arma el SQL completo de la cadena lineal hasta un nivel base dado, partiendo del nivel 3.
+ * @param base nivel base al que se quiere llegar.
+ * @returns el SQL de creación de todas las tablas de los niveles 3 hasta `base`.
+ */
 function schemaFor(base: Base): string { return SCHEMA + featureSql(3, base); }
+/**
+ * Comprueba que la estructura real de la base sea exactamente la esperada para su versión, construyendo
+ * (y guardando en caché por versión) una base de referencia en memoria con el mismo SQL que debería
+ * tener la base real.
+ * @param db conexión abierta a la base que se quiere comprobar.
+ * @param version número de `PRAGMA user_version` contra el que se compara.
+ * @throws MemoryError con código `DATABASE_SCHEMA` si la estructura real no coincide con la esperada.
+ */
 function validate(db: Database, version: number): void {
   if (!expectedDefinitions.has(version)) {
     const state = decode(version)!;
@@ -315,7 +385,13 @@ function validate(db: Database, version: number): void {
   }
 }
 
-/** Advance the linear feature chain to `target`; a no-op (after validation) when already there. */
+/**
+ * Avanza la cadena lineal de funciones hasta `target`; no hace nada (tras validar) si ya está allí.
+ * @param db conexión abierta a la base.
+ * @param target nivel base al que se quiere llegar.
+ * @param unsupported mensaje para el error si la versión actual no se puede migrar.
+ * @throws MemoryError con código `MIGRATION_REQUIRED` si la versión actual no es una que se pueda migrar.
+ */
 function upgradeTo(db: Database, target: 4 | 5 | 6 | 7, unsupported: string): void {
   db.transaction(() => {
     const version = currentVersion(db);
@@ -328,29 +404,36 @@ function upgradeTo(db: Database, target: 4 | 5 | 6 | 7, unsupported: string): vo
   }).immediate();
 }
 
-/** Explicit, additive enrollment; normal opens never migrate a local database. */
+/** Activación explícita y aditiva; al simplemente abrir la base nunca se migra una base local. */
 export function enableSynchronization(db: Database): void {
   upgradeTo(db, 4, "No se puede habilitar sincronización en este formato.");
 }
 
-/** Enables machine-local project bindings required by MCP and project context. */
+/** Activa los vínculos de proyecto locales a esta máquina que necesitan el MCP y el contexto de proyecto. */
 export function enableProjectBindings(db: Database): void {
   upgradeTo(db, 5, "No se pueden habilitar vínculos de proyecto en este formato.");
 }
 
-/** Explicit enrollment for the additive session lifecycle schema. */
+/** Activación explícita para el esquema aditivo del ciclo de vida de sesiones. */
 export function enableSessionLifecycle(db: Database): void {
   upgradeTo(db, 6, "No se puede habilitar sesiones en este formato.");
 }
 
-/** Explicit enrollment for immutable search reinforcement confirmations. */
+/** Activación explícita para las confirmaciones inmutables de refuerzo de búsqueda. */
 export function enableSearchReinforcement(db: Database): void {
   upgradeTo(db, 7, "No se puede habilitar el refuerzo de búsqueda en este formato.");
 }
 
-// SQLite's documented procedure for changing a CHECK constraint: create the replacement,
-// copy every row, drop the original, rename, then recreate indexes, triggers and the FTS index.
-// The caller owns the transaction and the foreign_keys pragma.
+// Procedimiento documentado por SQLite para cambiar una restricción CHECK: crear la tabla de
+// reemplazo, copiar cada fila, borrar la original, renombrar y luego recrear índices, disparadores
+// e índice de texto completo (FTS). Quien llama esta función es dueño de la transacción y de la
+// pragma foreign_keys (debe desactivarla antes, porque las tablas viejas y nuevas coexisten un instante).
+/**
+ * Amplía `memories` y `requests` para aceptar el ámbito `ecosystem`, siguiendo el procedimiento de
+ * SQLite para ampliar una restricción CHECK (ver comentario de arriba). No toca ningún dato: copia
+ * cada fila tal cual a la tabla nueva.
+ * @param db conexión abierta a la base, dentro de una transacción con `foreign_keys` desactivada.
+ */
 function applyEcosystemStructure(db: Database): void {
   db.exec(ECOSYSTEM_SCHEMA);
   db.exec(ECOSYSTEM_MEMORIES);
@@ -363,6 +446,13 @@ function applyEcosystemStructure(db: Database): void {
   db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')");
 }
 
+/**
+ * Calcula una huella (hash) del contenido de una tabla, para poder comprobar después de una
+ * migración que ninguna fila cambió ni se perdió.
+ * @param db conexión abierta a la base.
+ * @param table tabla cuyo contenido se resume.
+ * @returns cuántas filas tiene y su huella SHA-256, calculada leyendo las filas en un orden fijo.
+ */
 function contentDigest(db: Database, table: "memories" | "requests"): { count: number; digest: string } {
   const columns = table === "memories" ? MEMORY_COLUMNS : REQUEST_COLUMNS;
   const statement = db.prepare(`SELECT ${columns} FROM ${table} ORDER BY ${table === "memories" ? "rowid" : "scope,projectId,request_key"}`);
@@ -373,17 +463,34 @@ function contentDigest(db: Database, table: "memories" | "requests"): { count: n
   return { count, digest: hash.digest("hex") };
 }
 
+/**
+ * Cuenta cuántas filas violan alguna llave foránea (foreign key) ahora mismo.
+ * @param db conexión abierta a la base.
+ * @returns el número de violaciones que reporta `PRAGMA foreign_key_check`.
+ */
 function foreignKeyViolations(db: Database): number { return db.query("PRAGMA foreign_key_check").all().length; }
 
+/**
+ * Corta una migración a medio hacer porque la comprobación de contenido no coincidió.
+ * @throws MemoryError con código `MIGRATION_VERIFY_FAILED`, siempre: esta función nunca regresa.
+ */
 function verificationFailed(): never {
   throw new MemoryError("MIGRATION_VERIFY_FAILED", "La verificación de la migración falló: el contenido copiado no coincide con el original. No se modificó la base; el respaldo automático se conserva.");
 }
 
-// VACUUM INTO writes a complete, consistent copy even while the database is in WAL mode.
+// VACUUM INTO escribe una copia completa y consistente incluso mientras la base está en modo WAL
+// (el modo de journal que permite lecturas mientras se escribe).
+/**
+ * Guarda una copia completa de la base antes de una migración, para poder recuperarla si algo sale mal.
+ * @param db conexión abierta a la base.
+ * @param version versión actual, usada en el nombre del archivo de respaldo.
+ * @param label qué migración lo produce, usada en el nombre del archivo de respaldo.
+ * @returns la ruta del archivo de respaldo, o `null` si la base es solo en memoria o aún no tiene datos que perder.
+ */
 function backupBeforeMigration(db: Database, version: number, label: "ecosystem" | "intelligence" | "cloud"): string | null {
   const main = (db.query("PRAGMA database_list").all() as { name: string; file: string }[]).find(entry => entry.name === "main");
   if (!main?.file) return null;
-  // Nothing to lose in a database that holds no projects and no memories yet.
+  // No hay nada que perder en una base que todavía no tiene ni proyectos ni recuerdos.
   const held = db.query("SELECT (SELECT count(*) FROM projects)+(SELECT count(*) FROM memories) AS n").get() as { n: number };
   if (held.n === 0) return null;
   const stamp = new Date().toISOString().replace(/[-:.]/g, "");
@@ -393,16 +500,27 @@ function backupBeforeMigration(db: Database, version: number, label: "ecosystem"
   return target;
 }
 
+/**
+ * Resultado de intentar activar el ámbito de ecosistema.
+ * `migrated`: si esta llamada aplicó la migración (falso si la base ya estaba en ese nivel).
+ * `backup`: ruta del respaldo tomado antes de migrar, o `null` si no hizo falta uno.
+ */
 export interface EcosystemEnrolment { readonly migrated: boolean; readonly backup: string | null }
 
 /**
- * Explicit, additive enrollment for the ecosystem scope: new group tables plus a widened scope
- * check on memories and requests. Backs up first, verifies row counts and content checksums
- * inside the same transaction and rolls back on any difference.
+ * Activación explícita y aditiva del ámbito de ecosistema: agrega las tablas de grupo y amplía la
+ * restricción de ámbito (scope) de `memories` y `requests`. Respalda primero, verifica dentro de la
+ * misma transacción que el número de filas y su huella de contenido no cambiaron, y deshace todo
+ * (rollback) si encuentra alguna diferencia.
+ * @param db conexión abierta a la base.
+ * @returns si migró y, si tomó uno, dónde quedó el respaldo.
+ * @throws MemoryError con código `MIGRATION_REQUIRED` si la versión actual no se puede migrar, o
+ * `MIGRATION_VERIFY_FAILED` si la comprobación posterior no coincide.
  */
 export function enableEcosystem(db: Database): EcosystemEnrolment {
-  // Version and structure are read in one snapshot: another process may commit the migration at any moment,
-  // and reading them separately could pair the old version with the new structure.
+  // La versión y la estructura se leen en una sola foto (snapshot): otro proceso podría terminar la
+  // migración en cualquier momento, y leerlas por separado podría emparejar la versión vieja con la
+  // estructura nueva.
   const seen = db.transaction(() => {
     const current = currentVersion(db), decoded = decode(current);
     if (!decoded) throw new MemoryError("MIGRATION_REQUIRED", "No se puede habilitar el ámbito ecosystem en este formato.");
@@ -413,8 +531,8 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
   let state = seen.decoded;
   if (state.ecosystem) return { migrated: false, backup: null };
   if (state.base < 5) { enableProjectBindings(db); version = currentVersion(db); state = decode(version)!; }
-  // A connection that cannot write must fail before it leaves a useless backup behind.
-  // Separate statements on purpose: a multi-statement exec does not surface a read-only error.
+  // Una conexión que no puede escribir debe fallar antes de dejar un respaldo inútil a medias.
+  // Son sentencias separadas a propósito: un exec de varias sentencias no deja ver un error de solo lectura.
   db.exec("BEGIN IMMEDIATE");
   try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
   const backup = backupBeforeMigration(db, version, "ecosystem");
@@ -446,16 +564,33 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
   return { migrated, backup: migrated ? backup : null };
 }
 
+/**
+ * Resultado de intentar activar la memoria inteligente.
+ * `migrated`: si esta llamada aplicó la migración (falso si la base ya estaba en ese nivel).
+ * `backup`: ruta del respaldo tomado antes de migrar, o `null` si no hizo falta uno.
+ */
 export interface IntelligenceEnrolment { readonly migrated: boolean; readonly backup: string | null }
 
+/**
+ * Comprueba que un índice de texto completo (FTS) esté sano, pidiéndole a SQLite que se audite
+ * a sí mismo.
+ * @param db conexión abierta a la base.
+ * @param table índice FTS a comprobar.
+ * @throws MemoryError con código `MIGRATION_VERIFY_FAILED` (vía `verificationFailed`) si SQLite reporta corrupción.
+ */
 function ftsIntegrity(db: Database, table: "memories_fts" | "memories_words"): void {
   try { db.exec(`INSERT INTO ${table}(${table}) VALUES('integrity-check')`); } catch { verificationFailed(); }
 }
 
 /**
- * Explicit, additive enrollment for memory intelligence (level 11). Chains the prerequisites
- * (ecosystem structure, sessions, reinforcement), then adds side tables and the word index in one
- * transaction, verifying that no existing row changed. The MCP server never calls this.
+ * Activación explícita y aditiva de la memoria inteligente (nivel 11). Encadena los requisitos
+ * previos (estructura de ecosistema, sesiones, refuerzo de búsqueda), y luego agrega las tablas
+ * auxiliares y el índice por palabra en una sola transacción, comprobando que ninguna fila existente
+ * cambió. El servidor MCP nunca llama esto directamente.
+ * @param db conexión abierta a la base.
+ * @returns si migró y, si tomó uno, dónde quedó el respaldo.
+ * @throws MemoryError con código `MIGRATION_REQUIRED` si la versión actual no se puede migrar, o
+ * `MIGRATION_VERIFY_FAILED` si la comprobación posterior no coincide.
  */
 export function enableIntelligence(db: Database): IntelligenceEnrolment {
   const seen = db.transaction(() => {
@@ -469,7 +604,7 @@ export function enableIntelligence(db: Database): IntelligenceEnrolment {
   enableSessionLifecycle(db);
   enableSearchReinforcement(db);
   const version = currentVersion(db);
-  // A connection that cannot write must fail before it leaves a useless backup behind.
+  // Una conexión que no puede escribir debe fallar antes de dejar un respaldo inútil a medias.
   db.exec("BEGIN IMMEDIATE");
   try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
   const backup = backupBeforeMigration(db, version, "intelligence");
@@ -495,10 +630,11 @@ export function enableIntelligence(db: Database): IntelligenceEnrolment {
   return { migrated, backup: migrated ? backup : null };
 }
 
-// Cloud enrollment (schema level 12, D1). Additive only: a pending-change outbox fed by
-// AFTER INSERT/UPDATE/DELETE triggers on every table that travels (design section 5), a
-// single-row apply state (D2's apply_guard, last_applied_id and the remote fingerprint of
-// D14) and a notices table. Never reached by a normal open; only `enableCloud` writes it.
+// Activación de la nube (nivel de esquema 12, D1). Solo agrega: una bandeja de salida (outbox) de
+// cambios pendientes, alimentada por disparadores AFTER INSERT/UPDATE/DELETE en cada tabla que viaja
+// (sección 5 del diseño); un estado de aplicación de una sola fila (el apply_guard de D2,
+// last_applied_id y la huella del remoto de D14); y una tabla de avisos. Nunca se llega aquí al
+// simplemente abrir la base; solo `enableCloud` la escribe.
 const CLOUD_TABLES_SCHEMA = `CREATE TABLE cloud_outbox (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   change_id TEXT NOT NULL UNIQUE DEFAULT (lower(hex(randomblob(16)))),
@@ -528,9 +664,10 @@ CREATE TABLE cloud_version_map (
   PRIMARY KEY (memory_id, installation_id, remote_version)
 );
 `;
-// Every table that travels (design section 5), in dependency order (D14): projects and the
-// ecosystem structure first, then memories and their side tables, then sessions, then confirmations.
-// Column lists match schema.ts exactly (verified against the real DDL above, not the plan's line numbers).
+// Cada tabla que viaja (sección 5 del diseño), en orden de dependencia (D14): primero projects y la
+// estructura de ecosistema, luego memories y sus tablas auxiliares, luego sessions, luego confirmations.
+// Las listas de columnas coinciden exactamente con este archivo (se verificaron contra el SQL real de
+// arriba, no contra los números de línea del plan).
 const TRAVELING_TABLES: readonly (readonly [string, readonly string[]])[] = [
   ["projects", ["projectId", "name", "createdAt", "updatedAt"]],
   ["ecosystem_groups", ["id", "name", "createdAt"]],
@@ -545,9 +682,22 @@ const TRAVELING_TABLES: readonly (readonly [string, readonly string[]])[] = [
   ["confirmations", ["confirmationId", "memoryId", "version", "recordedAt", "sessionId"]],
   ["confirmation_requests", ["memoryId", "requestKey", "payloadHash", "expectedVersion", "confirmationId", "response"]],
 ];
+/**
+ * Arma la expresión SQL `json_object(...)` que empaqueta las columnas de una tabla en un JSON,
+ * leyendo la fila nueva o la vieja de un disparador.
+ * @param columns columnas a empaquetar.
+ * @param row si se lee de `new` (fila insertada o actualizada) o de `old` (fila borrada o anterior).
+ * @returns la expresión SQL lista para usarse dentro de un disparador.
+ */
 function jsonObject(columns: readonly string[], row: "new" | "old"): string {
   return `json_object(${columns.map(column => `'${column}',${row}.${column}`).join(",")})`;
 }
+/**
+ * Genera el SQL de los tres disparadores (insertar, actualizar, borrar) de cada tabla que viaja a la
+ * nube, cada uno guardando el cambio en `cloud_outbox` mientras `apply_guard` esté en 0 (para no
+ * volver a encolar los cambios que la propia aplicación de cambios bajados produce).
+ * @returns el SQL de creación de todos los disparadores, concatenado.
+ */
 function cloudTriggersSql(): string {
   let sql = "";
   for (const [table, columns] of TRAVELING_TABLES) {
@@ -572,38 +722,59 @@ END;
 }
 const CLOUD_SCHEMA = CLOUD_TABLES_SCHEMA + cloudTriggersSql();
 
-/** Read-only view of which columns travel per table, for tests to check against `PRAGMA table_info`. */
+/** Vista de solo lectura de qué columnas viajan por tabla, para que las pruebas la comparen contra `PRAGMA table_info`. */
 export function travelingTableColumns(): ReadonlyMap<string, readonly string[]> {
   return new Map(TRAVELING_TABLES);
 }
 
+/**
+ * Igual que `jsonObject`, pero para leer las columnas directamente de la tabla (sin `new.`/`old.`),
+ * como hace falta para encolar filas que ya existían antes de activar la nube.
+ * @param columns columnas a empaquetar.
+ * @returns la expresión SQL `json_object(...)` correspondiente.
+ */
 function jsonObjectFromColumns(columns: readonly string[]): string {
   return `json_object(${columns.map(column => `'${column}',${column}`).join(",")})`;
 }
-/** Queues every existing row of every traveling table, in dependency order (D14 first sync). */
+/** Encola cada fila que ya existe de cada tabla que viaja, en orden de dependencia (D14, primera sincronización). */
 function enqueueAllExisting(db: Database): void {
   for (const [table, columns] of TRAVELING_TABLES) {
     db.exec(`INSERT INTO cloud_outbox(kind,op,payload) SELECT '${table}','insert',${jsonObjectFromColumns(columns)} FROM ${table}`);
   }
 }
 
+/**
+ * Resultado de intentar activar la cola de la nube.
+ * `migrated`: si esta llamada aplicó la migración o volvió a encolar todo (falso si no hizo falta nada).
+ * `backup`: ruta del respaldo tomado antes de migrar, o `null` si no hizo falta uno o no era una migración nueva.
+ */
 export interface CloudEnrolment { readonly migrated: boolean; readonly backup: string | null }
 
+/**
+ * Guarda la huella (fingerprint) del remoto con el que esta base está sincronizada.
+ * @param db conexión abierta a la base.
+ * @param fingerprint huella a guardar, o `null` si no se conoce.
+ */
 function setFingerprint(db: Database, fingerprint: string | null): void {
   db.query("UPDATE cloud_state SET remote_fingerprint=? WHERE id=1").run(fingerprint);
 }
 
 /**
- * Explicit, additive enrollment for the cloud outbox (level 12, D1). Chains the prerequisite
- * intelligence level, then adds the outbox/state/notices tables and their triggers in one
- * transaction, queuing every existing traveling row in dependency order (D14). Calling it again
- * with the same remote fingerprint (or none) is a no-op; a different, non-null fingerprint means
- * a different remote database (D14): the queue is rebuilt from the current local rows and
- * `last_applied_id` restarts at 0, exactly as a first sync would.
+ * Activación explícita y aditiva de la cola de la nube (nivel 12, D1). Encadena el requisito previo
+ * (memoria inteligente), y luego agrega las tablas de bandeja de salida, estado y avisos, y sus
+ * disparadores, en una sola transacción, encolando cada fila que ya existe de cada tabla que viaja
+ * en orden de dependencia (D14). Llamarla de nuevo con la misma huella remota (o sin huella) no hace
+ * nada; una huella distinta y no nula significa una base remota distinta (D14): la cola se reconstruye
+ * desde las filas locales actuales y `last_applied_id` vuelve a 0, exactamente como en una primera
+ * sincronización.
  *
- * Deviation from the plan: `enableCloud(db)` in the plan's interface takes no fingerprint, but a
- * required test ("con otra huella remota vuelve a encolar todo") needs one to compare against.
- * The minimal signature that allows it is this optional second parameter.
+ * Desviación del plan: `enableCloud(db)` en la interfaz del plan no recibe huella, pero una prueba
+ * exigida ("con otra huella remota vuelve a encolar todo") necesita una para comparar. La firma mínima
+ * que lo permite es este segundo parámetro opcional.
+ * @param db conexión abierta a la base.
+ * @param remoteFingerprint huella del remoto con el que se sincroniza, si se conoce.
+ * @returns si migró (o volvió a encolar) y, si tomó uno, dónde quedó el respaldo.
+ * @throws MemoryError con código `MIGRATION_REQUIRED` si la versión actual no se puede migrar.
  */
 export function enableCloud(db: Database, remoteFingerprint?: string | null): CloudEnrolment {
   const fingerprint = remoteFingerprint ?? null;
@@ -629,7 +800,7 @@ export function enableCloud(db: Database, remoteFingerprint?: string | null): Cl
     return { migrated, backup: null };
   }
   const version = currentVersion(db);
-  // A connection that cannot write must fail before it leaves a useless backup behind.
+  // Una conexión que no puede escribir debe fallar antes de dejar un respaldo inútil a medias.
   db.exec("BEGIN IMMEDIATE");
   try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
   const backup = backupBeforeMigration(db, version, "cloud");
@@ -648,9 +819,20 @@ export function enableCloud(db: Database, remoteFingerprint?: string | null): Cl
   return { migrated, backup: migrated ? backup : null };
 }
 
-/** True when the database is at the cloud level (12): the outbox and its triggers are active. */
+/** Verdadero cuando la base está en el nivel de la nube (12): la bandeja de salida y sus disparadores están activos. */
 export function cloudEnabled(db: Database): boolean { return schemaFeatures(db)?.cloud === true; }
 
+/**
+ * Abre (o crea, la primera vez) la base y deja la conexión lista para usarse: pragmas básicas,
+ * detección de un formato anterior sin migración disponible, validación de estructura si ya existe,
+ * y creación del esquema base si la base está realmente vacía.
+ * @param db conexión recién abierta a la base.
+ * @param allowCreate si se permite crear el esquema cuando la base está vacía (por defecto sí).
+ * @param readonly si la conexión es de solo lectura: entonces nunca se crea el esquema ni se escribe nada.
+ * @throws MemoryError con código `MIGRATION_REQUIRED` si detecta un formato anterior sin migración
+ * disponible; `DATABASE_VERSION` si la versión no es reconocida; `DATABASE_OWNER` si la base ya
+ * contiene una estructura ajena; `DATABASE_UNINITIALIZED` si está vacía pero no se permite crearla.
+ */
 export function initialize(db: Database, allowCreate = true, readonly = false): void {
   db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
   let created = false;
@@ -670,7 +852,7 @@ export function initialize(db: Database, allowCreate = true, readonly = false): 
     created = true;
   });
   if (readonly) check.deferred(); else check.immediate();
-  // Materialize WAL bookkeeping on the initializing writable connection. Bun's
-  // SQLite on macOS cannot open a never-used WAL database read-only otherwise.
+  // Deja constancia del modo WAL en la conexión que inicializa y puede escribir. En macOS, el SQLite
+  // de Bun no puede abrir en solo lectura una base WAL que nunca se usó, si no se hace esto primero.
   if (created) db.exec("PRAGMA journal_mode=WAL; BEGIN IMMEDIATE; COMMIT;");
 }

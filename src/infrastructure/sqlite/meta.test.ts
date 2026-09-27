@@ -1,3 +1,5 @@
+/** Comprueba meta.ts: que upsertMeta combina (merge) parches sin perder lo anterior, y que
+ * readMeta/readMetas devuelven la metadata (metadatos) tal como quedó guardada. */
 import { expect, test } from "bun:test";
 import { withDatabase } from "../__test-support__/fixtures";
 import { createProject } from "./projects";
@@ -5,6 +7,7 @@ import { readMeta, readMetas, upsertMeta } from "./meta";
 import { enableIntelligence } from "./schema";
 import { save } from "./writes";
 
+// upsertMeta debe poder crear la fila, agregar un campo sin borrar los anteriores, y borrar un campo con null; readMetas no debe inventar entradas para memorias sin metadata.
 test("upsertMeta merges patches and readMeta/readMetas return the stored metadata", () => withDatabase(db => {
   enableIntelligence(db);
   const project = createProject(db, "Meta");
