@@ -1,3 +1,13 @@
+/**
+ * Contrato del SDK público, solo de tipos: no lo importa nada, lo comprueba `tsc` al hacer el
+ * chequeo de tipos (typecheck) porque el compilador falla si alguna de estas afirmaciones deja
+ * de ser cierta. Verifica que cuatro tipos públicos (`MemoryScope`, `SearchScope`, `MemoryType` y
+ * `WorkspaceSettings`) siguen teniendo exactamente la forma esperada, que los demás tipos de
+ * la lista `contracts` se siguen exportando, y que la clase `MemoryStore` sigue teniendo
+ * exactamente los mismos métodos, con las mismas firmas, que la interfaz `ExpectedStore` de aquí
+ * abajo: así un cambio accidental en la forma
+ * pública del SDK rompe el chequeo de tipos en vez de descubrirse en tiempo de ejecución.
+ */
 import type {
   ContextInput, ContextResult, Memory, MemoryScope, MemoryType, MemoryVersion, PreviewResult,
   Project, SaveInput, SearchResult, SearchScope, Session, SessionEntry, SessionSaveOptions,
@@ -30,7 +40,7 @@ interface ExpectedStore {
   context(projectId:string|null,input?:ContextInput):ContextResult;archive(projectId:string|null,id:string):Memory;restore(projectId:string|null,id:string):Memory;
   close():void;enableSync():void;enableProjectBindings():void;syncSnapshot():SyncSnapshot;syncCheckpoint(replica:string):SyncSnapshot;
   applySync(expected:SyncSnapshot,next:SyncSnapshot,replica:string):void;
-  // Added in 1.6.0 (ecosystem scope). Purely additive: nothing above changed.
+  // Agregado en 1.6.0 (ámbito ecosystem). Puramente aditivo: nada de lo de arriba cambió.
   ecosystemEnabled():boolean;enableEcosystem():{readonly migrated:boolean;readonly backup:string|null};createGroup(name:string):Group;ensureGroup(id:string,name:string):{group:Group;created:boolean};
   getGroup(id:string):Group|null;findGroups(name:string):Group[];resolveGroup(reference:string):Group;listGroups():GroupSummary[];renameGroup(id:string,name:string):Group;
   bindProjectToGroup(projectId:string,groupId:string,source?:MembershipSource):{group:Group;changed:boolean};unbindProject(projectId:string):boolean;
@@ -42,12 +52,12 @@ interface ExpectedStore {
   projectDirectories(projectId:string):string[];moveMemoryToGroup(from:string|null,id:string,groupId:string):{memory:Memory;from:{scope:"project"|"shared";projectId:string|null}};
   saveSessionSummaryInGroup(projectId:string,sessionId:string,groupId:string,fields:SummaryFields,request:{requestKey:string;expectedVersion?:number}):SessionSaveResult;
   registerProject(projectId:string,name:string):{project:Project;created:boolean};rebindProjectDirectory(directory:string,projectId:string):{previousProjectId:string|null};
-  // Added in 1.7.0 (memory intelligence). Purely additive: nothing above changed.
+  // Agregado en 1.7.0 (inteligencia de memoria). Puramente aditivo: nada de lo de arriba cambió.
   intelligenceEnabled():boolean;enableIntelligence():{readonly migrated:boolean;readonly backup:string|null};previousInterrupted(projectId:string):PreviousSession|null;
   setGroupSource(groupId:string,projectId:string):GroupSource;groupSource(groupId:string):GroupSource|null;
   demoteMemory(projectId:string,id:string):{memory:Memory;from:{scope:"ecosystem";groupId:string};to:{scope:"project";projectId:string}};
   startupBlock(projectId:string|null):StartupBlock;
-  // Added in 1.7.1 (parallel-session notice, "notice by time"). Purely additive: nothing above changed.
+  // Agregado en 1.7.1 (aviso de sesión paralela, "aviso por tiempo"). Puramente aditivo: nada de lo de arriba cambió.
   parallelSessions(projectId:string,sessionId:string):ParallelSession[];
 }
 type ActualStore = InstanceType<typeof MemoryStore>;

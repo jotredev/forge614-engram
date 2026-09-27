@@ -1,3 +1,10 @@
+/**
+ * Pruebas de extremo a extremo del instalador de desarrollo (`scripts/install-from-source.sh`,
+ * que compila el binario en vez de descargarlo): comprueban que el binario compilado funciona
+ * como una CLI aislada (sin Bun ni Node en el PATH) y que el servidor MCP compilado sirve
+ * sesiones y escrituras/lecturas progresivas de memoria de verdad, además de los rechazos del
+ * instalador cuando faltan Bun o Git, o las dependencias no están preparadas.
+ */
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, copyFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -22,6 +29,11 @@ function install(cwd: string, args: string[], env = buildEnv) {
 }
 afterEach(() => { for(const dir of dirs.splice(0)) rmSync(dir,{recursive:true}); });
 
+// Compila e instala el binario, y lo ejecuta con un PATH que solo contiene el propio binario
+// (sin Bun ni Node): debe funcionar como CLI independiente (ayuda, versión, guardar/leer contra
+// un SQLite directo con MemoryStore), rechazar una conexión por proyecto antes de mirar la
+// configuración real del usuario, negarse a reinstalar sin --force dejando el binario intacto, y
+// reinstalar con --force sin perder los datos ya guardados.
 test("developer source installer produces a standalone CLI usable outside the repo without Bun on PATH", () => {
   const dir = workspace();
   const bin = join(dir,"bin with spaces");
@@ -31,7 +43,7 @@ test("developer source installer produces a standalone CLI usable outside the re
   expect(existsSync(join(dir,'isolated-home/.forge614'))).toBe(false);
   const target = join(bin,"forge614-engram");
   expect(existsSync(target)).toBe(true);
-  // Only the installed command is discoverable: no bun, node, or source wrapper.
+  // Solo el comando instalado es localizable: ni bun, ni node, ni el script de origen.
   const run = (...args: string[]) => Bun.spawnSync(["forge614-engram",...args],{cwd:dir,env:{PATH:bin,HOME:join(dir,'isolated-home')}});
   const help = run("help");
   expect(help.exitCode).toBe(0);
@@ -43,8 +55,9 @@ test("developer source installer produces a standalone CLI usable outside the re
   const project = store.createProject("Install test");
   const saved = store.save({projectId:project.projectId,title:"Keep",content:"SQLite standalone",type:"fact"});
   store.close();
-  // The installed binary must reject per-project connections before consulting
-  // real user configuration. Full memory flows run in isolated child-process tests.
+  // El binario instalado debe rechazar las conexiones por proyecto antes de consultar la
+  // configuración real del usuario. Los flujos completos de memoria corren en pruebas de
+  // proceso hijo aisladas (aparte de esta).
   const connection = run("save","--project-id",project.projectId,"--db",path,"--title","No","--content","No");
   expect(connection.exitCode).toBe(1);
   expect(JSON.parse(connection.stderr.toString()).code).toBe("INVALID_INPUT");
@@ -58,6 +71,8 @@ test("developer source installer produces a standalone CLI usable outside the re
   finally { check.close(); }
 },30000);
 
+// --help debe salir con éxito y una opción desconocida debe fallar; en ninguno de los dos casos
+// se crea el directorio de destino.
 test("developer installer help and invalid options create no destination", () => {
   const dir = workspace();
   const bin = join(dir,"bin");
@@ -66,6 +81,8 @@ test("developer installer help and invalid options create no destination", () =>
   expect(existsSync(bin)).toBe(false);
 });
 
+// Con `FORGE614_HOME` absoluto, la instalación queda ahí y nunca toca el `.forge614` del hogar
+// aislado; con un valor vacío o relativo, falla con `INVALID_FORGE614_HOME` para los dos.
 test("developer installer uses absolute FORGE614_HOME and rejects invalid values", () => {
   const dir = workspace();
   const forgeHome = join(dir, "forge614-root");
@@ -81,6 +98,9 @@ test("developer installer uses absolute FORGE614_HOME and rejects invalid values
 });
 
 const nativeMac = process.platform === "darwin" ? test : test.skip;
+// Solo en macOS: envuelve `git` con un script que registra con qué variables de entorno lo
+// invocó el servidor MCP compilado al resolver el proyecto canónico, para diagnosticar esa
+// invocación real (no afirma un resultado concreto, solo imprime la evidencia recogida).
 nativeMac("diagnostic: compiled MCP records canonical-project Git invocation metadata",async()=>{
   const dir=workspace(),bin=join(dir,"bin"),home=join(dir,"isolated-home"),project=join(dir,"project"),commands=join(dir,"commands"),diagnostic=join(dir,"git-diagnostic");
   mkdirSync(project);mkdirSync(commands);
@@ -105,6 +125,9 @@ nativeMac("diagnostic: compiled MCP records canonical-project Git invocation met
   }finally{await client.close();}
 },30000);
 
+// Contra el binario compilado e instalado de verdad, ejercita por MCP la secuencia completa de
+// una sesión: arranque, guardado, búsqueda, lectura, línea de tiempo, contexto, resumen y cierre;
+// y comprueba que repetir el mismo guardado (misma requestKey) tras cerrar la sesión es idempotente.
 test("developer-installed compiled binary executes progressive MCP session reads and writes",async()=>{
   const dir=workspace(),bin=join(dir,"bin"),home=join(dir,"isolated-home"),project=join(dir,"project");mkdirSync(project);
   expect(install(dir,["--bin-dir",bin]).code).toBe(0);
@@ -132,6 +155,8 @@ test("developer-installed compiled binary executes progressive MCP session reads
   }finally{await client.close();}
 },30000);
 
+// Con un PATH que no incluye a Bun, el instalador debe fallar mencionando «Bun» en el error, sin
+// llegar a crear el directorio de destino.
 test("developer installer reports a missing Bun prerequisite without creating destination", () => {
   const dir = workspace();
   const bin = join(dir,"bin");
@@ -141,6 +166,9 @@ test("developer installer reports a missing Bun prerequisite without creating de
   expect(existsSync(bin)).toBe(false);
 });
 
+// En una copia aislada sin `node_modules` ni dependencias instaladas, el instalador debe fallar
+// indicando el comando `bun install --frozen-lockfile --ignore-scripts` para prepararlas, sin
+// crear `node_modules`, el directorio de destino ni `.forge614`.
 test('developer installer reports offline dependency preparation in an isolated checkout',()=>{
   const dir=workspace();mkdirSync(join(dir,'scripts'));copyFileSync(installer,join(dir,'scripts/install-from-source.sh'));
   copyFileSync(resolve(import.meta.dir,'../../package.json'),join(dir,'package.json'));
@@ -149,6 +177,8 @@ test('developer installer reports offline dependency preparation in an isolated 
   expect(existsSync(join(dir,'node_modules'))).toBe(false);expect(existsSync(join(dir,'bin'))).toBe(false);expect(existsSync(join(dir,'.forge614'))).toBe(false);
 });
 
+// Con un PATH que solo tiene a Bun (simulado con un enlace simbólico) y `uname`, pero no Git, el
+// instalador debe fallar mencionando «Git» antes de intentar compilar, sin crear el destino.
 test('developer installer fails closed when Git is unavailable before compilation',()=>{
   const dir=workspace(),path=join(dir,'commands');mkdirSync(path);
   symlinkSync(process.execPath,join(path,'bun'));symlinkSync('/usr/bin/uname',join(path,'uname'));
