@@ -1,22 +1,28 @@
+/**
+ * Accesorio (fixture) que construye un espacio de trabajo (workspace) configurado en el nivel de
+ * esquema más antiguo soportado, para las pruebas que necesitan partir de una base así en vez de
+ * una recién creada por `MemoryWorkspace.init()`.
+ */
 import { MemoryStore } from "../../src/app/memory-store";
 import type { WorkspaceConfig } from "../../src/infrastructure/filesystem/workspace-config";
 
 /**
- * Builds a configured (.env present) workspace database at the oldest supported schema level
- * (3: no project bindings, sessions, reinforcement, ecosystem or intelligence structure yet) --
- * exactly what a real installation predating memory intelligence looks like on disk.
+ * Construye una base de datos de espacio de trabajo configurada (con su `.env` presente) en el
+ * nivel de esquema soportado más antiguo (3: todavía sin vínculos de proyecto, sesiones, refuerzo,
+ * ecosistema ni estructura de inteligencia) -- exactamente como se ve en disco una instalación
+ * real anterior a la inteligencia de memoria.
  *
- * Since MemoryWorkspace.init() now births every brand-new database directly at schema 11
- * (memory intelligence, which already includes sessions and reinforcement), tests of behavior
- * that only makes sense for an older, still-configured base -- an existing database is never
- * migrated by init; reinforcement/intelligence enrollment explicitly migrating an older base;
- * setup asking whether to enable reinforcement -- must start from a database built with this
- * helper instead of a fresh MemoryWorkspace.init().
+ * Como `MemoryWorkspace.init()` ahora hace nacer cualquier base nueva ya directamente en el
+ * esquema 11 (inteligencia de memoria, que ya incluye sesiones y refuerzo), las pruebas de una
+ * conducta que solo tiene sentido para una base configurada más antigua -- `init()` nunca migra
+ * una base ya existente; la inscripción a refuerzo/inteligencia migra explícitamente una base
+ * antigua; la configuración pregunta si activar el refuerzo -- deben partir de una base
+ * construida con este ayudante en vez de un `MemoryWorkspace.init()` recién creado.
  *
- * `populate` runs against the open store before the level-3 database is closed and the config
- * is saved, e.g. to create projects or memories, or to advance specific features
- * (store.enableProjectBindings(), store.enableSessions(), store.enableEcosystem(), ...) while
- * keeping others -- notably reinforcement and intelligence -- off.
+ * `populate` corre contra el almacén ya abierto antes de cerrar la base de nivel 3 y guardar la
+ * configuración, por ejemplo para crear proyectos o memorias, o para adelantar funciones
+ * concretas (`store.enableProjectBindings()`, `store.enableSessions()`, `store.enableEcosystem()`, ...)
+ * mientras se dejan otras -- sobre todo el refuerzo y la inteligencia -- apagadas.
  */
 export function legacyConfiguredWorkspace(config: WorkspaceConfig, populate?: (store: MemoryStore) => void): void {
   config.prepare();

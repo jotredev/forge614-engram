@@ -1,3 +1,11 @@
+/**
+ * Pruebas de extremo a extremo (end-to-end, contra el proceso real, no simulado) de
+ * `scripts/install.sh`: levantan un servidor HTTP local que imita la API de lanzamientos
+ * (releases) de GitHub y ejecutan el instalador de verdad como proceso hijo, comprobando que
+ * descarga el binario correcto, verifica su suma de comprobación (checksum), agrega el
+ * directorio elegido al PATH del shell sin duplicar ni romper lo que ya había, instala
+ * Forge614 Engines como dependencia, y rechaza endpoints de prueba inseguros o mal configurados.
+ */
 import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -136,6 +144,8 @@ afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { force: true, recursive: true });
 });
 
+// Para cada shell soportado, instala dos veces (con y sin --force) en un directorio bin propio:
+// el bloque de PATH debe agregarse una sola vez y el resto del archivo de configuración, quedar igual.
 test.each([
   ["zsh", "/bin/zsh", ".zshrc"],
   ["bash", "/bin/bash", process.platform === "darwin" ? ".bash_profile" : ".bashrc"],
@@ -173,6 +183,8 @@ test.each([
   }
 });
 
+// Tras instalar, cargar (source) el bloque agregado debe anteponer el directorio del binario
+// al PATH heredado de la terminal, sin perder las rutas que ese PATH ya traía.
 test.each([
   ["zsh", "/bin/zsh", ".zshrc"],
   ["bash", "/bin/bash", process.platform === "darwin" ? ".bash_profile" : ".bashrc"],
@@ -205,6 +217,9 @@ test.each([
   }
 });
 
+// Con cuatro formas de bloque de marcadores mal formado (incompleto, anidado, cierre sin
+// apertura y uno completo seguido de otro incompleto), el instalador debe negarse a tocar el
+// archivo de configuración (queda idéntico byte a byte) y aun así instalar el binario dos veces.
 test.each([
   ["incomplete", "# >>> forge614-engram PATH >>>\nexport KEEP_THIS=1\n"],
   ["nested", "# >>> forge614-engram PATH >>>\nexport KEEP_THIS=1\n# >>> forge614-engram PATH >>>\n# <<< forge614-engram PATH <<<\n# <<< forge614-engram PATH <<<\n"],
@@ -234,6 +249,9 @@ test.each([
   }
 });
 
+// Cuando el archivo de configuración del shell es un enlace simbólico (lo gestiona un
+// administrador de dotfiles), el instalador no lo reemplaza -perdería el enlace- y en vez de
+// eso imprime la guía manual para agregar el PATH a mano.
 test("preserves symlink-managed rc files and offers manual PATH guidance", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -256,6 +274,9 @@ test("preserves symlink-managed rc files and offers manual PATH guidance", async
   }
 });
 
+// Solo en macOS: si ya existe `.profile` o `.bash_login`, crear `.bash_profile` apagaría ese
+// archivo en el arranque de una shell de acceso (login shell); el instalador debe dejarlo
+// intacto, no crear `.bash_profile` y avisar la guía manual de PATH.
 test.skipIf(process.platform !== "darwin").each([".profile", ".bash_login"])("preserves macOS Bash login behavior with existing %s", async (profile) => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -286,6 +307,9 @@ for (const [shell, configurationFile] of [
   ["zsh", ".zshrc"],
   ["fish", ".config/fish/conf.d/forge614-engram.fish"],
 ] as const) {
+  // Con el PATH heredado ya conteniendo el destino en distintas posiciones (al principio, en medio,
+  // al final o como prefijo de otro nombre), cargar el bloque agregado dos veces debe dejar el
+  // destino una sola vez, sin desordenar el resto de las rutas heredadas.
   test.skipIf(!Bun.which(shell))(`avoids inherited or repeated runtime PATH entries in ${shell}`, async () => {
     const executable = Bun.which(shell);
     if (!executable) throw new Error(`Missing shell: ${shell}`);
@@ -319,6 +343,8 @@ for (const [shell, configurationFile] of [
   });
 }
 
+// Con un shell desconocido, ningún archivo de configuración existente se toca (ni con --force) y
+// la salida imprime la línea `export PATH=...` para que la persona lo agregue a mano.
 test("leaves shell files untouched and prints manual PATH guidance for an unknown shell", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -351,6 +377,8 @@ test("leaves shell files untouched and prints manual PATH guidance for an unknow
   }
 });
 
+// Con las variables de entorno por defecto, la instalación descarga el binario de Engram,
+// instala Forge614 Engines como dependencia y no crea configuración de ningún cliente de IA.
 test("downloads verified Engram and Engines binaries without configuring an AI client", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -376,6 +404,8 @@ test("downloads verified Engram and Engines binaries without configuring an AI c
   }
 });
 
+// Sin --bin-dir se usa el directorio del producto bajo `$FORGE614_HOME/engram/bin`, con
+// permisos 700, y un archivo ya existente de Forge614 Shell bajo el mismo `$FORGE614_HOME` queda intacto.
 test("default install uses the product bin and preserves Forge614 Shell", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -397,6 +427,8 @@ test("default install uses the product bin and preserves Forge614 Shell", async 
   } finally { server.stop(true); }
 });
 
+// Con `FORGE614_HOME` absoluto en el entorno, tanto Engram como Engines se instalan ahí y el
+// directorio histórico `$HOME/.forge614` nunca se crea.
 test("default install uses an absolute FORGE614_HOME and leaves the historic home untouched", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -420,6 +452,8 @@ test("default install uses an absolute FORGE614_HOME and leaves the historic hom
   }
 });
 
+// Un `FORGE614_HOME` vacío o relativo (no absoluto) debe rechazarse con `INVALID_FORGE614_HOME`
+// antes de crear nada, para las dos formas inválidas.
 test("installer rejects empty and relative FORGE614_HOME before creating a destination", async () => {
   const root = temporaryDirectory();
   const fakeHome = join(root, "home");
@@ -439,6 +473,8 @@ test("installer rejects empty and relative FORGE614_HOME before creating a desti
   }
 });
 
+// Instalar dos veces sin --force debe fallar en la segunda, dejando intactos tanto el binario ya
+// instalado como la dependencia de Engines instalada en la primera vuelta.
 test("refuses replacement without force", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -460,6 +496,8 @@ test("refuses replacement without force", async () => {
   }
 });
 
+// Si SHA256SUMS no coincide con el binario descargado, el instalador debe fallar antes de crear
+// el destino y sin llegar a crear el directorio `$FORGE614_HOME`.
 test("rejects a checksum mismatch before creating the destination", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");
@@ -480,6 +518,9 @@ test("rejects a checksum mismatch before creating the destination", async () => 
   }
 });
 
+// El endpoint de pruebas debe ser HTTP de loopback (127.0.0.1 o localhost) con puerto explícito y
+// sin credenciales incrustadas en la URL (userinfo); un endpoint HTTPS o con usuario:contraseña se
+// rechaza antes de intentar descargar nada.
 test.each([
   ["an HTTPS endpoint", "https://127.0.0.1:1"],
   ["a userinfo endpoint", "http://127.0.0.1:5432@localhost:1"],
@@ -499,6 +540,9 @@ test.each([
   expect(existsSync(join(fakeHome, ".forge614"))).toBe(false);
 });
 
+// Usar el endpoint de lanzamientos (releases) de prueba sin la variable centinela
+// `FORGE614_ENGRAM_INSTALLER_TEST=1` debe rechazarse: ese endpoint está reservado a los
+// accesorios (fixtures) de prueba.
 test("rejects a test endpoint without the test sentinel", async () => {
   const root = temporaryDirectory();
   const fakeHome = join(root, "empty-home");
@@ -515,6 +559,8 @@ test("rejects a test endpoint without the test sentinel", async () => {
   expect(existsSync(join(fakeHome, ".forge614"))).toBe(false);
 });
 
+// Aunque el servidor de pruebas responda con URLs de descarga que apuntan a otro host (no de
+// loopback), el instalador vuelve a comprobarlas por su cuenta y rechaza el resultado si no lo son.
 test("rejects non-loopback release asset URLs from a test fixture", async () => {
   const root = temporaryDirectory();
   const fakeHome = join(root, "empty-home");
@@ -537,6 +583,8 @@ test("rejects non-loopback release asset URLs from a test fixture", async () => 
   }
 });
 
+// Con un instalador de Engines de prueba inyectado por variable de entorno, la instalación deja
+// el binario de Engines en su lugar y no crea configuración de ningún cliente de IA.
 test("installs Forge614 Engines as a dependency without configuring an AI client", async () => {
   const root = temporaryDirectory();
   const fixture = join(root, "fixture-binary");

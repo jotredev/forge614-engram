@@ -1,5 +1,9 @@
-// Search benchmark: 30 memories modeled on real ones from this ecosystem (rewritten, no private data)
-// and 20 natural-language questions its owner asked, each with the title it must find in the top 3.
+/**
+ * Prueba de referencia (benchmark) de búsqueda: 30 memorias modeladas sobre otras reales de este
+ * ecosistema (reescritas, sin datos privados) y 20 preguntas en lenguaje natural que su
+ * propietario hizo de verdad, cada una con el título que debe aparecer entre los tres primeros
+ * resultados.
+ */
 export const BENCHMARK_MEMORIES: ReadonlyArray<{ title: string; content: string; type: "fact" | "decision" | "procedure" | "warning" | "preference" }> = [
   { type: "decision", title: "Versión de Sentinel dentro de forge614.node.json", content: "La versión de Sentinel vive en el campo sentinel.version del archivo del nodo; no se agregan archivos nuevos." },
   { type: "decision", title: "Presupuesto de arranque de 3000 tokens", content: "Acta 0020: la memoria que se inyecta al iniciar una sesión no pasa de 3000 tokens." },

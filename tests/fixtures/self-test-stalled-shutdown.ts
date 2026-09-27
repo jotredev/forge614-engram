@@ -1,3 +1,12 @@
+/**
+ * Servidor MCP real de un solo archivo, pensado para correr como proceso hijo en una prueba:
+ * simula un servidor instalado que se queda colgado al apagarse (ignora la señal SIGTERM y sigue
+ * vivo con un intervalo que no hace nada), para poner a prueba cómo se detecta y maneja un
+ * servidor que no responde al apagado normal. Escribe su propio pid en `child.pid` y, en cuanto
+ * responde la lista de herramientas, un archivo `listed`, ambos junto al ejecutable que lo lanzó,
+ * para que la prueba que lo arrancó pueda comprobar en qué punto se quedó sin tener que
+ * interpretar su salida estándar. Ningún archivo actual del árbol lo referencia por su ruta.
+ */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';

@@ -1,3 +1,9 @@
+/**
+ * Prueba de extremo a extremo contra un PostgreSQL real (se salta si no hay uno disponible): la
+ * CLI configurada sigue funcionando sin conexión y en local, y una sincronización que falla deja
+ * intactos los datos SQLite que ya tenía cada usuario, sin filtrar la URL de conexión (que puede
+ * llevar contraseña) en la salida ni en los errores.
+ */
 import { afterAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -21,7 +27,8 @@ afterAll(async()=>{
 
 
 integration("configured CLI stays local offline and sync failure preserves the same SQLite data",async()=>{
-  // Fresh database, never a user service. Earlier tests intentionally corrupted postgres schema.
+  // Base de datos nueva, nunca un servicio real de usuario. Otras pruebas ya corrompieron a
+  // propósito el esquema de la base «postgres» por defecto.
   await admin.unsafe("CREATE DATABASE setup_test");
   const testUrl=url.replace("/postgres?","/setup_test?");
   const user=join(directory,"cli-user");const config=new WorkspaceConfig(join(user,".forge614","engram"));
@@ -44,8 +51,9 @@ integration("configured CLI stays local offline and sync failure preserves the s
   await expect(syncWorkspace(config)).rejects.toMatchObject({code:"POSTGRES_UNAVAILABLE"});
   expect(readFileSync(config.databasePath)).toEqual(before);
   const cli=resolve(import.meta.dir,"../../src/cli.ts");
-  // See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
-  // unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+  // Ver src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync tiene un error confirmado y
+  // sin corregir aguas arriba (oven-sh/bun#34069) que se queda colgado, así que aquí se usa
+  // Bun.spawn asíncrono en su lugar.
   const run=async(...args:string[])=>{
     const child=Bun.spawn([process.execPath,cli,...args],{env:{...process.env,FORGE614_HOME:join(user,".forge614")},stdout:"pipe",stderr:"pipe"});
     const timer=setTimeout(()=>child.kill(),20_000);
