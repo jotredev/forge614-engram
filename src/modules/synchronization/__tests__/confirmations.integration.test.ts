@@ -1,3 +1,4 @@
+/** Comprueba las confirmaciones dentro del ciclo completo de validación y reconciliación de instantáneas: fechas anteriores a la edición, fusión de tres vías, extensión de solo apéndice y campos forjados. */
 import { expect, test } from "bun:test";
 import type { Confirmation, MemoryVersion } from "../../memory";
 import {
@@ -5,12 +6,16 @@ import {
 } from "../__test-support__/confirmation-fixtures";
 import { assertExtension,reconcile,validateSnapshot,type SyncSnapshotV3 } from "../snapshot";
 
+// Una confirmación puede registrarse sobre una versión anterior a la más reciente sin que se confunda
+// con la edición posterior (la fecha de la confirmación es anterior a la última actualización del recuerdo).
 test("format 3 validates an old-version confirmation without confusing it with the later edit",()=>{
   const snapshot=snapshot3();
   expect(snapshot.confirmations[0]!.recordedAt < snapshot.memories[0]!.memory.updatedAt).toBe(true);
   expect(()=>validateSnapshot(snapshot)).not.toThrow();
 });
 
+// Dos confirmaciones distintas agregadas cada una en un lado se unen sin conflicto, y reconciliar el
+// resultado consigo mismo tres veces produce siempre la misma instantánea (idempotencia).
 test("reconciliation unions confirmation identities and remains idempotent",()=>{
   const base={...legacySnapshot(1),format:3 as const,confirmations:[],confirmationRequests:[]};
   const local={...base,confirmations:[confirmation(confirmationB)]};
@@ -21,6 +26,8 @@ test("reconciliation unions confirmation identities and remains idempotent",()=>
   expect(reconcile(merged,merged,merged)).toEqual(merged);
 });
 
+// La misma identidad de confirmación con datos distintos en cada lado (sin que la base la tuviera para
+// arbitrar) es un conflicto irreconciliable, no una fusión automática.
 test("reconciliation rejects the same confirmation identity with changed data even without a checkpoint",()=>{
   const base={...legacySnapshot(1),format:3 as const,confirmations:[],confirmationRequests:[]};
   const local={...base,confirmations:[confirmation()]};
@@ -28,6 +35,8 @@ test("reconciliation rejects the same confirmation identity with changed data ev
   expect(()=>reconcile(base,local,remote)).toThrow(expect.objectContaining({code:"SYNC_CONFLICT"}));
 });
 
+// Una confirmación agregada en un lado sobrevive a la fusión aunque el otro lado haya avanzado el
+// recuerdo a una versión posterior; ambos cambios son independientes y se conservan los dos.
 test("reconciliation retains a confirmation concurrent with a later memory revision",()=>{
   const base={...legacySnapshot(1),format:3 as const,confirmations:[],confirmationRequests:[]};
   const local={...base,confirmations:[confirmation()]};
@@ -37,6 +46,8 @@ test("reconciliation retains a confirmation concurrent with a later memory revis
   expect(merged.memories[0]!.memory.version).toBe(2);
 });
 
+// Dos peticiones con la misma confirmationId pero distinta requestKey, una por cada lado, se unen
+// ambas: una confirmación puede tener más de una petición asociada.
 test("requests are unioned by owner namespace while one confirmation remains one event",()=>{
   const base={...legacySnapshot(1),format:3 as const,confirmations:[],confirmationRequests:[]};
   const event=confirmation();
@@ -47,6 +58,8 @@ test("requests are unioned by owner namespace while one confirmation remains one
   expect(merged.format===3 && merged.confirmationRequests.map(item=>item.requestKey)).toEqual(["left","right"]);
 });
 
+// La misma requestKey del mismo dueño no puede quedar atada a dos confirmationId distintas a la vez:
+// eso es un conflicto real, no dos peticiones independientes.
 test("reconciliation rejects one owner request key attached to different confirmation events",()=>{
   const base={...legacySnapshot(1),format:3 as const,confirmations:[],confirmationRequests:[]};
   const local={...base,confirmations:[confirmation(confirmationA)],confirmationRequests:[request(confirmationA,"same")]};
@@ -54,6 +67,8 @@ test("reconciliation rejects one owner request key attached to different confirm
   expect(()=>reconcile(base,local,remote)).toThrow(expect.objectContaining({code:"SYNC_CONFLICT"}));
 });
 
+// assertExtension debe rechazar cualquier intento de vaciar confirmaciones, peticiones o eventos que
+// la instantánea actual ya tenía; el chequeo de solo apéndice cubre las tres colecciones por igual.
 test("append-only checks reject removed confirmations, requests, and legacy events",()=>{
   const current=snapshot3();
   for(const mutate of [
@@ -66,6 +81,9 @@ test("append-only checks reject removed confirmations, requests, and legacy even
   }
 });
 
+// Cada mutación de esta lista corrompe un campo distinto de una confirmación o su petición (campo
+// extra, formato de UUID, fecha, referencia a otro recuerdo, sesión inexistente, huella o versión
+// esperada incorrectas); todas deben ser detectadas por la validación estricta.
 test("strict validation rejects forged confirmation and response fields",()=>{
   const mutations:Array<(snapshot:SyncSnapshotV3)=>void>=[
     snapshot=>Object.assign(snapshot.confirmations[0]!,{extra:true}),
@@ -92,6 +110,8 @@ test("strict validation rejects forged confirmation and response fields",()=>{
   }
 });
 
+// Un recuerdo sin topicKey nunca declara una versión esperada: forzar expectedVersion a un número
+// para ese caso debe rechazarse aunque el resto de la petición sea coherente.
 test("no-topic requests require null expectedVersion",()=>{
   const snapshot=snapshot3(1);const historical=snapshot.memories[0]!.versions[0]!;
   historical.topicKey=null;snapshot.memories[0]!.memory.topicKey=null;snapshot.confirmations[0]!.sessionId=null;
@@ -103,6 +123,8 @@ test("no-topic requests require null expectedVersion",()=>{
   expect(()=>validateSnapshot(snapshot)).toThrow(expect.objectContaining({code:"SYNC_INVALID"}));
 });
 
+// La misma clave de petición no puede repetirse ni entre una petición heredada (formato de fila SQL) y
+// una nueva, ni entre dos peticiones de confirmación, dentro del mismo espacio de nombres de dueño.
 test("request keys are unique across old and confirmation collections in the resolved owner namespace",()=>{
   const duplicate=snapshot3();const oldMemory=duplicate.memories[0]!.versions[0]!;
   duplicate.memories[0]!.requests.push({request_key:"confirm-v1",payload_hash:payloadHash(oldMemory,null),version:1});
@@ -112,6 +134,8 @@ test("request keys are unique across old and confirmation collections in the res
   expect(()=>validateSnapshot(repeated)).toThrow(expect.objectContaining({code:"SYNC_INVALID"}));
 });
 
+// La misma clave de petición sí es válida cuando pertenece a espacios de nombres de dueño distintos
+// (otro proyecto, u otro alcance como shared): la unicidad es por dueño, no global.
 test("the same request key is valid for different project and shared owner namespaces",()=>{
   const snapshot=snapshot3();const otherMemoryId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const otherVersion:MemoryVersion={id:otherMemoryId,projectId:null,scope:"shared",topicKey:null,type:"fact",title:"Shared",content:"Body",pinned:false,version:1,createdAt,updatedAt:createdAt};
@@ -123,6 +147,8 @@ test("the same request key is valid for different project and shared owner names
   expect(()=>validateSnapshot(snapshot)).not.toThrow();
 });
 
+// Una confirmación de un recuerdo shared solo puede referenciar una sesión runtime existente cuando el
+// origen declarado es "explicit"; "inferred" no basta para justificar una escritura shared.
 test("a shared confirmation may reference an existing runtime session only through an explicit response",()=>{
   const snapshot=snapshot3(1);const historical=snapshot.memories[0]!.versions[0]!;
   historical.scope="shared";historical.projectId=null;snapshot.memories[0]!.memory.scope="shared";snapshot.memories[0]!.memory.projectId=null;
@@ -133,6 +159,9 @@ test("a shared confirmation may reference an existing runtime session only throu
   expect(()=>validateSnapshot(snapshot)).toThrow(expect.objectContaining({code:"SYNC_INVALID"}));
 });
 
+// Una respuesta de confirmación puede elegir una sesión válida sin que esa sesión tenga ninguna entrada
+// de historial propia; pero si la sesión es manual, una respuesta con `sessionSource` «explicit» se
+// rechaza, porque ese origen exige una sesión runtime.
 test("a confirmation response may select a valid session without owning a session entry",()=>{
   const snapshot=snapshot3();expect(snapshot.sessionEntries).toEqual([]);expect(()=>validateSnapshot(snapshot)).not.toThrow();
   snapshot.sessions[0]!.kind="manual";snapshot.sessions[0]!.endedAt=null;snapshot.confirmationRequests[0]!.response.sessionSource="explicit";

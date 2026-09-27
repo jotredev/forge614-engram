@@ -1,7 +1,10 @@
+/** Comprueba la normalización de formato, la compatibilidad de instantáneas históricas, la validación estricta y la reconciliación de tres vías. */
 import { expect, test } from "bun:test";
 import { compatibilitySnapshots } from "./__test-support__/confirmation-fixtures";
 import { assertExtension, canonical, emptySnapshot, normalizeSnapshot, reconcile, snapshotHash, validateSnapshot, type SyncSnapshotV3 } from "./snapshot";
 
+// Subir una instantánea vacía de formato 1 a formato 2 no debe alterar el objeto original (mismo JSON,
+// misma huella), y el resultado normalizado debe tener una huella distinta por llevar los campos nuevos.
 test("format normalization never changes the original CAS payload", () => {
   const old = emptySnapshot();
   const originalHash = snapshotHash(old);
@@ -17,6 +20,8 @@ test("format normalization never changes the original CAS payload", () => {
   expect(() => assertExtension(current, old)).toThrow();
 });
 
+// Las instantáneas de formato 1 y 2 producidas antes de esta versión deben seguir validando y
+// serializando byte a byte igual (huellas fijas), para no romper la compatibilidad con datos ya sincronizados.
 test("non-empty historical format 1 and 2 payload bytes and hashes remain compatible",()=>{
   const {one,two}=compatibilitySnapshots();
   expect(()=>validateSnapshot(one)).not.toThrow();expect(()=>validateSnapshot(two)).not.toThrow();
@@ -26,16 +31,21 @@ test("non-empty historical format 1 and 2 payload bytes and hashes remain compat
   expect(snapshotHash(two)).toBe("31e0bb25e1f8dad8f7f06de69e3379f745a4565df14105f36b54030849015d88");
 });
 
+// Una instantánea ya construida directamente en formato 3 debe pasar `normalizeSnapshot` sin copiarse
+// (misma referencia) y validar sin errores.
 test("format 3 normalization preserves the explicit promoted payload",()=>{
   const promoted:SyncSnapshotV3={format:3,projects:[],memories:[],sessions:[],sessionEntries:[],sessionSummaries:[],confirmations:[],confirmationRequests:[]};
   expect(normalizeSnapshot(promoted)).toBe(promoted);
   expect(()=>validateSnapshot(promoted)).not.toThrow();
 });
 
+// Las claves de un objeto anidado se ordenan alfabéticamente, pero el orden de un arreglo se conserva
+// tal cual (no se ordena su contenido).
 test("canonical serialization sorts nested object keys while preserving array order", () => {
   expect(canonical({z:[{b:2,a:1},0],a:"text"})).toBe('{"a":"text","z":[{"a":1,"b":2},0]}');
 });
 
+// Un campo desconocido en el objeto raíz, o dos proyectos con el mismo projectId, deben rechazarse.
 test("snapshot validation rejects unknown fields and duplicate project identities", () => {
   const project = {projectId:"12345678-1234-4234-8234-123456789abc",name:"Project",createdAt:"2026-01-01T00:00:00.000Z",updatedAt:"2026-01-01T00:00:00.000Z"};
   expect(() => validateSnapshot({format:1,projects:[project],memories:[]})).not.toThrow();
@@ -44,6 +54,8 @@ test("snapshot validation rejects unknown fields and duplicate project identitie
   }
 });
 
+// Un proyecto agregado en cada lado (base vacía) se conserva en ambos tras fusionar; el mismo proyecto
+// editado de forma distinta en cada lado, sin que ninguno coincida con la base, es un conflicto real.
 test("reconciliation retains independent additions and refuses conflicting edits", () => {
   const first = {projectId:"12345678-1234-4234-8234-123456789abc",name:"First",createdAt:"2026-01-01T00:00:00.000Z",updatedAt:"2026-01-01T00:00:00.000Z"};
   const second = {...first,projectId:"22345678-1234-4234-8234-123456789abc",name:"Second"};

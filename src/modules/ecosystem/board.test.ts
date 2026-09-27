@@ -1,6 +1,9 @@
+/** Comprueba las constantes del tablero del ecosistema y qué tipos de recuerdo acepta según el tema. */
 import { expect, test } from "bun:test";
 import { boardTypeAllowed, ECOSYSTEM_AFFECTS_MIN, ECOSYSTEM_BOARD_LIMIT, ECOSYSTEM_STATUS_MAX, ECOSYSTEM_STATUS_TOPIC } from "./board";
 
+// Los valores fijos no deben cambiar por accidente, y solo la nota de estado (ECOSYSTEM_STATUS_TOPIC)
+// acepta el tipo "fact"; con cualquier otro tema, "fact" y "preference" quedan fuera del tablero.
 test("board constants and allowed types; only the status note also accepts facts", () => {
   expect([ECOSYSTEM_BOARD_LIMIT, ECOSYSTEM_AFFECTS_MIN, ECOSYSTEM_STATUS_MAX, ECOSYSTEM_STATUS_TOPIC]).toEqual([40, 2, 600, "ecosystem/estado-actual"]);
   const types = ["decision", "procedure", "warning", "fact", "preference"];

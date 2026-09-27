@@ -1,3 +1,4 @@
+/** Comprueba la validación de colecciones de confirmaciones y peticiones, el cálculo de identidad de dueño y las comprobaciones de extensión (solo apéndice). */
 import { expect, test } from "bun:test";
 import type { SyncSnapshotV3 } from "./snapshot";
 import {
@@ -22,6 +23,8 @@ function context(snapshot:SyncSnapshotV3, requestKeys=new Set<string>()) {
   };
 }
 
+// Una confirmación sin petición asociada (evento "desnudo") es válida tanto si la sesión es manual
+// como si es de ejecución automática (runtime); no toda confirmación necesita venir de un guardado.
 test("bare project confirmation events accept manual and runtime sessions without a request",()=>{
   for(const kind of ["manual","runtime"] as const) {
     const snapshot=snapshot3(1);snapshot.sessions[0]!.kind=kind;snapshot.confirmationRequests=[];
@@ -29,6 +32,8 @@ test("bare project confirmation events accept manual and runtime sessions withou
   }
 });
 
+// Una confirmación de un recuerdo de proyecto debe usar una sesión de ese mismo proyecto; una de un
+// recuerdo shared solo puede usar una sesión runtime, nunca manual.
 test("bare confirmation sessions retain project ownership and shared runtime restrictions",()=>{
   const foreign=snapshot3(1);foreign.confirmationRequests=[];foreign.sessions[0]!.projectId=otherProjectId;
   expect(()=>validateConfirmationCollections(foreign.confirmations,foreign.confirmationRequests,context(foreign))).toThrow("invalid confirmation collection");
@@ -41,6 +46,8 @@ test("bare confirmation sessions retain project ownership and shared runtime res
   expect(()=>validateConfirmationCollections(shared.confirmations,shared.confirmationRequests,context(shared))).not.toThrow();
 });
 
+// Una petición con un origen de sesión que no coincide con su confirmación, una huella de contenido
+// alterada, o una clave de petición que ya ocupa el mismo espacio de nombres de dueño, deben rechazarse.
 test("collection validation checks request hashes, response sources, and occupied owner namespaces",()=>{
   const good=snapshot3(1);
   expect(()=>validateConfirmationCollections(good.confirmations,good.confirmationRequests,context(good))).not.toThrow();
@@ -55,6 +62,8 @@ test("collection validation checks request hashes, response sources, and occupie
   expect(()=>validateConfirmationCollections(occupied.confirmations,occupied.confirmationRequests,context(occupied,keys))).toThrow("invalid confirmation collection");
 });
 
+// requestOwnerKey combina alcance, proyecto y clave en una sola cadena; confirmationRequestIdentity
+// hace lo mismo pero resolviendo el alcance y proyecto a partir del recuerdo referenciado.
 test("request identities derive scope and project from the referenced memory",()=>{
   expect(requestOwnerKey("project",otherProjectId,"same")).toBe('["project","22222222-2222-4222-8222-222222222222","same"]');
   expect(requestOwnerKey("shared",null,"same")).toBe('["shared",null,"same"]');
@@ -64,12 +73,16 @@ test("request identities derive scope and project from the referenced memory",()
   );
 });
 
+// Una confirmación que desaparece o que cambia de contenido en la lista nueva rompe la extensión;
+// agregar una confirmación adicional sin tocar la existente sí es una extensión válida.
 test("confirmation extension helpers reject removed or rewritten identities",()=>{
   expect(()=>assertConfirmationExtension([confirmation()],[],canonical,invalid)).toThrow("invalid confirmation collection");
   expect(()=>assertConfirmationExtension([confirmation()],[{...confirmation(),recordedAt:"2026-09-17T10:01:01.000Z"}],canonical,invalid)).toThrow("invalid confirmation collection");
   expect(()=>assertConfirmationExtension([confirmation()],[confirmation(),confirmation(confirmationB)],canonical,invalid)).not.toThrow();
 });
 
+// La extensión de peticiones se indexa por espacio de nombres de dueño más clave de petición, no por
+// posición ni por confirmationId: agregar otra petición con distinta clave no rompe la extensión.
 test("confirmation request extension is keyed by owner namespace and request key",()=>{
   const snapshot=snapshot3(1);const memories=new Map(snapshot.memories.map(bundle=>[bundle.memory.id,bundle]));
   const current=request(confirmationA,"same");
