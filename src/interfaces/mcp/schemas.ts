@@ -1,8 +1,14 @@
+/**
+ * Esquemas de validación (Zod) de la entrada de cada herramienta MCP (protocolo de contexto de modelo). `memory-tools.ts`
+ * y `sessions-tools.ts` los usan como `inputSchema` al registrar sus herramientas, así el SDK de MCP valida y recorta
+ * (trim) los argumentos antes de que el manejador los reciba.
+ */
 import { z } from "zod";
 import { memoryTypes } from "../../modules/memory";
 import { FIELD_DESCRIPTIONS as describe } from "../../modules/memory-protocol";
 import { sessionIdentity } from "../../modules/sessions";
 const path = z.string().trim().min(1).max(4096).refine(value => !value.includes("\0"));
+/** Cadena de texto recortada (trim), no vacía, con un máximo de caracteres y sin bytes nulos (que romperían el texto guardado). */
 const text = (maximum: number) => z.string().trim().min(1).max(maximum).refine(value => !value.includes("\0"));
 const directory = path.optional().describe(describe.directory);
 const id = text(128).describe(describe.id);
@@ -14,9 +20,11 @@ const projectScope = z.enum(["project","shared","ecosystem"]).describe(describe.
 const searchScope = z.enum(["all","project","shared","ecosystem"]).describe(describe.searchScope);
 const groupIntent = text(1000).describe(describe.groupIntent);
 
+  /** Como `text`, pero acepta cadena vacía: los campos de un resumen de sesión pueden quedar sin llenar. */
   const narrative=(maximum:number)=>z.string().max(maximum).refine(value=>!value.includes("\0"));
   const summaryFields=z.object({goal:text(4000),instructions:narrative(8000),discoveries:narrative(8000),accomplishments:narrative(8000),nextSteps:narrative(8000),files:z.array(path).max(200)}).strict().describe(describe.summary);
 
+/** Un esquema `.strict()` por herramienta: rechaza campos no listados, así el cliente MCP nunca cuela un argumento inesperado. */
 export const toolSchemas = {
   memory_current_project: z.object({ directory }).strict(),
   memory_search: z.object({ directory,query:text(500).describe(describe.query),limit:z.number().int().min(1).max(50).optional(),scope:searchScope.optional() }).strict(),

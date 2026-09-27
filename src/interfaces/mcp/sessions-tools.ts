@@ -1,3 +1,8 @@
+/**
+ * Registra las herramientas MCP (protocolo de contexto de modelo) de sesión y contexto: `memory_session_start`,
+ * `memory_session_end`, `memory_session_summary`, `memory_timeline` y `memory_context`. `tools.ts` llama a
+ * `registerSessionTools` junto a `registerMemoryTools` al construir el servidor.
+ */
 import { readProjectContext, resolveProjectContext, startProjectSessionWithNotices } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { sessionNotice } from "../../modules/sessions";
@@ -5,6 +10,7 @@ import { toolSchemas } from "./schemas";
 import type { ToolContext } from "./context";
 import { ecosystemTarget } from "./memory-tools";
 
+/** Da de alta las cinco herramientas de sesión y contexto sobre el `ToolContext` recibido. */
 export function registerSessionTools(tools:ToolContext):void {
   const {register,safely,memoryStore,projectDirectory}=tools;
   register("memory_session_start", {
@@ -12,6 +18,7 @@ export function registerSessionTools(tools:ToolContext):void {
     inputSchema:toolSchemas.memory_session_start,
   }, safely(async ({directory,sessionId}) => {
     const started=startProjectSessionWithNotices(memoryStore(),await projectDirectory(directory),sessionId);
+    // El aviso de sesión (dejada abierta, o abierta en paralelo) se calcula aparte, a partir de lo que devolvió el arranque.
     const notice=sessionNotice(started.previous,started.parallel);
     return {...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{}),...(notice?{sessionNotice:notice}:{})};
   }));
@@ -29,6 +36,7 @@ export function registerSessionTools(tools:ToolContext):void {
     description:"Save a structured durable session summary before closing the explicit session.",
     inputSchema:toolSchemas.memory_session_summary,
   }, safely(async ({directory,sessionId,summary,requestKey,expectedVersion,scope,groupIntent}) => {
+    // scope ecosystem exige groupIntent y guarda el resumen contra el grupo del proyecto, no contra el proyecto solo.
     if(scope==="ecosystem") {
       if(!groupIntent) throw new MemoryError("GROUP_INTENT_REQUIRED","scope ecosystem requiere explicar por qué aplica a todo el ecosistema (groupIntent).");
       const target=await ecosystemTarget(tools,directory);
@@ -54,6 +62,7 @@ export function registerSessionTools(tools:ToolContext):void {
     inputSchema:toolSchemas.memory_context,
   }, safely(async ({directory,scope,compact,maxBytes}) => {
     const options={...(compact===undefined?{}:{compact}),...(maxBytes===undefined?{}:{maxBytes})};
+    // shared y ecosystem no dependen de resolver el proyecto de la carpeta; sin scope explícito, cae al contexto del proyecto (con su bloque de ecosistema si pertenece a un grupo).
     if(scope==="shared") return memoryStore().context(null,options);
     if(scope==="ecosystem") return memoryStore().contextForGroup((await ecosystemTarget(tools,directory)).group.id,options);
     const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);

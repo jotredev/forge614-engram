@@ -1,3 +1,4 @@
+/** Prueba de punta a punta del servidor MCP real por stdio, arrancado desde el CLI: proyectos, guardado, sesiones y alcances (scopes). */
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,8 +19,8 @@ function environment(userDirectory: string): Record<string, string> {
   return Object.fromEntries(Object.entries({ ...process.env, FORGE614_HOME: join(userDirectory,".forge614") })
     .filter((entry): entry is [string, string] => entry[1] !== undefined));
 }
-// See cli.e2e.test.ts: Bun.spawnSync has a confirmed, unfixed upstream hang bug
-// (oven-sh/bun#34069), so the CLI launcher uses the async Bun.spawn path instead.
+// Ver cli.e2e.test.ts: Bun.spawnSync tiene un error de bloqueo confirmado y sin corregir en Bun
+// (oven-sh/bun#34069), por eso el lanzador del CLI usa aquí el camino asíncrono Bun.spawn en su lugar.
 async function runCli(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath, cli, ...args], {
     cwd, env: environment(userDirectory), stdout:"pipe", stderr:"pipe",
@@ -76,6 +77,7 @@ afterEach(async () => {
   for (const directory of temporaryDirectories.splice(0).reverse()) rmSync(directory, { recursive: true, force: true });
 });
 
+// Con una sola raíz MCP anunciada, memory_current_project resuelve esa carpeta sin crear un proyecto (source "unbound"); project-list del CLI sigue vacío.
 test("init enables project bindings and MCP resolves one client root without creating a project", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -84,6 +86,7 @@ test("init enables project bindings and MCP resolves one client root without cre
   expect(JSON.parse((await runCli(root, userDirectory, "project-list")).stdout)).toEqual([]);
 }, 40000);
 
+// Sin raíces anunciadas y con el directorio de trabajo del proceso sin Git, memory_current_project falla en vez de tratar esa carpeta como proyecto implícito.
 test("a non-Git process cwd is not treated as an implicit non-Git project root", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -92,6 +95,7 @@ test("a non-Git process cwd is not treated as an implicit non-Git project root",
   expect(JSON.parse((await runCli(root,userDirectory,"project-list")).stdout)).toEqual([]);
 }, 40000);
 
+// Guardar, buscar, leer, revisar historial y repetir con la misma requestKey funcionan sobre un servidor real, y lo guardado sigue disponible tras cerrar y reabrir la conexión.
 test("stdio save, search, get, history, update and request replay persist across restarts", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -102,8 +106,8 @@ test("stdio save, search, get, history, update and request replay persist across
   };
   const saved = data(await call(connection.client, "memory_save", input)) as { id: string; projectId: string; version: number;sessionId:string;sessionSource:string };
   expect(saved.version).toBe(1);
-  // A brand-new database is born with sessions already enabled (schema 11): a directory-scoped
-  // save with no explicit session attaches to that directory's manual session.
+  // Una base de datos recién creada nace con las sesiones ya activas (esquema 11): un guardado con
+  // directorio explícito y sin sesión explícita se une a la sesión manual de esa carpeta.
   expect(saved).toMatchObject({sessionId:expect.any(String),sessionSource:"manual"});
   expect(data(await call(connection.client, "memory_save", input))).toEqual(saved);
   expect((data(await call(connection.client, "memory_search", { directory: project, query: "SQLite" })) as {format:number;results:unknown[]}).results).toHaveLength(1);
@@ -120,6 +124,7 @@ test("stdio save, search, get, history, update and request replay persist across
   expect(persisted.results[0]?.memory.id).toBe(saved.id);
 }, 40000);
 
+// Con el reforzamiento de duplicados activo, dos raíces distintas (a y b) guardan cada una su propio recuerdo con el mismo título y contenido; repetir el guardado en a solo refuerza el de a, sin tocar el de b ni subir de versión.
 test("stdio duplicate saves reinforce only the selected project without increasing its version", async () => {
   const root=temporary();const userDirectory=join(root,"user");const a=temporary();const b=temporary();
   expect((await runCli(root,userDirectory,"reinforcement-enable")).code).toBe(0);
@@ -138,6 +143,7 @@ test("stdio duplicate saves reinforce only the selected project without increasi
   expect(searched.results[0]).toMatchObject({memory:{id:first.id},explanation:{reinforcement:{duplicateCount:1}}});
 }, 40000);
 
+// Un guardado shared sin globalIntent, o con uno vacío tras recortar espacios, falla; solo un texto explícito y no vacío lo acepta con projectId nulo.
 test("shared saves require explicit scope and a nonempty global-intent explanation", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -151,6 +157,7 @@ test("shared saves require explicit scope and a nonempty global-intent explanati
   expect(saved).toMatchObject({ scope: "shared", projectId: null });
 }, 40000);
 
+// Con dos raíces anunciadas, memory_current_project falla (ambigüedad); leer o buscar el recuerdo de una raíz (a) desde la otra (b) falla; una consulta demasiado larga o con un campo no esperado también falla, y el valor del campo rechazado (SECRET_MARKER) nunca aparece en la respuesta de error.
 test("owner mismatch, unbound default search, multiple roots and oversized inputs fail safely", async () => {
   const root = temporary(); const userDirectory = join(root, "user"); const a = temporary(); const b = temporary();
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
@@ -167,6 +174,7 @@ test("owner mismatch, unbound default search, multiple roots and oversized input
   expect(JSON.stringify(invalid)).not.toContain("SECRET_MARKER");
 }, 40000);
 
+// Dos sesiones abiertas a la vez, revisiones con versión exacta, repetición de un resumen con la misma requestKey, que un resumen incompleto o con expectedVersion equivocada se rechaza y que el texto guardado empieza por el bloque «Goal:», y que un guardado shared no filtre el sessionId de origen: todo sobre un servidor real.
 test("MCP session contracts support parallel chats, exact versions, replay, summary ordering and private shared origins",async()=>{
   const root=temporary(),userDirectory=join(root,"user"),project=temporary();
   expect((await runCli(root,userDirectory,"sessions-enable")).code).toBe(0);
@@ -198,6 +206,7 @@ test("MCP session contracts support parallel chats, exact versions, replay, summ
   expect(data(await call(client,"memory_context",{}))).toMatchObject({format:1,pinned:expect.any(Array),recent:expect.any(Array),summaries:expect.any(Array)});
 }, 40000);
 
+// El SDK acepta un sessionId hasta su límite exacto (200 caracteres Unicode) y rechaza uno más largo o con espacio exterior; con dos sesiones abiertas a la vez, un guardado sin sessionId explícito no puede inferir cuál usar (AMBIGUOUS_SESSION).
 test("MCP accepts the SDK session identifier boundary and reports ambiguous assistant inference",async()=>{
   const root=temporary(),userDirectory=join(root,"user"),project=temporary();
   expect((await runCli(root,userDirectory,"sessions-enable")).code).toBe(0);
@@ -208,9 +217,9 @@ test("MCP accepts the SDK session identifier boundary and reports ambiguous assi
   expect((await call(client,"memory_session_start",{sessionId:"x".repeat(201)})).isError).toBe(true);
   expect((await call(client,"memory_session_start",{sessionId:" chat"})).isError).toBe(true);
   expect((await call(client,"memory_session_start",{sessionId:"chat-two"})).isError).not.toBe(true);
-  // 1.7.1: opening chat-two marks nobody (starting a session no longer interrupts other open
-  // sessions). longId and chat-two are both open runtime sessions live in the same folder, so
-  // a save with no explicit sessionId is genuinely ambiguous between the two right away.
+  // 1.7.1: abrir chat-two no marca a nadie (iniciar una sesión ya no interrumpe otras sesiones
+  // abiertas). longId y chat-two son ambas sesiones de ejecución abiertas en la misma carpeta, así
+  // que un guardado sin sessionId explícito es realmente ambiguo entre las dos de inmediato.
   const result=await call(client,"memory_save",{title:"Ambiguous",content:"Two chats",type:"fact"});
   expect(result.isError).toBe(true);expect(data(result)).toMatchObject({code:"AMBIGUOUS_SESSION"});
 }, 40000);

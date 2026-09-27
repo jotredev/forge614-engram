@@ -1,3 +1,4 @@
+/** Comprueba `main` como proceso real del CLI: help, --version, el comando por defecto y cómo serializa los errores. */
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,8 +11,8 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-cli-")); directories.push(dir); return dir;
 }
 const cli = resolve(import.meta.dir,"../../cli.ts");
-// See src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync has a confirmed,
-// unfixed upstream hang bug (oven-sh/bun#34069), so this uses async Bun.spawn instead.
+// Ver src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync tiene un error de bloqueo confirmado
+// y sin corregir en Bun (oven-sh/bun#34069), por eso aquí se usa el Bun.spawn asíncrono en su lugar.
 async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
     cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
@@ -36,6 +37,7 @@ async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
 }
 async function run(cwd: string, ...args: string[]) { return (await runAs(cwd,join(cwd,"user"),...args)); }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive:true}); });
+// help, --version y project-list (sin proyectos) no crean ningún archivo de usuario; el texto de ayuda incluye la sintaxis de los comandos actuales y ya no menciona funciones retiradas.
 test("help, version and empty project list create no storage", async () => {
   const dir = workspace();
   for (const args of [["help"],["--version"],["project-list"]]) {
@@ -69,6 +71,7 @@ test("help, version and empty project list create no storage", async () => {
   expect(JSON.parse((await run(dir,"project-list")).stdout)).toEqual([]);
 }, 40000);
 
+// Sin argumentos, el CLI muestra la misma ayuda que --help; un argumento extra en help o --version, o un comando desconocido, sale por stderr como JSON (nunca por stdout) sin filtrar el valor recibido.
 test("main defaults to help and serializes invalid invocations only to stderr", async () => {
   const dir=workspace();
   expect((await run(dir)).stdout).toBe((await run(dir,"--help")).stdout);

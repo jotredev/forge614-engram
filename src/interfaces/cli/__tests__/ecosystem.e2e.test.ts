@@ -1,3 +1,4 @@
+/** Prueba de punta a punta del alcance (scope) ecosystem como proceso real del CLI: grupos, identidad por archivo, migraciones y el contrato de máquina. */
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
@@ -12,7 +13,7 @@ afterEach(() => { for (const value of roots.splice(0).reverse()) rmSync(value, {
 
 const cli = resolve(import.meta.dir, "../../../cli.ts");
 interface Result { code: number; stdout: string; stderr: string }
-// Async spawn on purpose: see cli.e2e.test.ts (oven-sh/bun#34069).
+// Se usa Bun.spawn asíncrono a propósito: ver cli.e2e.test.ts (oven-sh/bun#34069).
 async function launch(home: string, cwd: string, args: string[]): Promise<Result> {
   const child = Bun.spawn([process.execPath, cli, ...args], { cwd, env: { ...process.env, FORGE614_HOME: home }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => child.kill(), 20_000);
@@ -21,7 +22,7 @@ async function launch(home: string, cwd: string, args: string[]): Promise<Result
     return { code, stdout, stderr };
   } finally { clearTimeout(timer); }
 }
-// A "machine" is an isolated FORGE614_HOME with its own database.
+// Una "máquina" (machine) es un FORGE614_HOME aislado con su propia base de datos.
 interface Machine { home: string; run: (...args: string[]) => Promise<Result>; ok: (...args: string[]) => Promise<any>; fail: (...args: string[]) => Promise<any>; database: string }
 async function machine(initialize = true): Promise<Machine> {
   const base = temporary("engram-eco-e2e-"); const home = join(base, "home");
@@ -41,12 +42,12 @@ const readIdentity = (root: string) => JSON.parse(readFileSync(identityPath(root
 const sha = (path: string) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const T = 60_000;
 
+// group-create, group-list y group-rename devuelven la forma exacta del contrato de máquina ({schemaVersion, ...}); crear el primer grupo no reporta ninguna migración.
 test("group-create, group-list and group-rename speak the machine contract with schemaVersion", async () => {
   const engram = await machine();
   const created = await engram.ok("group-create", "--name", "mi-tienda");
-  // A brand-new base is now born already at the ecosystem-and-intelligence level (schema 11),
-  // so creating the first group never migrates it: no notices field at all (an empty array is
-  // never serialized).
+  // Una base recién creada ya nace en el nivel de ecosistema e inteligencia (esquema 11), así que
+  // crear el primer grupo nunca la migra: no hay campo notices en absoluto (un arreglo vacío nunca se serializa).
   expect(created).toEqual({ schemaVersion: 1, group: { id: expect.stringMatching(/^[0-9a-f-]{36}$/), name: "mi-tienda", createdAt: expect.any(String) } });
   expect(await engram.ok("group-list")).toEqual({ schemaVersion: 1, groups: [{ ...created.group, projects: [] }] });
   const renamed = await engram.ok("group-rename", "--group", "mi-tienda", "--name", "tienda-2");
@@ -54,6 +55,7 @@ test("group-create, group-list and group-rename speak the machine contract with 
   expect((await engram.ok("group-list")).groups[0].name).toBe("tienda-2");
 }, T);
 
+// Cada error de los comandos group-* sale por stderr con la forma {schemaVersion, code, error}, código en MAYÚSCULAS_CON_GUION_BAJO, y código de salida 1.
 test("group errors are {schemaVersion, code, error} on stderr with an UPPER_SNAKE code and exit 1", async () => {
   const engram = await machine();
   await engram.ok("group-create", "--name", "tienda");
@@ -72,6 +74,7 @@ test("group errors are {schemaVersion, code, error} on stderr with an UPPER_SNAK
   }
 }, T);
 
+// Un proyecto puede moverse de un grupo a otro con group-bind; group-unbind lo saca; en todo momento pertenece como máximo a un grupo, y cada cambio queda en identity_events.
 test("group-bind and group-unbind move a project between groups, record events and keep one group per project", async () => {
   const engram = await machine();
   const project = await engram.ok("project-create", "--name", "frontend");
@@ -87,6 +90,7 @@ test("group-bind and group-unbind move a project between groups, record events a
   finally { db.close(); }
 }, T);
 
+// Un archivo forge614.node.json que declara ecosystem "forge614" vincula el proyecto a ese grupo fijo al inicializar, escribe el archivo de identidad, y otra máquina que nunca vio el proyecto deriva el mismo grupo del mismo archivo.
 test("a node file that declares ecosystem forge614 binds the fixed group, writes the identity file and reaches startup-context", async () => {
   const engram = await machine(); const repository = folder();
   writeFileSync(join(repository, "forge614.node.json"), JSON.stringify({ schemaVersion: 1, node: "engram", kind: "product", standard: { version: "1.0.0", sha256: "a".repeat(64) }, ecosystem: "forge614" }));
@@ -98,8 +102,8 @@ test("a node file that declares ecosystem forge614 binds the fixed group, writes
   const group = bound.project.group;
   expect(group.id).toMatch(/^[0-9a-f-]{36}$/);
   expect(readIdentity(repository)).toEqual({ schemaVersion: 1, project: { id: bound.project.projectId, name: expect.any(String) }, ecosystem: group });
-  // The ecosystem board now requires (memory intelligence, born with a brand-new base) an
-  // allowed type plus at least two affected member projects: bind a second project to the group.
+  // El tablero de ecosistema ahora exige (memoria inteligente, con la que nace una base nueva) un
+  // tipo permitido más al menos dos proyectos miembro afectados: se vincula un segundo proyecto al grupo.
   const repositoryName = readIdentity(repository).project.name as string;
   const sibling = await engram.ok("project-create", "--name", "forge614-sibling");
   await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "forge614");
@@ -110,12 +114,13 @@ test("a node file that declares ecosystem forge614 binds the fixed group, writes
   expect(after.shared.recent.map((row: any) => row.title)).toEqual(["Persona"]);
   expect(after.project).toMatchObject({ status: "bound", projectId: bound.project.projectId, source: "file" });
   expect(Object.keys(after)).toEqual(["format", "shared", "ecosystem", "project"]);
-  // Another machine that never saw the project derives the very same group identity from the node file.
+  // Otra máquina que nunca vio el proyecto deriva exactamente la misma identidad de grupo a partir del archivo de nodo.
   const other = await machine();
   const clone = await other.ok("startup-context", "--directory", repository, "--json");
   expect(clone.ecosystem.group).toEqual(group);
 }, T);
 
+// Un clon que ya trae .forge614/project.json se registra por su id sin preguntar y se une a su grupo de inmediato; repetir la consulta no cambia el archivo.
 test("a clone carrying .forge614/project.json is registered by id without asking, then joins its group", async () => {
   const engram = await machine(); const repository = folder();
   const project = crypto.randomUUID(), group = { id: crypto.randomUUID(), name: "mi-tienda" };
@@ -130,6 +135,7 @@ test("a clone carrying .forge614/project.json is registered by id without asking
   expect(sha(identityPath(repository))).toBe(digest);
 }, T);
 
+// Diez procesos arrancando a la vez sobre el mismo clon recién traído terminan todos con éxito y el proyecto se registra una sola vez, no diez.
 test("many hosts starting at once in a fresh clone all succeed and register the project exactly once", async () => {
   const engram = await machine(); const repository = folder(); const project = crypto.randomUUID();
   writeIdentity(repository, { schemaVersion: 1, project: { id: project, name: "frontend" }, ecosystem: null });
@@ -138,6 +144,7 @@ test("many hosts starting at once in a fresh clone all succeed and register the 
   expect(await engram.ok("project-list")).toEqual([expect.objectContaining({ projectId: project })]);
 }, T);
 
+// Doce procesos que disparan a la vez la migración de una base v1.5.3 (esquema 7) terminan todos sin error y la base queda una sola vez en el esquema 10.
 test("upgrading a v1.5.3 database from many processes at once never reports a false schema error", async () => {
   const engram = await machine();
   const fixture = resolve(import.meta.dir, "../../../../tests/fixtures/v1.5.3/schema-7.db");
@@ -152,6 +159,7 @@ test("upgrading a v1.5.3 database from many processes at once never reports a fa
   } finally { holder.close(); }
 }, T);
 
+// Un proyecto vinculado pero sin grupo reporta ecosystem status "none"; una carpeta sin vincular también reporta "none" y no escribe ningún archivo.
 test("startup-context without a group reports ecosystem none and an unbound folder writes nothing", async () => {
   const engram = await machine(); const loose = folder(), unbound = folder();
   const created = await engram.ok("init", "--json", "--directory", loose);
@@ -165,6 +173,7 @@ test("startup-context without a group reports ecosystem none and an unbound fold
   expect(existsSync(join(unbound, ".forge614"))).toBe(false);
 }, T);
 
+// Un proyecto vinculado solo por ruta (project-bind, sin archivo de identidad) recibe su archivo en el siguiente startup-context, con un aviso PROJECT_FILE_CREATED que solo sale esa primera vez.
 test("a project bound by path receives its identity file on the next startup-context, with a notice", async () => {
   const engram = await machine(); const repository = folder();
   const project = await engram.ok("project-create", "--name", "legado");
@@ -176,6 +185,7 @@ test("a project bound by path receives its identity file on the next startup-con
   expect((await engram.ok("startup-context", "--directory", repository, "--json")).project.notices).toBeUndefined();
 }, T);
 
+// session-start, igual que startup-context, le da su archivo de identidad a un proyecto vinculado solo por ruta y lo dice en el resultado; repetirlo ya no lleva el aviso.
 test("session-start gives a legacy path-bound project its identity file and says so in the result", async () => {
   const engram = await machine(); const repository = folder();
   await engram.ok("sessions-enable");
@@ -190,6 +200,7 @@ test("session-start gives a legacy path-bound project its identity file and says
   expect(Object.keys(again)).toEqual(["sessionId", "projectId", "kind", "startedAt", "endedAt"]);
 }, T);
 
+// Repetir init o project-bind sobre la misma carpeta deja el archivo de identidad byte a byte idéntico, sin crear un segundo proyecto.
 test("init and project-bind are idempotent: a repeated run leaves the identity file byte-identical", async () => {
   const engram = await machine(); const repository = folder();
   const first = await engram.ok("init", "--json", "--directory", repository);
@@ -204,6 +215,7 @@ test("init and project-bind are idempotent: a repeated run leaves the identity f
   expect((await engram.ok("project-list"))).toHaveLength(1);
 }, T);
 
+// Si el vínculo local (project-bind) y el archivo de identidad no coinciden, gana el archivo: se reasigna al id declarado, se registra el evento y el archivo nunca se toca.
 test("when the local binding and the file disagree the file wins, the event is recorded and the file is never touched", async () => {
   const engram = await machine(); const repository = folder();
   const local = await engram.ok("project-create", "--name", "local");
@@ -214,8 +226,8 @@ test("when the local binding and the file disagree the file wins, the event is r
   const digest = sha(identityPath(repository));
   const context = await engram.ok("startup-context", "--directory", repository, "--json");
   expect(context.project).toMatchObject({ projectId: declared, source: "file" });
-  // A brand-new base is already at the ecosystem-and-intelligence level: rebinding from the file
-  // is the only notice, with no migration ahead of it.
+  // Una base recién creada ya está en el nivel de ecosistema e inteligencia: reasignar desde el
+  // archivo es el único aviso, sin ninguna migración por delante.
   expect(context.project.notices.map((item: any) => item.code)).toEqual(["PROJECT_REBOUND_FROM_FILE"]);
   expect(sha(identityPath(repository))).toBe(digest);
   const db = new Database(engram.database, { readonly: true });
@@ -223,6 +235,7 @@ test("when the local binding and the file disagree the file wins, the event is r
   finally { db.close(); }
 }, T);
 
+// JSON corrupto, una versión de esquema desconocida, o un campo extra en project.json: los tres casos fallan igual con PROJECT_FILE_INVALID y el archivo nunca se sobrescribe.
 test.each([
   ["corrupt JSON", "{ not json"],
   ["an unknown schema version", JSON.stringify({ schemaVersion: 2, project: { id: "6f0e1c1a-0000-4000-8000-000000000001", name: "x" }, ecosystem: null })],
@@ -237,6 +250,7 @@ test.each([
   expect(await engram.ok("project-list")).toEqual([]);
 }, T);
 
+// Vincular un proyecto a un grupo actualiza el archivo de identidad de su carpeta; renombrar el grupo o el proyecto se refleja ahí; el id nunca cambia con ninguna de estas operaciones.
 test("group-bind updates the identity file of the bound folder; renames follow; ids never change", async () => {
   const engram = await machine(); const repository = folder();
   const created = await engram.ok("init", "--json", "--directory", repository);
@@ -252,13 +266,14 @@ test("group-bind updates the identity file of the bound folder; renames follow; 
   expect(readIdentity(repository)).toEqual({ schemaVersion: 1, project: { id, name: "frontend-nuevo" }, ecosystem: null });
 }, T);
 
+// Con el mismo topicKey guardado en los tres alcances, la búsqueda por scope all prioriza project sobre ecosystem, y ecosystem sobre shared; al archivar el de mayor prioridad, aparece el siguiente.
 test("a repeated topic key resolves project over ecosystem over shared", async () => {
   const engram = await machine(); const repository = folder();
   const { project } = await engram.ok("init", "--json", "--directory", repository);
   await engram.ok("group-create", "--name", "tienda");
   await engram.ok("group-bind", "--project-id", project.projectId, "--group", "tienda");
-  // The ecosystem board now requires at least two affected member projects (memory
-  // intelligence, born with a brand-new base): bind a second one to the group.
+  // El tablero de ecosistema ahora exige al menos dos proyectos miembro afectados (memoria
+  // inteligente, con la que nace una base nueva): se vincula un segundo al grupo.
   const repositoryName = readIdentity(repository).project.name as string;
   const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
   await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
@@ -276,11 +291,12 @@ test("a repeated topic key resolves project over ecosystem over shared", async (
   expect(ecosystem).toMatchObject({ scope: "ecosystem", groupId: expect.any(String), projectId: null });
 }, T);
 
+// save, get, history, search y context aceptan --scope ecosystem --group (por nombre o por id) y rechazan combinaciones inconsistentes de banderas (shared con --group, ecosystem sin --group, un grupo que no existe).
 test("save, get, history, search and context accept --scope ecosystem --group and refuse inconsistent flags", async () => {
   const engram = await machine();
   const group = (await engram.ok("group-create", "--name", "tienda")).group;
-  // The ecosystem board now requires at least two affected member projects (memory
-  // intelligence, born with a brand-new base).
+  // El tablero de ecosistema ahora exige al menos dos proyectos miembro afectados (memoria
+  // inteligente, con la que nace una base nueva).
   const a = await engram.ok("project-create", "--name", "tienda-a");
   const b = await engram.ok("project-create", "--name", "tienda-b");
   await engram.ok("group-bind", "--project-id", a.projectId, "--group", "tienda");
@@ -300,14 +316,15 @@ test("save, get, history, search and context accept --scope ecosystem --group an
   await engram.ok("restore", "--scope", "ecosystem", "--group", "tienda", "--id", saved.id);
 }, T);
 
+// El context de un proyecto miembro de un grupo trae además su bloque ecosystem; el de un proyecto suelto conserva exactamente la misma forma de siempre.
 test("context for a project in a group also returns its ecosystem block; for a loose project it is unchanged", async () => {
   const engram = await machine();
   const loose = await engram.ok("project-create", "--name", "suelto");
   const member = await engram.ok("project-create", "--name", "miembro");
   const group = (await engram.ok("group-create", "--name", "tienda")).group;
   await engram.ok("group-bind", "--project-id", member.projectId, "--group", "tienda");
-  // The ecosystem board now requires at least two affected member projects (memory
-  // intelligence, born with a brand-new base).
+  // El tablero de ecosistema ahora exige al menos dos proyectos miembro afectados (memoria
+  // inteligente, con la que nace una base nueva).
   const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
   await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
   await engram.ok("save", "--scope", "ecosystem", "--group", "tienda", "--title", "Regla", "--content", "de grupo", "--type", "decision", "--affects", "miembro,tienda-sibling");
@@ -318,13 +335,14 @@ test("context for a project in a group also returns its ecosystem block; for a l
   expect(withGroup.recent).toEqual([]);
 }, T);
 
+// memory-move sube un recuerdo de project (o de shared) a ecosystem conservando su id, todo su historial de versiones y agregando una versión más con el nuevo scope; un topicKey ya usado en el grupo detiene el movimiento sin copiar ni borrar nada.
 test("memory-move re-scopes a memory into a group keeping its id, history and versions", async () => {
   const engram = await machine();
   const project = await engram.ok("project-create", "--name", "frontend");
   await engram.ok("group-create", "--name", "tienda");
-  // The ecosystem board now requires at least two affected member projects (memory
-  // intelligence, born with a brand-new base): bind the project and a sibling, and record the
-  // affected projects on the memory before it moves (the move itself reuses that metadata).
+  // El tablero de ecosistema ahora exige al menos dos proyectos miembro afectados (memoria
+  // inteligente, con la que nace una base nueva): se vincula el proyecto y un compañero, y se
+  // registran los proyectos afectados en el recuerdo antes de moverlo (el movimiento reutiliza esos metadatos).
   const sibling = await engram.ok("project-create", "--name", "tienda-sibling");
   await engram.ok("group-bind", "--project-id", project.projectId, "--group", "tienda");
   await engram.ok("group-bind", "--project-id", sibling.projectId, "--group", "tienda");
@@ -339,17 +357,18 @@ test("memory-move re-scopes a memory into a group keeping its id, history and ve
   const db = new Database(engram.database, { readonly: true });
   try { expect(db.query("SELECT action,groupId IS NOT NULL AS g FROM identity_events WHERE action='MEMORY_MOVED'").all()).toEqual([{ action: "MEMORY_MOVED", g: 1 }]); }
   finally { db.close(); }
-  // Nothing is copied or deleted silently: a topic already taken in the group stops the move.
-  // (type decision, not fact: the ecosystem board no longer allows fact outside the status note.)
+  // Nada se copia ni se borra en silencio: un tema ya ocupado en el grupo detiene el movimiento.
+  // (tipo decision, no fact: el tablero de ecosistema ya no permite fact fuera de la nota de estado.)
   const other = await engram.ok("save", "--project-id", project.projectId, "--title", "Otro", "--content", "c", "--type", "decision", "--topic", "api", "--affects", "frontend,tienda-sibling");
   const conflict = await engram.fail("memory-move", "--id", other.id, "--project-id", project.projectId, "--to-scope", "ecosystem", "--group", "tienda");
   expect(conflict).toEqual({ schemaVersion: 1, code: "TOPIC_CONFLICT", error: expect.any(String) });
   expect(await engram.ok("get", "--project-id", project.projectId, "--id", other.id)).toMatchObject({ scope: "project" });
-  // Shared memories can move too.
+  // Los recuerdos shared también se pueden mover.
   const shared = await engram.ok("save", "--scope", "shared", "--title", "Global", "--content", "g", "--type", "decision", "--topic", "g", "--affects", "frontend,tienda-sibling");
   expect((await engram.ok("memory-move", "--id", shared.id, "--scope", "shared", "--to-scope", "ecosystem", "--group", "tienda")).from).toEqual({ scope: "shared", projectId: null });
 }, T);
 
+// El texto de memory-protocol para las versiones 1 y 2 coincide byte a byte con memoryProtocol(1) y memoryProtocol(2); la versión 3 ya menciona ecosystem y groupIntent.
 test("memory protocol versions 1 and 2 stay byte-identical and version 3 announces the ecosystem scope", async () => {
   const engram = await machine(false);
   for (const version of [1, 2] as const) {
@@ -365,13 +384,14 @@ test("memory protocol versions 1 and 2 stay byte-identical and version 3 announc
   expect(JSON.stringify(three)).toContain("groupIntent");
 }, T);
 
+// Una base creada por v1.5.3 abre y se lee completa con la versión nueva sin migrar nada; solo un comando que necesita escribir (group-create) dispara la migración, con respaldo, y los datos siguen intactos después.
 test("a database created by v1.5.3 opens and reads completely with the new version, then upgrades on demand with a backup", async () => {
   const engram = await machine();
   const fixture = resolve(import.meta.dir, "../../../../tests/fixtures/v1.5.3/schema-7.db");
   for (const suffix of ["", "-wal", "-shm"]) rmSync(engram.database + suffix, { force: true });
   copyFileSync(fixture, engram.database);
-  // A database in daily use keeps its WAL sidecars next to it (Bun's SQLite cannot open a WAL database
-  // read-only without them), so hold one connection open for the duration, as a running assistant would.
+  // Una base en uso diario conserva sus archivos WAL al lado (el SQLite de Bun no puede abrir una base
+  // con WAL en modo solo lectura sin ellos), así que se mantiene una conexión abierta durante la prueba, como lo haría un asistente en ejecución.
   const holder = new Database(engram.database); holder.query("SELECT count(*) FROM memories").get();
   try {
   const projects = await engram.ok("project-list");
@@ -398,6 +418,7 @@ test("a database created by v1.5.3 opens and reads completely with the new versi
   } finally { holder.close(); }
 }, T);
 
+// El primer comando que migra una base con datos reales lo dice en un aviso DATABASE_MIGRATED que nombra el respaldo; los siguientes comandos ya no lo reportan.
 test("the command that first upgrades a base with data says so and names the backup; later ones stay quiet", async () => {
   const engram = await machine();
   const fixture = resolve(import.meta.dir, "../../../../tests/fixtures/v1.5.3/schema-7.db");
@@ -425,6 +446,7 @@ test("the command that first upgrades a base with data says so and names the bac
   } finally { holder2.close(); }
 }, T);
 
+// Los comandos que ya existían antes del ecosistema (project-create, save, get, project-bind, memory-protocol sin --protocol-version, get de un id inexistente) conservan exactamente su misma forma de campos.
 test("existing commands keep their exact JSON shape for someone who never uses the ecosystem scope", async () => {
   const engram = await machine();
   const project = await engram.ok("project-create", "--name", "clasico");
@@ -440,16 +462,17 @@ test("existing commands keep their exact JSON shape for someone who never uses t
   const error = JSON.parse((await engram.run("get", "--project-id", project.projectId, "--id", "nada")).stderr);
   expect(error).toEqual({ code: "NOT_FOUND", error: "Recuerdo no encontrado en el alcance seleccionado." });
 }, T);
+// group-source-set fija qué proyecto es la fuente del grupo; un save de tipo fact en ecosystem sin el tema de la nota de estado (`ecosystem/estado-actual`) falla con ECOSYSTEM_TYPE_NOT_ALLOWED aunque la fuente ya esté fijada; memory-demote baja un recuerdo de vuelta a project.
 test("group-source-set, memory-demote and save --affects speak the machine contract at level 11", async () => {
   const engram = await machine();
   const ai = await engram.ok("project-create", "--name", "forge614-ai");
   const node = await engram.ok("project-create", "--name", "forge614-engram");
   await engram.ok("group-create", "--name", "forge614");
   for (const project of [ai, node]) await engram.ok("group-bind", "--project-id", project.projectId, "--group", "forge614");
-  // A brand-new base is already born at level 11 (memory intelligence included), so
-  // intelligence-enable is a no-op here; the INTELLIGENCE_REQUIRED gate itself (group-source-set
-  // refusing a pre-intelligence database) is covered directly in board.test.ts and
-  // meta-save.test.ts against a database built at a lower level.
+  // Una base recién creada ya nace en el nivel 11 (con la memoria inteligente incluida), así que
+  // intelligence-enable es aquí un no-op; la propia condición INTELLIGENCE_REQUIRED (group-source-set
+  // rechazando una base anterior a la inteligencia) se cubre directamente en board.test.ts y
+  // meta-save.test.ts contra una base construida en un nivel más bajo.
   expect(await engram.ok("intelligence-enable")).toMatchObject({ enabled: true, migrated: false });
   expect(await engram.ok("group-source-set", "--group", "forge614", "--project-id", ai.projectId))
     .toEqual({ schemaVersion: 1, source: { groupId: expect.any(String), projectId: ai.projectId, setAt: expect.any(String) } });

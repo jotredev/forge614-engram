@@ -1,6 +1,8 @@
+/** Comprueba los límites públicos de `toolSchemas`: qué acepta y qué rechaza cada campo. */
 import { expect, test } from "bun:test";
 import { toolSchemas } from "./schemas";
 
+// short acepta hasta 300 caracteres, supersedes hereda el límite de 128 caracteres de `id`, y affects acepta entre 1 y 20 elementos.
 test("memory_save accepts bounded metadata fields", () => {
   const save = { title: "T", content: "c", type: "decision" as const };
   expect(toolSchemas.memory_save.parse({ ...save, short: "  corta  ", supersedes: "id-1", affects: ["engram", "shell"] }))
@@ -10,6 +12,7 @@ test("memory_save accepts bounded metadata fields", () => {
   expect(toolSchemas.memory_save.safeParse({ ...save, affects: Array.from({ length: 21 }, (_, i) => `p${i}`) }).success).toBe(false);
 });
 
+// title y content se recortan (trim) porque son texto durable a mostrar; sessionId conserva sus espacios y controles tal cual, para no romper el identificador que da el cliente.
 test("save schema normalizes durable text while preserving exact session identity", () => {
   expect(toolSchemas.memory_save.parse({title:"  Keep  ",content:"  Decision  ",type:"decision",sessionId:"chat-1"})).toEqual({title:"Keep",content:"Decision",type:"decision",sessionId:"chat-1"});
   for (const sessionId of [" chat", "chat ", "chat\n", "x".repeat(201)]) {
@@ -17,6 +20,7 @@ test("save schema normalizes durable text while preserving exact session identit
   }
   expect(toolSchemas.memory_session_start.safeParse({sessionId:"x".repeat(200)}).success).toBe(true);
 });
+// limit de memory_search va de 1 a 50 y debe ser entero; after de memory_timeline llega hasta 20; maxBytes de memory_context va de 1024 a 65536.
 test("search, timeline and context schemas enforce their public bounds", () => {
   expect(toolSchemas.memory_search.safeParse({query:"x",limit:50}).success).toBe(true);
   for (const limit of [0,51,1.5]) expect(toolSchemas.memory_search.safeParse({query:"x",limit}).success).toBe(false);
@@ -26,6 +30,7 @@ test("search, timeline and context schemas enforce their public bounds", () => {
   for(const maxBytes of [1024,65536]) expect(toolSchemas.memory_context.safeParse({scope:"shared",maxBytes}).success).toBe(true);
   for(const maxBytes of [1023,65537]) expect(toolSchemas.memory_context.safeParse({maxBytes}).success).toBe(false);
 });
+// Cada esquema es .strict(): un campo no listado (projectId, secret) lo rechaza aunque el resto sea válido; un resumen sin sus seis campos también.
 test("schemas reject unknown fields, nul bytes and incomplete structured summaries", () => {
   expect(toolSchemas.memory_current_project.safeParse({directory:"/tmp",projectId:"unexpected"}).success).toBe(false);
   expect(toolSchemas.memory_current_project.safeParse({directory:"/tmp\0private"}).success).toBe(false);
@@ -35,6 +40,7 @@ test("schemas reject unknown fields, nul bytes and incomplete structured summari
   expect(toolSchemas.memory_session_summary.safeParse({sessionId:"chat",requestKey:"key",summary:{...summary,secret:"hidden"}}).success).toBe(false);
 });
 
+// El scope "ecosystem" exige groupIntent (no vacío, sin bytes nulos, hasta 1000 caracteres) y solo lo aceptan las herramientas listadas en la tabla.
 test("the ecosystem scope is accepted by the memory tools with strict shapes", () => {
   const save = { title: "Rule", content: "Body", type: "decision" as const };
   expect(toolSchemas.memory_save.parse({ ...save, scope: "ecosystem", groupIntent: "  Applies to every repo of the group  " }))

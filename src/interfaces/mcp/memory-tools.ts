@@ -1,10 +1,15 @@
+/**
+ * Registra las herramientas MCP (protocolo de contexto de modelo) que leen y guardan recuerdos: `memory_current_project`,
+ * `memory_search`, `memory_get`, `memory_save` y `memory_history`. `tools.ts` llama a `registerMemoryTools` una sola vez
+ * al construir el servidor; `sessions-tools.ts` reutiliza `ecosystemTarget` para resolver el grupo de ecosistema del proyecto.
+ */
 import { resolveProjectContext, saveProjectMemoryWithSessionAndNotices } from "../../app";
 import type { ToolContext } from "./context";
 import { MemoryError } from "../../shared/errors";
 import type { MemoryType, SearchScope } from "../../modules/memory";
 import { toolSchemas } from "./schemas";
 
-/** The bound project of a directory and the ecosystem group it belongs to; both are required for the ecosystem scope. */
+/** Resuelve el proyecto vinculado a un directorio y el grupo de ecosistema al que pertenece; ambos son obligatorios para el alcance (scope) ecosystem. */
 export async function ecosystemTarget({memoryStore,projectDirectory}:ToolContext, directory:string|undefined):Promise<{projectId:string;group:{id:string;name:string}}> {
   const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
   if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
@@ -12,6 +17,7 @@ export async function ecosystemTarget({memoryStore,projectDirectory}:ToolContext
   return {projectId:context.projectId,group:context.group};
 }
 
+/** Da de alta las cinco herramientas de lectura y guardado de recuerdos sobre el `ToolContext` recibido. */
 export function registerMemoryTools(tools:ToolContext):void {
   const {register,safely,memoryStore,projectDirectory}=tools;
   register("memory_current_project", {
@@ -27,7 +33,9 @@ export function registerMemoryTools(tools:ToolContext):void {
     inputSchema:toolSchemas.memory_search,
   }, safely(async ({ directory,query,limit,scope }) => {
     const selected = scope ?? "all";
+    // El alcance shared no necesita proyecto vinculado: se busca directamente con projectId nulo.
     if (selected === "shared") return {format:2,results:memoryStore().searchPreviews(null,query,limit ?? 10,"shared")};
+    // Cualquier otro alcance (project, ecosystem o all) exige resolver primero el proyecto de la carpeta.
     const directoryPath = await projectDirectory(directory);
     const context = resolveProjectContext(memoryStore(),directoryPath,false);
     if (!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta todavía no está vinculada; guardar puede crearla o project-bind puede recuperarla.");
@@ -38,6 +46,7 @@ export function registerMemoryTools(tools:ToolContext):void {
     description:"Get one memory after verifying it belongs to the selected project or explicit shared scope.",
     inputSchema:toolSchemas.memory_get,
   }, safely(async ({ directory,id,scope,version }) => {
+    // El alcance ecosystem se resuelve aparte: busca por grupo, no por projectId, y no pasa por getVersion.
     if (scope === "ecosystem") {
       const { group } = await ecosystemTarget(tools,directory);
       const found = memoryStore().getVersionInGroup(group.id,id,version);
@@ -46,6 +55,7 @@ export function registerMemoryTools(tools:ToolContext):void {
     }
     let projectId: string | null = null;
     let notices: unknown[] | undefined;
+    // shared usa projectId nulo a propósito; cualquier otro alcance necesita el proyecto de la carpeta.
     if (scope !== "shared") {
       const directoryPath = await projectDirectory(directory);
       const context = resolveProjectContext(memoryStore(),directoryPath,false);
@@ -70,6 +80,7 @@ export function registerMemoryTools(tools:ToolContext):void {
     if (input.short !== undefined) saveInput.short = input.short;
     if (input.supersedes !== undefined) saveInput.supersedes = input.supersedes;
     if (input.affects !== undefined) saveInput.affects = input.affects;
+    // Alcance ecosystem: exige groupIntent, prohíbe los campos propios de shared y guarda contra el grupo del proyecto (no contra un projectId).
     if (scope === "ecosystem") {
       if (!groupIntent) throw new MemoryError("GROUP_INTENT_REQUIRED","scope ecosystem requiere explicar por qué aplica a todo el ecosistema (groupIntent).");
       if (globalIntent !== undefined) throw new MemoryError("INVALID_INPUT","globalIntent solo se acepta con scope shared explícito.");
@@ -80,6 +91,7 @@ export function registerMemoryTools(tools:ToolContext):void {
       return saved.similar ? {...saved.memory,similar:saved.similar} : saved.memory;
     }
     if (groupIntent !== undefined) throw new MemoryError("INVALID_INPUT","groupIntent solo se acepta con scope ecosystem.");
+    // Alcance shared: exige globalIntent y, si se da sessionId o sessionProjectId, exige los dos juntos; guarda con projectId nulo.
     if (scope === "shared") {
       if (!globalIntent) throw new MemoryError("SHARED_INTENT_REQUIRED","scope shared requiere explicar la intención global explícita del usuario.");
       if ((sessionId === undefined) !== (sessionProjectId === undefined)) throw new MemoryError("INVALID_INPUT","sessionId y sessionProjectId son obligatorios juntos para shared.");
@@ -87,6 +99,7 @@ export function registerMemoryTools(tools:ToolContext):void {
         {mode:"assistant",...(sessionId?{sessionId}:{}),...(sessionProjectId?{projectId:sessionProjectId}:{})});
       return saved.similar ? {...saved.memory,similar:saved.similar} : saved.memory;
     }
+    // Sin scope explícito (project, el caso por defecto): globalIntent y sessionProjectId no aplican; se resuelve o crea el proyecto de la carpeta.
     if (globalIntent !== undefined) throw new MemoryError("INVALID_INPUT","globalIntent solo se acepta con scope shared explícito.");
     if (sessionProjectId !== undefined) throw new MemoryError("INVALID_INPUT","sessionProjectId solo se acepta con scope shared.");
     const directoryPath = await projectDirectory(directory);
@@ -98,6 +111,7 @@ export function registerMemoryTools(tools:ToolContext):void {
     description:"List all versions after verifying memory ownership in the selected scope.",
     inputSchema:toolSchemas.memory_history,
   }, safely(async ({ directory,id,scope }) => {
+    // Igual que en memory_get: ecosystem se resuelve por grupo, aparte de la ruta por projectId.
     if (scope === "ecosystem") {
       const { group } = await ecosystemTarget(tools,directory);
       const versions = memoryStore().historyInGroup(group.id,id);

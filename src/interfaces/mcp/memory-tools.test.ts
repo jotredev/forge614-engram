@@ -1,9 +1,11 @@
+/** Comprueba las herramientas MCP de `memory-tools.ts`: guardado, lectura, búsqueda e historial en cada alcance (project, shared, ecosystem). */
 import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FIELD_DESCRIPTIONS } from "../../modules/memory-protocol";
 import { registerMemoryTools } from "./memory-tools";
 
+// Al nivel 11 (inteligencia activa), memory_get añade marcas como "superseded" y un secreto detectado se rechaza con SECRET_REJECTED en vez de guardarse.
 test("memory_save passes metadata through and memory_get returns it with marks at level 11", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {
@@ -17,6 +19,7 @@ test("memory_save passes metadata through and memory_get returns it with marks a
 });
 import { sdkHarness } from "./__tests__/sdk-harness";
 
+// La nota ecosystem/estado-actual solo la puede escribir el proyecto que el grupo marcó como fuente (setGroupSource); antes de marcarlo, se rechaza con ECOSYSTEM_STATUS_FORBIDDEN.
 test("memory_save writes the ecosystem status note only from the group's source project (level 11)", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {
@@ -31,6 +34,7 @@ test("memory_save writes the ecosystem status note only from the group's source 
   } finally {await h.close();}
 });
 
+// Sin proyecto vinculado, memory_search falla con PROJECT_NOT_BOUND; una vez guardado el primer recuerdo, memory_get, memory_history y memory_search por scope project funcionan sobre esa versión.
 test("memory handlers resolve projects, save revisions and expose owner-scoped previews and history", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {
@@ -47,6 +51,7 @@ test("memory handlers resolve projects, save revisions and expose owner-scoped p
     expect((await h.call("memory_get",{id:saved.id,scope:"shared"})).data.code).toBe("NOT_FOUND");
   } finally {await h.close();}
 });
+// scope shared exige globalIntent; sessionId y sessionProjectId son obligatorios juntos; un guardado shared válido no crea ni resuelve ningún proyecto.
 test("shared saves require explicit intent and paired session ownership without resolving a project", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {
@@ -62,6 +67,7 @@ test("shared saves require explicit intent and paired session ownership without 
   } finally {await h.close();}
 });
 
+// Con la reforzamiento de búsqueda activo, un guardado con el mismo título y contenido que otro del mismo proyecto refuerza la versión existente en vez de crear una nueva, y nunca toca el recuerdo de otro proyecto (foreign).
 test("enrolled MCP duplicate saves reinforce one project memory without creating a version or leaking another owner", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {
@@ -79,6 +85,7 @@ test("enrolled MCP duplicate saves reinforce one project memory without creating
   } finally {await h.close();}
 });
 
+/** Crea el primer recuerdo del proyecto y lo une a un grupo de ecosistema recién creado; lo usan las pruebas de scope ecosystem de este archivo. */
 async function grouped(h: Awaited<ReturnType<typeof sdkHarness>>, name = "tienda") {
   const first = (await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" })).data;
   h.store.enableEcosystem();
@@ -87,6 +94,7 @@ async function grouped(h: Awaited<ReturnType<typeof sdkHarness>>, name = "tienda
   return { projectId: first.projectId as string, group };
 }
 
+// scope ecosystem exige groupIntent y un proyecto ya unido a un grupo (PROJECT_NOT_BOUND antes de eso); prohíbe mezclar globalIntent o sessionProjectId, y groupIntent nunca se acepta fuera de ecosystem.
 test("ecosystem saves need a truthful groupIntent and a project that belongs to a group", async () => {
   const h = await sdkHarness(registerMemoryTools);
   try {
@@ -108,6 +116,7 @@ test("ecosystem saves need a truthful groupIntent and a project that belongs to 
   } finally { await h.close(); }
 });
 
+// Un proyecto que no pertenece a ningún grupo no puede guardar, buscar, leer ni listar el historial en scope ecosystem: las cuatro herramientas devuelven GROUP_REQUIRED.
 test("a project outside any group cannot save, search or read the ecosystem scope", async () => {
   const h = await sdkHarness(registerMemoryTools);
   try {
@@ -120,6 +129,7 @@ test("a project outside any group cannot save, search or read the ecosystem scop
   } finally { await h.close(); }
 });
 
+// Un recuerdo ecosystem aparece en la búsqueda y lectura por su grupo aunque exista un recuerdo shared con el mismo título; sin scope explícito, memory_search también encuentra el ecosystem del proyecto actual, pero memory_get sin scope no (NOT_FOUND).
 test("ecosystem memories are searched, read and listed through the group of the current project", async () => {
   const h = await sdkHarness(registerMemoryTools);
   try {
@@ -137,6 +147,7 @@ test("ecosystem memories are searched, read and listed through the group of the 
   } finally { await h.close(); }
 });
 
+// El aviso DATABASE_MIGRATED sale solo la primera vez que una llamada toca un archivo de proyecto en un esquema viejo; el siguiente guardado y memory_current_project ya no lo llevan.
 test("the first tool call that upgrades the base carries the notice, and only that one", async () => {
   const h = await sdkHarness(registerMemoryTools);
   try {
@@ -149,6 +160,7 @@ test("the first tool call that upgrades the base carries the notice, and only th
     expect((await h.call("memory_current_project")).data.notices).toBeUndefined();
   } finally { await h.close(); }
 });
+// Al nivel 11, guardar un recuerdo parecido a uno anterior lo lista en similar; memory_search, con modo híbrido, encuentra ese recuerdo aunque la pregunta esté escrita en lenguaje natural.
 test("memory_save reports look-alikes of a new memory at level 11 and memory_search finds natural questions", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {
@@ -162,6 +174,7 @@ test("memory_save reports look-alikes of a new memory at level 11 and memory_sea
   } finally {await h.close();}
 });
 
+// Las descripciones que ve el cliente MCP en tools/list para cada campo vienen del manual (FIELD_DESCRIPTIONS), no de un texto propio de cada esquema.
 test("tools/list publishes the manual's field descriptions for memory_save and memory_search", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {

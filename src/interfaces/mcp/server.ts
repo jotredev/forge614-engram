@@ -1,3 +1,9 @@
+/**
+ * Servidor MCP (protocolo de contexto de modelo) que se comunica por entrada y salida estándar (stdio): la forma
+ * en que los clientes de IA (Claude Code, etc.) hablan con Forge614 Engram. `commands.ts` lo arranca con
+ * `forge614 mcp`; registra las diez herramientas de `tools.ts` y cierra la base de datos de forma ordenada
+ * al recibir SIGINT, SIGTERM o el cierre de la entrada estándar.
+ */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { MemoryStore, MemoryWorkspace } from "../../app";
@@ -7,7 +13,7 @@ import { version } from "../../../package.json";
 import { directoryResolver } from "./project-directory";
 import { registerTools } from "./tools";
 
-/** Starts the local stdio MCP server. Opening SQLite is deferred until a tool call. */
+/** Arranca el servidor MCP local por stdio. Abrir SQLite se aplaza hasta la primera llamada a una herramienta. */
 export async function startMcp(): Promise<void> {
   let store: MemoryStore | null = null;
   let closing = false;
@@ -22,6 +28,7 @@ export async function startMcp(): Promise<void> {
   const transport = new StdioServerTransport(process.stdin,process.stdout,{ maxBufferSize:256 * 1024 });
   const closeStore = () => { store?.close(); store = null; };
   let shutdownPromise: Promise<void> | null = null;
+  // Memoizada: SIGINT, SIGTERM y el cierre de stdin pueden llegar juntos, y el cierre solo debe ejecutarse una vez.
   const shutdown = (): Promise<void> => {
     if (shutdownPromise) return shutdownPromise;
     closing = true; closeStore();

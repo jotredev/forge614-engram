@@ -1,3 +1,9 @@
+/**
+ * Arma un servidor y un cliente MCP (protocolo de contexto de modelo) reales, unidos por un transporte en memoria,
+ * con una base SQLite efímera (`:memory:`) y una carpeta temporal como directorio de proyecto. Lo usan las pruebas
+ * de `project-directory.test.ts`, `memory-tools.test.ts`, `sessions-tools.test.ts` y `tools.test.ts`
+ * para registrar herramientas y llamarlas sin depender de un proceso ni de un archivo real de usuario.
+ */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +14,7 @@ import { ListRootsRequestSchema, type CallToolResult } from "@modelcontextprotoc
 import { MemoryStore } from "../../../app";
 import { safely, type ToolContext } from "../context";
 
-// Real SDK transports and ephemeral SQLite; no module mocks or personal paths.
+// Transportes reales del SDK y SQLite efímera; sin simulacros (mocks) de módulos ni rutas personales.
 export async function sdkHarness(register?: (context:ToolContext,server:McpServer)=>void, roots?:string[]) {
   const directory=mkdtempSync(join(tmpdir(),"engram-handler-"));
   const store=new MemoryStore(":memory:"); store.enableProjectBindings(); store.enableSessions();
