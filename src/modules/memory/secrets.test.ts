@@ -1,3 +1,4 @@
+/** Comprueba que cada patrón de secreto se detecte por su id, que textos legítimos del dominio nunca se marquen como secretos, y que una asignación con valor literal se rechace en cualquier forma. */
 import { expect, test } from "bun:test";
 import { findSecret } from "./secrets";
 
@@ -13,6 +14,8 @@ const SAMPLES: ReadonlyArray<readonly [string, string]> = [
   ["password-assignment", join("pass", "word = ", "hunter2hunter2")],
 ];
 
+// Cada muestra está partida en trozos (join) para que el propio archivo de pruebas no contenga el
+// secreto en texto plano; cada una debe devolver exactamente el id de su patrón.
 test("every secret pattern is detected and only its id is returned", () => {
   for (const [id, text] of SAMPLES) expect(findSecret(text)).toBe(id);
 });
@@ -38,7 +41,7 @@ const BENIGN = [
   "El respaldo queda en engram.db.v10-pre-intelligence-20260924T180657787Z-0542aea7.bak.",
   "Precio de Opus 5.5: entrada $4, salida $20 por millón de tokens.",
   "La API key se configura como variable de entorno, nunca en la memoria.",
-  // Keyword followed by something that names or hides a value (errata 2026-09-24).
+  // Palabra clave seguida de algo que nombra u oculta un valor, no un valor real (errata 2026-09-24).
   "La config usa apiKey: process.env.OPENAI_KEY",
   "El error es secret: SECRET_REJECTED cuando el texto trae credenciales.",
   "password: <redacted>",
@@ -48,10 +51,14 @@ const BENIGN = [
   "api_key=${API_KEY} en el archivo de entorno.",
 ];
 
+// Menciones normales del dominio (nombres de variable de entorno, referencias de código, hashes,
+// UUIDs, precios, rutas) no deben confundirse con un secreto real.
 test("real domain texts are never rejected", () => {
   for (const text of BENIGN) expect(findSecret(text)).toBeNull();
 });
 
+// Cualquier forma de asignación con un valor literal de 8 o más caracteres (dos puntos o igual,
+// con o sin comillas, mayúsculas o minúsculas en la palabra clave) debe rechazarse igual.
 test("an assignment with a literal value is rejected whatever its form", () => {
   const ASSIGNED = [
     join("pass", "word: ", "hunter2hunter2."),

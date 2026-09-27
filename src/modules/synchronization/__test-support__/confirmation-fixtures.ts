@@ -1,3 +1,8 @@
+/**
+ * Datos de prueba compartidos para los tests de sincronización y confirmaciones: identidades fijas
+ * (proyectos, recuerdos, confirmaciones), fechas fijas y funciones que arman instantáneas válidas de
+ * cada formato, para no repetir esta construcción en cada archivo de prueba.
+ */
 import { createHash } from "node:crypto";
 import type { Confirmation, ConfirmationRequest, MemoryVersion } from "../../memory";
 import type { MemoryBundle, SyncSnapshotV1, SyncSnapshotV2, SyncSnapshotV3 } from "../snapshot";
@@ -11,12 +16,20 @@ export const createdAt="2026-09-17T10:00:00.000Z";
 export const confirmedAt="2026-09-17T10:01:00.000Z";
 export const revisedAt="2026-09-17T10:02:00.000Z";
 
+/**
+ * Recalcula la huella de contenido de una petición de guardado, igual que `confirmations.ts`, para
+ * armar peticiones de prueba con la huella correcta.
+ * @param memory Versión del recuerdo.
+ * @param expectedVersion Versión esperada declarada por la petición.
+ * @returns La huella SHA-256 del contenido relevante.
+ */
 export function payloadHash(memory:MemoryVersion, expectedVersion:number|null):string {
   return createHash("sha256").update(JSON.stringify([
     memory.scope,memory.projectId,memory.title,memory.content,memory.type,memory.topicKey,memory.pinned,expectedVersion,
   ])).digest("hex");
 }
 
+/** Dos versiones sucesivas de un mismo recuerdo (versión 1 recién creada, versión 2 revisada), usadas como historial base en la mayoría de las pruebas. */
 export function versions():[MemoryVersion,MemoryVersion] {
   return [
     {id:memoryId,projectId,scope:"project",topicKey:"storage",type:"decision",title:"Store",content:"SQLite",pinned:false,version:1,createdAt,updatedAt:createdAt},
@@ -24,6 +37,12 @@ export function versions():[MemoryVersion,MemoryVersion] {
   ];
 }
 
+/**
+ * Arma un `MemoryBundle` completo (recuerdo activo, historial, eventos de guardado, sin peticiones)
+ * hasta la versión indicada.
+ * @param currentVersion Cuántas versiones del historial incluir (1 o 2).
+ * @returns El bundle con el recuerdo activo en la versión pedida.
+ */
 export function legacyBundle(currentVersion=2):MemoryBundle {
   const history=versions().slice(0,currentVersion);
   const current=history.at(-1)!;
@@ -33,6 +52,7 @@ export function legacyBundle(currentVersion=2):MemoryBundle {
   };
 }
 
+/** Una instantánea formato 2 completa y válida (un proyecto, un bundle de recuerdo, una sesión runtime abierta), lista para validar o reconciliar en las pruebas. */
 export function legacySnapshot(currentVersion=2):SyncSnapshotV2 {
   return {
     format:2,projects:[{projectId,name:"Primary",createdAt,updatedAt:createdAt}],memories:[legacyBundle(currentVersion)],
@@ -40,20 +60,24 @@ export function legacySnapshot(currentVersion=2):SyncSnapshotV2 {
   };
 }
 
+/** Una confirmación de escritura válida sobre la versión 1 del recuerdo de prueba, con la sesión runtime-a como origen. */
 export function confirmation(id=confirmationA):Confirmation {
   return {confirmationId:id,memoryId,version:1,recordedAt:confirmedAt,sessionId:"runtime-a"};
 }
 
+/** Una petición de confirmación válida para la versión 1 del recuerdo de prueba, con la huella y el origen de sesión coherentes con `confirmation()`. */
 export function request(id=confirmationA, requestKey="confirm-v1"):ConfirmationRequest {
   const memory=versions()[0];
   return {memoryId,requestKey,payloadHash:payloadHash(memory,1),expectedVersion:1,confirmationId:id,
     response:{memory,sessionId:"runtime-a",sessionSource:"inferred"}};
 }
 
+/** Una instantánea formato 3 completa y válida, con una confirmación y su petición ya incluidas. */
 export function snapshot3(currentVersion=2):SyncSnapshotV3 {
   return {...legacySnapshot(currentVersion),format:3,confirmations:[confirmation()],confirmationRequests:[request()]};
 }
 
+/** Un mismo bundle de recuerdo (con dos peticiones de guardado idempotente ya resueltas) expresado en formato 1 y en formato 2, para comprobar que ambos siguen siendo válidos y compatibles byte a byte. */
 export function compatibilitySnapshots():{one:SyncSnapshotV1;two:SyncSnapshotV2} {
   const bundle=legacyBundle(2);
   const [first,second]=bundle.versions;

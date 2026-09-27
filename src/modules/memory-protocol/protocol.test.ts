@@ -1,6 +1,9 @@
+/** Comprueba las cuatro versiones del protocolo de memoria: instrucciones, ciclo de vida, alcances, seguridad y los límites de tamaño del manual y de las instrucciones MCP. */
 import { expect, test } from "bun:test";
 import { FIELD_DESCRIPTIONS, MANUAL_MAX, MCP_INSTRUCTIONS_MAX, memoryProtocol } from "./protocol";
 
+// La versión 1 debe traer el ciclo de vida fijo completo (inicio, guardado, compactación, reanudación,
+// fin) y la lista de lo que nunca se guarda, y no debe llevar todavía startupContext (llegó en la v2).
 test("publishes the fixed version-one memory lifecycle", () => {
   const protocol = memoryProtocol();
 
@@ -17,10 +20,13 @@ test("publishes the fixed version-one memory lifecycle", () => {
   expect(protocol).not.toHaveProperty("startupContext");
 });
 
+// Pedir la versión 1 explícitamente o dejar el argumento por defecto debe dar el mismo objeto.
 test("version 1 stays byte-identical whether requested explicitly or by default", () => {
   expect(memoryProtocol(1)).toEqual(memoryProtocol());
 });
 
+// La versión 2 solo añade startupContext; instrucciones, ciclo de vida, alcances y seguridad deben
+// quedar igual que en la versión 1, y la descripción del comando no debe mencionar secretos.
 test("version 2 keeps version 1's instructions and lifecycle unchanged while announcing startup-context", () => {
   const v1 = memoryProtocol(1);
   const v2 = memoryProtocol(2);
@@ -37,7 +43,7 @@ test("version 2 keeps version 1's instructions and lifecycle unchanged while ann
   expect(v2.startupContext.description.toLowerCase()).not.toMatch(/password|token|credential|connection string/);
 });
 
-// Published protocol versions are immutable: these digests were taken from v1.5.3's own output.
+// Las versiones publicadas del protocolo son inmutables: estas huellas se tomaron de la propia salida de v1.5.3.
 test("versions 1 and 2 are byte-identical to what v1.5.3 published", () => {
   const digest = (version: 1 | 2) => new Bun.CryptoHasher("sha256").update(JSON.stringify(memoryProtocol(version), null, 2)).digest("hex");
   expect(digest(1)).toBe("f3817767979b2e7df397c53a139d0b90cb6bf5afe7f6773b7d7513f8d58c821b");
@@ -46,6 +52,8 @@ test("versions 1 and 2 are byte-identical to what v1.5.3 published", () => {
   expect(Object.isFrozen(memoryProtocol(2))).toBe(true);
 });
 
+// La versión 3 agrega el alcance ecosystem exigiendo groupIntent, sin tocar shared ni project, y
+// actualiza el ciclo de vida (inicio y guardado) para mencionar el nuevo alcance.
 test("version 3 announces the ecosystem scope, requires groupIntent and updates the lifecycle", () => {
   const v3 = memoryProtocol(3);
   expect(v3).toMatchObject({ id: "forge614-engram-memory", version: 3 });
@@ -66,18 +74,21 @@ test("version 3 announces the ecosystem scope, requires groupIntent and updates 
   expect(JSON.stringify(v3).toLowerCase()).not.toMatch(/password":|secret|claude|openai|anthropic/);
 });
 
+// La versión por defecto de memoryProtocol() nunca debe correrse aunque existan versiones más nuevas.
 test("the default and explicit selections never change: 1 stays the default", () => {
   expect(memoryProtocol().version).toBe(1);
   expect(memoryProtocol(2).version).toBe(2);
   expect(memoryProtocol(3).version).toBe(3);
 });
 
-// Version 3 as published by 1.6.0; a new version must never touch it.
+// La versión 3 tal como la publicó 1.6.0; una versión nueva nunca debe tocarla.
 test("version 3 stays byte-identical to what 1.6.0 published", () => {
   expect(new Bun.CryptoHasher("sha256").update(JSON.stringify(memoryProtocol(3), null, 2)).digest("hex"))
     .toBe("77732768998c56c7da85de311583a8565ff3fa9d46bdfbcc4f9d12d643332f19");
 });
 
+// La versión 4 es un solo manual maestro: mcpInstructions debe ser un subconjunto de reglas completas
+// de instructions, en el mismo orden, más corto, y ambas salidas deben caber bajo sus límites de tamaño.
 test("version 4 is one master manual: the MCP output keeps whole rules of the complete one, in order and within both limits", () => {
   const v4 = memoryProtocol(4);
   const count = (text: string) => Array.from(text).length;
@@ -99,9 +110,9 @@ test("version 4 is one master manual: the MCP output keeps whole rules of the co
   expect(memoryProtocol().version).toBe(1);
 });
 
-// 1.7.1: the session rule now distinguishes a parallel session from one left open, and the
-// writing rule asks for the reason when keeping a save apart from a similar one.
-// 1.7.2: the session rule names previous first, and for parallel says only that it is open now.
+// 1.7.1: la regla de sesión ahora distingue una sesión en paralelo de una dejada abierta, y la regla de
+// escritura pide el motivo al mantener un guardado aparte de uno similar.
+// 1.7.2: la regla de sesión nombra primero la sesión previa, y para la paralela solo dice que está abierta ahora.
 test("version 4 tells previous and parallel apart, asks for a reason when keeping a save apart, and stays within both limits", () => {
   const v4 = memoryProtocol(4);
   const count = (text: string) => Array.from(text).length;
@@ -115,6 +126,8 @@ test("version 4 tells previous and parallel apart, asks for a reason when keepin
   expect(count(v4.mcpInstructions)).toBeLessThan(MCP_INSTRUCTIONS_MAX);
 });
 
+// Cada descripción de campo debe ser corta (cabe en la ficha de una herramienta MCP), estar congelada
+// y nunca nombrar un producto de IA concreto.
 test("field descriptions are short, frozen and never name a product", () => {
   expect(Object.isFrozen(FIELD_DESCRIPTIONS)).toBe(true);
   for (const text of Object.values(FIELD_DESCRIPTIONS)) {

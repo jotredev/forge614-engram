@@ -1,3 +1,4 @@
+/** Punto de entrada del módulo `memory`: reexporta los tipos centrales del recuerdo, la comparación de confirmaciones, el cálculo del multiplicador de orden, la detección de secretos y los metadatos (short, affects, marcas). */
 export { memoryTypes } from "./types";
 export type { MemoryType, MemoryScope, MemoryOwner, SearchScope, SaveInput, MemoryVersion, Memory, SearchResult, ReinforcementExplanation, SearchExplanation, SimilarCandidate } from "./types";
 export { sameConfirmationPayload } from "./confirmations";

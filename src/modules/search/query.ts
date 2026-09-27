@@ -1,6 +1,11 @@
-// Natural-language query planning for the level-11 hybrid search: filler words are dropped,
-// the remaining terms are OR-ed, terms of four or more letters match by prefix in the word
-// index and terms of three or more letters match anywhere in the trigram index.
+/**
+ * Planificación de consultas en lenguaje natural para la búsqueda híbrida del nivel 11: quita palabras
+ * vacías (artículos, preposiciones, etc.), une los términos restantes con OR, y arma dos consultas: una
+ * para el índice de palabras (los términos de cuatro o más letras hacen coincidencia por prefijo) y otra
+ * para el índice de trigramas (los términos de tres o más letras hacen coincidencia en cualquier parte
+ * del texto). También calcula la similitud (índice de Jaccard) entre dos recuerdos para detectar
+ * duplicados al guardar. Lo usa `src/infrastructure/sqlite/search.ts` al construir y ejecutar búsquedas.
+ */
 const STOPWORDS = new Set([
   "a","al","algo","ante","antes","aqui","asi","cada","como","con","contra","cual","cuales","cuando","de","del","desde","donde",
   "el","ella","ellas","ellos","en","entre","era","eres","es","esa","esas","ese","eso","esos","esta","estaba","estan","estas",
@@ -12,54 +17,82 @@ const STOPWORDS = new Set([
   "this","to","was","we","were","what","when","where","which","who","why","will","with","you","your",
 ]);
 
-/** At most this many terms are sent to the indexes; the rest of a long text is ignored. */
+/** Como máximo se envían estos términos a los índices; el resto de un texto largo se ignora. */
 export const MAX_QUERY_TERMS = 16;
-/** A result must contain at least this many query terms (or all of them when the query has fewer). */
+/** Un resultado debe contener al menos estos términos de la consulta (o todos, si la consulta tiene menos). */
 export const MIN_MATCHED_TERMS = 2;
-/** Reciprocal rank fusion constant: a result scores 1/(RRF_K + rank) in each index that returns it. */
+/** Constante de fusión de rangos recíprocos (RRF): un resultado puntúa 1/(RRF_K + posición) en cada índice que lo devuelve. */
 export const RRF_K = 60;
-/** Candidates read from each index before fusion. */
+/** Candidatos leídos de cada índice antes de fusionarlos. */
 export const HYBRID_CANDIDATES = 50;
 
+/** Plan de consulta ya armado: los términos extraídos y las cadenas de consulta listas para el índice de palabras (`words`) y el de trigramas (`trigram`); `null` cuando no hay términos que buscar en ese índice. */
 export interface QueryPlan { terms: string[]; words: string | null; trigram: string | null }
 
+/** Quita los acentos de un texto (descomponiendo y eliminando las marcas diacríticas) y lo pasa a minúsculas. */
 function fold(text: string): string {
   return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 }
 
+/** Extrae las secuencias de letras y números de un texto ya sin acentos, como lista de palabras. */
 function tokens(text: string): string[] {
   return fold(text).match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
-/** Distinct folded words of a text without filler words; when every word is filler, all of them. */
+/**
+ * Extrae las palabras distintas de un texto (sin acentos, en minúsculas) descartando las palabras
+ * vacías; si el texto solo tiene palabras vacías, las conserva todas para no quedarse sin términos.
+ * @param text Texto de entrada, típicamente lo que escribió la persona en una búsqueda.
+ * @returns Lista de palabras distintas y normalizadas, en el orden en que aparecen por primera vez.
+ */
 export function termsOf(text: string): string[] {
   const all = [...new Set(tokens(text))];
   const meaningful = all.filter(term => !STOPWORDS.has(term));
   return meaningful.length > 0 ? meaningful : all;
 }
 
+/**
+ * Arma el plan de consulta completo a partir de un texto: extrae los términos (limitados a
+ * MAX_QUERY_TERMS), y construye las cadenas de consulta para el índice de palabras y el de trigramas.
+ * @param text Texto de búsqueda en lenguaje natural.
+ * @returns El plan con los términos y ambas cadenas de consulta (o `null` cuando no aplican).
+ */
 export function buildQuery(text: string): QueryPlan {
   const terms = termsOf(text).slice(0, MAX_QUERY_TERMS);
   const quote = (term: string) => `"${term}"`;
+  // Un término de cuatro o más letras se busca por prefijo (con *); uno más corto, exacto, para no
+  // producir demasiados falsos positivos en el índice de palabras.
   const words = terms.length === 0 ? null : terms.map(term => Array.from(term).length >= 4 ? `${quote(term)}*` : quote(term)).join(" OR ");
-  // The trigram index keeps accents: search each term as folded and as written.
+  // El índice de trigramas conserva los acentos: cada término se busca tanto sin acentos como tal cual se escribió.
   const written = (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(word => terms.includes(fold(word)));
   const long = [...new Set([...terms, ...written])].filter(term => Array.from(term).length >= 3);
   return { terms, words, trigram: long.length === 0 ? null : long.map(quote).join(" OR ") };
 }
 
-/** How many query terms a text contains: by substring for three or more letters, as a whole word otherwise. */
+/**
+ * Cuenta cuántos de los términos de una consulta aparecen en un texto: un término de tres o más letras
+ * cuenta si aparece como subcadena; uno más corto, solo si aparece como palabra completa.
+ * @param terms Términos de la consulta ya planificados (normalizados, sin acentos).
+ * @param text Texto del recuerdo a comparar contra los términos.
+ * @returns Cuántos de los términos dados aparecen en el texto.
+ */
 export function matchedTerms(terms: readonly string[], text: string): number {
   const folded = fold(text), words = new Set(tokens(text));
   return terms.filter(term => Array.from(term).length >= 3 ? folded.includes(term) : words.has(term)).length;
 }
 
-/** At most this many similar memories are returned after a save. */
+/** Como máximo se devuelven estos recuerdos similares tras un guardado. */
 export const SIMILAR_LIMIT = 3;
-/** Minimum share of distinct words two memories must have in common to be reported as similar. */
+/** Proporción mínima de palabras distintas en común que deben tener dos recuerdos para reportarse como similares. */
 export const SIMILAR_MIN_SCORE = 0.25;
 
-/** Jaccard similarity of two term sets, rounded to two decimals. */
+/**
+ * Calcula la similitud de Jaccard (tamaño de la intersección entre el tamaño de la unión) de dos
+ * conjuntos de términos, redondeada a dos decimales.
+ * @param left Términos del primer recuerdo.
+ * @param right Términos del segundo recuerdo.
+ * @returns Un número entre 0 y 1; 0 si alguno de los dos conjuntos está vacío.
+ */
 export function similarity(left: readonly string[], right: readonly string[]): number {
   const a = new Set(left), b = new Set(right);
   if (a.size === 0 || b.size === 0) return 0;
