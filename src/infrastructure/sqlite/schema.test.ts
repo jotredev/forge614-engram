@@ -68,7 +68,8 @@ test("schema 7 initialization validates exact definitions and future versions re
     initialize(db); enableSearchReinforcement(db); initialize(db);
     db.exec("DROP INDEX confirmations_memory_time");
     expect(()=>initialize(db)).toThrow(expect.objectContaining({code:"DATABASE_SCHEMA"}));
-    db.exec("PRAGMA user_version=12");
+    // 12 is now the cloud level (T1); 13 is the next unknown future version.
+    db.exec("PRAGMA user_version=13");
     expect(()=>initialize(db)).toThrow(expect.objectContaining({code:"DATABASE_VERSION"}));
   } finally { db.close(); }
 });

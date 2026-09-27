@@ -46,7 +46,7 @@ test("level 10 base migrates to 11: every row kept, backup written, new structur
     expect(result.backup).toStartWith(`${file}.v10-pre-intelligence-`);
     expect(statSync(result.backup!).mode & 0o777).toBe(0o600);
     expect(version(db)).toBe(11);
-    expect(schemaState(db)).toEqual({ base: 7, ecosystem: true, intelligence: true });
+    expect(schemaState(db)).toEqual({ base: 7, ecosystem: true, intelligence: true, cloud: false });
     expect(dump(db)).toEqual(before);
     for (const table of ["memory_meta", "session_activity", "ecosystem_sources"]) {
       expect(db.query(`SELECT count(*) AS n FROM ${table}`).get()).toEqual({ n: 0 });
@@ -138,7 +138,7 @@ test("a failure inside the migration rolls back to level 10 with no new objects"
   } finally { db.close(); }
 });
 
-test("level 11 validates its exact structure and 12 stays an unknown future version", () => {
+test("level 11 validates its exact structure and 13 stays an unknown future version", () => {
   const { db } = fixture("v1.6.0/schema-10.db");
   try {
     enableIntelligence(db);
@@ -148,7 +148,8 @@ test("level 11 validates its exact structure and 12 stays an unknown future vers
   const fresh = new Database(":memory:");
   try {
     initialize(fresh); enableIntelligence(fresh);
-    fresh.exec("PRAGMA user_version=12");
+    // 12 is now the cloud level (T1); 13 is the next unknown future version.
+    fresh.exec("PRAGMA user_version=13");
     expect(() => initialize(fresh)).toThrow(expect.objectContaining({ code: "DATABASE_VERSION" }));
   } finally { fresh.close(); }
 });

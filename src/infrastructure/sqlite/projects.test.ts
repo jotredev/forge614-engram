@@ -25,6 +25,7 @@ test("directory resolution reuses its binding and refuses same-name ambiguity", 
 test("schema 7 retains project bindings without admitting future versions", () => withDatabase(db => {
   enableProjectBindings(db); db.exec("PRAGMA user_version=7");
   expect(resolveProjectDirectory(db,"/seven","Seven",true).project?.name).toBe("Seven");
-  db.exec("PRAGMA user_version=12");
+  // 12 is now the cloud level (T1); 13 is the next unknown future version.
+  db.exec("PRAGMA user_version=13");
   expect(()=>projectForDirectory(db,"/seven")).toThrow(expect.objectContaining({code:"MIGRATION_REQUIRED"}));
 }));
