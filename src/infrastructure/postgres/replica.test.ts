@@ -1,6 +1,9 @@
 /** Comprueba `postgresOptions` sin base de datos, y contra un clúster real: publicación, historial, cola de cambios y validación de esquema. */
 import { afterAll, expect, test } from "bun:test";
 import { SQL } from "bun";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { PostgresReplica, postgresOptions } from "./replica";
 import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../__test-support__/postgres";
 
@@ -11,6 +14,44 @@ test("PostgreSQL URL parsing rejects ambiguous URLs and insecure remote TLS with
   }
   expect(postgresOptions("postgresql://u:p@127.0.0.1/db?sslmode=disable").tls).toBe(false);
   expect(postgresOptions("postgresql://u:p@example.org/db").tls).toMatchObject({rejectUnauthorized:true});
+});
+
+// La forma que da Neon por defecto (sslmode=require&channel_binding=require) se acepta y channel_binding se ignora.
+test("postgresOptions accepts Neon's connection string with channel_binding",()=>{
+  const options=postgresOptions("postgresql://u:p@ep-x-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require");
+  expect(options.hostname).toBe("ep-x-pooler.us-east-2.aws.neon.tech");
+  expect(options.database).toBe("neondb");
+  expect(options.tls).toMatchObject({rejectUnauthorized:true});
+});
+
+// Los tres valores de channel_binding que usa libpq se aceptan, en cualquier orden respecto a sslmode.
+test("postgresOptions accepts any libpq channel_binding value and the parameter order",()=>{
+  for(const input of [
+    "postgresql://u:p@example.org/db?sslmode=require&channel_binding=prefer",
+    "postgresql://u:p@example.org/db?sslmode=require&channel_binding=disable",
+    "postgresql://u:p@example.org/db?channel_binding=require&sslmode=require",
+  ]) expect(postgresOptions(input).tls).toMatchObject({rejectUnauthorized:true});
+});
+
+// channel_binding inválido, repetido, con TLS insegura fuera de loopback, o cualquier otro parámetro ajeno se rechazan igual que antes.
+test("postgresOptions rejects an invalid channel_binding, a repeated one, an insecure sslmode, or any other query parameter",()=>{
+  for(const input of [
+    "postgresql://u:SECRET@example.org/db?sslmode=require&channel_binding=otra",
+    "postgresql://u:SECRET@example.org/db?sslmode=require&channel_binding=require&channel_binding=require",
+    "postgresql://u:SECRET@example.org/db?sslmode=disable&channel_binding=require",
+    "postgresql://u:SECRET@example.org/db?sslmode=require&options=bad",
+    "postgresql://u:SECRET@example.org/db?sslmode=require&application_name=x",
+  ]) { try { postgresOptions(input); throw new Error("accepted"); } catch(error) { expect(String(error)).not.toContain("SECRET");expect(String(error)).toContain("POSTGRES_URL"); } }
+});
+
+// El mensaje de error nombra qué parámetros admite y nunca repite la credencial recibida.
+test("postgresOptions error names the accepted parameters without echoing the credential",()=>{
+  try { postgresOptions("postgresql://u:SECRET@example.org/db?sslmode=require&channel_binding=otra"); throw new Error("accepted"); }
+  catch(error) {
+    expect(String(error)).toContain("sslmode");
+    expect(String(error)).toContain("channel_binding");
+    expect(String(error)).not.toContain("SECRET");
+  }
 });
 
 const cluster = startPostgresCluster();
@@ -278,4 +319,23 @@ integration("pullChanges cancels the query on abort, bounded by lock_timeout whe
       expect(Date.now() - start).toBeLessThan(6000);
     });
   } finally { await locker.close(); await replica.close(); }
+}, postgresTestTimeoutMs);
+
+// De punta a punta, como imita Neon al añadir channel_binding a la dirección: `cloud on` con ese parámetro
+// arranca, y `sync` vuelve a leer la dirección guardada sin problema (se guarda tal cual, con channel_binding incluido).
+integration("cloud on accepts a local PostgreSQL URL with channel_binding and a later sync still reads it back",async () => {
+  const url = await freshDatabase("channel_binding_e2e");
+  const withChannelBinding = `${url}&channel_binding=disable`;
+  const cli = resolve(import.meta.dir, "../../cli.ts");
+  const home = mkdtempSync(join(tmpdir(), "engram-channel-binding-"));
+  async function run(...args: string[]) {
+    const child = Bun.spawn([process.execPath, cli, ...args], { cwd: home, env: { ...process.env, FORGE614_HOME: home }, stdout: "pipe", stderr: "pipe" });
+    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    return { code, stdout, stderr };
+  }
+  try {
+    expect((await run("init", "--json")).code).toBe(0);
+    expect((await run("cloud", "on", "--postgres-url", withChannelBinding)).code).toBe(0);
+    expect((await run("sync")).code).toBe(0);
+  } finally { rmSync(home, { recursive: true, force: true }); }
 }, postgresTestTimeoutMs);
