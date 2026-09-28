@@ -12,17 +12,19 @@ import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
 import { intelligenceEnabled } from "../infrastructure/sqlite/intelligence";
 import * as board from "../infrastructure/sqlite/board";
-import { enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
+import { cloudEnabled,type CloudEnrolment,enableCloud,enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
+import { takeCloudNotices } from "../infrastructure/sqlite/cloud-notices";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { startupBlock } from "../infrastructure/sqlite/startup";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
 import * as writes from "../infrastructure/sqlite/writes";
+import { downloadChanges,runCloudCycle,type CloudReplica } from "./cloud-sync";
 import type { Group,GroupSource,GroupSummary,IdentityEvent,MembershipSource,ProjectGroup } from "../modules/ecosystem";
 import { type Memory,type MemoryVersion,type SaveInput,type SearchResult,type SearchScope } from "../modules/memory";
 import { type Project } from "../modules/projects";
 import { type ContextInput,type ContextResult,type PreviewResult,type StartupBlock,type TimelineInput,type TimelineResult,type VersionRead } from "../modules/search";
-import { type ParallelSession,type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
+import { type CloudNotice,type ParallelSession,type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
 import type { SyncSnapshot } from "../modules/synchronization";
 
 /** Fachada de acceso a una base SQLite de Engram: proyectos, memorias, sesiones, sincronización, ecosistema (grupos) e inteligencia. */
@@ -189,4 +191,16 @@ export class MemoryStore {
   groupSource(groupId: string): GroupSource | null { return board.groupSource(this.db, groupId); }
   /** Mueve una memoria de ecosistema (grupo) de vuelta a un proyecto concreto del grupo. */
   demoteMemory(projectId: string, id: string): { memory: Memory; from: { scope: "ecosystem"; groupId: string }; to: { scope: "project"; projectId: string } } { return board.demoteMemory(this.db, projectId, id); }
+
+  // Sincronización con la nube (nivel de esquema 12, D1). Es aditiva; solo se activa explícitamente con `enableCloud`.
+  /** Migra la base para activar la sincronización con la nube (cola de pendientes, avisos, D1). */
+  enableCloud(remoteFingerprint?: string | null): CloudEnrolment { return enableCloud(this.db, remoteFingerprint); }
+  /** Si el nivel de esquema de esta base ya tiene activada la nube (nivel 12): la bandeja de salida y sus disparadores están activos. */
+  cloudEnabled(): boolean { return cloudEnabled(this.db); }
+  /** Un ciclo completo de sincronización (D7): sube la cola pendiente y baja y aplica los cambios nuevos. Lo usa la tarea de fondo del servidor MCP (`startCloudBackground`, `src/app/cloud-background.ts`) en cada intervalo y al guardar. */
+  syncCloudCycle(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> { return runCloudCycle(this.db, replica, installationId, signal); }
+  /** Solo la bajada del ciclo (sin subir la cola): baja y aplica los cambios nuevos, cancelable con `signal`. La usa la espera de arranque (`waitForCloud`, D8) antes de leer el contexto local. */
+  downloadCloudChanges(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> { return downloadChanges(this.db, replica, installationId, signal); }
+  /** Recoge (y marca como mostrados) los avisos de nube pendientes: conflictos, cambios saltados y cola vieja (D4, D5, D11); vacío si no hay nube o no hay nada que avisar. */
+  takeCloudNotices(now: Date = new Date()): CloudNotice[] { return takeCloudNotices(this.db, now); }
 }

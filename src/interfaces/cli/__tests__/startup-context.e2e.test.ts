@@ -1,9 +1,11 @@
-/** Prueba de punta a punta de `startup-context` como proceso real del CLI: validación, vínculo, aislamiento, permisos de solo lectura y los dos formatos de salida. */
+/** Prueba de punta a punta de `startup-context` como proceso real del CLI: validación, vínculo, aislamiento, permisos de solo lectura, los dos formatos de salida y la espera de arranque con nube (D8). */
 import { afterEach, expect, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, parse, resolve } from "node:path";
 import { procSnapshot } from "../../../../tests/fixtures/proc-snapshot";
+import { enableCloud } from "../../../infrastructure/sqlite/schema";
 
 const directories: string[] = [];
 function temporary(prefix = "forge614-startup-context-"): string {
@@ -254,6 +256,27 @@ test("startup-context opens the base read-only when nothing has to be written, s
     expect((await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json")).code).toBe(0);
     expect(readdirSync(engramDirectory).sort()).toEqual(before);
   } finally { holder.kill(9); }
+}, 40000);
+
+// D8: con nube configurada contra un servidor TCP que acepta y nunca responde, startup-context no se
+// queda esperando a Neon: el proceso imprime el bloque igual y termina pronto (el tope de espera de
+// arranque, 1000 ms, más el resto del comando, caben de sobra en 1500 ms).
+test("startup-context with cloud configured against a mute TCP endpoint still prints and exits promptly", async () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  const mute = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  try {
+    const dbPath = join(userDirectory, ".forge614", "engram", "engram.db");
+    const db = new Database(dbPath); enableCloud(db); db.close();
+    writeFileSync(join(userDirectory, ".forge614", "engram", ".env"),
+      `FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1:${mute.port}/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n`,
+      { mode: 0o600 });
+    const start = Date.now();
+    const result = await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json");
+    expect(Date.now() - start).toBeLessThanOrEqual(1500);
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ format: 1, project: { status: "unbound" } });
+  } finally { mute.stop(true); }
 }, 40000);
 
 // --format 2 imprime el bloque de texto listo para inyectar; --format 1 coincide byte a byte con el valor por defecto (sin --format); cualquier otro valor falla con INVALID_INPUT.

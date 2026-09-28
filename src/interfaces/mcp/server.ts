@@ -6,7 +6,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { MemoryStore, MemoryWorkspace } from "../../app";
+import { MemoryStore, MemoryWorkspace, startCloudBackground, type CloudBackgroundTask } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { MEMORY_PROTOCOL } from "../../modules/mcp";
 import { version } from "../../../package.json";
@@ -16,14 +16,18 @@ import { registerTools } from "./tools";
 /** Arranca el servidor MCP local por stdio. Abrir SQLite se aplaza hasta la primera llamada a una herramienta. */
 export async function startMcp(): Promise<void> {
   let store: MemoryStore | null = null;
+  let background: CloudBackgroundTask | null = null;
   let closing = false;
   const memoryStore = () => {
     if (closing) throw new MemoryError("SERVER_CLOSING","El servidor MCP se está cerrando.");
-    return store ??= new MemoryWorkspace().open();
+    // Al abrir el store por primera vez (nunca antes: la base sigue sin crearse hasta la primera herramienta),
+    // se arranca también la tarea de fondo (D7); `startCloudBackground` no hace nada sin nube configurada.
+    if (!store) { store = new MemoryWorkspace().open(); background = startCloudBackground(store); }
+    return store;
   };
   const server = new McpServer({ name:"forge614-engram",version }, { instructions:MEMORY_PROTOCOL });
 
-  registerTools(server,memoryStore,directoryResolver(server));
+  registerTools(server,memoryStore,directoryResolver(server),() => background?.notifySave());
 
   const transport = new StdioServerTransport(process.stdin,process.stdout,{ maxBufferSize:256 * 1024 });
   const closeStore = () => { store?.close(); store = null; };
@@ -31,7 +35,10 @@ export async function startMcp(): Promise<void> {
   // Memoizada: SIGINT, SIGTERM y el cierre de stdin pueden llegar juntos, y el cierre solo debe ejecutarse una vez.
   const shutdown = (): Promise<void> => {
     if (shutdownPromise) return shutdownPromise;
-    closing = true; closeStore();
+    closing = true;
+    // La tarea de fondo se detiene ANTES de cerrar el store: un ciclo en vuelo que termine después no debe
+    // aplicar nada sobre una base ya cerrada.
+    background?.stop(); background = null; closeStore();
     shutdownPromise = server.close().catch(() => {}).finally(closeStore);
     return shutdownPromise;
   };

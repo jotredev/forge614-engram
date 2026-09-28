@@ -3,7 +3,7 @@
  * por `parseArguments`, abre el espacio de trabajo (workspace) que corresponda y llama a la operación de `app`
  * adecuada, imprimiendo el resultado como JSON. `main.ts` llama a `dispatch` con el resultado de `parseArguments`.
  */
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext } from "../../app";
+import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud } from "../../app";
 import type { EngramUpdateResult } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
@@ -144,7 +144,7 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     console.log(JSON.stringify(result,null,2)); return;
   }
   if(command==="session-start"){
-    const store=workspace.open();try{const started=startProjectSessionWithNotices(store,need("directory"),need("session-id"));const notice=sessionNotice(started.previous,started.parallel);console.log(JSON.stringify({...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{}),...(notice?{sessionNotice:notice}:{})},null,2));}finally{store.close();}return;
+    const store=workspace.open();try{const started=startProjectSessionWithNotices(store,need("directory"),need("session-id"));const notice=sessionNotice(started.previous,started.parallel,store.takeCloudNotices());console.log(JSON.stringify({...started.session,...(started.previous?{previous:started.previous}:{}),...(started.parallel?{parallel:started.parallel}:{}),...(started.notices.length?{notices:started.notices}:{}),...(notice?{sessionNotice:notice}:{})},null,2));}finally{store.close();}return;
   }
   if(command==="session-end"){
     const store=workspace.open();try{console.log(JSON.stringify(store.endSession(projectIdentity(need("project-id")),need("session-id")),null,2));}finally{store.close();}return;
@@ -173,13 +173,33 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     const directory=need("directory");
     const read=values.get("format")==="2"?readStartupBlock:readStartupContext;
     // Primero de solo lectura: el caso común no escribe nada en la base, y una base intacta conserva su huella
-    // exacta en disco. Solo cuando el flujo de identidad debe registrar algo (un clon, un grupo) se repite en
-    // modo escritura; ese flujo es idempotente, así que repetirlo es seguro.
+    // exacta en disco. Solo cuando el flujo de identidad debe registrar algo (un clon, un grupo), o cuando hay
+    // nube configurada (D8: la espera de arranque necesita aplicar lo bajado), se repite en modo escritura;
+    // ambos flujos son idempotentes, así que repetirlo es seguro.
     const readonlyStore=workspace.open(true);
-    try{console.log(JSON.stringify(read(readonlyStore,directory),null,2));return;}
+    let needsCloudWait=false;
+    try{
+      needsCloudWait=readonlyStore.cloudEnabled()&&cloudSettings()!==null;
+      if(!needsCloudWait){console.log(JSON.stringify(read(readonlyStore,directory),null,2));return;}
+    }
     catch(error){if((error as {code?:unknown})?.code!=="SQLITE_READONLY")throw error;}
     finally{readonlyStore.close();}
-    const store=workspace.open();try{console.log(JSON.stringify(read(store,directory),null,2));}finally{store.close();}return;
+    const store=workspace.open();
+    try{if(needsCloudWait)await waitForCloud(store);console.log(JSON.stringify(read(store,directory),null,2));}
+    finally{store.close();}
+    // Nota de laboratorio (D8): waitForCloud ya vuelve dentro de su propio tope, pero un intento de conexión
+    // que ni siquiera terminó de conectarse (Neon, o aquí, un servidor mudo) deja un zócalo (socket) abierto
+    // que Bun no puede cancelar por fuera (comprobado aparte: ni abortar la señal ni cerrar el cliente
+    // interrumpen un handshake ya en curso). Sin forzar la salida, ese zócalo mantendría vivo el proceso
+    // hasta su propio tiempo de espera de conexión (`connectionTimeout`, 5 s), incumpliendo "el proceso de
+    // la CLI debe terminar enseguida después de imprimir". Se vacían stdout/stderr antes de salir para no
+    // truncar el bloque ya impreso.
+    if(needsCloudWait){
+      await new Promise(resolve=>process.stdout.write("",resolve));
+      await new Promise(resolve=>process.stderr.write("",resolve));
+      process.exit(0);
+    }
+    return;
   }
   // Se completa la validación de argumentos antes de leer la configuración o abrir ninguna base de datos.
   const scope = values.get("scope") ?? (command === "search" ? "all" : "project");

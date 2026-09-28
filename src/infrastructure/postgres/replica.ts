@@ -244,23 +244,36 @@ export class PostgresReplica {
   }
   /**
    * Consulta la cola de cambios a partir de un identificador dado, para que cada instalación siga leyendo
-   * desde donde se quedó.
+   * desde donde se quedó. Cancelable de verdad (Foco de revisión #3): si `signal` ya está abortada, ni
+   * siquiera abre la consulta; si se aborta mientras la consulta sigue en curso, la cancela en PostgreSQL
+   * (`query.cancel()`) en vez de solo ignorar su respuesta, para no dejar una consulta bloqueada compitiendo
+   * por la misma conexión que la tarea en segundo plano.
    * @param since Solo se devuelven cambios con identificador mayor a este valor.
    * @param limit Cantidad máxima de filas a devolver (por defecto 1000).
+   * @param signal Señal opcional de cancelación (tope de la espera de arranque, D8, o detención de la tarea de fondo).
    * @returns Los cambios con `id > since`, ordenados por `id` ascendente, hasta `limit` filas.
    * @throws MemoryError con código `SYNC_INVALID` si `since` no es un entero no negativo, o `limit` no es
-   * un entero entre 1 y 1000; con `POSTGRES_UNAVAILABLE` para cualquier otro fallo.
+   * un entero entre 1 y 1000; con `POSTGRES_UNAVAILABLE` si `signal` ya estaba abortada, si se abortó
+   * mientras la consulta seguía en curso, o para cualquier otro fallo.
    */
-  async pullChanges(since:number,limit=1000):Promise<ChangeRow[]> {
+  async pullChanges(since:number,limit=1000,signal?:AbortSignal):Promise<ChangeRow[]> {
     if(!Number.isInteger(since)||since<0||!Number.isInteger(limit)||limit<1||limit>1000) syncError("SYNC_INVALID");
+    // Si el tope ya venció antes de intentarlo, ni vale la pena abrir la consulta.
+    if(signal?.aborted) return safe(new Error("pullChanges aborted before querying"));
+    const query=this.db.unsafe(
+      `SELECT id,change_id,installation_id,kind,op,payload,
+        to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
+       FROM forge614_sync.changes WHERE id>$1 ORDER BY id LIMIT $2`,[since,limit]);
+    // Si la señal se aborta mientras la consulta sigue en curso, se cancela de verdad en PostgreSQL
+    // (libera cualquier candado que estuviera esperando), no solo se descarta la respuesta al volver.
+    const onAbort=()=>{query.cancel();};
+    signal?.addEventListener("abort",onAbort,{once:true});
     try {
-      const rows=await this.db.unsafe(
-        `SELECT id,change_id,installation_id,kind,op,payload,
-          to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
-         FROM forge614_sync.changes WHERE id>$1 ORDER BY id LIMIT $2`,[since,limit]);
+      const rows=await query;
       return rows.map((r:any):ChangeRow=>({id:Number(r.id),changeId:r.change_id,installationId:r.installation_id,kind:r.kind,
         op:r.op,payload:typeof r.payload==="string"?JSON.parse(r.payload):r.payload,createdAt:r.created_at}));
     } catch(error) { return safe(error); }
+    finally { signal?.removeEventListener("abort",onAbort); }
   }
   /** Cierra la conexión a PostgreSQL. */
   async close():Promise<void> {await this.db.close();}

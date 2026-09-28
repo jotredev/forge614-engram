@@ -22,3 +22,7 @@ export { updateEngram } from "./update";
 export type { EngramUpdateResult } from "./update";
 export { readProjectContext, readStartupBlock, readStartupContext } from "./startup-context";
 export type { ProjectContextResult, StartupContextResult, StartupEcosystemContext, StartupProjectContext } from "./startup-context";
+export { cloudSettings } from "./cloud-settings";
+export type { CloudSettings } from "./cloud-settings";
+export { startCloudBackground, waitForCloud } from "./cloud-background";
+export type { CloudBackgroundOptions, CloudBackgroundTask, CloudReplica } from "./cloud-background";
