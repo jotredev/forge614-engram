@@ -11,7 +11,7 @@ import type { Project } from "../modules/projects";
 import { projectIdentity } from "../modules/projects";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 import { MemoryStore } from "./memory-store";
-import { openWorkspaceDatabase } from "../infrastructure/sqlite/workspace-database";
+import { missingWalSidecar, openWorkspaceDatabase } from "../infrastructure/sqlite/workspace-database";
 import { enrollEcosystem, updateIdentityFiles, type IdentityNotice } from "./project-identity";
 
 /** Cuántos archivos de identidad se actualizaron y cuántos se saltaron por estar dañados, tras una operación que pudo tocar varios. */
@@ -62,6 +62,12 @@ export class MemoryWorkspace {
   open(readonly = false): MemoryStore {
     this.config.read();
     return openWorkspaceDatabase(this.config.databasePath, false, readonly, (path, options) => new MemoryStore(path, options));
+  }
+
+  /** T6b: si a la base configurada le falta `-shm` junto a un encabezado ya en modo WAL, ver `missingWalSidecar`. */
+  missingWalSidecar(): boolean {
+    this.config.read();
+    return missingWalSidecar(this.config.databasePath);
   }
 
   /**
