@@ -34,7 +34,35 @@ SQLite es la base local durable. FTS5 es su índice léxico de texto completo. A
 
 ## Réplica PostgreSQL
 
-Copia sincronizada opcional del estado local de Engram. No reemplaza SQLite ni FTS5. Se configura con `init --json --postgres-url <URL>` y se sincroniza explícitamente. Todavía no replica las memorias de ámbito `ecosystem` (llegará en 1.8.0, «formato 4»).
+Copia sincronizada opcional del estado local de Engram, en un proyecto de PostgreSQL (por ejemplo, en Neon). Hay dos rutas independientes: los formatos 1–3, un snapshot versionado configurado con `init --json --postgres-url <URL>` y sincronizado con `sync --upgrade-format` (obsoleta desde 1.8.0, no replica `ecosystem`), y la nube de `cloud on` (desde 1.8.0), que sí replica los tres ámbitos. Ninguna reemplaza a SQLite ni a FTS5, que siguen siendo locales.
+
+## Nube (`cloud`)
+
+La sincronización nueva de 1.8.0 que mantiene la misma memoria en dos Mac: se activa con `cloud on`, corre sola en segundo plano dentro del servidor MCP y se apaga con `cloud off` sin borrar nada local. Sin activarla, Engram funciona exactamente igual que sin ella.
+
+## Neon
+
+El servicio de PostgreSQL en la nube que usa Engram para la sincronización entre Mac (`cloud on`). La dirección la crea el propietario del proyecto Neon, nunca Engram.
+
+## Dirección de conexión
+
+La URL completa con la que Engram se conecta a Neon (`postgresql://<usuario>:<contraseña>@<host>/<base>?sslmode=require&channel_binding=require`). Es una llave: nunca se guarda en un recuerdo ni en un archivo del repositorio, solo en `~/.forge614/engram/.env`; `cloud on` la pide en la terminal sin mostrarla.
+
+## Id de instalación
+
+Un UUID por Mac (`FORGE614_ENGRAM_INSTALLATION_ID`), generado la primera vez que corre `cloud on` en esa Mac. Identifica de dónde vino cada cambio subido a Neon; no cambia si repites `cloud on`.
+
+## Cola de pendientes
+
+La lista local (`cloud_outbox`) de cambios que todavía no se subieron a Neon. Cada guardado entra a ella en la misma transacción que el guardado en sí, así nada se pierde si se cierra la Mac antes de subir; `cloud status` muestra cuántos hay y desde cuándo espera el más viejo.
+
+## Cambio
+
+Una fila numerada de `forge614_sync.changes` en Neon: un alta, un cambio o un borrado de una fila de una tabla que viaja, con el id de la instalación que lo originó. Cada Mac recuerda el número más alto que ya aplicó y solo pide los posteriores.
+
+## Primera bajada
+
+Lo que ocurre en cada Mac la primera vez que corre `cloud on` (o cuando apunta a otra base): sube toda su memoria local que viaja y baja desde el cambio 0 lo que la otra Mac ya había subido. Si esta Mac ya tenía memoria propia, las dos terminan con la suma de ambas.
 
 ## Refuerzo
 

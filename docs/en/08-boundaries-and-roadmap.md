@@ -52,6 +52,15 @@ Limits of this delivery: (1) a session that works more than 30 minutes without s
 - Reason: in lab testing, an assistant did not mention the session left open even when it received `previous`; with the readable-sentence notice it mentioned it with its time in every run, and the rule's new order keeps it from offering to continue a session that is still open in parallel.
 - Known limit: the notice does not guarantee that the assistant offers to continue from the summary of the session left open; in those tests, an assistant said it was left open and when, but offered it only in some runs.
 
+## Capabilities added in v1.8.0
+
+- The same memory (project, personal notebook, and ecosystem board, across all three scopes) on two Macs, turned on explicitly with `forge614-engram cloud on` and a PostgreSQL database on Neon; `cloud off` turns it off without touching anything local. See [01. Installation and Getting Started](01-installation-and-getting-started.md) and [05. Internal Architecture and Formulas](05-internal-architecture-and-formulas.md).
+- This new path (schema 12) **does** replicate the `ecosystem` scope, something the formats 1–3 replica never did: it supersedes the promise of a group-specific "format 4" mentioned in the 1.6.0 and 1.7.0 deliveries. Formats 1–3 (`sync --upgrade-format`) become the deprecated mechanism, without being removed (acta 0024, sunset 2027-03-31).
+- Without `cloud on`, Engram starts up exactly as it did in 1.7.2 (measured, median difference within ±2 ms); with the cloud on, startup waits at most 1 second before continuing with local data.
+- Project identity also by normalized Git remote (`origin`), for a folder without `.forge614/project.json` on the other Mac.
+
+Limits of this delivery: Neon's changes table (`forge614_sync.changes`) is not pruned yet; a query blocked on Neon is not cut short before its `lock_timeout` (5 s), and because of that the MCP server can take up to 5 s to close if a connection was left half-open; the text a person sees (terminal output, `help`) stays fixed in Spanish, the bilingual es/en output for that text arrives in 1.9.0.
+
 ## Explicit non-goals
 
 - No Engram TUI or full-screen terminal control center.

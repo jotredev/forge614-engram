@@ -34,7 +34,35 @@ SQLite is the durable local database. FTS5 is its lexical full-text search index
 
 ## PostgreSQL replica
 
-An optional synchronized copy of the local Engram state. It does not replace SQLite or FTS5. Configure it with `init --json --postgres-url <URL>` and synchronize explicitly. It does not replicate `ecosystem` memories yet (coming in 1.8.0, "format 4").
+An optional synchronized copy of the local Engram state, in a PostgreSQL project (for example, on Neon). There are two independent paths: formats 1–3, a versioned snapshot configured with `init --json --postgres-url <URL>` and synchronized with `sync --upgrade-format` (deprecated since 1.8.0, does not replicate `ecosystem`), and the `cloud on` cloud (since 1.8.0), which does replicate all three scopes. Neither replaces SQLite or FTS5, which remain local.
+
+## Cloud (`cloud`)
+
+The new 1.8.0 synchronization that keeps the same memory on two Macs: turned on with `cloud on`, it runs on its own in the background inside the MCP server, and turns off with `cloud off` without deleting anything local. Without turning it on, Engram behaves exactly as it always has.
+
+## Neon
+
+The hosted PostgreSQL service Engram uses for syncing between Macs (`cloud on`). The connection string is created by the owner of the Neon project, never by Engram.
+
+## Connection string
+
+The full URL Engram uses to connect to Neon (`postgresql://<user>:<password>@<host>/<database>?sslmode=require&channel_binding=require`). It is a key: it is never stored in a memory or in a file inside the repository, only in `~/.forge614/engram/.env`; `cloud on` asks for it in the terminal without echoing it.
+
+## Installation id
+
+A UUID per Mac (`FORGE614_ENGRAM_INSTALLATION_ID`), generated the first time `cloud on` runs on that Mac. It identifies where each change uploaded to Neon came from; it does not change if you run `cloud on` again.
+
+## Pending queue
+
+The local list (`cloud_outbox`) of changes not yet uploaded to Neon. Every save enters it in the same transaction as the save itself, so nothing is lost if the Mac closes before uploading; `cloud status` shows how many there are and how long the oldest one has been waiting.
+
+## Change
+
+A numbered row of `forge614_sync.changes` on Neon: an insert, update, or delete of a row of a table that travels, with the id of the installation that produced it. Each Mac remembers the highest number it already applied and asks only for later ones.
+
+## First download
+
+What happens on each Mac the first time it runs `cloud on` (or when it points to a different base): it uploads all of its local memory that travels and downloads from change 0 what the other Mac had already uploaded. If this Mac already had its own memory, both end up with the sum of both.
 
 ## Reinforcement
 

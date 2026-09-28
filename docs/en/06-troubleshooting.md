@@ -58,6 +58,26 @@ Since 1.7.0. In the CLI these codes return `{schemaVersion,code,error}` on stder
 
 **Another session appears as left open (`previous`) while it is still working.** It has gone more than 30 minutes without going through Engram (starting or replaying, saving or confirming with a runtime session, updating its summary, or closing); chat messages do not count. It is not closed, and it stops appearing as soon as it saves something or updates its summary (since 1.7.1).
 
+## Cloud (`cloud on/off/status`, since 1.8.0)
+
+See [01. Installation and Getting Started](01-installation-and-getting-started.md) for the step-by-step guide and [05. Internal Architecture and Formulas](05-internal-architecture-and-formulas.md) for how it works.
+
+**Conflicts and notices, they never stop synchronization:**
+
+- The same memory changed on both Macs without syncing in between: both versions stay (the most recent one active, the other in history) and a notice appears once in the next `session-start`/`memory_session_start`, inside `sessionNotice`. History numbering can end up different between the two Macs; that is normal.
+- A downloaded change with a secret, or with an invalid or unknown shape, is skipped, with a grouped notice in the same session; the rest of the queue keeps applying.
+- If a local pending change has waited more than 24 hours to upload, a notice appears in the next session; `cloud status` also always shows it (`oldestPendingAt`).
+
+**Errors that are new, or can now appear once the cloud is on:**
+
+- `CONFIG_NOT_FOUND`: you asked for `cloud on` before `init`. Run `init` before `cloud on`.
+- `POSTGRES_URL`: the connection string is invalid (missing protocol, user, host, or database; outside loopback it requires `sslmode=require` or `verify-full`; it only accepts the `sslmode` and `channel_binding` parameters, with `channel_binding` set to `require`, `prefer`, or `disable`). The message names what is accepted; it never echoes the string you sent.
+- `POSTGRES_SCHEMA`: Neon's `forge614_sync` schema does not have exactly the expected shape (someone modified it from outside, or it was left half-built). PostgreSQL 16 through 18 are supported; on 18, catalogued `NOT NULL` constraints do not count as a difference.
+- `POSTGRES_UNAVAILABLE`: PostgreSQL is unavailable or lacks permissions; local data is kept as is. Check the connection and TLS without sharing credentials.
+- `SYNC_DISABLED`: you asked for `sync`/`sync-watch` on the new mechanism without having run `cloud on` first (or `.env` has the connection string but the local database never reached the cloud schema level). Run `cloud on`.
+- `DATABASE_VERSION` ("Base incompatible: no se puede abrir con esta versión"): a version of Engram earlier than 1.8.0 tried to open a database already prepared for the cloud. Update that Mac to 1.8.0 and first close any earlier session still open.
+- `SYNC_WATCH_DEPRECATED` and `SYNC_UPGRADE_FORMAT_DEPRECATED`: warnings on stderr, not errors that stop anything; `sync-watch` and `sync --upgrade-format` (formats 1–3) keep working the same way while they wait to retire on 2027-03-31.
+
 ## AI integrations
 
 Engram does not detect or configure AI clients. If an MCP client is unavailable, use the public Forge614 Engines/Shell setup path; do not look for an Engram TUI or assistant command.

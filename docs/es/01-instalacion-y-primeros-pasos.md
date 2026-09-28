@@ -76,6 +76,40 @@ forge614-engram save --scope shared --title "Convención" --content "Usar conven
 forge614-engram search --scope shared --query "conventional"
 ```
 
+## Usar la misma memoria en otra Mac
+
+Si trabajas desde dos Mac, puedes hacer que las dos vean exactamente los mismos recuerdos (los de tus proyectos, tu libreta personal y el tablero del ecosistema), sin usarlas al mismo tiempo. Sin esto activado, Engram funciona exactamente igual que siempre: nada cambia hasta que lo prendas.
+
+**1. Crea un proyecto en Neon.** [Neon](https://neon.tech) es un servicio de PostgreSQL en la nube; crea una cuenta y un proyecto nuevo dedicado solo a Engram (cualquier región cercana sirve; Engram admite PostgreSQL 16 a 18). Neon te da una dirección de conexión: cópiala tal cual, con `sslmode=require&channel_binding=require`, con o sin `-pooler` en el host. Si quieres ensayar antes, Neon deja crear una rama de prueba con su propia dirección, que puedes borrar al terminar.
+
+Esa dirección es una llave: nunca la pegues en un chat ni la guardes en un archivo del repositorio. Los comandos de este capítulo la piden en la terminal sin mostrarla en pantalla, y la guardan solo en `~/.forge614/engram/.env`, con permisos que solo tú puedes leer. Por ejemplo: `postgresql://<usuario>:<contraseña>@<host>/neondb?sslmode=require&channel_binding=require`.
+
+**2. Instala 1.8.0 y cierra todas las sesiones.** Actualiza Engram en las dos Mac (`forge614-engram update`). Una base ya preparada para la nube no la puede abrir una versión anterior a 1.8.0 (responde `DATABASE_VERSION`), así que antes de activar la nube cierra cualquier sesión de terminal, IA o servidor MCP que todavía use Engram en esa Mac.
+
+**3. Activa la nube en la primera Mac.**
+
+```bash
+forge614-engram cloud on
+```
+
+Sin `--postgres-url`, el comando te pide la dirección en la terminal (no se muestra al escribirla) y la prueba conectándose antes de guardar nada. La primera vez que se activa, sube a Neon toda la memoria que ya tenías en esa Mac.
+
+**4. Activa la nube en la segunda Mac, con la MISMA dirección.**
+
+```bash
+forge614-engram cloud on
+```
+
+Esta Mac también activa la nube por primera vez: sube toda su memoria local que viaja y baja desde el cambio 0 lo que subió la primera Mac. Si esta Mac ya tenía memoria propia, las dos terminan con la suma de ambas (en segundo plano, o de inmediato con `forge614-engram sync`).
+
+**5. Confirma el estado en las dos.**
+
+```bash
+forge614-engram cloud status --json
+```
+
+Cuando `pending` sea `0` en ambas, las dos Mac tienen la misma memoria. A partir de aquí, cada guardado se sincroniza solo, sin comandos: mientras Engram esté abierto, sube y baja cambios cada 30 segundos y también justo después de guardar. Si te quedas sin internet, lo pendiente espera en una cola local y sale en cuanto vuelva la conexión, sin perder nada. Consulta el capítulo [05. Arquitectura Interna y Fórmulas](05-arquitectura-interna-y-formulas.md) para cómo funciona por dentro y el capítulo [03. Referencia CLI](03-referencia-cli.md) para el resto de `cloud on/off/status`.
+
 ## MCP y trabajo diario con IA
 
 Inicia el servidor local por `stdio` con `forge614-engram mcp`. La detección y configuración de clientes de IA no pertenecen a Engram: son responsabilidad de Forge614 Engines y Shell. Tras configurar una integración mediante sus contratos públicos, puedes trabajar en ADE Orca, Claude Code, Codex u otro entorno nativo sin mantener Shell abierto.

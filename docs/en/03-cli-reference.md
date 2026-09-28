@@ -123,6 +123,24 @@ Use `--scope shared` rather than `--project-id` for a shared memory. Updating an
 
 Use `--scope ecosystem --group <name|id>` (without `--project-id`) for a group's memory; it has the same topics, versions, archive/restore, and reinforcement as the other scopes, and its JSON adds `groupId`. In `search`, `--scope ecosystem` accepts `--group` or the `--project-id` of a project that belongs to a group (otherwise `GROUP_REQUIRED`). `--group` is accepted only with `--scope ecosystem`. With `--project-id` and `--scope all`, the search automatically includes the project's group; when a topic repeats, the project's wins, then the group's, and finally the shared one.
 
+## Cloud: the same memory on another Mac
+
+Available since version 1.8.0. See chapter [01. Installation and Getting Started](01-installation-and-getting-started.md) for the step-by-step guide and chapter [05. Internal Architecture and Formulas](05-internal-architecture-and-formulas.md) for how it works internally.
+
+```text
+cloud on [--postgres-url <URL>]  turn on the cloud; without --postgres-url it is asked for in the terminal, not echoed
+cloud off                        turn off the cloud; keeps the installation id and the pending queue
+cloud status [--json]            cloud on or off, installation id, last applied change, and pending queue
+```
+
+`cloud on` requires `init` to have already run. It tests the connection (creating the changes table on Neon if it is missing) and closes it **before** saving anything: a connection string that does not work leaves no trace. It generates `FORGE614_ENGRAM_INSTALLATION_ID` (a UUID) only if one does not already exist; repeating the command does not change it. The first time it is turned on, it queues all the local memory that travels (projects, groups, memberships, memories with their history, sessions, summaries, and confirmations) to upload; if `cloud on` points to a different Neon database than the one already in use, it is treated as the first time: everything is queued again and downloaded from scratch. Output: `{ "installationId": "<uuid>", "enabled": true }`.
+
+`cloud off` removes `POSTGRES_URL` from `.env`; it keeps the installation id, the database's cloud schema level, and the pending queue intact, ready for a later `cloud on` with the same database to pick up where it left off. Output: `{ "enabled": false }`.
+
+`cloud status [--json]` never connects to the cloud: it only reads the local database. `enabled` requires both the cloud schema level and a configured connection string; the other figures (`installationId`, `lastAppliedId`, `pending`, `oldestPendingAt`) are given whenever the database has ever gone through `cloud on`, whether the cloud is on or off right now. With `--json`: `{ "enabled": true, "installationId": "<uuid>", "lastAppliedId": 42, "pending": 0, "oldestPendingAt": null }`. Without `--json`, the same figures in readable lines (in Spanish, matching its terminal neighbors).
+
+With the cloud on (`cloud on` already run on this Mac), `sync` stops using the formats 1–3 snapshot and instead runs a single cycle with the new mechanism: it uploads the pending queue and downloads the new changes from the other Macs. `sync --upgrade-format` and `sync-watch` are deprecated (retiring 2027-03-31): they keep working exactly as before, with a warning on stderr; `sync-watch` with the cloud on runs the new cycle on every pass.
+
 ## Sessions and context
 
 ```text
