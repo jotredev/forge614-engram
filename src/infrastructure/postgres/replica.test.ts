@@ -345,6 +345,59 @@ integration("pullChanges cancels the query on abort, bounded by lock_timeout whe
   } finally { await locker.close(); await replica.close(); }
 }, postgresTestTimeoutMs);
 
+/**
+ * Levanta un proxy TCP mínimo hacia `targetPort` (loopback) que retrasa `delayMs` cada bloque que viaja del
+ * servidor al cliente, para simular la latencia de ida y vuelta de una red real (Neon) sobre el clúster
+ * desechable de la suite, que corre en loopback sin latencia. Cuenta esos bloques servidor→cliente para que
+ * la prueba pueda afirmar cuántas idas y vueltas hace `connect()`.
+ */
+function startDelayingProxy(targetPort: number, delayMs: number) {
+  let blocks = 0;
+  const upstreams = new Map<any, Promise<any>>();
+  const server = Bun.listen<undefined>({
+    hostname: "127.0.0.1", port: 0,
+    socket: {
+      open(socket) {
+        const upstream = Bun.connect({
+          hostname: "127.0.0.1", port: targetPort,
+          socket: {
+            data(_up, chunk) { blocks++; setTimeout(() => { try { socket.write(chunk); } catch { /* el cliente ya cerró */ } }, delayMs); },
+            close() { try { socket.end(); } catch { /* ya cerrado */ } },
+            error() { try { socket.end(); } catch { /* ya cerrado */ } },
+          },
+        });
+        upstreams.set(socket, upstream);
+      },
+      async data(socket, chunk) { (await upstreams.get(socket)!).write(chunk); },
+      close(socket) { upstreams.get(socket)?.then(u => { try { u.end(); } catch { /* ya cerrado */ } }).catch(() => {}); upstreams.delete(socket); },
+      error(socket) { upstreams.delete(socket); },
+    },
+  });
+  return { port: server.port, stop: () => server.stop(true), blockCount: () => blocks };
+}
+
+// Foco de rendimiento (T6e): con el esquema ya creado, conectar por una red con latencia (aquí simulada con
+// 40 ms por bloque servidor→cliente, similar a una ida y vuelta contra Neon) debe tardar menos de 400 ms y
+// hacer pocas idas y vueltas, no las ~11 del camino con transacción y bloqueo consultivo de antes.
+integration("connecting to an already-initialized schema over a delayed network stays under 400ms with few round trips", async () => {
+  const url = await freshDatabase("perf_single_query");
+  const setup = await PostgresReplica.connect(url, true);
+  await setup.close();
+  const targetPort = Number(new URL(url).port);
+  const proxy = startDelayingProxy(targetPort, 40);
+  const proxyUrl = url.replace(`:${targetPort}/`, `:${proxy.port}/`);
+  try {
+    const start = Date.now();
+    const replica = await PostgresReplica.connect(proxyUrl);
+    const elapsed = Date.now() - start;
+    await replica.close();
+    expect(elapsed).toBeLessThan(400);
+    // Antes de T6e (camino con transacción y bloqueo consultivo): 13 bloques servidor→cliente, ~510 ms.
+    // Después (una sola consulta de solo lectura, sin transacción): 3 bloques, ~90 ms; al menos 5 menos que antes.
+    expect(proxy.blockCount()).toBeLessThanOrEqual(3);
+  } finally { proxy.stop(); }
+}, postgresTestTimeoutMs);
+
 // De punta a punta, como imita Neon al añadir channel_binding a la dirección: `cloud on` con ese parámetro
 // arranca, y `sync` vuelve a leer la dirección guardada sin problema (se guarda tal cual, con channel_binding incluido).
 integration("cloud on accepts a local PostgreSQL URL with channel_binding and a later sync still reads it back",async () => {

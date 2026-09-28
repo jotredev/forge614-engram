@@ -66,56 +66,162 @@ ${CHANGES_DDL}`;
 export interface ChangeRow { readonly id:number; readonly changeId:string; readonly installationId:string; readonly kind:string; readonly op:"insert"|"update"|"delete"; readonly payload:unknown; readonly createdAt:string }
 /** La instantánea vigente (head) leída de la réplica junto con el hash que la identifica. */
 type Head={hash:string;snapshot:SyncSnapshot};
-/**
- * Comprueba que el esquema `forge614_sync` en la base conectada tiene exactamente las columnas,
- * restricciones y objetos esperados, y ningún disparador, función o vista extra; una réplica modificada
- * por fuera de este módulo se rechaza en vez de usarse tal cual.
- * @param db Conexión o transacción activa contra la base de PostgreSQL.
- * @throws MemoryError con código `POSTGRES_SCHEMA` (vía `syncError`) si las columnas, restricciones,
- * objetos del esquema, o el conteo de disparadores/funciones/vistas no coinciden exactamente con lo esperado.
- */
-async function validate(db:SQL|Bun.TransactionSQL):Promise<void> {
-  // Compara cada columna (tabla, nombre, tipo, si admite NULL) de todas las tablas del esquema contra la lista exacta esperada.
-  const columns=await db.unsafe(`SELECT c.relname,a.attname,format_type(a.atttypid,a.atttypmod) AS type,a.attnotnull
-    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-    JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid WHERE n.nspname='forge614_sync' AND c.relkind='r'
-    AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.relname,a.attnum`);
-  const expected=[
+// Las cuatro comparaciones de abajo (columnas, restricciones, objetos, extras) son la única fuente de verdad
+// de "cómo debe verse" el esquema: las usa tanto `validate()` (camino de creación, con transacción) como
+// `validateProbe()` (camino rápido de solo lectura, una sola consulta), para que ambos caminos rechacen
+// exactamente las mismas formas inesperadas con el mismo código de error.
+/** Compara cada columna (tabla, nombre, tipo, si admite NULL) contra la lista exacta esperada. */
+function checkColumns(rows:[string,string,string,boolean][]):void {
+  const expected:[string,string,string,boolean][]=[
     ["changes","id","bigint",true],["changes","change_id","text",true],["changes","installation_id","uuid",true],
     ["changes","kind","text",true],["changes","op","text",true],["changes","payload","jsonb",true],["changes","created_at","timestamp with time zone",true],
     ["revisions","hash","text",true],["revisions","payload","text",true],
     ["state","id","integer",true],["state","format","integer",true],["state","replica","uuid",true],["state","head","text",true],
   ];
-  if(canonical(columns.map((r:any)=>[r.relname,r.attname,r.type,r.attnotnull]))!==canonical(expected)) syncError("POSTGRES_SCHEMA");
-  // Compara cada restricción (clave primaria, única, de comprobación, foránea) del esquema contra la lista exacta esperada.
-  // Desde PostgreSQL 18, cada columna NOT NULL también se cataloga aquí (contype 'n'), así que se excluye de
-  // esta comparación exacta: la columna ya se comprueba arriba con attnotnull, y su validez se comprueba aparte.
-  const constraints=await db.unsafe(`SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_catalog.pg_constraint
-    WHERE connamespace='forge614_sync'::regnamespace AND contype<>'n' ORDER BY conname`);
-  const wanted=[
+  if(canonical(rows)!==canonical(expected)) syncError("POSTGRES_SCHEMA");
+}
+/**
+ * Compara cada restricción (clave primaria, única, de comprobación, foránea) contra la lista exacta esperada.
+ * Desde PostgreSQL 18, cada columna NOT NULL también se cataloga aquí (contype 'n'), así que quien arma
+ * `rows` ya la excluye: la columna se comprueba en {@link checkColumns} con attnotnull, y su validez aparte
+ * en {@link checkUnvalidatedNotNull}.
+ */
+function checkConstraints(rows:[string,string][]):void {
+  const wanted:[string,string][]=[
     ["changes_change_id_key","UNIQUE (change_id)"],["changes_op_check","CHECK ((op = ANY (ARRAY['insert'::text, 'update'::text, 'delete'::text])))"],["changes_pkey","PRIMARY KEY (id)"],
     ["revisions_hash_check","CHECK ((length(hash) = 64))"],["revisions_pkey","PRIMARY KEY (hash)"],
     ["state_format_check","CHECK ((format = 1))"],["state_head_fkey","FOREIGN KEY (head) REFERENCES forge614_sync.revisions(hash)"],
     ["state_id_check","CHECK ((id = 1))"],["state_pkey","PRIMARY KEY (id)"],
   ];
-  if(canonical(constraints.map((r:any)=>[r.conname,r.definition]))!==canonical(wanted)) syncError("POSTGRES_SCHEMA");
-  // Una restricción NOT NULL (contype 'n') sin validar (NOT VALID) podría convivir con filas nulas aunque
-  // attnotnull ya esté en true, así que se rechaza aparte: en PostgreSQL < 18 esta consulta siempre da cero filas.
-  const unvalidatedNotNull=await db.unsafe(`SELECT count(*) AS n FROM pg_catalog.pg_constraint
-    WHERE connamespace='forge614_sync'::regnamespace AND contype='n' AND NOT convalidated`);
-  if(Number(unvalidatedNotNull[0].n)!==0) syncError("POSTGRES_SCHEMA");
-  // Compara la lista de objetos del esquema (tablas, índices, secuencias) y si alguno tiene seguridad de fila por registro (RLS) activada.
-  const objects=await db.unsafe(`SELECT relname,relkind,relrowsecurity FROM pg_catalog.pg_class WHERE relnamespace='forge614_sync'::regnamespace ORDER BY relname`);
-  if(canonical(objects.map((r:any)=>[r.relname,r.relkind,r.relrowsecurity]))!==canonical([
+  if(canonical(rows)!==canonical(wanted)) syncError("POSTGRES_SCHEMA");
+}
+/**
+ * Una restricción NOT NULL (contype 'n') sin validar (NOT VALID) podría convivir con filas nulas aunque
+ * attnotnull ya esté en true, así que se rechaza aparte: en PostgreSQL < 18 este conteo siempre da cero.
+ */
+function checkUnvalidatedNotNull(count:number):void { if(count!==0) syncError("POSTGRES_SCHEMA"); }
+/** Compara la lista de objetos del esquema (tablas, índices, secuencias) y si alguno tiene seguridad de fila por registro (RLS) activada. */
+function checkObjects(rows:[string,string,boolean][]):void {
+  const expected:[string,string,boolean][]=[
     ["changes","r",false],["changes_change_id_key","i",false],["changes_id_seq","S",false],["changes_pkey","i",false],
     ["revisions","r",false],["revisions_pkey","i",false],["state","r",false],["state_pkey","i",false],
-  ])) syncError("POSTGRES_SCHEMA");
-  // Ningún disparador, función o vista debe existir en el esquema: su suma debe dar exactamente cero.
+  ];
+  if(canonical(rows)!==canonical(expected)) syncError("POSTGRES_SCHEMA");
+}
+/** Ningún disparador, función o vista debe existir en el esquema: su suma debe dar exactamente cero. */
+function checkExtras(count:number):void { if(count!==0) syncError("POSTGRES_SCHEMA"); }
+/**
+ * Comprueba que el esquema `forge614_sync` en la base conectada tiene exactamente las columnas,
+ * restricciones y objetos esperados, y ningún disparador, función o vista extra; una réplica modificada
+ * por fuera de este módulo se rechaza en vez de usarse tal cual. La usa el camino de creación (con
+ * transacción): el camino rápido de solo lectura usa en cambio {@link validateProbe} sobre el resultado de
+ * {@link probeSchema}, contra las mismas comparaciones.
+ * @param db Conexión o transacción activa contra la base de PostgreSQL.
+ * @throws MemoryError con código `POSTGRES_SCHEMA` (vía `syncError`) si las columnas, restricciones,
+ * objetos del esquema, o el conteo de disparadores/funciones/vistas no coinciden exactamente con lo esperado.
+ */
+async function validate(db:SQL|Bun.TransactionSQL):Promise<void> {
+  const columns=await db.unsafe(`SELECT c.relname,a.attname,format_type(a.atttypid,a.atttypmod) AS type,a.attnotnull
+    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid WHERE n.nspname='forge614_sync' AND c.relkind='r'
+    AND a.attnum>0 AND NOT a.attisdropped ORDER BY c.relname,a.attnum`);
+  checkColumns(columns.map((r:any)=>[r.relname,r.attname,r.type,r.attnotnull]));
+  const constraints=await db.unsafe(`SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_catalog.pg_constraint
+    WHERE connamespace='forge614_sync'::regnamespace AND contype<>'n' ORDER BY conname`);
+  checkConstraints(constraints.map((r:any)=>[r.conname,r.definition]));
+  const unvalidatedNotNull=await db.unsafe(`SELECT count(*) AS n FROM pg_catalog.pg_constraint
+    WHERE connamespace='forge614_sync'::regnamespace AND contype='n' AND NOT convalidated`);
+  checkUnvalidatedNotNull(Number(unvalidatedNotNull[0].n));
+  const objects=await db.unsafe(`SELECT relname,relkind,relrowsecurity FROM pg_catalog.pg_class WHERE relnamespace='forge614_sync'::regnamespace ORDER BY relname`);
+  checkObjects(objects.map((r:any)=>[r.relname,r.relkind,r.relrowsecurity]));
   const extras=await db.unsafe(`SELECT
     (SELECT count(*) FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace='forge614_sync'::regnamespace AND NOT t.tgisinternal)
     +(SELECT count(*) FROM pg_catalog.pg_proc WHERE pronamespace='forge614_sync'::regnamespace)
     +(SELECT count(*) FROM pg_catalog.pg_rewrite r JOIN pg_catalog.pg_class c ON c.oid=r.ev_class WHERE c.relnamespace='forge614_sync'::regnamespace) AS n`);
-  if(Number(extras[0].n)!==0) syncError("POSTGRES_SCHEMA");
+  checkExtras(Number(extras[0].n));
+}
+/** Lo que devuelve {@link probeSchema} en una sola fila: todo lo que antes leían las cinco consultas de `validate()`, más la existencia del esquema/tabla `changes` y la fila de estado (si la hay). */
+interface SchemaProbe {
+  /** Si existe el esquema `forge614_sync`. */
+  schemaExists:boolean;
+  /** Si existe la tabla `forge614_sync.changes`. */
+  changesExists:boolean;
+  /** Columnas de `changes`: nombre, tipo, valor por defecto y si acepta NULL. */
+  columns:[string,string,string,boolean][];
+  /** Restricciones CHECK de `changes`: nombre y definición. */
+  constraints:[string,string][];
+  /** Cuántas restricciones NOT NULL del esquema aún no están validadas. */
+  unvalidatedNotNull:number;
+  /** Objetos del esquema (tablas, índices, etc.): nombre, tipo de relación y si tiene RLS activo. */
+  objects:[string,string,boolean][];
+  /** Cuántos triggers, funciones y vistas adicionales hay en el esquema. */
+  extras:number;
+  /** La fila de estado con el id de la réplica y su formato, o null si la tabla falta o no tiene la fila 1. */
+  state:{replica:string;format:number}|null;
+}
+// Cada ida y vuelta a una réplica remota (Neon) cuesta ~60 ms, y la espera de arranque tiene un tope de
+// 1000 ms (D8): con el esquema ya creado, las 11 idas y vueltas que hacía `connect()` (BEGIN, bloqueo
+// consultivo, pg_namespace, to_regclass, las 5 consultas de `validate()`, SELECT de state, COMMIT) agotaban
+// ese tope solas. Esta única sentencia SELECT ve una foto coherente (MVCC) de todo eso en una sola ida y
+// vuelta. Las columnas/restricciones/objetos/extras se filtran por nombre de esquema (`n.nspname='forge614_sync'`
+// vía join, nunca `::regnamespace`) para que la consulta no falle cuando el esquema falta: da listas vacías
+// en vez de un error. La fila de `state` sí necesita nombrar la tabla de forma literal (`FROM
+// forge614_sync.state`), y esa referencia SÍ haría fallar la sentencia entera si la tabla no existe (el
+// análisis de Postgres resuelve los nombres de tabla al vuelo, sin importar ningún CASE que la rodee:
+// comprobado a mano). Por eso esa parte se ejecuta de forma dinámica con `query_to_xml` (siempre disponible
+// en el núcleo, sin extensión) dentro de un CASE guardado por `to_regclass('forge614_sync.state')`: el texto
+// de la subconsulta es solo una cadena para la sentencia externa, así que su análisis se pospone hasta que
+// `query_to_xml` la ejecuta en tiempo de ejecución, y el CASE ya garantizó entonces que la tabla existe;
+// `xmltable` convierte esa salida XML de vuelta a JSON para no tener que analizar XML a mano en JavaScript.
+const PROBE_SQL=`SELECT
+  (to_regnamespace('forge614_sync') IS NOT NULL) AS schema_exists,
+  (to_regclass('forge614_sync.changes') IS NOT NULL) AS changes_exists,
+  COALESCE((SELECT json_agg(json_build_array(c.relname,a.attname,format_type(a.atttypid,a.atttypmod),a.attnotnull) ORDER BY c.relname,a.attnum)
+    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+    JOIN pg_catalog.pg_attribute a ON a.attrelid=c.oid
+    WHERE n.nspname='forge614_sync' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped), '[]')::jsonb AS columns,
+  COALESCE((SELECT json_agg(json_build_array(pc.conname,pg_get_constraintdef(pc.oid)) ORDER BY pc.conname)
+    FROM pg_catalog.pg_constraint pc JOIN pg_catalog.pg_namespace n ON n.oid=pc.connamespace
+    WHERE n.nspname='forge614_sync' AND pc.contype<>'n'), '[]')::jsonb AS constraints,
+  (SELECT count(*) FROM pg_catalog.pg_constraint pc JOIN pg_catalog.pg_namespace n ON n.oid=pc.connamespace
+    WHERE n.nspname='forge614_sync' AND pc.contype='n' AND NOT pc.convalidated) AS unvalidated_not_null,
+  COALESCE((SELECT json_agg(json_build_array(c.relname,c.relkind,c.relrowsecurity) ORDER BY c.relname)
+    FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+    WHERE n.nspname='forge614_sync'), '[]')::jsonb AS objects,
+  (
+    (SELECT count(*) FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
+       JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='forge614_sync' AND NOT t.tgisinternal)
+    + (SELECT count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='forge614_sync')
+    + (SELECT count(*) FROM pg_catalog.pg_rewrite r JOIN pg_catalog.pg_class c ON c.oid=r.ev_class
+       JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='forge614_sync')
+  ) AS extras,
+  (CASE WHEN to_regclass('forge614_sync.state') IS NOT NULL THEN
+    (SELECT json_build_object('replica',x.replica,'format',x.format)
+     FROM xmltable('/table/row' PASSING query_to_xml('SELECT replica::text AS replica, format FROM forge614_sync.state WHERE id=1', false, false, '')
+       COLUMNS replica text PATH 'replica', format int PATH 'format') x)
+  ELSE NULL END)::jsonb AS state`;
+/** Convierte lo que Bun devuelve para una columna `jsonb` (a veces ya el valor, a veces su texto) al valor JS. */
+function jsonColumn(value:unknown):any { return typeof value==="string"?JSON.parse(value):value; }
+/**
+ * Hace la única consulta de solo lectura que necesita el camino rápido de {@link PostgresReplica.connect}.
+ * @param db Conexión (fuera de transacción: una sola sentencia `SELECT` ya ve una foto coherente).
+ * @returns Todo lo que antes exigía cinco consultas de `validate()` más la comprobación de existencia y la
+ * fila de estado, en una sola ida y vuelta a la base.
+ */
+async function probeSchema(db:SQL):Promise<SchemaProbe> {
+  const [row]=await db.unsafe(PROBE_SQL);
+  const state=jsonColumn(row.state);
+  return {
+    schemaExists:row.schema_exists,changesExists:row.changes_exists,
+    columns:jsonColumn(row.columns)??[],constraints:jsonColumn(row.constraints)??[],
+    unvalidatedNotNull:Number(row.unvalidated_not_null),objects:jsonColumn(row.objects)??[],extras:Number(row.extras),
+    state:state?{replica:state.replica,format:Number(state.format)}:null,
+  };
+}
+/** Aplica a un {@link SchemaProbe} las mismas comprobaciones que {@link validate} aplica en el camino de creación. */
+function validateProbe(probe:SchemaProbe):void {
+  checkColumns(probe.columns);checkConstraints(probe.constraints);
+  checkUnvalidatedNotNull(probe.unvalidatedNotNull);checkObjects(probe.objects);checkExtras(probe.extras);
 }
 /**
  * Convierte cualquier error capturado en un `MemoryError` seguro de mostrar: si ya lo es, lo repropaga tal
@@ -153,6 +259,15 @@ export class PostgresReplica {
   static async connect(url:string,create=false):Promise<PostgresReplica> {
     const db=new SQL(postgresOptions(url));
     try {
+      // Camino rápido: si el esquema ya está completo (con `changes`), una sola consulta de solo lectura
+      // (ver PROBE_SQL) basta para validarlo y leer el id de la réplica, sin transacción ni bloqueo
+      // consultivo (innecesarios cuando no se va a escribir nada).
+      const probe=await probeSchema(db);
+      if(probe.schemaExists&&probe.changesExists) {
+        validateProbe(probe);
+        if(!probe.state||probe.state.format!==1) syncError("POSTGRES_SCHEMA");
+        return new PostgresReplica(db,probe.state.replica);
+      }
       const id=await db.begin(async tx=>{
         await tx.unsafe("SELECT pg_advisory_xact_lock(1177956660,7)");
         const exists=await tx.unsafe("SELECT oid FROM pg_catalog.pg_namespace WHERE nspname='forge614_sync'");
