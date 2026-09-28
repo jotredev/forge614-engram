@@ -45,6 +45,23 @@ test("parser accepts an optional PostgreSQL URL only for noninteractive initiali
   expect(() => parseArguments(["project-list", "--json"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
+// "cloud on|off|status" (dos palabras) se traduce a "cloud-on"/"cloud-off"/"cloud-status" (D9); cada uno conserva sus propias opciones y el resto de los argumentos.
+test("parser translates the two-word cloud command into its hyphenated form", () => {
+  expect(parseArguments(["cloud", "on", "--postgres-url", "postgresql://user:secret@host/db"])).toMatchObject({ command: "cloud-on" });
+  expect(parseArguments(["cloud", "on", "--postgres-url", "postgresql://user:secret@host/db"]).values.get("postgres-url")).toBe("postgresql://user:secret@host/db");
+  expect(parseArguments(["cloud", "off"]).command).toBe("cloud-off");
+  expect(parseArguments(["cloud", "status"]).command).toBe("cloud-status");
+  expect(parseArguments(["cloud", "status", "--json"]).values.get("json")).toBe("true");
+});
+
+// "cloud" sin subcomando, o con uno que no es on/off/status, es un comando desconocido; cloud off y cloud on sin --postgres-url no admiten opciones ajenas.
+test("parser rejects an unknown cloud subcommand and options that do not belong to it", () => {
+  expect(() => parseArguments(["cloud"])).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+  expect(() => parseArguments(["cloud", "sideways"])).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+  expect(() => parseArguments(["cloud", "off", "--postgres-url", "postgresql://user:secret@host/db"])).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+  expect(() => parseArguments(["cloud", "on", "--json"])).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+});
+
 // Comandos retirados de versiones anteriores (asistente propio, TUI local) ya no existen: cualquier intento de usarlos es un comando desconocido.
 test("parser no longer exposes assistant ownership or a local TUI", () => {
   for (const command of ["tui", "assistant-list", "memory-hook", "integration-enable"]) {

@@ -3,16 +3,29 @@
  * por `parseArguments`, abre el espacio de trabajo (workspace) que corresponda y llama a la operación de `app`
  * adecuada, imprimiendo el resultado como JSON. `main.ts` llama a `dispatch` con el resultado de `parseArguments`.
  */
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud } from "../../app";
+import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud, runCloudOn, runCloudOff, runCloudStatus, runCloudSync } from "../../app";
 import type { EngramUpdateResult } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { memoryProtocol } from "../../modules/memory-protocol";
 import { projectIdentity } from "../../modules/projects";
 import { sessionNotice } from "../../modules/sessions";
+import { readCloudPostgresUrl } from "../terminal/cloud-input";
 import { initTerminal } from "../terminal/setup";
 import { watchSync } from "../terminal/sync-watch";
 import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
+
+// Texto exacto del aviso de obsolescencia de D10 (sync --upgrade-format, formatos 1-3): se retira en la fecha dada, sin cambiar su código.
+const SYNC_UPGRADE_FORMAT_DEPRECATED = { code: "SYNC_UPGRADE_FORMAT_DEPRECATED", error: "sync --upgrade-format es obsoleto; se retira el 2027-03-31." };
+
+/** Imprime en líneas legibles en español las cifras de `cloud status` cuando no se pidió `--json` (mismo idioma que sus vecinos, D16). */
+function printCloudStatus(status: ReturnType<typeof runCloudStatus>): void {
+  console.log(`Nube: ${status.enabled ? "activada" : "desactivada"}`);
+  console.log(`Id de instalación: ${status.installationId ?? "(ninguno)"}`);
+  console.log(`Último cambio aplicado: ${status.lastAppliedId ?? "(ninguno)"}`);
+  console.log(`Pendientes en la cola: ${status.pending}`);
+  console.log(`Pendiente más viejo: ${status.oldestPendingAt ?? "(ninguno)"}`);
+}
 
 /** Convierte el resultado de `update` en el JSON exacto que imprime `runUpdateCommand` cuando se pide `--json`. */
 export function updateResultJson(result: EngramUpdateResult): string {
@@ -46,7 +59,28 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     const result=await uninstallEngram({confirmation:need("confirm")},{executable:process.execPath});
     console.log(JSON.stringify(result,null,2));return;
   }
-  if (command === "sync") {console.log(JSON.stringify(await syncWorkspace(undefined,{upgradeFormat:values.has("upgrade-format")}),null,2));return;}
+  if (command === "cloud-on") {
+    const url = values.get("postgres-url") ?? await readCloudPostgresUrl();
+    console.log(JSON.stringify(await runCloudOn(url)));
+    return;
+  }
+  if (command === "cloud-off") { console.log(JSON.stringify(await runCloudOff())); return; }
+  if (command === "cloud-status") {
+    const status = runCloudStatus();
+    if (values.has("json")) console.log(JSON.stringify(status)); else printCloudStatus(status);
+    return;
+  }
+  if (command === "sync") {
+    // --upgrade-format es la ruta obsoleta (D10): siempre el mecanismo local de formatos 1-3, con nube o sin ella.
+    if (values.has("upgrade-format")) {
+      console.error(JSON.stringify(SYNC_UPGRADE_FORMAT_DEPRECATED));
+      console.log(JSON.stringify(await syncWorkspace(undefined,{upgradeFormat:true}),null,2));
+      return;
+    }
+    // Con `cloud on` ya hecho (installationId presente), sync usa el ciclo nuevo; si no, sigue igual que hoy (D10).
+    console.log(JSON.stringify(cloudSettings() ? await runCloudSync() : await syncWorkspace()));
+    return;
+  }
   if(command==="sync-watch"&&values.has("upgrade-format"))invalid("sync-watch no acepta --upgrade-format.");
   if (command === "sync-watch") {await watchSync(values.has("interval")?integer(need("interval"),"interval",3600):30);return;}
   // Cargado de forma perezosa (lazy): el SDK de MCP (y zod, con su barril de 64 archivos de locale) no

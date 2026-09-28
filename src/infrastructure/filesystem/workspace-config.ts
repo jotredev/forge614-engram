@@ -170,6 +170,10 @@ export class WorkspaceConfig {
       if(values.size===3 && values.get("FORMAT_VERSION")==="3" && values.get("STORAGE")==="sqlite" && values.has("POSTGRES_URL")) {
         const postgresUrl=values.get("POSTGRES_URL")!;postgresOptions(postgresUrl);return {storage:"sqlite",postgresUrl};
       }
+      // Formato v3 dejado por "cloud off" (D9): id de instalación conservado, sin POSTGRES_URL (la nube está apagada, pero la base sigue en nivel 12 con su cola).
+      if(values.size===3 && values.get("FORMAT_VERSION")==="3" && values.get("STORAGE")==="sqlite" && values.has("FORGE614_ENGRAM_INSTALLATION_ID") && !values.has("POSTGRES_URL")) {
+        return {storage:"sqlite",installationId:values.get("FORGE614_ENGRAM_INSTALLATION_ID")!};
+      }
       // Formato v2: solo SQLite local, sin PostgreSQL; debe ser exactamente estas dos claves.
       if (values.size !== 2 || values.get("FORMAT_VERSION") !== "2" || values.get("STORAGE") !== "sqlite") failure();
       return { storage: "sqlite" };
@@ -203,10 +207,13 @@ export class WorkspaceConfig {
    * `null`, se valida con {@link postgresOptions} antes de tocar nada.
    * @param expected Huella de {@link revision} que se esperaba encontrar; si no coincide, se rechaza sin
    * escribir.
+   * @param installationId Id de instalación (D9) a dejar escrito; si se omite, se conserva el que ya
+   * hubiera en la configuración actual (así una llamada de `setup`/`init`, que no sabe nada de nubes,
+   * nunca borra el id que `cloud on` ya hubiera generado). Un `null` explícito lo quita.
    * @throws MemoryError con código `CONFIG_BUSY` si otra configuración está en curso (el candado ya
    * existe); con `CONFIG_CHANGED` si la configuración cambió desde que se leyó `expected`.
    */
-  configurePostgres(url:string|null,expected:string|null):void {
+  configurePostgres(url:string|null,expected:string|null,installationId?:string|null):void {
     if(url!==null) postgresOptions(url);
     this.prepare();
     const lock=join(this.root,".config-lock");let lockFd:number;
@@ -215,8 +222,12 @@ export class WorkspaceConfig {
     try {
       if(this.revision()!==expected) throw new MemoryError("CONFIG_CHANGED","La configuración cambió mientras respondías. Vuelve a ejecutar setup.");
       const current=expected!==null?this.read():null;
-      if(current && (current.postgresUrl??null)===url) return;
-      const content=url===null?'FORMAT_VERSION="2"\nSTORAGE="sqlite"\n':`FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL=${JSON.stringify(url)}\n`;
+      // Sin id explícito, se conserva el que ya hubiera (o ninguno); con id explícito (incluido null), manda ese.
+      const effectiveId=installationId!==undefined?installationId:(current?.installationId??null);
+      if(current && (current.postgresUrl??null)===url && (current.installationId??null)===effectiveId) return;
+      const content=url===null
+        ?(effectiveId===null?'FORMAT_VERSION="2"\nSTORAGE="sqlite"\n':`FORMAT_VERSION="3"\nSTORAGE="sqlite"\nFORGE614_ENGRAM_INSTALLATION_ID=${JSON.stringify(effectiveId)}\n`)
+        :(effectiveId===null?`FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL=${JSON.stringify(url)}\n`:`FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL=${JSON.stringify(url)}\nFORGE614_ENGRAM_INSTALLATION_ID=${JSON.stringify(effectiveId)}\n`);
       const fd=openSync(temporary,"wx",0o600);ownsTemporary=true;
       try {writeFileSync(fd,content);fsyncSync(fd);} finally {closeSync(fd);}
       // Sin configuración previa (expected null), publica con enlace duro (nunca reemplaza algo que otro haya creado primero); si ya había una, renombra sobre ella tras confirmar la huella.

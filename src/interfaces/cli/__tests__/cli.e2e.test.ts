@@ -1,11 +1,46 @@
-/** Prueba de punta a punta del CLI como proceso real: comandos retirados, init, protocolo de memoria, sincronización, identidad, sesiones y concurrencia. */
-import { afterEach, expect, test } from "bun:test";
+/** Prueba de punta a punta del CLI como proceso real: comandos retirados, init, protocolo de memoria, sincronización, nube (cloud on/off/status), identidad, sesiones y concurrencia. */
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { SQL } from "bun";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { WorkspaceConfig } from "../../../infrastructure/filesystem/workspace-config";
+import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../../../infrastructure/__test-support__/postgres";
 import { procSnapshot } from "../../../../tests/fixtures/proc-snapshot";
+
+// Solo un servidor de prueba (fixture) desechable y en loopback (127.0.0.1), explícito: nunca se usa una base ambiente ya existente.
+const cluster = startPostgresCluster();
+const integration = cluster.available ? test : test.skip;
+let admin!: SQL;
+// Se captura aparte (fuera del `if`) porque TypeScript no reduce (narrow) el tipo de `cluster` dentro de una función declarada más abajo, como `freshDatabase`.
+const clusterUrl = cluster.available ? cluster.url : "";
+if (cluster.available) admin = new SQL(cluster.url);
+else console.warn(`SKIP PostgreSQL integration: ${cluster.reason}`);
+afterAll(async () => {
+  if (!cluster.available) return;
+  try { await admin.close(); } finally { stopPostgresCluster(cluster); }
+}, postgresTestTimeoutMs);
+/** Crea una base de PostgreSQL nueva y desechable, y da su URL de conexión. */
+async function freshDatabase(name: string): Promise<string> {
+  await admin.unsafe(`DROP DATABASE IF EXISTS ${name}`); await admin.unsafe(`CREATE DATABASE ${name}`);
+  return clusterUrl.replace(/\/postgres(\?|$)/, `/${name}$1`);
+}
+/** Corre un comando del CLI con una entrada estándar (`stdin`) dada, para probar `cloud on` sin `--postgres-url` (D13). */
+async function runWithStdin(cwd: string, stdin: string, ...args: string[]) {
+  const child = Bun.spawn([process.execPath, cli, ...args], {
+    cwd, env: { ...process.env, FORGE614_HOME: join(cwd, "user", ".forge614") }, stdin: "pipe", stdout: "pipe", stderr: "pipe",
+  });
+  child.stdin.write(stdin); await child.stdin.end();
+  const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+  return { code, stdout, stderr };
+}
+/** Cuenta las filas de `cloud_outbox` en la base SQLite de una carpeta de espacio de trabajo. */
+function pendingOutboxCount(userDirectory: string): number {
+  const db = new Database(join(userDirectory, ".forge614", "engram", "engram.db"), { readonly: true });
+  try { return (db.query("SELECT COUNT(*) AS n FROM cloud_outbox").get() as { n: number }).n; }
+  finally { db.close(); }
+}
 
 // Los bytes crudos de un archivo SQLite no son una comprobación de idempotencia segura: una compilación de
 // SQLite más nueva dentro de Bun puede tocar campos de la cabecera (contador de cambios, contabilidad del
@@ -360,4 +395,107 @@ test("session-start CLI reports a session opened right before as parallel, not p
   const replay=(await run(dir,"session-start","--directory",dir,"--session-id","chat-two"));
   expect(JSON.parse(replay.stdout)).not.toHaveProperty("parallel");
   expect(JSON.parse(replay.stdout)).not.toHaveProperty("sessionNotice");
+}, 40000);
+
+// help lista los tres subcomandos de cloud y marca sync-watch y sync --upgrade-format obsoletos con su fecha exacta de retiro (D9, D10).
+test("help lists cloud on/off/status and marks sync-watch and sync --upgrade-format obsolete with their sunset", async () => {
+  const dir = workspace();
+  const result = await run(dir, "help");
+  expect(result.code).toBe(0);
+  for (const line of ["cloud on [--postgres-url <URL>]", "cloud off", "cloud status [--json]"]) expect(result.stdout).toContain(line);
+  expect(result.stdout).toContain("sync-watch      Obsoleto (sunset 2027-03-31)");
+  expect(result.stdout).toContain("Obsoleto: sunset 2027-03-31.");
+}, 40000);
+
+// cloud on sin init falla sin escribir nada; con init, prueba la conexión ANTES de escribir el .env y una dirección inalcanzable no deja rastro ni aparece en el error.
+test("cloud on requires init first, and an unreachable address leaves nothing behind without echoing it", async () => {
+  const dir = workspace();
+  const withoutInit = await run(dir, "cloud", "on", "--postgres-url", "postgresql://u@127.0.0.1:1/db?sslmode=disable");
+  expect(withoutInit.code).toBe(1);
+  expect(JSON.parse(withoutInit.stderr).code).toBe("CONFIG_NOT_FOUND");
+  expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const envPath = join(dir, "user", ".forge614", "engram", ".env");
+  const before = readFileSync(envPath);
+  const failed = await run(dir, "cloud", "on", "--postgres-url", "postgresql://u:SECRET@127.0.0.1:1/db?sslmode=disable");
+  expect(failed.code).toBe(1);
+  expect(JSON.parse(failed.stderr).code).toBe("POSTGRES_UNAVAILABLE");
+  expect(failed.stderr).not.toContain("SECRET");
+  expect(readFileSync(envPath)).toEqual(before);
+}, 40000);
+
+// cloud on sin --postgres-url lee la dirección de la entrada estándar sin mostrarla, y nunca la escribe ni en la salida ni en los errores (D13).
+integration("cloud on without --postgres-url reads the address from stdin without ever printing it", async () => {
+  const dir = workspace();
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const url = await freshDatabase("cli_cloud_on_stdin");
+  const result = await runWithStdin(dir, url + "\n", "cloud", "on");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ enabled: true });
+  expect(result.stdout).not.toContain(url);
+  expect(result.stderr).not.toContain(url);
+}, postgresTestTimeoutMs);
+
+// cloud on genera installationId una sola vez; correrlo de nuevo con la misma base no lo cambia. cloud off quita POSTGRES_URL conservando el id y la base de nivel 12.
+integration("cloud on generates the installation id once, and cloud off keeps it while dropping POSTGRES_URL", async () => {
+  const dir = workspace();
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const url = await freshDatabase("cli_cloud_on_off");
+  const first = JSON.parse((await run(dir, "cloud", "on", "--postgres-url", url)).stdout);
+  const second = JSON.parse((await run(dir, "cloud", "on", "--postgres-url", url)).stdout);
+  expect(second.installationId).toBe(first.installationId);
+  const off = JSON.parse((await run(dir, "cloud", "off")).stdout);
+  expect(off).toEqual({ enabled: false });
+  const envPath = join(dir, "user", ".forge614", "engram", ".env");
+  expect(readFileSync(envPath, "utf8")).not.toContain("POSTGRES_URL");
+  expect(readFileSync(envPath, "utf8")).toContain(first.installationId);
+}, postgresTestTimeoutMs);
+
+// cloud status --json reporta enabled, installationId, lastAppliedId, pending y oldestPendingAt; Foco de revisión #4: cloud off con pendientes en la cola los sigue mostrando, y cloud on con OTRA base reencola todo (lastAppliedId vuelve a 0).
+integration("cloud status reports its full shape and survives cloud off; a different database re-queues everything", async () => {
+  const dir = workspace();
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const urlA = await freshDatabase("cli_cloud_status_a");
+  const on = JSON.parse((await run(dir, "cloud", "on", "--postgres-url", urlA)).stdout);
+  expect((await run(dir, "save", "--scope", "shared", "--title", "Pending", "--content", "Queued")).code).toBe(0);
+  // Se simula que esta base ya bajó cambios de A (lastAppliedId > 0), como pasaría tras un sync real: así el reinicio a 0 con otra base (D14) es una afirmación real, no trivial.
+  const db = new Database(join(dir, "user", ".forge614", "engram", "engram.db"));
+  try { db.query("UPDATE cloud_state SET last_applied_id=7 WHERE id=1").run(); } finally { db.close(); }
+  const withPending = JSON.parse((await run(dir, "cloud", "status", "--json")).stdout);
+  expect(withPending).toMatchObject({ enabled: true, installationId: on.installationId, lastAppliedId: 7 });
+  expect(withPending.pending).toBeGreaterThan(0);
+  expect((await run(dir, "cloud", "off")).code).toBe(0);
+  const afterOff = JSON.parse((await run(dir, "cloud", "status", "--json")).stdout);
+  expect(afterOff).toMatchObject({ enabled: false, pending: withPending.pending, oldestPendingAt: withPending.oldestPendingAt });
+  const urlB = await freshDatabase("cli_cloud_status_b");
+  expect((await run(dir, "cloud", "on", "--postgres-url", urlB)).code).toBe(0);
+  const afterOtherDb = JSON.parse((await run(dir, "cloud", "status", "--json")).stdout);
+  expect(afterOtherDb.lastAppliedId).toBe(0);
+  expect(afterOtherDb.pending).toBeGreaterThan(0);
+}, postgresTestTimeoutMs);
+
+// sync con nube prendida sube lo pendiente (la cola local queda vacía) con el mecanismo nuevo, no el snapshot de formatos 1-3.
+integration("sync uploads the pending queue through the new cloud mechanism once cloud on has run", async () => {
+  const dir = workspace();
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const url = await freshDatabase("cli_sync_cloud");
+  expect((await run(dir, "cloud", "on", "--postgres-url", url)).code).toBe(0);
+  expect((await run(dir, "save", "--scope", "shared", "--title", "To upload", "--content", "Queued")).code).toBe(0);
+  expect(pendingOutboxCount(join(dir, "user"))).toBeGreaterThan(0);
+  const result = await run(dir, "sync");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ uploaded: expect.any(Number), downloaded: expect.any(Number) });
+  expect(pendingOutboxCount(join(dir, "user"))).toBe(0);
+}, postgresTestTimeoutMs);
+
+// sync --upgrade-format sigue el mecanismo local anterior sin cambiar su código (sin nube configurada, sigue fallando con SYNC_DISABLED como siempre) y avisa su propia obsolescencia en stderr con la fecha exacta de retiro (D10).
+test("sync --upgrade-format keeps its old behavior and reports its own obsolescence in stderr", async () => {
+  const dir = workspace();
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const result = await run(dir, "sync", "--upgrade-format");
+  expect(result.code).toBe(1);
+  expect(result.stdout).toBe("");
+  const [notice, error] = result.stderr.trim().split("\n").map(line => JSON.parse(line));
+  expect(notice).toEqual({ code: "SYNC_UPGRADE_FORMAT_DEPRECATED", error: "sync --upgrade-format es obsoleto; se retira el 2027-03-31." });
+  expect(error.code).toBe("SYNC_DISABLED");
 }, 40000);

@@ -56,6 +56,17 @@ function outboxCount(db: Database): number {
 }
 
 /**
+ * Cifras de la cola de subida, para `cloud status` (D9, Foco de revisión #4): cuántas filas
+ * quedan pendientes y la fecha de la más vieja, sin importar si la nube está prendida o apagada
+ * ahora mismo (la cola se conserva tal cual mientras esté apagada).
+ * @param db Base local.
+ * @returns `pending` (total en `cloud_outbox`) y `oldestPendingAt` (fecha del más viejo, o `null` si la cola está vacía).
+ */
+export function cloudQueueStatus(db: Database): { pending: number; oldestPendingAt: string | null } {
+  return { pending: outboxCount(db), oldestPendingAt: oldestOutboxDate(db) };
+}
+
+/**
  * Recoge y marca como mostrados los avisos de nube pendientes de esta base.
  * @param db Base local.
  * @param now Hora actual, para decidir si la cola pendiente ya lleva más de 24 h esperando (recibida

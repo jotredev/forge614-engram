@@ -7,6 +7,7 @@ import { MemoryError } from "../../shared/errors";
 const MEMORY_OPTIONS = ["project-id", "scope", "group"];
 const OPTIONS: Record<string, readonly string[]> = {
   init: ["json", "postgres-url", "directory"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "intelligence-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
+  "cloud-on": ["postgres-url"], "cloud-off": [], "cloud-status": ["json"],
   "group-create": ["name"], "group-list": [], "group-bind": ["project-id","group"], "group-unbind": ["project-id"], "group-rename": ["group","name"], "group-source-set": ["group","project-id"],
   "memory-demote": ["id","project-id"],
   "memory-move": ["id","project-id","scope","to-scope","group"],
@@ -38,12 +39,28 @@ export function nonnegative(value:string,field:string,max:number):number {
 }
 
 /**
+ * Traduce `cloud on|off|status` (dos palabras) al comando de una sola palabra con guion que
+ * `OPTIONS` conoce (`cloud-on`, `cloud-off`, `cloud-status`): el analizador de abajo solo reconoce
+ * comandos de una palabra, igual que `group-create`, `project-list`, etc.
+ * @param args Argumentos crudos, tal como llegan a `parseArguments`.
+ * @returns Los mismos argumentos si `args[0]` no es `"cloud"`; si lo es, el comando ya traducido
+ * seguido del resto de los argumentos sin tocar.
+ */
+function translateCloudCommand(args:string[]):string[] {
+  if (args[0] !== "cloud") return args;
+  const sub = args[1];
+  if (sub !== "on" && sub !== "off" && sub !== "status") invalid("Comando desconocido. Consulta help.");
+  return [`cloud-${sub}`, ...args.slice(2)];
+}
+
+/**
  * Analiza los argumentos crudos de la línea de comandos (`process.argv` sin el ejecutable ni el script) en un
  * comando reconocido y sus opciones. Sin argumentos, el comando es "help". Cada comando solo acepta las opciones
  * listadas en `OPTIONS`; una opción desconocida, repetida o sin valor no vacío detiene todo con `invalid`.
  * Las reglas propias de un comando (p. ej. que `--postgres-url` exija `init --json`) se comprueban después, aparte.
  */
-export function parseArguments(args:string[]) {
+export function parseArguments(rawArgs:string[]) {
+  const args=translateCloudCommand(rawArgs);
   const command=args[0] ?? "help";
   if (!Object.hasOwn(OPTIONS,command)) invalid("Comando desconocido. Consulta help.");
   const allowed = new Set(OPTIONS[command]!);

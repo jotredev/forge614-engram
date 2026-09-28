@@ -12,8 +12,8 @@ import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
 import { intelligenceEnabled } from "../infrastructure/sqlite/intelligence";
 import * as board from "../infrastructure/sqlite/board";
-import { cloudEnabled,type CloudEnrolment,enableCloud,enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization } from "../infrastructure/sqlite/schema";
-import { takeCloudNotices } from "../infrastructure/sqlite/cloud-notices";
+import { cloudEnabled,type CloudEnrolment,enableCloud,enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization,lastAppliedId } from "../infrastructure/sqlite/schema";
+import { cloudQueueStatus,takeCloudNotices } from "../infrastructure/sqlite/cloud-notices";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { startupBlock } from "../infrastructure/sqlite/startup";
@@ -197,10 +197,14 @@ export class MemoryStore {
   enableCloud(remoteFingerprint?: string | null): CloudEnrolment { return enableCloud(this.db, remoteFingerprint); }
   /** Si el nivel de esquema de esta base ya tiene activada la nube (nivel 12): la bandeja de salida y sus disparadores están activos. */
   cloudEnabled(): boolean { return cloudEnabled(this.db); }
-  /** Un ciclo completo de sincronización (D7): sube la cola pendiente y baja y aplica los cambios nuevos. Lo usa la tarea de fondo del servidor MCP (`startCloudBackground`, `src/app/cloud-background.ts`) en cada intervalo y al guardar. */
-  syncCloudCycle(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> { return runCloudCycle(this.db, replica, installationId, signal); }
+  /** Un ciclo completo de sincronización (D7): sube la cola pendiente y baja y aplica los cambios nuevos; da cuántas filas se subieron y cuántas se bajaron y aplicaron de verdad (nunca el avance de `lastAppliedId`, que también cuenta filas propias y saltadas). Lo usa la tarea de fondo del servidor MCP (`startCloudBackground`, `src/app/cloud-background.ts`) en cada intervalo y al guardar. */
+  syncCloudCycle(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<{ uploaded: number; downloaded: number }> { return runCloudCycle(this.db, replica, installationId, signal); }
   /** Solo la bajada del ciclo (sin subir la cola): baja y aplica los cambios nuevos, cancelable con `signal`. La usa la espera de arranque (`waitForCloud`, D8) antes de leer el contexto local. */
-  downloadCloudChanges(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> { return downloadChanges(this.db, replica, installationId, signal); }
+  async downloadCloudChanges(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> { await downloadChanges(this.db, replica, installationId, signal); }
   /** Recoge (y marca como mostrados) los avisos de nube pendientes: conflictos, cambios saltados y cola vieja (D4, D5, D11); vacío si no hay nube o no hay nada que avisar. */
   takeCloudNotices(now: Date = new Date()): CloudNotice[] { return takeCloudNotices(this.db, now); }
+  /** Cifras de la cola de la nube para `cloud status` (D9): último cambio aplicado, cuántos pendientes hay en `cloud_outbox` y la fecha del más viejo; se conservan tal cual aunque la nube esté apagada (Foco de revisión #4). Solo válido si `cloudEnabled()` es `true`. */
+  cloudQueueStatus(): { lastAppliedId: number; pending: number; oldestPendingAt: string | null } {
+    return { lastAppliedId: lastAppliedId(this.db), ...cloudQueueStatus(this.db) };
+  }
 }

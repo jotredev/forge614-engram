@@ -26,3 +26,5 @@ export { cloudSettings } from "./cloud-settings";
 export type { CloudSettings } from "./cloud-settings";
 export { startCloudBackground, waitForCloud } from "./cloud-background";
 export type { CloudBackgroundOptions, CloudBackgroundTask, CloudReplica } from "./cloud-background";
+export { runCloudOn, runCloudOff, runCloudStatus, runCloudSync } from "./cloud-control";
+export type { CloudOnResult, CloudOffResult, CloudStatusResult, CloudSyncResult } from "./cloud-control";
