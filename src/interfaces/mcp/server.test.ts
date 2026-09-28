@@ -1,6 +1,7 @@
 /** Comprueba el servidor MCP real por stdio (entrada y salida estándar): arranque, lista de herramientas y cierre ordenado, con el CLI en fuente y compilado. */
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,6 +10,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { ListRootsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { procSnapshot } from "../../../tests/fixtures/proc-snapshot";
 import { memoryProtocol } from "../../modules/memory-protocol";
+import { enableCloud } from "../../infrastructure/sqlite/schema";
 
 const temporaryDirectories: string[] = [];
 const clients: Client[] = [];
@@ -132,3 +134,29 @@ test("raw stdin EOF cancels an unanswered roots request and exits promptly", asy
     child.kill("SIGKILL"); await child.exited; await reader.cancel().catch(() => {});
   }
 },30000);
+
+// D8: con nube configurada contra un servidor TCP que acepta la conexión y nunca responde, memory_context
+// no se queda esperando a Neon: el tope de la espera de arranque (1000 ms) la corta y responde con lo
+// local. El servidor, además, sigue cerrando bien (stdin) tras esa llamada.
+test("memory_context returns within the startup wait cutoff against a cloud endpoint that never answers, and the server still shuts down cleanly", async () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  // Servidor TCP mudo: acepta la conexión (el intento de conectar no falla al instante) pero nunca contesta nada.
+  const mute = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  try {
+    const dbPath = join(userDirectory, ".forge614", "engram", "engram.db");
+    const db = new Database(dbPath); enableCloud(db); db.close();
+    const envPath = join(userDirectory, ".forge614", "engram", ".env");
+    writeFileSync(envPath,
+      `FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1:${mute.port}/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n`,
+      { mode: 0o600 });
+    const { client, transport } = await connect({ cwd: root, userDirectory });
+    const start = Date.now();
+    const result = await client.callTool({ name: "memory_context", arguments: { scope: "shared" } }) as CallToolResult;
+    expect(Date.now() - start).toBeLessThanOrEqual(1300);
+    const block = result.content.find(value => value.type === "text");
+    expect(block && block.type === "text" ? JSON.parse(block.text) : null).toMatchObject({ format: 1 });
+    await client.close();
+    expect(transport.pid).toBeNull();
+  } finally { mute.stop(true); }
+}, 40000);

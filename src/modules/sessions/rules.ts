@@ -1,10 +1,23 @@
 /**
  * Reglas de sesión: validación del identificador, el aviso legible (session notice) sobre una sesión
- * previa dejada abierta o sesiones en paralelo, y el armado del texto de un resumen estructurado. Lo usa
- * `src/infrastructure/sqlite/writes.ts` y `sessions.ts` al validar y componer estos datos.
+ * previa dejada abierta, sesiones en paralelo o avisos de nube, y el armado del texto de un resumen
+ * estructurado. Lo usa `src/infrastructure/sqlite/writes.ts` y `sessions.ts` al validar y componer
+ * estos datos, y `src/interfaces/mcp/sessions-tools.ts` y `src/interfaces/cli/commands.ts` al armar
+ * el aviso de `memory_session_start`/`session-start`.
  */
 import { MemoryError } from "../../shared/errors";
 import type { ParallelSession, PreviousSession, SummaryFields } from "./types";
+/**
+ * Un aviso de nube (D4, D5, D11) ya listo para mostrarse: qué tipo de aviso es y su texto exacto.
+ * Lo arma `takeCloudNotices` (`src/infrastructure/sqlite/cloud-notices.ts`) a partir de `cloud_notices`
+ * y `cloud_outbox`; `sessionNotice` solo lo agrega al final, sin tocar su `detail`.
+ */
+export interface CloudNotice {
+  /** "conflict" (D4: una versión llegó a un número que ya ocupaba otro contenido), "skipped" (D5: un cambio se rechazó por secreto o forma inválida) o "stale-outbox" (D11: el pendiente más viejo lleva más de 24 h esperando). */
+  readonly kind: "conflict" | "skipped" | "stale-outbox";
+  /** Texto exacto del aviso, en inglés (D16), listo para agregarse tal cual al final de `sessionNotice`. */
+  readonly detail: string;
+}
 // Horas sin actividad tras las que una sesión de ejecución automática abierta deja de inferirse para un
 // guardado sin sessionId (nivel 11).
 export const INACTIVITY_HOURS = 6;
@@ -30,18 +43,23 @@ export function sessionIdentity(value:unknown):string{const length=typeof value=
 function textField(value:unknown,field:string,nonblank=false):string{if(typeof value!=="string"||value.includes("\0")||(nonblank&&!value.trim()))throw new MemoryError("INVALID_INPUT",`${field} debe ser texto${nonblank?" no vacío":""}.`);return value;}
 // Un hecho legible para el asistente, derivado de `previous`/`parallel` (1.7.2): es un dato, nunca una orden.
 /**
- * Arma el aviso legible sobre el estado de otras sesiones: menciona primero la sesión previa dejada
- * abierta (si la hay, diciendo si guardó resumen o no), y después cuáles sesiones están abiertas en
- * paralelo ahora mismo (en singular o plural según cuántas haya).
+ * Arma el aviso legible sobre el estado de otras sesiones y de la nube: menciona primero la sesión
+ * previa dejada abierta (si la hay, diciendo si guardó resumen o no), después cuáles sesiones están
+ * abiertas en paralelo ahora mismo (en singular o plural según cuántas haya), y por último cada aviso
+ * de nube (`cloud`, D4/D5/D11) que traiga `detail` ya armado, en el mismo orden en que llega, sin
+ * tocar su texto. Es un dato para quien lee, nunca una orden.
  * @param previous Sesión previa dejada abierta, o `null`/`undefined` si no hay ninguna que avisar.
  * @param parallel Sesiones abiertas en paralelo a la actual, o `null`/`undefined` si no hay ninguna.
- * @returns El texto del aviso combinando ambas partes, o `null` si no hay nada que avisar.
+ * @param cloud Avisos de nube ya armados (`takeCloudNotices`), o `null`/`undefined` si no hay ninguno.
+ * @returns El texto del aviso combinando las tres partes, o `null` si no hay nada que avisar.
  */
-export function sessionNotice(previous?:PreviousSession|null,parallel?:ParallelSession[]|null):string|null{
+export function sessionNotice(previous?:PreviousSession|null,parallel?:ParallelSession[]|null,cloud?:CloudNotice[]|null):string|null{
   const parts:string[]=[];
   if(previous) parts.push(`Session ${previous.sessionId} was left open; its last activity was at ${previous.interruptedAt}; ${previous.summary?"its summary is available.":"it saved no summary."}`);
   if(parallel&&parallel.length===1) parts.push(`Another session is open now: ${parallel[0]!.sessionId}.`);
   else if(parallel&&parallel.length>1) parts.push(`Other sessions are open now: ${parallel.map(session=>session.sessionId).join(", ")}.`);
+  // Los avisos de nube van al final, sin cambiar los de arriba ni su orden (D4/D11 son datos adicionales, no reemplazan nada de 1.7.2).
+  if(cloud) for(const notice of cloud) parts.push(notice.detail);
   return parts.length?parts.join(" "):null;
 }
 /**

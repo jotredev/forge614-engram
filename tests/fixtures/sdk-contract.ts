@@ -16,6 +16,9 @@ import type {
   PreviousSession, GroupSource, StartupBlock, ParallelSession,
 } from "../../src/index";
 import type { SyncSnapshot } from "../../src/modules/synchronization";
+import type { CloudNotice } from "../../src/modules/sessions";
+import type { CloudEnrolment } from "../../src/infrastructure/sqlite/schema";
+import type { CloudReplica } from "../../src/app/cloud-sync";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
@@ -60,6 +63,11 @@ interface ExpectedStore {
   startupBlock(projectId:string|null):StartupBlock;
   // Agregado en 1.7.1 (aviso de sesión paralela, "aviso por tiempo"). Puramente aditivo: nada de lo de arriba cambió.
   parallelSessions(projectId:string,sessionId:string):ParallelSession[];
+  // Agregado en 1.8.0 (nube, nivel de esquema 12, D1/D7/D8). Puramente aditivo: nada de lo de arriba cambió.
+  enableCloud(remoteFingerprint?:string|null):CloudEnrolment;cloudEnabled():boolean;
+  syncCloudCycle(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<void>;
+  downloadCloudChanges(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<void>;
+  takeCloudNotices(now?:Date):CloudNotice[];
 }
 type ActualStore = InstanceType<typeof MemoryStore>;
 type _StoreMethodNames = Assert<Equal<keyof ActualStore, keyof ExpectedStore>>;

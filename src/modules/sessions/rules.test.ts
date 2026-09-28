@@ -1,6 +1,6 @@
-/** Comprueba la validación del identificador de sesión, el armado del resumen estructurado y el aviso sobre sesión previa y sesiones en paralelo. */
+/** Comprueba la validación del identificador de sesión, el armado del resumen estructurado y el aviso sobre sesión previa, sesiones en paralelo y avisos de nube. */
 import { expect, test } from "bun:test";
-import { sessionIdentity, sessionNotice, summaryContent } from "./rules";
+import { sessionIdentity, sessionNotice, summaryContent, type CloudNotice } from "./rules";
 import type { ParallelSession, PreviousSession } from "./types";
 
 // El largo se cuenta en caracteres Unicode (200 emojis pasan, 201 no); vacío, espacio exterior,
@@ -50,4 +50,31 @@ test("sessionNotice is null with neither previous nor parallel", () => {
   expect(sessionNotice(null,null)).toBeNull();
   expect(sessionNotice(undefined,undefined)).toBeNull();
   expect(sessionNotice(null,[])).toBeNull();
+});
+
+const conflictNotice:CloudNotice = {kind:"conflict",detail:"Cloud sync: 1 memory had a conflicting change from another Mac; the most recent version is active and the other one is in its history."};
+const staleNotice:CloudNotice = {kind:"stale-outbox",detail:"Cloud sync: 3 local changes have been waiting to upload for more than 24 h (oldest from 2026-01-01T00:00:00.000Z)."};
+
+// Con un solo aviso de nube (conflicto), su texto se agrega tal cual, sin ningún otro dato de sesión.
+test("sessionNotice appends a lone conflict cloud notice unchanged", () => {
+  expect(sessionNotice(null,null,[conflictNotice])).toBe(conflictNotice.detail);
+});
+// Con un solo aviso de nube (cola vieja), igual: su texto se agrega tal cual.
+test("sessionNotice appends a lone stale-outbox cloud notice unchanged", () => {
+  expect(sessionNotice(null,null,[staleNotice])).toBe(staleNotice.detail);
+});
+// Con los dos avisos de nube juntos, se agregan en el mismo orden en que llegan, separados por un espacio.
+test("sessionNotice appends both cloud notices together, in the order given", () => {
+  expect(sessionNotice(null,null,[conflictNotice,staleNotice])).toBe(`${conflictNotice.detail} ${staleNotice.detail}`);
+});
+// Sin avisos de nube (null, undefined o arreglo vacío), el resultado es idéntico al de antes de D4/D11: no cambia nada de lo existente.
+test("sessionNotice is unchanged from before when there are no cloud notices", () => {
+  expect(sessionNotice(previousWithSummary,oneParallel,null)).toBe(sessionNotice(previousWithSummary,oneParallel));
+  expect(sessionNotice(previousWithSummary,oneParallel,undefined)).toBe(sessionNotice(previousWithSummary,oneParallel));
+  expect(sessionNotice(previousWithSummary,oneParallel,[])).toBe(sessionNotice(previousWithSummary,oneParallel));
+});
+// Los avisos de nube van después de la sesión previa y de las sesiones en paralelo, en ese orden, sin tocar esas partes.
+test("sessionNotice puts cloud notices last, after the previous-session and parallel-session parts", () => {
+  expect(sessionNotice(previousWithSummary,manyParallel,[conflictNotice])).toBe(
+    `Session first was left open; its last activity was at 2026-01-01T00:00:00.000Z; its summary is available. Other sessions are open now: second, third. ${conflictNotice.detail}`);
 });

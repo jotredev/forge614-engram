@@ -227,3 +227,40 @@ integration("pullChanges con since o limit inválidos rechaza con SYNC_INVALID",
     await expect(replica.pullChanges(0, 1.5)).rejects.toMatchObject({ code: "SYNC_INVALID" });
   } finally { await replica.close(); }
 }, postgresTestTimeoutMs);
+
+// Foco de revisión #3: con la señal ya abortada, pullChanges rechaza sin siquiera abrir la consulta.
+integration("pullChanges rejects without querying when the signal is already aborted", async () => {
+  const url = await freshDatabase("pull_preaborted");
+  const replica = await PostgresReplica.connect(url, true);
+  const controller = new AbortController(); controller.abort();
+  try {
+    await expect(replica.pullChanges(0, 1000, controller.signal)).rejects.toMatchObject({ code: "POSTGRES_UNAVAILABLE" });
+  } finally { await replica.close(); }
+}, postgresTestTimeoutMs);
+
+// Cancelación (Foco de revisión #3): con la tabla bloqueada por otra conexión, pullChanges queda
+// esperando; al abortar la señal se llama query.cancel() (se quita el escuchador al terminar, sin
+// dejarlo puesto de más). Nota de laboratorio: en esta versión de Bun (1.4.2), query.cancel() no
+// interrumpe de verdad una consulta ya bloqueada esperando un candado en el servidor (comprobado aparte,
+// fuera de esta prueba: la consulta se queda colgada indefinidamente pese a llamar cancel()); lo que
+// de verdad acota la espera aquí es `lock_timeout=5000` de postgresOptions (replica.ts:29), así que el
+// rechazo llega alrededor de los 5 s, no de los ~500 ms que pedía el plan original. Repórtalo como riesgo:
+// si Bun corrige `cancel()` para consultas bloqueadas, este límite debería bajar y esta prueba debería
+// ajustarse para exigirlo.
+integration("pullChanges cancels the query on abort, bounded by lock_timeout when a real Postgres lock cancel is not honored", async () => {
+  const url = await freshDatabase("pull_cancel_real");
+  const replica = await PostgresReplica.connect(url, true);
+  const locker = new SQL(url);
+  try {
+    await locker.begin(async tx => {
+      // El candado se toma dentro de una transacción sin cerrar (a propósito: se libera al final, en el finally de abajo).
+      await tx.unsafe("LOCK TABLE forge614_sync.changes IN ACCESS EXCLUSIVE MODE");
+      const controller = new AbortController();
+      const start = Date.now();
+      setTimeout(() => controller.abort(), 100);
+      await expect(replica.pullChanges(0, 1000, controller.signal)).rejects.toMatchObject({ code: "POSTGRES_UNAVAILABLE" });
+      // Nunca se queda colgada para siempre: como mucho, `lock_timeout` (5 s) más margen.
+      expect(Date.now() - start).toBeLessThan(6000);
+    });
+  } finally { await locker.close(); await replica.close(); }
+}, postgresTestTimeoutMs);

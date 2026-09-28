@@ -33,6 +33,8 @@ const ECOSYSTEM_STORE_METHODS = [
 const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled", "previousInterrupted", "setGroupSource", "groupSource", "demoteMemory", "startupBlock"];
 // Agregado en 1.7.1: el aviso de sesión paralela (avisar según el momento, no marcar desde el inicio). Las listas de arriba solo crecen.
 const PARALLEL_SESSIONS_STORE_METHODS = ["parallelSessions"];
+// Agregado en 1.8.0 con la sincronización con la nube (D1/D7/D8): activar el nivel 12, saber si está activo, el ciclo (subida+bajada, y solo bajada para la espera de arranque) y recoger avisos. Las listas de arriba solo crecen.
+const CLOUD_STORE_METHODS = ["enableCloud", "cloudEnabled", "syncCloudCycle", "downloadCloudChanges", "takeCloudNotices"];
 
 // El contrato público del SDK agrupa varias comprobaciones relacionadas con qué expone `index.ts`.
 describe("public SDK contract", () => {
@@ -41,7 +43,7 @@ describe("public SDK contract", () => {
     expect(Object.keys(sdk).sort()).toEqual(RUNTIME_EXPORTS.sort());
     expect(Object.getOwnPropertyNames(sdk.MemoryStore.prototype)
       .filter(name => name !== "constructor").sort())
-      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS, ...INTELLIGENCE_STORE_METHODS, ...PARALLEL_SESSIONS_STORE_METHODS].sort());
+      .toEqual([...PUBLIC_STORE_METHODS, ...ECOSYSTEM_STORE_METHODS, ...INTELLIGENCE_STORE_METHODS, ...PARALLEL_SESSIONS_STORE_METHODS, ...CLOUD_STORE_METHODS].sort());
   });
 
   // Forge614 Shell necesita estas tres funciones de inicialización sin interfaz visual para integrarse.
