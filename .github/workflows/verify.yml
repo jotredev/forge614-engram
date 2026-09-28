@@ -30,8 +30,8 @@ jobs:
             sudo apt-get install --yes postgresql
             echo "FORGE614_TEST_POSTGRES_BIN=$(pg_config --bindir)" >> "$GITHUB_ENV"
           else
-            brew install postgresql@17
-            echo "FORGE614_TEST_POSTGRES_BIN=$(brew --prefix postgresql@17)/bin" >> "$GITHUB_ENV"
+            brew install postgresql@18
+            echo "FORGE614_TEST_POSTGRES_BIN=$(brew --prefix postgresql@18)/bin" >> "$GITHUB_ENV"
           fi
       - run: bun test
       - run: bun run typecheck

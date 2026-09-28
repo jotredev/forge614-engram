@@ -88,8 +88,10 @@ async function validate(db:SQL|Bun.TransactionSQL):Promise<void> {
   ];
   if(canonical(columns.map((r:any)=>[r.relname,r.attname,r.type,r.attnotnull]))!==canonical(expected)) syncError("POSTGRES_SCHEMA");
   // Compara cada restricción (clave primaria, única, de comprobación, foránea) del esquema contra la lista exacta esperada.
+  // Desde PostgreSQL 18, cada columna NOT NULL también se cataloga aquí (contype 'n'), así que se excluye de
+  // esta comparación exacta: la columna ya se comprueba arriba con attnotnull, y su validez se comprueba aparte.
   const constraints=await db.unsafe(`SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_catalog.pg_constraint
-    WHERE connamespace='forge614_sync'::regnamespace ORDER BY conname`);
+    WHERE connamespace='forge614_sync'::regnamespace AND contype<>'n' ORDER BY conname`);
   const wanted=[
     ["changes_change_id_key","UNIQUE (change_id)"],["changes_op_check","CHECK ((op = ANY (ARRAY['insert'::text, 'update'::text, 'delete'::text])))"],["changes_pkey","PRIMARY KEY (id)"],
     ["revisions_hash_check","CHECK ((length(hash) = 64))"],["revisions_pkey","PRIMARY KEY (hash)"],
@@ -97,6 +99,11 @@ async function validate(db:SQL|Bun.TransactionSQL):Promise<void> {
     ["state_id_check","CHECK ((id = 1))"],["state_pkey","PRIMARY KEY (id)"],
   ];
   if(canonical(constraints.map((r:any)=>[r.conname,r.definition]))!==canonical(wanted)) syncError("POSTGRES_SCHEMA");
+  // Una restricción NOT NULL (contype 'n') sin validar (NOT VALID) podría convivir con filas nulas aunque
+  // attnotnull ya esté en true, así que se rechaza aparte: en PostgreSQL < 18 esta consulta siempre da cero filas.
+  const unvalidatedNotNull=await db.unsafe(`SELECT count(*) AS n FROM pg_catalog.pg_constraint
+    WHERE connamespace='forge614_sync'::regnamespace AND contype='n' AND NOT convalidated`);
+  if(Number(unvalidatedNotNull[0].n)!==0) syncError("POSTGRES_SCHEMA");
   // Compara la lista de objetos del esquema (tablas, índices, secuencias) y si alguno tiene seguridad de fila por registro (RLS) activada.
   const objects=await db.unsafe(`SELECT relname,relkind,relrowsecurity FROM pg_catalog.pg_class WHERE relnamespace='forge614_sync'::regnamespace ORDER BY relname`);
   if(canonical(objects.map((r:any)=>[r.relname,r.relkind,r.relrowsecurity]))!==canonical([

@@ -57,6 +57,11 @@ test("postgresOptions error names the accepted parameters without echoing the cr
 const cluster = startPostgresCluster();
 const integration = cluster.available ? test : test.skip;
 if (!cluster.available) console.warn(`SKIP PostgreSQL integration: ${cluster.reason}`);
+// Versión mayor del binario del clúster de pruebas (ej. 18 de "postgres (PostgreSQL) 18.6 (Homebrew)"),
+// leída de forma síncrona para poder decidir con test.skipIf si corresponde la prueba de PostgreSQL 18 de abajo.
+const serverMajor = cluster.available
+  ? Number(Bun.spawnSync([join(cluster.bin, "postgres"), "--version"]).stdout.toString().match(/PostgreSQL\)?\s+(\d+)/)?.[1] ?? 0)
+  : 0;
 let admin!: SQL;
 if (cluster.available) admin = new SQL(cluster.url);
 afterAll(() => { if (cluster.available) admin.close(); stopPostgresCluster(cluster); }, postgresTestTimeoutMs);
@@ -268,6 +273,25 @@ integration("validate rechaza una tabla changes con forma distinta (sin restricc
       op text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
     );`).simple();
     await expect(PostgresReplica.connect(url, false)).rejects.toMatchObject({ code: "POSTGRES_SCHEMA" });
+  } finally { await db.close(); }
+}, postgresTestTimeoutMs);
+
+// PostgreSQL 18 cataloga cada restricción NOT NULL en pg_constraint (contype 'n'); si alguna existe pero no
+// está validada (NOT VALID), la columna ya podría tener nulos aunque attnotnull siga en true (comprobado a
+// mano: DROP NOT NULL + ADD CONSTRAINT ... NOT NULL ... NOT VALID deja attnotnull=true, convalidated=false),
+// así que debe rechazarse igual que cualquier otra forma inesperada del esquema. Solo aplica desde PostgreSQL 18.
+(serverMajor >= 18 ? integration : test.skip)("validate rejects an unvalidated NOT NULL constraint (PostgreSQL 18) with POSTGRES_SCHEMA", async () => {
+  if (!cluster.available) return;
+  const url = await freshDatabase("not_valid_not_null");
+  const replica = await PostgresReplica.connect(url, true);
+  await replica.close();
+  const db = new SQL(url);
+  try {
+    await db.unsafe("ALTER TABLE forge614_sync.changes ALTER COLUMN kind DROP NOT NULL");
+    await db.unsafe("ALTER TABLE forge614_sync.changes ADD CONSTRAINT changes_kind_not_null NOT NULL kind NOT VALID");
+    const [row] = await db.unsafe("SELECT attnotnull FROM pg_attribute WHERE attrelid='forge614_sync.changes'::regclass AND attname='kind'");
+    expect(row.attnotnull).toBe(true); // La columna sigue marcada NOT NULL: solo la restricción del catálogo quedó sin validar.
+    await expect(PostgresReplica.connect(url)).rejects.toMatchObject({ code: "POSTGRES_SCHEMA" });
   } finally { await db.close(); }
 }, postgresTestTimeoutMs);
 
