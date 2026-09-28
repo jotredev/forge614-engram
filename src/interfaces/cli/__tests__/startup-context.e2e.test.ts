@@ -1,11 +1,32 @@
 /** Prueba de punta a punta de `startup-context` como proceso real del CLI: validación, vínculo, aislamiento, permisos de solo lectura, los dos formatos de salida y la espera de arranque con nube (D8). */
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { SQL } from "bun";
 import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, parse, resolve } from "node:path";
 import { procSnapshot } from "../../../../tests/fixtures/proc-snapshot";
 import { enableCloud } from "../../../infrastructure/sqlite/schema";
+import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../../../infrastructure/__test-support__/postgres";
+import { PostgresReplica } from "../../../infrastructure/postgres/replica";
+
+// Un solo servidor de prueba desechable y en loopback (127.0.0.1), como en tests/e2e/cloud-two-macs.test.ts;
+// solo la prueba T6b + D8 (más abajo) lo necesita, así que se omite sola si no hay binario configurado.
+const cluster = startPostgresCluster();
+const integration = cluster.available ? test : test.skip;
+let admin!: SQL;
+const clusterUrl = cluster.available ? cluster.url : "";
+if (cluster.available) admin = new SQL(cluster.url);
+else console.warn(`SKIP PostgreSQL integration: ${cluster.reason}`);
+afterAll(async () => {
+  if (!cluster.available) return;
+  try { await admin.close(); } finally { stopPostgresCluster(cluster); }
+}, postgresTestTimeoutMs);
+/** Crea una base de PostgreSQL nueva y desechable, y da su URL de conexión (una por prueba, para que no se mezclen). */
+async function freshDatabase(name: string): Promise<string> {
+  await admin.unsafe(`DROP DATABASE IF EXISTS ${name}`); await admin.unsafe(`CREATE DATABASE ${name}`);
+  return clusterUrl.replace(/\/postgres(\?|$)/, `/${name}$1`);
+}
 
 const directories: string[] = [];
 function temporary(prefix = "forge614-startup-context-"): string {
@@ -256,6 +277,70 @@ test("startup-context opens the base read-only when nothing has to be written, s
     expect((await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json")).code).toBe(0);
     expect(readdirSync(engramDirectory).sort()).toEqual(before);
   } finally { holder.kill(9); }
+}, 40000);
+
+// SQLite borra engram.db-wal y engram.db-shm al cerrarse la última conexión: si eso pasa
+// justo antes de la primera sesión, startup-context debe abrir igual (T6b), no fallar con STORAGE_ERROR.
+test("startup-context opens even when SQLite's WAL side files are missing", async () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  const projectId = JSON.parse((await runCli(root, userDirectory, "project-create", "--name", "demo")).stdout).projectId;
+  expect((await runCli(root, userDirectory, "save", "--project-id", projectId, "--title", "Nota", "--content", "Contenido", "--type", "fact")).code).toBe(0);
+  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  const dbPath = join(engramDirectory, "engram.db");
+  const header = Buffer.alloc(20);
+  const fd = require("node:fs").openSync(dbPath, "r");
+  try { require("node:fs").readSync(fd, header, 0, 20, 0); } finally { require("node:fs").closeSync(fd); }
+  expect(header[18]).toBe(2); // 2 = modo WAL en el encabezado del archivo de SQLite
+  for (const suffix of ["-wal", "-shm"]) {
+    const sidecar = dbPath + suffix;
+    if (existsSync(sidecar)) rmSync(sidecar);
+  }
+  const result = await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ format: 1 });
+}, 40000);
+
+// T6b + D8: con la nube prendida, el caso «faltan -wal/-shm» también debe esperar y bajar lo nuevo antes
+// de imprimir, no solo abrir en modo escritura sin esperar la nube. Ese caso es justo la primera sesión
+// tras cerrar todo, el momento en que más importa traer lo que hizo la otra Mac.
+integration("startup-context without the WAL side files still waits for the cloud and downloads what's new (T6b + D8)", async () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  const url = await freshDatabase("t6b_wal_missing");
+  expect((await runCli(root, userDirectory, "cloud", "on", "--postgres-url", url)).code).toBe(0);
+  expect((await runCli(root, userDirectory, "sync")).code).toBe(0);
+  // Otra instalación (otro installationId) empuja un recuerdo nuevo directo a Neon, como haría la otra Mac.
+  const other = await PostgresReplica.connect(url, true);
+  try {
+    await other.pushChanges("00000000-0000-4000-8000-000000000002", [
+      { changeId: crypto.randomUUID(), kind: "memories", op: "insert", payload: {
+        id: crypto.randomUUID(), projectId: null, scope: "shared", topic_key: null, type: "fact",
+        title: "From the other Mac", content: "Pushed while this Mac had no WAL side files", pinned: 0, version: 1, state: "active",
+        created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", groupId: null,
+      } },
+    ]);
+  } finally { await other.close(); }
+  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  const dbPath = join(engramDirectory, "engram.db");
+  for (const suffix of ["-wal", "-shm"]) { const sidecar = dbPath + suffix; if (existsSync(sidecar)) rmSync(sidecar); }
+  const result = await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout).shared.recent.map((row: { title: string }) => row.title)).toContain("From the other Mac");
+}, postgresTestTimeoutMs);
+
+// Protección: una base sin encabezado válido de SQLite (basura, sin relación con -wal/-shm) sigue
+// fallando con STORAGE_ERROR (SQLITE_NOTADB), en vez de repetirse en modo escritura como T6b.
+test("startup-context still fails when the database file is not a real SQLite database", async () => {
+  const root = temporary(); const userDirectory = join(root, "user");
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  const dbPath = join(engramDirectory, "engram.db");
+  for (const suffix of ["-wal", "-shm"]) { const sidecar = dbPath + suffix; if (existsSync(sidecar)) rmSync(sidecar); }
+  writeFileSync(dbPath, "no es una base de SQLite real, solo texto de prueba");
+  const result = await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json");
+  expect(result.code).toBe(1);
+  expect(JSON.parse(result.stderr).code).toBe("STORAGE_ERROR");
 }, 40000);
 
 // D8: con nube configurada contra un servidor TCP que acepta y nunca responde, startup-context no se

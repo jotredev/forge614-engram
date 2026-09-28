@@ -209,16 +209,29 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     // Primero de solo lectura: el caso común no escribe nada en la base, y una base intacta conserva su huella
     // exacta en disco. Solo cuando el flujo de identidad debe registrar algo (un clon, un grupo), o cuando hay
     // nube configurada (D8: la espera de arranque necesita aplicar lo bajado), se repite en modo escritura;
-    // ambos flujos son idempotentes, así que repetirlo es seguro.
-    const readonlyStore=workspace.open(true);
+    // ambos flujos son idempotentes, así que repetirlo es seguro. T6b: SQLite borra los archivos auxiliares
+    // -wal y -shm al cerrarse la última conexión, así que la primera sesión tras cerrar todo puede encontrar
+    // la base en modo WAL sin su -shm; abrirla en solo lectura falla entonces con SQLITE_CANTOPEN (no puede
+    // crear el auxiliar que le falta). Ese caso concreto también se repite en modo escritura; cualquier otro
+    // motivo de apertura fallida (permisos, base dañada) se sigue lanzando como hoy.
+    let readonlyStore: ReturnType<typeof workspace.open>|undefined;
     let needsCloudWait=false;
     try{
-      needsCloudWait=readonlyStore.cloudEnabled()&&cloudSettings()!==null;
-      if(!needsCloudWait){console.log(JSON.stringify(read(readonlyStore,directory),null,2));return;}
+      readonlyStore=workspace.open(true);
     }
-    catch(error){if((error as {code?:unknown})?.code!=="SQLITE_READONLY")throw error;}
-    finally{readonlyStore.close();}
+    catch(error){if((error as {code?:unknown})?.code!=="SQLITE_CANTOPEN"||!workspace.missingWalSidecar())throw error;}
+    if(readonlyStore){
+      try{
+        needsCloudWait=readonlyStore.cloudEnabled()&&cloudSettings()!==null;
+        if(!needsCloudWait){console.log(JSON.stringify(read(readonlyStore,directory),null,2));return;}
+      }
+      catch(error){if((error as {code?:unknown})?.code!=="SQLITE_READONLY")throw error;}
+      finally{readonlyStore.close();}
+    }
     const store=workspace.open();
+    // T6b: cuando la apertura de solo lectura falló arriba, needsCloudWait nunca se calculó; se calcula
+    // aquí con el store de escritura, para que este camino también espere lo nuevo con la nube prendida (D8).
+    if(!readonlyStore)needsCloudWait=store.cloudEnabled()&&cloudSettings()!==null;
     try{if(needsCloudWait)await waitForCloud(store);console.log(JSON.stringify(read(store,directory),null,2));}
     finally{store.close();}
     // Nota de laboratorio (D8): waitForCloud ya vuelve dentro de su propio tope, pero un intento de conexión

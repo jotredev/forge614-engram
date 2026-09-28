@@ -4,7 +4,7 @@
  * dejar que bun:sqlite los toque, y crea el archivo principal de forma exclusiva cuando hace
  * falta, evitando una carrera (que dos procesos lo creen a la vez) y sin truncar una base existente.
  */
-import { closeSync, lstatSync, openSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, openSync, readSync } from "node:fs";
 import { MemoryError } from "../../shared/errors";
 
 /**
@@ -29,6 +29,27 @@ function existsAsOwnedFile(path: string): boolean {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
+}
+
+/**
+ * Comprueba si `path` es el caso preciso de T6b: una base cuyo encabezado ya quedó en modo WAL
+ * (el byte 18 vale 2, ver la documentación del formato de archivo de SQLite) pero a la que le
+ * falta su archivo auxiliar `-shm`, porque SQLite los borra al cerrarse la última conexión y
+ * puede pasar justo antes de la primera sesión. Solo lee el encabezado, sin abrir la base con
+ * SQLite; si `path` no se puede leer (por ejemplo, sin permiso), no es este caso.
+ * @param path Ruta del archivo principal de la base de datos.
+ * @returns `true` solo cuando el encabezado es legible, está en modo WAL y falta `-shm`.
+ */
+export function missingWalSidecar(path: string): boolean {
+  if (existsSync(path + "-shm")) return false;
+  try {
+    const fd = openSync(path, "r");
+    try {
+      const header = Buffer.alloc(20);
+      readSync(fd, header, 0, 20, 0);
+      return header[18] === 2;
+    } finally { closeSync(fd); }
+  } catch { return false; }
 }
 
 /**
