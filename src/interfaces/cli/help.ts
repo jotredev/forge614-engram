@@ -23,9 +23,16 @@ startup-context --directory <carpeta> --json [--format 1|2]
                 --format 2 devuelve un solo bloque de texto listo para inyectar (máximo 5000 caracteres):
                 esencial fijado, sesión anterior interrumpida e índice de títulos. Defecto 1.
 uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
+cloud on [--postgres-url <URL>]
+                Activa la sincronización con la nube; sin --postgres-url, la pide en la terminal sin mostrarla.
+cloud off       Desactiva la nube; conserva el id de instalación y la cola pendiente para retomarla después.
+cloud status [--json]
+                Nube activa o no, id de instalación, último cambio aplicado y cola pendiente (cuántos y desde cuándo).
 sync [--upgrade-format]
-                Sincroniza todo; --upgrade-format promueve al formato local habilitado (hasta 3).
-sync-watch      Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
+                Con la nube activada (cloud on), un ciclo de subida y bajada con el mecanismo nuevo.
+                --upgrade-format promueve al formato local habilitado (hasta 3). Obsoleto: sunset 2027-03-31.
+sync-watch      Obsoleto (sunset 2027-03-31); con la nube activada corre el ciclo nuevo en cada vuelta.
+                Reintenta mientras esté abierto [--interval <1..3600 segundos>, defecto 30].
 sessions-enable Habilita explícitamente sesiones (esquema 6).
 reinforcement-enable
                 Habilita explícitamente repeticiones y orden reforzado (esquema 7).
@@ -87,8 +94,8 @@ Para guardar shared sin crear un proyecto, ejecuta init primero.
 init puede mover la ubicación antigua de Engram a ~/.forge614/engram cuando es seguro; nunca reemplaza datos en conflicto.
 SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada con init.
 sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
-Antes de sync --upgrade-format, actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
-sync-watch debe permanecer abierto para reintentar; no se instala un servicio permanente.
+Antes de sync --upgrade-format (obsoleto, sunset 2027-03-31), actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
+sync-watch (obsoleto, sunset 2027-03-31) debe permanecer abierto para reintentar; no se instala un servicio permanente.
 init ofrece el refuerzo explícitamente; registrar repeticiones mejora el orden, no verifica la verdad.
 La habilitación local no promueve la réplica: ejecuta sync --upgrade-format por separado.
 Las consultas son literales; todas las palabras deben coincidir.

@@ -34,7 +34,7 @@ const INTELLIGENCE_STORE_METHODS = ["enableIntelligence", "intelligenceEnabled",
 // Agregado en 1.7.1: el aviso de sesión paralela (avisar según el momento, no marcar desde el inicio). Las listas de arriba solo crecen.
 const PARALLEL_SESSIONS_STORE_METHODS = ["parallelSessions"];
 // Agregado en 1.8.0 con la sincronización con la nube (D1/D7/D8): activar el nivel 12, saber si está activo, el ciclo (subida+bajada, y solo bajada para la espera de arranque) y recoger avisos. Las listas de arriba solo crecen.
-const CLOUD_STORE_METHODS = ["enableCloud", "cloudEnabled", "syncCloudCycle", "downloadCloudChanges", "takeCloudNotices"];
+const CLOUD_STORE_METHODS = ["enableCloud", "cloudEnabled", "syncCloudCycle", "downloadCloudChanges", "takeCloudNotices", "cloudQueueStatus"];
 
 // El contrato público del SDK agrupa varias comprobaciones relacionadas con qué expone `index.ts`.
 describe("public SDK contract", () => {

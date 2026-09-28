@@ -45,7 +45,7 @@ function fakeStore(overrides: {
 } = {}): MemoryStore {
   return {
     cloudEnabled: overrides.cloudEnabled ?? (() => true),
-    syncCloudCycle: overrides.syncCloudCycle ?? (async () => {}),
+    syncCloudCycle: overrides.syncCloudCycle ?? (async () => ({ uploaded: 0, downloaded: 0 })),
     downloadCloudChanges: overrides.downloadCloudChanges ?? (async () => {}),
   } as unknown as MemoryStore;
 }
@@ -97,7 +97,7 @@ test("a network error in the cycle never throws or leaves an unhandled rejection
   process.on("unhandledRejection", onUnhandled);
   try {
     const task = startCloudBackground(fakeStore({
-      syncCloudCycle: async () => { succeeded++; },
+      syncCloudCycle: async () => { succeeded++; return { uploaded: 0, downloaded: 0 }; },
     }), {
       connect: async () => { attempts++; if (attempts === 1) throw new Error("network down"); return noopReplica(); },
       intervalMs: 30,
@@ -120,7 +120,7 @@ test("an error inside an already-connected cycle never throws or leaves an unhan
   process.on("unhandledRejection", onUnhandled);
   try {
     const task = startCloudBackground(fakeStore({
-      syncCloudCycle: async () => { calls++; if (calls === 1) throw new Error("cycle boom"); },
+      syncCloudCycle: async () => { calls++; if (calls === 1) throw new Error("cycle boom"); return { uploaded: 0, downloaded: 0 }; },
     }), { connect: async () => noopReplica(), intervalMs: 30 });
     expect(task).not.toBeNull();
     await sleep(150);
@@ -134,7 +134,7 @@ test("an error inside an already-connected cycle never throws or leaves an unhan
 test("a tick and notifySave at nearly the same time share a single in-flight cycle", async () => {
   let calls = 0;
   const task = startCloudBackground(fakeStore({
-    syncCloudCycle: async () => { calls++; await sleep(60); },
+    syncCloudCycle: async () => { calls++; await sleep(60); return { uploaded: 0, downloaded: 0 }; },
   }), { connect: async () => noopReplica(), intervalMs: 100_000, saveDelayMs: 10 });
   expect(task).not.toBeNull();
   // El ciclo inmediato del arranque ya está en vuelo (dura 60 ms); notifySave() agenda otro a los 10 ms,
@@ -149,7 +149,7 @@ test("a tick and notifySave at nearly the same time share a single in-flight cyc
 test("three notifySave calls in a row run only one grouped cycle", async () => {
   let calls = 0;
   const task = startCloudBackground(fakeStore({
-    syncCloudCycle: async () => { calls++; },
+    syncCloudCycle: async () => { calls++; return { uploaded: 0, downloaded: 0 }; },
   }), { connect: async () => noopReplica(), intervalMs: 100_000, saveDelayMs: 30 });
   await sleep(10); // Deja que el ciclo inmediato del arranque termine antes de empezar a contar.
   const afterStartup = calls;
@@ -169,6 +169,7 @@ test("stop cancels an in-flight cycle's signal so it applies nothing when it lat
       calls++;
       await sleep(60);
       if (aborted(signal)) sawAbortedSignal = true; else appliedAfterStop = true;
+      return { uploaded: 0, downloaded: 0 };
     },
   }), { connect: async () => noopReplica(), intervalMs: 20 });
   await sleep(5); // El ciclo inmediato del arranque ya está en vuelo (dura 60 ms).
@@ -195,7 +196,7 @@ test("waitForCloud returns within the timeout plus margin when the download is s
   process.on("unhandledRejection", onUnhandled);
   try {
     const store = fakeStore({
-      syncCloudCycle: async () => {}, // El ciclo inmediato de arranque de la tarea de fondo termina rápido.
+      syncCloudCycle: async () => ({ uploaded: 0, downloaded: 0 }), // El ciclo inmediato de arranque de la tarea de fondo termina rápido.
       downloadCloudChanges: async () => { await sleep(1050); }, // La bajada que usa waitForCloud es la lenta.
     });
     const task = startCloudBackground(store, { connect: async () => noopReplica(), intervalMs: 100_000 });
@@ -217,7 +218,7 @@ test("nothing is applied when the download resolves 50 ms after the cutoff", asy
   try {
     let applied = false, sawAbortedSignal = false;
     const store = fakeStore({
-      syncCloudCycle: async () => {},
+      syncCloudCycle: async () => ({ uploaded: 0, downloaded: 0 }),
       downloadCloudChanges: async (_replica, _installationId, signal) => {
         await sleep(120); // 50 ms después de un corte de 70 ms.
         if (aborted(signal)) sawAbortedSignal = true; else applied = true;

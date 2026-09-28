@@ -65,9 +65,11 @@ interface ExpectedStore {
   parallelSessions(projectId:string,sessionId:string):ParallelSession[];
   // Agregado en 1.8.0 (nube, nivel de esquema 12, D1/D7/D8). Puramente aditivo: nada de lo de arriba cambió.
   enableCloud(remoteFingerprint?:string|null):CloudEnrolment;cloudEnabled():boolean;
-  syncCloudCycle(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<void>;
+  syncCloudCycle(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<{uploaded:number;downloaded:number}>;
   downloadCloudChanges(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<void>;
   takeCloudNotices(now?:Date):CloudNotice[];
+  // Agregado en 1.8.0 T5 (CLI cloud status, D9). Puramente aditivo: nada de lo de arriba cambió.
+  cloudQueueStatus():{lastAppliedId:number;pending:number;oldestPendingAt:string|null};
 }
 type ActualStore = InstanceType<typeof MemoryStore>;
 type _StoreMethodNames = Assert<Equal<keyof ActualStore, keyof ExpectedStore>>;

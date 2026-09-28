@@ -45,6 +45,12 @@ test("cloudSettings is null with a postgres URL but no installation id yet", () 
   expect(cloudSettings()).toBeNull();
 });
 
+// Con el formato que deja "cloud off" (D9: STORAGE e id, sin POSTGRES_URL), cloudSettings da null: la nube está apagada aunque la base siga en nivel 12.
+test("cloudSettings is null with the format 'cloud off' leaves behind (installation id without a postgres URL)", () => {
+  writeEnv('FORMAT_VERSION="3"\nSTORAGE="sqlite"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n');
+  expect(cloudSettings()).toBeNull();
+});
+
 // Con los dos datos completos, cloudSettings los da tal cual.
 test("cloudSettings returns the postgres URL and installation id when both are set", () => {
   writeEnv('FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n');

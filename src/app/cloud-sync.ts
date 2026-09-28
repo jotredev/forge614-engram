@@ -37,12 +37,14 @@ interface OutboxRow { readonly id: number; readonly change_id: string; readonly 
  * @param db Base local con la cola pendiente.
  * @param replica Réplica remota (o su doble de prueba) a la que se suben los cambios.
  * @param installationId Identificador de esta instalación, que viaja con cada cambio subido.
+ * @returns Cuántas filas se subieron en total (la suma de todos los lotes).
  */
-export async function uploadOutbox(db: Database, replica: CloudReplica, installationId: string): Promise<void> {
+export async function uploadOutbox(db: Database, replica: CloudReplica, installationId: string): Promise<number> {
+  let uploaded = 0;
   for (;;) {
     // Se relee la cola en cada vuelta: un guardado nuevo durante la subida entra en el siguiente lote, no en este.
     const rows = db.query("SELECT id, change_id, kind, op, payload FROM cloud_outbox ORDER BY id LIMIT ?").all(UPLOAD_BATCH_SIZE) as OutboxRow[];
-    if (rows.length === 0) return;
+    if (rows.length === 0) return uploaded;
     await replica.pushChanges(installationId, rows.map(row => ({
       changeId: row.change_id, kind: row.kind, op: row.op, payload: JSON.parse(row.payload),
     })));
@@ -51,7 +53,8 @@ export async function uploadOutbox(db: Database, replica: CloudReplica, installa
     db.transaction(() => {
       db.query(`DELETE FROM cloud_outbox WHERE id IN (${ids.map(() => "?").join(",")})`).run(...ids);
     })();
-    if (rows.length < UPLOAD_BATCH_SIZE) return; // Lote incompleto: no puede haber más filas esperando.
+    uploaded += rows.length;
+    if (rows.length < UPLOAD_BATCH_SIZE) return uploaded; // Lote incompleto: no puede haber más filas esperando.
   }
 }
 
@@ -64,17 +67,20 @@ export async function uploadOutbox(db: Database, replica: CloudReplica, installa
  * @param replica Réplica remota (o su doble de prueba) de la que se bajan los cambios.
  * @param installationId Identificador de esta instalación, para que `applyCloudChanges` reconozca sus propias filas.
  * @param signal Señal opcional de cancelación (tope de la espera de arranque, D8, o detención de la tarea de fondo).
+ * @returns Cuántas filas se aplicaron de verdad (sin contar las propias, las saltadas ni las de conflicto
+ * que ya se cuentan como aplicadas en `applyCloudChanges`; ver esa función para el detalle).
  */
-export async function downloadChanges(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> {
+export async function downloadChanges(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<number> {
+  let applied = 0;
   for (;;) {
-    if (signal?.aborted) return;
+    if (signal?.aborted) return applied;
     const since = (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
     const rows = await replica.pullChanges(since, DOWNLOAD_BATCH_SIZE, signal);
     // El tope pudo vencer mientras `pullChanges` seguía en el aire: no se aplica nada bajado tarde.
-    if (signal?.aborted) return;
-    if (rows.length === 0) return;
-    applyCloudChanges(db, rows, installationId);
-    if (rows.length < DOWNLOAD_BATCH_SIZE) return;
+    if (signal?.aborted) return applied;
+    if (rows.length === 0) return applied;
+    applied += applyCloudChanges(db, rows, installationId).applied;
+    if (rows.length < DOWNLOAD_BATCH_SIZE) return applied;
   }
 }
 
@@ -86,8 +92,10 @@ export async function downloadChanges(db: Database, replica: CloudReplica, insta
  * @param replica Réplica remota (o su doble de prueba).
  * @param installationId Identificador de esta instalación.
  * @param signal Señal opcional de cancelación, que solo afecta a la bajada.
+ * @returns Cuántas filas se subieron y cuántas se bajaron y aplicaron de verdad.
  */
-export async function runCloudCycle(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> {
-  await uploadOutbox(db, replica, installationId);
-  await downloadChanges(db, replica, installationId, signal);
+export async function runCloudCycle(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<{ uploaded: number; downloaded: number }> {
+  const uploaded = await uploadOutbox(db, replica, installationId);
+  const downloaded = await downloadChanges(db, replica, installationId, signal);
+  return { uploaded, downloaded };
 }

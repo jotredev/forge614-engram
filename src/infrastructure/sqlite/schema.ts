@@ -768,6 +768,15 @@ function setFingerprint(db: Database, fingerprint: string | null): void {
 }
 
 /**
+ * Da el número del último cambio bajado de la nube y aplicado a esta base (D9 `cloud status`).
+ * @param db conexión abierta a una base ya con la nube activada (nivel 12).
+ * @returns el valor actual de `cloud_state.last_applied_id`.
+ */
+export function lastAppliedId(db: Database): number {
+  return (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
+}
+
+/**
  * Activación explícita y aditiva de la cola de la nube (nivel 12, D1). Encadena el requisito previo
  * (memoria inteligente), y luego agrega las tablas de bandeja de salida, estado y avisos, y sus
  * disparadores, en una sola transacción, encolando cada fila que ya existe de cada tabla que viaja

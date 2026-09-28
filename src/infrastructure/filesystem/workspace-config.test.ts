@@ -45,6 +45,35 @@ test("installationId is exposed from FORGE614_ENGRAM_INSTALLATION_ID and absent 
   expect(f.config.read()).toEqual({storage:"sqlite",postgresUrl:"postgresql://u:SECRET@127.0.0.1/db?sslmode=disable",installationId:"3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"});
 });
 
+// El formato que deja "cloud off" (D9): id de instalación conservado, sin POSTGRES_URL; read() lo acepta.
+test("read accepts the format 'cloud off' leaves behind: an installation id without POSTGRES_URL", () => {
+  const f = fixture(); f.config.save();
+  writeFileSync(f.path, 'FORMAT_VERSION="3"\nSTORAGE="sqlite"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n', { mode: 0o600 });
+  expect(f.config.read()).toEqual({ storage: "sqlite", installationId: "3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f" });
+});
+
+// configurePostgres con un tercer argumento (installationId) lo escribe junto a la URL; repetir la llamada con el mismo id y la misma URL no reemplaza el archivo (no-op).
+test("configurePostgres writes the installation id when given one, and repeating the same call is a no-op", () => {
+  const f = fixture(); f.config.save();
+  const id = "3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f";
+  f.config.configurePostgres("postgresql://u@127.0.0.1/db?sslmode=disable", f.config.revision(), id);
+  expect(f.config.read()).toEqual({ storage: "sqlite", postgresUrl: "postgresql://u@127.0.0.1/db?sslmode=disable", installationId: id });
+  const before = readFileSync(f.path);
+  f.config.configurePostgres("postgresql://u@127.0.0.1/db?sslmode=disable", f.config.revision(), id);
+  expect(readFileSync(f.path)).toEqual(before);
+});
+
+// configurePostgres(null, ..., id) quita la URL pero conserva el id (forma de "cloud off"); sin id explícito (dos argumentos, como usan setup/init), el id que ya hubiera se conserva igual.
+test("configurePostgres(null, ..., id) drops the URL but keeps the given id; the two-argument call preserves whatever id was already there", () => {
+  const f = fixture(); f.config.save();
+  const id = "3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f";
+  f.config.configurePostgres("postgresql://u@127.0.0.1/db?sslmode=disable", f.config.revision(), id);
+  f.config.configurePostgres(null, f.config.revision(), id);
+  expect(f.config.read()).toEqual({ storage: "sqlite", installationId: id });
+  f.config.configurePostgres("postgresql://u@127.0.0.1/db?sslmode=disable", f.config.revision());
+  expect(f.config.read()).toEqual({ storage: "sqlite", postgresUrl: "postgresql://u@127.0.0.1/db?sslmode=disable", installationId: id });
+});
+
 // La configuración es única por instalación: no debe guardar identidad de proyecto ni una ruta de base de datos propia de un proyecto.
 test("one private config contains no project identity or project-specific database path", () => {
   const f = fixture(); f.config.save();
