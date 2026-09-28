@@ -24,13 +24,14 @@ type _SearchScope = Assert<Equal<SearchScope, MemoryScope | "all">>;
 type _MemoryType = Assert<Equal<MemoryType, "fact" | "decision" | "procedure" | "warning" | "preference">>;
 type _WorkspaceSettings = Assert<Equal<WorkspaceSettings, {storage:"sqlite";postgresUrl?:string;installationId?:string}>>;
 interface ExpectedStore {
+  // D6 (T3b): las cuatro firmas de abajo con "origin" ganaron ese parámetro opcional al final (identidad de proyecto por remoto de Git); ningún nombre cambió.
   createProject(name:string):Project;getProject(projectId:string):Project|null;listProjects():Project[];renameProject(projectId:string,name:string):Project;
   sessionsEnabled():boolean;reinforcementEnabled():boolean;enableSessions():void;enableSearchReinforcement():void;startSession(projectId:string,sessionId:string,runtimeDirectory?:string):Session;endSession(projectId:string,sessionId:string):Session;getSession(projectId:string,sessionId:string):Session|null;
-  startSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,sessionId:string,bindingAvailable?:(directory:string)=>boolean):Session;
+  startSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,sessionId:string,bindingAvailable?:(directory:string)=>boolean,origin?:string|null):Session;
   projectForDirectory(directory:string):Project|null;bindProjectDirectory(directory:string,projectId:string):Project;
-  resolveProjectDirectory(directory:string,name:string,create:boolean,bindingAvailable?:(directory:string)=>boolean):{project:Project|null;created:boolean};
-  saveForProjectDirectory(directory:string,name:string,input:Omit<SaveInput,"projectId"|"scope">,bindingAvailable?:(directory:string)=>boolean):MemoryVersion;
-  saveWithSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,input:Omit<SaveInput,"projectId"|"scope">,options?:SessionSaveOptions,bindingAvailable?:(directory:string)=>boolean):SessionSaveResult;
+  resolveProjectDirectory(directory:string,name:string,create:boolean,bindingAvailable?:(directory:string)=>boolean,origin?:string|null):{project:Project|null;created:boolean};
+  saveForProjectDirectory(directory:string,name:string,input:Omit<SaveInput,"projectId"|"scope">,bindingAvailable?:(directory:string)=>boolean,origin?:string|null):MemoryVersion;
+  saveWithSessionForProjectDirectory(directory:string,name:string,runtimeDirectory:string,input:Omit<SaveInput,"projectId"|"scope">,options?:SessionSaveOptions,bindingAvailable?:(directory:string)=>boolean,origin?:string|null):SessionSaveResult;
   save(input:SaveInput):MemoryVersion;saveWithSession(input:SaveInput,options?:SessionSaveOptions):SessionSaveResult;
   saveSessionSummary(projectId:string,sessionId:string,fields:SummaryFields,request:{requestKey:string;expectedVersion?:number}):SessionSaveResult;
   get(projectId:string|null,id:string):Memory|null;getByTopic(projectId:string|null,topicKey:string):Memory|null;history(projectId:string|null,id:string):MemoryVersion[];

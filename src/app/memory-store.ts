@@ -70,21 +70,21 @@ export class MemoryStore {
   endSession(projectId: string, sessionId: string): Session { return writes.endSession(this.db, projectId, sessionId); }
   /** Lee una sesión por proyecto y id, o `null` si no existe. */
   getSession(projectId: string, sessionId: string): Session | null { return sessions.getSession(this.db, projectId, sessionId); }
-  /** Como `startSession`, pero resolviendo primero el proyecto a partir de una carpeta (la liga o la crea según `bindingAvailable`). */
+  /** Como `startSession`, pero resolviendo primero el proyecto a partir de una carpeta (la liga, la crea, o la reconoce por remoto de Git según `origin`, D6). */
   startSessionForProjectDirectory(directory: string, name: string, runtimeDirectory: string, sessionId: string,
-      bindingAvailable?: (directory:string)=>boolean): Session { return writes.startSessionForProjectDirectory(this.db, directory, name, runtimeDirectory, sessionId, bindingAvailable); }
+      bindingAvailable?: (directory:string)=>boolean, origin?: string | null): Session { return writes.startSessionForProjectDirectory(this.db, directory, name, runtimeDirectory, sessionId, bindingAvailable, origin); }
   /** Lee el proyecto ya ligado a una carpeta, o `null` si ninguno lo está. */
   projectForDirectory(directory: string): Project | null { return projects.projectForDirectory(this.db, directory); }
   /** Liga una carpeta a un proyecto ya existente. */
   bindProjectDirectory(directory: string, projectId: string): Project { return writes.bindProjectDirectory(this.db, directory, projectId); }
-  /** Resuelve el proyecto de una carpeta por su vínculo registrado, creándolo si `create` es `true` y no existía ninguno. */
-  resolveProjectDirectory(directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } { return writes.resolveProjectDirectory(this.db, directory, name, create, bindingAvailable); }
+  /** Resuelve el proyecto de una carpeta por su vínculo registrado, creándolo si `create` es `true` y no existía ninguno (o ligándola por remoto de Git si `origin` coincide con un proyecto ya conocido, D6, T3b). */
+  resolveProjectDirectory(directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean, origin?: string | null): { project: Project | null; created: boolean } { return writes.resolveProjectDirectory(this.db, directory, name, create, bindingAvailable, origin); }
   /** Guarda una memoria resolviendo antes el proyecto de la carpeta dada. */
-  saveForProjectDirectory(directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean): MemoryVersion { return writes.saveForProjectDirectory(this.db, directory, name, input, bindingAvailable); }
+  saveForProjectDirectory(directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean, origin?: string | null): MemoryVersion { return writes.saveForProjectDirectory(this.db, directory, name, input, bindingAvailable, origin); }
   /** Como `saveForProjectDirectory`, pero además ligado a una sesión (la abre si hace falta). */
   saveWithSessionForProjectDirectory(directory: string, name: string, runtimeDirectory: string,
       input: Omit<SaveInput,"projectId"|"scope">, options: SessionSaveOptions = {},
-      bindingAvailable?: (directory:string)=>boolean): SessionSaveResult { return writes.saveWithSessionForProjectDirectory(this.db, directory, name, runtimeDirectory, input, options, bindingAvailable); }
+      bindingAvailable?: (directory:string)=>boolean, origin?: string | null): SessionSaveResult { return writes.saveWithSessionForProjectDirectory(this.db, directory, name, runtimeDirectory, input, options, bindingAvailable, origin); }
   /** Guarda una memoria con el proyecto y alcance (`scope`) ya indicados en `input`. */
   save(input: SaveInput): MemoryVersion { return writes.save(this.db, input); }
   /** Como `save`, pero ligado a una sesión de proyecto. */

@@ -133,6 +133,8 @@ const secretCases: { kind: string; op: "insert"; payload: Record<string, unknown
     snapshot: JSON.stringify({ id: "m1", title: "AKIAABCDEFGHIJKLMNOP", content: "ok", version: 1, updatedAt: "2026-01-01T00:00:00.000Z" }) } },
   { kind: "memory_versions", op: "insert", payload: { memory_id: "m1", version: 1,
     snapshot: JSON.stringify({ id: "m1", title: "ok", content: "AKIAABCDEFGHIJKLMNOP", version: 1, updatedAt: "2026-01-01T00:00:00.000Z" }) } },
+  // T3b (D6): el remoto anotado de un proyecto es texto libre (llega de un archivo config ajeno), así que pasa por el mismo filtro.
+  { kind: "project_remotes", op: "insert", payload: { project_id: "placeholder", origin: "leak AKIAABCDEFGHIJKLMNOP", updated_at: "2026-01-01T00:00:00.000Z" } },
 ];
 for (const [index, testCase] of secretCases.entries()) {
   // Verifica, para cada campo de texto libre de la lista de arriba, que un secreto (aquí, una clave de acceso de AWS) en ese campo hace que la fila se rechace con el patrón correcto, sin aplicarse.
@@ -148,6 +150,8 @@ for (const [index, testCase] of secretCases.entries()) {
       (payload as Record<string, unknown>).memory_id = seedId;
       if (testCase.kind === "memory_versions") (payload as Record<string, unknown>).snapshot = (payload.snapshot as string).replace(/"m1"/g, `"${seedId}"`);
     }
+    // project_remotes exige un proyecto real por su llave foránea; se sustituye el marcador por el creado arriba.
+    if (testCase.kind === "project_remotes") (payload as Record<string, unknown>).project_id = project.projectId;
     const row: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: testCase.kind, op: testCase.op,
       payload, createdAt: "2026-01-01T00:00:00.000Z" };
     const result = applyCloudChanges(db, [row], "local");
@@ -182,6 +186,21 @@ test("D6: tabla con fecha (projects) — gana el updatedAt más reciente", () =>
     payload: { projectId: project.projectId, name: "newer", createdAt: project.createdAt, updatedAt: "2999-01-01T00:00:00.000Z" }, createdAt: "x" };
   applyCloudChanges(db, [newer], "local");
   expect((db.query("SELECT name FROM projects WHERE projectId=?").get(project.projectId) as { name: string }).name).toBe("newer");
+});
+
+// T3b (D6): igual que projects, pero con la tabla nueva project_remotes (llave natural project_id, fecha updated_at).
+test("D6: tabla con fecha (project_remotes) — gana el updated_at más reciente", () => {
+  const db = freshCloudDb();
+  const project = createProject(db, "p1"); db.exec("DELETE FROM cloud_outbox");
+  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(project.projectId, "github.com/org/repo", "2020-01-01T00:00:00.000Z");
+  const older: ChangeRow = { id: 1, changeId: "a", installationId: "remote", kind: "project_remotes", op: "update",
+    payload: { project_id: project.projectId, origin: "github.com/org/older", updated_at: "2000-01-01T00:00:00.000Z" }, createdAt: "x" };
+  applyCloudChanges(db, [older], "local");
+  expect((db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(project.projectId) as { origin: string }).origin).toBe("github.com/org/repo");
+  const newer: ChangeRow = { id: 2, changeId: "b", installationId: "remote", kind: "project_remotes", op: "update",
+    payload: { project_id: project.projectId, origin: "github.com/org/newer", updated_at: "2999-01-01T00:00:00.000Z" }, createdAt: "x" };
+  applyCloudChanges(db, [newer], "local");
+  expect((db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(project.projectId) as { origin: string }).origin).toBe("github.com/org/newer");
 });
 
 // Verifica que dos filas con la misma fecha de actualización se desempatan por JSON canónico de forma que ambas bases llegan al mismo resultado, sin importar en qué orden reciban las dos filas.

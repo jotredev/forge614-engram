@@ -633,8 +633,9 @@ export function enableIntelligence(db: Database): IntelligenceEnrolment {
 // Activación de la nube (nivel de esquema 12, D1). Solo agrega: una bandeja de salida (outbox) de
 // cambios pendientes, alimentada por disparadores AFTER INSERT/UPDATE/DELETE en cada tabla que viaja
 // (sección 5 del diseño); un estado de aplicación de una sola fila (el apply_guard de D2,
-// last_applied_id y la huella del remoto de D14); y una tabla de avisos. Nunca se llega aquí al
-// simplemente abrir la base; solo `enableCloud` la escribe.
+// last_applied_id y la huella del remoto de D14); una tabla de avisos; y (T3b, D6) el remoto de Git
+// normalizado de cada proyecto (project_remotes), para reconocer en otra Mac una carpeta sin archivo
+// de identidad. Nunca se llega aquí al simplemente abrir la base; solo `enableCloud` la escribe.
 const CLOUD_TABLES_SCHEMA = `CREATE TABLE cloud_outbox (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   change_id TEXT NOT NULL UNIQUE DEFAULT (lower(hex(randomblob(16)))),
@@ -663,13 +664,20 @@ CREATE TABLE cloud_version_map (
   local_version INTEGER NOT NULL,
   PRIMARY KEY (memory_id, installation_id, remote_version)
 );
+CREATE TABLE project_remotes (
+  project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(projectId),
+  origin TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 // Cada tabla que viaja (sección 5 del diseño), en orden de dependencia (D14): primero projects y la
 // estructura de ecosistema, luego memories y sus tablas auxiliares, luego sessions, luego confirmations.
 // Las listas de columnas coinciden exactamente con este archivo (se verificaron contra el SQL real de
-// arriba, no contra los números de línea del plan).
+// arriba, no contra los números de línea del plan). project_remotes (D6, identidad de proyecto por
+// remoto de Git, T3b) va justo después de projects: su clave foránea exige que el proyecto ya viajó.
 const TRAVELING_TABLES: readonly (readonly [string, readonly string[]])[] = [
   ["projects", ["projectId", "name", "createdAt", "updatedAt"]],
+  ["project_remotes", ["project_id", "origin", "updated_at"]],
   ["ecosystem_groups", ["id", "name", "createdAt"]],
   ["ecosystem_memberships", ["projectId", "groupId", "boundAt", "source"]],
   ["ecosystem_sources", ["groupId", "projectId", "setAt"]],
