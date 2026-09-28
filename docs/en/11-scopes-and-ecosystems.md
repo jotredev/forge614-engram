@@ -85,9 +85,13 @@ Group session summaries (`memory_session_summary` with `scope: "ecosystem"`) do 
 
 **Demoting a memory.** `memory-demote --id <memory> --project-id <UUID>` (SDK: `demoteMemory(projectId, id)`) returns to the project a memory from the board of that project's group, keeping its id, all its versions, and its metadata (short version, `affects`, validity). It appends a version that records the scope change and a `MEMORY_DEMOTED` event. If the project already has a memory with that topic it answers `TOPIC_CONFLICT`. The commands are detailed in [chapter 3](03-cli-reference.md).
 
+## The same memory on another Mac, with the cloud (since 1.8.0)
+
+With `forge614-engram cloud on` (chapter [01](01-installation-and-getting-started.md)), groups, memberships, group source, and `ecosystem` memories with their history travel between two Macs just like project and `shared` ones do. On the other Mac, a project without `.forge614/project.json` is recognized by its normalized Git remote (`origin`, with or without `.git`, `git@`/`ssh://` versus `https://`, host lowercased): if it matches exactly one already-known local project it is bound to it; if two projects share the same remote, neither is bound — it is never guessed — and a new project is created as usual. With the cloud on, a second clone of the same repository on the same Mac binds to the same project, just as worktrees already do.
+
 ## Current limits
 
-- **PostgreSQL replica.** **`ecosystem` memories are not replicated yet.** Synchronization does not describe the group scope yet: if `ecosystem` memories exist, `sync` stops with `SYNC_ECOSYSTEM_UNSUPPORTED` without touching local or remote data; without group memories it works as before. Group replication will arrive in its own plan (1.8.0, "format 4").
+- **Formats 1–3 PostgreSQL replica.** **`ecosystem` memories are not replicated through this path.** Without the cloud on, `sync` (with or without `--upgrade-format`) stops with `SYNC_ECOSYSTEM_UNSUPPORTED` if `ecosystem` memories exist, without touching local or remote data; without group memories it works as before. `sync --upgrade-format` always uses this path, even with the cloud on. This path is deprecated since 1.8.0 (sunset 2027-03-31): the `cloud on` cloud does replicate the `ecosystem` scope (above).
 - **`forge614.node.json` is read-only** for Engram and only its `ecosystem` field is used.
 - **A group is local to this machine's database** plus each repository's `.forge614/project.json` files; there is no central group service.
 - Asking which group a project without a declaration belongs to is not done by Engram (Shell does it in its visual flow).

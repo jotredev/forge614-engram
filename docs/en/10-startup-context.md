@@ -91,6 +91,12 @@ Format 2 works at any database level: it does not require `intelligence-enable`.
 
 Without `--format`, the command keeps returning format 1, with the same output as always. `--format` accepts only `1` or `2`: any other value answers `INVALID_INPUT` (`format debe ser 1 o 2.`) before the database is opened. Versions 2 and 3 of the memory protocol announce the command without `--format`, that is, format 1 (version 1 announces none); version 4 (since 1.7.0) announces format 2. From the SDK, `MemoryStore.startupBlock` delivers the same block.
 
+## With the cloud on (since 1.8.0)
+
+With `cloud on` already run on this Mac, `startup-context` (and `memory_context` over MCP) wait at most 1 second for new changes to arrive from the cloud before returning context; if they do not arrive in time, they continue with local data and what is new arrives on the next background cycle. Measured against Neon: around 0.6 s with the database awake; if Neon was asleep (no recent use) it can spend the full second. Without the cloud on, this command changes nothing compared to earlier versions.
+
+`startup-context` also opens correctly even when SQLite's WAL auxiliary files are missing (`engram.db-wal` and `engram.db-shm`), which SQLite deletes when the last connection closes: previously it failed with `STORAGE_ERROR` on the first session after closing everything (also in 1.7.2); since 1.8.0 it retries in writable mode and keeps working normally, including the cloud wait.
+
 ## Safe errors
 
 `--directory` and `--json` are required. A nonexistent path, a path that is not a directory, an unreadable path, an uninitialized workspace, or any other real failure fails, and so does an invalid `.forge614/project.json` (`PROJECT_FILE_INVALID`: corrupt JSON, an unknown schema version, or unknown fields), which Engram never overwrites. The failure leaves stdout empty, writes JSON only to stderr, and exits with exit code 1: `{ "code": "…", "error": "…" }`, or `{ "schemaVersion": 1, "code": "…", "error": "…" }` for the codes introduced in 1.6.0. It does not print secrets, tokens, credentials, or raw paths in an error message.

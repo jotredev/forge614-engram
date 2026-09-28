@@ -123,6 +123,24 @@ Usa `--scope shared` en vez de `--project-id` para un recuerdo compartido. Actua
 
 Usa `--scope ecosystem --group <nombre|id>` (sin `--project-id`) para el recuerdo de un grupo; tiene los mismos temas, versiones, archivo/restauración y refuerzo que los otros ámbitos, y su JSON añade `groupId`. En `search`, `--scope ecosystem` acepta `--group` o el `--project-id` de un proyecto que pertenezca a un grupo (si no pertenece, `GROUP_REQUIRED`). `--group` solo se acepta con `--scope ecosystem`. Con `--project-id` y `--scope all`, la búsqueda incluye automáticamente el grupo del proyecto; si un tema se repite, gana el del proyecto, luego el del grupo y por último el compartido.
 
+## Nube: la misma memoria en otra Mac
+
+Disponible desde la versión 1.8.0. Consulta el capítulo [01. Instalación y Primeros Pasos](01-instalacion-y-primeros-pasos.md) para la guía paso a paso y el capítulo [05. Arquitectura Interna y Fórmulas](05-arquitectura-interna-y-formulas.md) para cómo funciona por dentro.
+
+```text
+cloud on [--postgres-url <URL>]  activa la nube; sin --postgres-url la pide en la terminal sin mostrarla
+cloud off                        desactiva la nube; conserva el id de instalación y la cola pendiente
+cloud status [--json]            nube activa o no, id de instalación, último cambio aplicado y cola pendiente
+```
+
+`cloud on` exige `init` ya ejecutado. Prueba la conexión (crea la tabla de cambios en Neon si falta) y la cierra **antes** de guardar nada: una dirección que no sirve no deja rastro. Genera `FORGE614_ENGRAM_INSTALLATION_ID` (un UUID) solo si todavía no existe; repetir el comando no lo cambia. La primera vez que se activa, encola toda la memoria local que viaja (proyectos, grupos, pertenencias, recuerdos con su historial, sesiones, resúmenes y confirmaciones) para subirla; si `cloud on` apunta a una base de Neon distinta de la que ya se usaba, se trata igual que la primera vez: se vuelve a encolar todo y se descarga desde cero. Salida: `{ "installationId": "<uuid>", "enabled": true }`.
+
+`cloud off` quita `POSTGRES_URL` del `.env`; conserva el id de instalación, la base en su nivel de esquema y la cola de pendientes intacta, lista para que una `cloud on` posterior con la misma base la retome donde se quedó. Salida: `{ "enabled": false }`.
+
+`cloud status [--json]` nunca se conecta a la nube: lee solo la base local. `enabled` exige a la vez el nivel de esquema de la nube y una dirección configurada; las demás cifras (`installationId`, `lastAppliedId`, `pending`, `oldestPendingAt`) se dan siempre que la base ya pasó por `cloud on` alguna vez, esté la nube prendida o apagada ahora mismo. Con `--json`: `{ "enabled": true, "installationId": "<uuid>", "lastAppliedId": 42, "pending": 0, "oldestPendingAt": null }`. Sin `--json`, las mismas cifras en líneas legibles en español.
+
+Con la nube activada (`cloud on` ya corrido en esta Mac), `sync` deja de usar el snapshot de los formatos 1–3 y hace un solo ciclo con el mecanismo nuevo: sube la cola pendiente y baja los cambios nuevos de las otras Mac. `sync --upgrade-format` y `sync-watch` quedan obsoletos (se retiran el 2027-03-31): siguen funcionando exactamente igual que antes, con un aviso en stderr; `sync-watch` con la nube activada corre el ciclo nuevo en cada vuelta.
+
 ## Sesiones y contexto
 
 ```text

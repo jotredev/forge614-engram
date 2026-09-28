@@ -52,6 +52,15 @@ Límites de esta entrega: (1) una sesión que trabaja más de 30 minutos sin gua
 - Motivo: en pruebas de laboratorio, un asistente no mencionaba la sesión que quedó abierta aunque recibía `previous`; con el aviso en frase legible la mencionó con su hora en todas las corridas, y el nuevo orden de la regla evita que ofrezca continuar una sesión que sigue abierta en paralelo.
 - Límite conocido: el aviso no garantiza que el asistente ofrezca continuar desde el resumen de la sesión que quedó abierta; en esas pruebas, un asistente dijo que quedó abierta y cuándo, pero lo ofreció solo en algunas corridas.
 
+## Capacidades incorporadas en v1.8.0
+
+- La misma memoria (proyecto, libreta personal y tablero del ecosistema, con sus tres ámbitos) en dos Mac, activada explícitamente con `forge614-engram cloud on` y una base de PostgreSQL en Neon; `cloud off` la apaga sin tocar nada local. Consulta [01. Instalación y Primeros Pasos](01-instalacion-y-primeros-pasos.md) y [05. Arquitectura Interna y Fórmulas](05-arquitectura-interna-y-formulas.md).
+- Esta ruta nueva (esquema 12) **sí** replica el ámbito `ecosystem`, algo que la réplica de formatos 1–3 nunca hizo: reemplaza la promesa de un «formato 4» propio para grupos que mencionaban las entregas 1.6.0 y 1.7.0. Los formatos 1–3 (`sync --upgrade-format`) quedan como mecanismo obsoleto, sin borrarse (acta 0024, sunset 2027-03-31).
+- Sin `cloud on`, Engram arranca exactamente igual que en 1.7.2 (medido, diferencia de mediana dentro de ±2 ms); con la nube activada, el arranque espera como máximo 1 segundo antes de seguir con lo local.
+- Identidad de proyecto también por remoto de Git normalizado (`origin`), para una carpeta sin `.forge614/project.json` en la otra Mac.
+
+Límites de esta entrega: la tabla de cambios en Neon (`forge614_sync.changes`) no se poda todavía; una consulta bloqueada en Neon no se corta antes de su `lock_timeout` (5 s), y por eso el servidor MCP puede tardar hasta 5 s en cerrar si una conexión quedó a medio abrir; los textos que ve la persona (salida de terminal, `help`) siguen en español fijo, la salida bilingüe es/en de esos textos llega en 1.9.0.
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.

@@ -91,6 +91,12 @@ El formato 2 funciona en cualquier nivel de la base: no exige `intelligence-enab
 
 Sin `--format`, el comando sigue devolviendo el formato 1, con la salida de siempre. `--format` acepta solo `1` o `2`: otro valor responde `INVALID_INPUT` (`format debe ser 1 o 2.`) antes de abrir la base. Las versiones 2 y 3 del protocolo de memoria anuncian el comando sin `--format`, es decir, el formato 1 (la versión 1 no anuncia ninguno); la versión 4 (desde 1.7.0) anuncia el formato 2. Desde el SDK, el mismo bloque lo entrega `MemoryStore.startupBlock`.
 
+## Con la nube activada (desde 1.8.0)
+
+Con `cloud on` ya corrido en esta Mac, `startup-context` (y `memory_context` por MCP) esperan como máximo 1 segundo a que lleguen los cambios nuevos de la nube antes de devolver el contexto; si no llegan a tiempo, siguen con lo local y lo nuevo llega en el siguiente ciclo en segundo plano. Medido contra Neon: cerca de 0,6 s con la base despierta; si Neon estaba dormida (sin uso reciente) puede gastar el segundo completo. Sin la nube activada, este comando no cambia nada respecto a versiones anteriores.
+
+`startup-context` también abre correctamente aunque falten los archivos auxiliares de SQLite en modo WAL (`engram.db-wal` y `engram.db-shm`), que SQLite borra al cerrarse la última conexión: antes fallaba con `STORAGE_ERROR` en la primera sesión tras cerrar todo (también en 1.7.2); desde 1.8.0 reintenta en modo escritura y sigue funcionando con normalidad, incluida la espera de la nube.
+
 ## Errores seguros
 
 `--directory` y `--json` son obligatorios. Fallan una ruta inexistente, una ruta que no es directorio o una ruta ilegible, un espacio no inicializado o cualquier otro fallo real, y también un `.forge614/project.json` inválido (`PROJECT_FILE_INVALID`: JSON corrupto, versión de esquema desconocida o campos desconocidos), que Engram nunca sobrescribe. El fallo deja stdout vacío, escribe JSON únicamente por stderr y termina con exit code 1: `{ "code": "…", "error": "…" }`, o `{ "schemaVersion": 1, "code": "…", "error": "…" }` para los códigos incorporados en 1.6.0. No imprime secretos, tokens, credenciales ni rutas crudas en el mensaje de error.

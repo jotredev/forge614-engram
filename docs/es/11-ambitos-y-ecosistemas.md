@@ -85,9 +85,13 @@ Los resúmenes de sesión de grupo (`memory_session_summary` con `scope: "ecosys
 
 **Bajar un recuerdo.** `memory-demote --id <recuerdo> --project-id <UUID>` (SDK: `demoteMemory(projectId, id)`) devuelve al proyecto un recuerdo del tablero del grupo de ese proyecto, conservando su id, todas sus versiones y sus metadatos (versión corta, `affects`, vigencia). Añade una versión que registra el cambio de ámbito y el evento `MEMORY_DEMOTED`. Si el proyecto ya tiene un recuerdo con ese tema responde `TOPIC_CONFLICT`. El detalle de los comandos está en el [capítulo 3](03-referencia-cli.md).
 
+## La misma memoria en otra Mac, con nube (desde 1.8.0)
+
+Con `forge614-engram cloud on` (capítulo [01](01-instalacion-y-primeros-pasos.md)), grupos, pertenencias, fuente de grupo y recuerdos `ecosystem` con su historial viajan igual que los de proyecto y `shared` entre dos Mac. En la otra Mac, un proyecto sin `.forge614/project.json` se reconoce por el remoto de Git (`origin`) normalizado (con o sin `.git`, `git@`/`ssh://` frente a `https://`, host en minúsculas): si coincide con exactamente un proyecto local ya conocido se liga a él; si dos proyectos comparten el mismo remoto no se liga ninguno, nunca se adivina, y se crea un proyecto nuevo como hoy. Con la nube prendida, un segundo clon del mismo repositorio en la misma Mac se liga al mismo proyecto, igual que ya pasa con los worktrees.
+
 ## Límites actuales
 
-- **Réplica PostgreSQL.** **Las memorias de ámbito `ecosystem` no se replican todavía.** La sincronización aún no describe el ámbito de grupo: si existen recuerdos `ecosystem`, `sync` se detiene con `SYNC_ECOSYSTEM_UNSUPPORTED` sin tocar datos locales ni remotos; sin recuerdos de grupo funciona igual que antes. La replicación de grupos llegará en un plan propio (1.8.0, «formato 4»).
+- **Réplica PostgreSQL de los formatos 1–3.** **Las memorias de ámbito `ecosystem` no se replican por esta ruta.** Sin la nube activada, `sync` (con o sin `--upgrade-format`) se detiene con `SYNC_ECOSYSTEM_UNSUPPORTED` si existen recuerdos `ecosystem`, sin tocar datos locales ni remotos; sin recuerdos de grupo funciona igual que antes. `sync --upgrade-format` usa siempre esta ruta, aun con la nube activada. Esta ruta queda obsoleta desde 1.8.0 (sunset 2027-03-31): la nube de `cloud on` sí replica el ámbito `ecosystem` (arriba).
 - **`forge614.node.json` es de solo lectura** para Engram y solo se usa su campo `ecosystem`.
 - **Un grupo es local a la base** de esta máquina más los archivos `.forge614/project.json` de cada repositorio; no hay un servicio central de grupos.
 - La pregunta de a qué grupo pertenece un proyecto sin declaración no la hace Engram (la hace Shell en su flujo visual).
