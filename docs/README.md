@@ -5,4 +5,4 @@ Forge614 Engram is Forge614's persistent-memory engine: local SQLite/FTS5, optio
 - [English](en/README.md)
 - [Español](es/README.md)
 
-The current product surface is nonvisual. Forge614 Shell owns Forge614's visual setup/lifecycle experience; Forge614 Engines owns installed-AI detection and adapters. Historical plans under `docs/handoffs/` and `docs/superpowers/` are implementation records, not current user documentation.
+The current product surface is nonvisual. Forge614 Shell owns Forge614's visual setup/lifecycle experience; Forge614 Engines owns installed-AI detection and adapters. Historical plans under `.agents/handoffs/` and `.agents/superpowers/` are implementation records, not current user documentation.
