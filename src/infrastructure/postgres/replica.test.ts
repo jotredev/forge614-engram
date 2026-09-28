@@ -110,6 +110,21 @@ integration("pullChanges devuelve ChangeRow completo con payload objeto y create
   } finally { await replica.close(); }
 }, postgresTestTimeoutMs);
 
+// El payload que pushChanges guarda debe llegar a PostgreSQL como objeto JSON (jsonb_typeof "object"), no como
+// texto doblemente serializado (jsonb_typeof "string"): así el contenido queda consultable directo en Neon.
+integration("pushChanges stores payload as a JSON object queryable in Postgres, not as a double-encoded string", async () => {
+  const url = await freshDatabase("push_payload_shape");
+  const replica = await PostgresReplica.connect(url, true);
+  const db = new SQL(url);
+  try {
+    const installationId = crypto.randomUUID();
+    const { ids } = await replica.pushChanges(installationId, [{ changeId: "shape-json", kind: "memory", op: "insert", payload: { nested: [1, 2, "x"] } }]);
+    const [row] = await db.unsafe("SELECT jsonb_typeof(payload) AS type, payload->'nested'->>2 AS third FROM forge614_sync.changes WHERE id=$1", [ids[0]!]);
+    expect(row.type).toBe("object");
+    expect(row.third).toBe("x");
+  } finally { await db.close(); await replica.close(); }
+}, postgresTestTimeoutMs);
+
 // Una réplica antigua sin la tabla `changes` debe recibirla al conectar con create=true, sin tocar las revisiones ni el estado ya guardados.
 integration("forge614_sync.changes se crea si falta y no se toca si ya existe", async () => {
   const url = await freshDatabase("changes_missing");

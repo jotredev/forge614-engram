@@ -213,7 +213,10 @@ export class PostgresReplica {
    * Envía un lote de cambios individuales a la cola compartida, ignorando en silencio los que ya se habían
    * enviado antes (mismo `changeId`), para que reintentar un envío con respuesta perdida no duplique filas.
    * Todo el lote se serializa bajo un bloqueo consultivo, así que dos lotes concurrentes nunca intercalan
-   * sus identificadores.
+   * sus identificadores. El parámetro llega como texto (`row.payload` ya pasado por `JSON.stringify`) y el
+   * SQL lo convierte a `jsonb` con `::text::jsonb`; convertirlo directo con `::jsonb` guardaría el texto
+   * JSON como una cadena dentro de la columna (doble codificación), en vez del objeto, y el contenido
+   * quedaría inconsultable en Neon.
    * @param installationId Identificador de la instalación que origina los cambios.
    * @param rows Cambios a enviar, en el orden en que deben quedar numerados.
    * @returns Los identificadores numéricos asignados a cada fila, en el mismo orden que `rows` (el de una
@@ -228,7 +231,7 @@ export class PostgresReplica {
         const out:number[]=[];
         for(const row of rows) {
           const inserted=await tx.unsafe(
-            "INSERT INTO forge614_sync.changes(change_id,installation_id,kind,op,payload) VALUES($1,$2,$3,$4,$5::jsonb) ON CONFLICT (change_id) DO NOTHING RETURNING id",
+            "INSERT INTO forge614_sync.changes(change_id,installation_id,kind,op,payload) VALUES($1,$2,$3,$4,$5::text::jsonb) ON CONFLICT (change_id) DO NOTHING RETURNING id",
             [row.changeId,installationId,row.kind,row.op,JSON.stringify(row.payload)]);
           if(inserted.length) out.push(Number(inserted[0].id));
           else {
