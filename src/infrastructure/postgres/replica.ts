@@ -17,9 +17,10 @@ import { canonical, emptySnapshot, snapshotHash, syncError, validateSnapshot, ty
  * @param input URL de conexión completa (`postgres://` o `postgresql://`).
  * @returns Las opciones de conexión (`adapter`, host, puerto, credenciales, TLS y límites de la sesión).
  * @throws MemoryError con código `POSTGRES_URL` si la URL no es una cadena válida, no usa el protocolo
- * correcto, le falta usuario, host o base de datos, tiene parámetros de consulta distintos de `sslmode`,
- * usa un `sslmode` no permitido (fuera de loopback exige `require` o `verify-full`), el puerto no es válido,
- * o alguna parte decodificada contiene un carácter de control.
+ * correcto, le falta usuario, host o base de datos, tiene parámetros de consulta distintos de `sslmode` y
+ * `channel_binding`, usa un `sslmode` no permitido (fuera de loopback exige `require` o `verify-full`),
+ * repite `channel_binding` o le da un valor que no sea `require`, `prefer` o `disable`, el puerto no es
+ * válido, o alguna parte decodificada contiene un carácter de control.
  */
 export function postgresOptions(input:string): SQL.PostgresOrMySQLOptions {
   try {
@@ -28,7 +29,12 @@ export function postgresOptions(input:string): SQL.PostgresOrMySQLOptions {
     if(!["postgres:","postgresql:"].includes(url.protocol)||!url.hostname||!url.username||url.pathname.length<2||url.hash) throw 0;
     const loopback=["127.0.0.1","localhost","[::1]"].includes(url.hostname);
     const modes=url.searchParams.getAll("sslmode");
-    if([...url.searchParams.keys()].some(k=>k!=="sslmode")||modes.length>1) throw 0;
+    // Neon añade channel_binding a su dirección por defecto; Engram ya exige TLS verificado
+    // (rejectUnauthorized:true) fuera de loopback, así que se acepta y se ignora (Bun no lo necesita).
+    const bindings=url.searchParams.getAll("channel_binding");
+    if([...url.searchParams.keys()].some(k=>k!=="sslmode"&&k!=="channel_binding")||modes.length>1||bindings.length>1) throw 0;
+    const binding=bindings[0];
+    if(binding!==undefined&&!["require","prefer","disable"].includes(binding)) throw 0;
     const mode=modes[0];
     if(mode!==undefined&&!(["require","verify-full"].includes(mode)||(loopback&&mode==="disable"))) throw 0;
     const port=url.port?Number(url.port):5432;
@@ -38,7 +44,7 @@ export function postgresOptions(input:string): SQL.PostgresOrMySQLOptions {
     return {adapter:"postgres",hostname:url.hostname.replace(/^\[|\]$/g,""),port,username,password,database,
       tls:loopback&&mode==="disable"?false:{rejectUnauthorized:true},max:2,connectionTimeout:5,idleTimeout:5,
       connection:{statement_timeout:10000,lock_timeout:5000}};
-  } catch { throw new MemoryError("POSTGRES_URL","POSTGRES_URL: conexión inválida. Usa una URL PostgreSQL completa; TLS verificado es obligatorio fuera de loopback."); }
+  } catch { throw new MemoryError("POSTGRES_URL","POSTGRES_URL: conexión inválida. Usa la dirección completa de PostgreSQL (postgresql://usuario:clave@servidor/base); fuera de loopback exige TLS (sslmode=require o verify-full) y solo admite los parámetros sslmode y channel_binding."); }
 }
 
 const CHANGES_DDL=`CREATE TABLE forge614_sync.changes (
