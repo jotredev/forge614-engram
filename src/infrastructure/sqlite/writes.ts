@@ -48,15 +48,18 @@ import { endRuntimeSession,inferredSessions,manualSession,requireSessions,sessio
  * @param create si es falso, solo busca el vínculo existente y nunca crea nada.
  * @param bindingAvailable función opcional que dice si la carpeta de un vínculo ya guardado sigue
  *   existiendo en disco; se usa para decidir si hace falta un vínculo explícito antes de crear.
+ * @param origin remoto de Git crudo de la carpeta (D6, T3b), o `null`/`undefined` si no se conoce;
+ *   ver `resolveProjectDirectory` de `./projects` para cómo se usa.
  * @returns el proyecto encontrado o creado (o null si no existe y `create` es falso) y si se creó.
  * @throws MemoryError con código MIGRATION_REQUIRED si los vínculos de proyecto no están
  *   habilitados, INVALID_INPUT si `directory` o `name` están vacíos, o PROJECT_BINDING_REQUIRED
- *   si hace falta vincular a mano (nombre repetido o carpetas registradas ausentes).
+ *   si hace falta vincular a mano (nombre repetido sin remoto coincidente, o carpetas registradas ausentes).
  */
-export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean, bindingAvailable?: (directory:string)=>boolean): { project: Project | null; created: boolean } {
+export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean,
+    bindingAvailable?: (directory:string)=>boolean, origin?: string | null): { project: Project | null; created: boolean } {
   requireProjectBindings(db);
   const path = required(directory,"directory"), displayName = required(name,"name");
-  const operation = () => resolveProjectDirectoryInTransaction(db,path,displayName,create,bindingAvailable);
+  const operation = () => resolveProjectDirectoryInTransaction(db,path,displayName,create,bindingAvailable,origin);
   // Solo cuando puede crear hace falta transacción: crear el proyecto y su vínculo son dos
   // escrituras que deben quedar juntas; una simple búsqueda no escribe nada y no la necesita.
   return create ? db.transaction(operation).immediate() : operation();
@@ -127,14 +130,16 @@ export function endSession(db: Database, projectId: string, sessionId: string): 
  * @param runtimeDirectory carpeta desde la que corre la sesión.
  * @param sessionId identificador de la sesión a abrir.
  * @param bindingAvailable ver resolveProjectDirectory.
+ * @param origin ver resolveProjectDirectory (D6, T3b).
  * @returns la sesión abierta.
  * @throws MemoryError con los mismos códigos que resolveProjectDirectory y startRuntimeSession.
  */
-export function startSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, sessionId: string, bindingAvailable?: (directory:string)=>boolean): Session {
+export function startSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, sessionId: string,
+    bindingAvailable?: (directory:string)=>boolean, origin?: string | null): Session {
     requireSessions(db);
     const id = sessionIdentity(sessionId); const runtime = required(runtimeDirectory,"runtimeDirectory");
     return db.transaction(() => {
-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
       return startRuntimeSession(db,context.project!.projectId,id,runtime);
     }).immediate();
   }
@@ -208,13 +213,15 @@ export function rebindProjectDirectory(db: Database, directory: string, projectI
  * @param name nombre a usar si hay que crear el proyecto.
  * @param input datos del recuerdo a guardar (sin projectId ni scope, que los pone esta función).
  * @param bindingAvailable ver resolveProjectDirectory.
+ * @param origin ver resolveProjectDirectory (D6, T3b).
  * @returns la versión del recuerdo guardado.
  * @throws MemoryError con los códigos de resolveProjectDirectory y de saveCore.
  */
-export function saveForProjectDirectory(db: Database, directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">, bindingAvailable?: (directory:string)=>boolean): MemoryVersion {
+export function saveForProjectDirectory(db: Database, directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">,
+    bindingAvailable?: (directory:string)=>boolean, origin?: string | null): MemoryVersion {
     requireProjectBindings(db);
     return db.transaction(() => {
-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
       return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },{},new Date().toISOString()).memory;
     }).immediate();
   }
@@ -229,14 +236,16 @@ export function saveForProjectDirectory(db: Database, directory: string, name: s
  * @param input datos del recuerdo a guardar.
  * @param options opciones de asociación con la sesión (sessionId explícito, modo, etc).
  * @param bindingAvailable ver resolveProjectDirectory.
+ * @param origin ver resolveProjectDirectory (D6, T3b).
  * @returns el recuerdo guardado junto con la sesión asociada.
  * @throws MemoryError con los códigos de resolveProjectDirectory y de saveCore.
  */
-export function saveWithSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, input: Omit<SaveInput,"projectId"|"scope">, options: SessionSaveOptions = {}, bindingAvailable?: (directory:string)=>boolean): SessionSaveResult {
+export function saveWithSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, input: Omit<SaveInput,"projectId"|"scope">,
+    options: SessionSaveOptions = {}, bindingAvailable?: (directory:string)=>boolean, origin?: string | null): SessionSaveResult {
     requireProjectBindings(db);
     const runtime = required(runtimeDirectory,"runtimeDirectory");
     return db.transaction(() => {
-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable);
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
       return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },
         { ...options, runtimeDirectory:runtime },new Date().toISOString());
     }).immediate();

@@ -11,6 +11,7 @@ import { MemoryStore } from "./memory-store";
 import { applyIdentityFile, groupOf, publishIdentity, type IdentityNotice } from "./project-identity";
 import { readProjectFile } from "../infrastructure/filesystem/project-identity-file";
 import { canonicalProject, canonicalProjectForRead, identityRoot, runtimeProjectDirectory, bindingAvailable } from "../infrastructure/git/project-directory";
+import { readOriginRemote } from "../infrastructure/git/remote-origin";
 export { assertGitProjectDirectory } from "../infrastructure/git/project-directory";
 
 /** Resultado de identificar el proyecto de una carpeta. */
@@ -43,13 +44,16 @@ type Canonical = ReturnType<typeof canonicalProject>;
 export function resolveProjectContext(store: MemoryStore, directory: string, create: boolean): ProjectContext {
   if (typeof create !== "boolean") throw new MemoryError("INVALID_INPUT","create debe ser booleano.");
   const canonical = canonicalProject(directory);
-  return resolveCanonicalProjectContext(store, canonical, create, identityRoot(directory, canonical), create);
+  // D6 (T3b): el remoto solo hace falta cuando de verdad se puede crear un proyecto; con create=false
+  // (la ruta más frecuente, en cada lectura) leerlo sería un archivo de disco de más sin ningún uso.
+  const origin = create && canonical.git ? readOriginRemote(canonical.directory) : null;
+  return resolveCanonicalProjectContext(store, canonical, create, identityRoot(directory, canonical), create, origin);
 }
 
-/** Precarga de solo lectura en su mayoría: nunca crea un proyecto para una carpeta sin vínculo, pero mantiene los archivos de identidad al día. */
+/** Precarga de solo lectura en su mayoría: nunca crea un proyecto para una carpeta sin vínculo, pero mantiene los archivos de identidad al día. Nunca lee el remoto de Git (D6): es una ruta de solo lectura. */
 export function resolveStartupProjectContext(store: MemoryStore, directory: string): ProjectContext {
   const canonical = canonicalProjectForRead(directory);
-  return resolveCanonicalProjectContext(store, canonical, false, identityRoot(directory, canonical), true);
+  return resolveCanonicalProjectContext(store, canonical, false, identityRoot(directory, canonical), true, null);
 }
 
 /**
@@ -60,14 +64,15 @@ export function resolveStartupProjectContext(store: MemoryStore, directory: stri
  * @param create Si se permite crear un proyecto nuevo al caer al vínculo de carpeta.
  * @param root Carpeta desde la que se busca el archivo de identidad, o `null` si no aplica.
  * @param publish Si se debe reescribir el archivo de identidad tras resolver por vínculo de carpeta.
+ * @param origin Remoto de Git crudo de `canonical.directory` (D6, T3b), o `null` si no aplica o no se leyó.
  */
-function resolveCanonicalProjectContext(store: MemoryStore, canonical: Canonical, create: boolean, root: string | null, publish: boolean): ProjectContext {
+function resolveCanonicalProjectContext(store: MemoryStore, canonical: Canonical, create: boolean, root: string | null, publish: boolean, origin: string | null): ProjectContext {
   const fromFile = applyIdentityFile(store, canonical.directory, root);
   const notices = [...fromFile.notices];
   let projectId: string | null, source: string;
   if (fromFile.projectId !== null) { projectId = fromFile.projectId; source = "file"; }
   else {
-    const resolved = store.resolveProjectDirectory(canonical.directory,canonical.name,create,bindingAvailable);
+    const resolved = store.resolveProjectDirectory(canonical.directory,canonical.name,create,bindingAvailable,origin);
     projectId = resolved.project?.projectId ?? null;
     source = resolved.created ? "created" : resolved.project ? "binding" : "unbound";
     // Solo se publica (reescribe) el archivo de identidad cuando se pidió y de verdad se resolvió un proyecto por vínculo de carpeta.
@@ -111,7 +116,9 @@ export function saveProjectMemory(store: MemoryStore, directory: string, input: 
   const canonical = canonicalProject(directory);
   const root = identityRoot(directory, canonical);
   applyIdentityFile(store, canonical.directory, root);
-  const saved = store.saveForProjectDirectory(canonical.directory,canonical.name,input,bindingAvailable);
+  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
+  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
+  const saved = store.saveForProjectDirectory(canonical.directory,canonical.name,input,bindingAvailable,origin);
   const project = saved.projectId === null ? null : store.getProject(saved.projectId);
   if (project) publishIdentity(store, project, root, false);
   return saved;
@@ -132,7 +139,9 @@ export function saveProjectMemoryWithSessionAndNotices(store: MemoryStore, direc
   const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
   const root = identityRoot(directory, canonical);
   const notices = [...applyIdentityFile(store, canonical.directory, root).notices];
-  const saved = store.saveWithSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,input,options,bindingAvailable);
+  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
+  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
+  const saved = store.saveWithSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,input,options,bindingAvailable,origin);
   const project = saved.memory.projectId === null ? null : store.getProject(saved.memory.projectId);
   if (project) notices.push(...publishIdentity(store, project, root, false));
   return { saved, notices };
@@ -172,7 +181,9 @@ export function startProjectSessionWithNotices(store: MemoryStore, directory: st
   // Solo con el nivel 11: si este id ya nombra una sesión, se comprueba antes de iniciarla (una repetición nunca informa `previous`/`parallel`).
   const known = store.intelligenceEnabled() ? (identity.projectId ?? store.projectForDirectory(canonical.directory)?.projectId ?? null) : null;
   const existed = known !== null && store.getSession(known, sessionId) !== null;
-  const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable);
+  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
+  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
+  const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable,origin);
   const project = store.getProject(session.projectId);
   if (project) notices.push(...publishIdentity(store, project, root, true));
   const previous = store.intelligenceEnabled() && !existed ? store.previousInterrupted(session.projectId) : null;

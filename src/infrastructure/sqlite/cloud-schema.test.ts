@@ -131,6 +131,11 @@ test("un INSERT en cada tabla que viaja con apply_guard=0 encola una fila en clo
 
     expect(countOf("projects")).toBeGreaterThan(0);
 
+    // T3b (D6): igual que las demás, un INSERT en project_remotes encola una fila mientras apply_guard esté en 0.
+    const remotesBefore = countOf("project_remotes");
+    db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(project.projectId, "github.com/org/repo", "now");
+    expect(countOf("project_remotes")).toBe(remotesBefore + 1);
+
     const group = "grupo-uno";
     const groupsBefore = countOf("ecosystem_groups");
     db.query("INSERT INTO ecosystem_groups(id,name,createdAt) VALUES(?,?,?)").run(group, group, "now");
@@ -218,6 +223,15 @@ test("enableCloud encola toda la memoria local existente en orden de dependencia
     expect(kinds.indexOf("memories")).toBeLessThan(kinds.indexOf("memory_versions"));
     expect(kinds.indexOf("sessions")).toBeLessThan(kinds.indexOf("session_summaries"));
   } finally { db.close(); }
+});
+
+// T3b (D6, D14): a diferencia de las demás tablas que viajan, project_remotes nace exactamente en el
+// nivel 12 (no existe antes), así que nunca puede tener filas "ya existentes" que enqueueAllExisting
+// deba encolar en su primera activación; lo que sí debe respetarse es que, en TRAVELING_TABLES, quede
+// justo después de projects (su clave foránea exige que el proyecto ya haya viajado).
+test("project_remotes viaja justo después de projects en TRAVELING_TABLES (D14)", () => {
+  const order = [...travelingTableColumns().keys()];
+  expect(order.indexOf("project_remotes")).toBe(order.indexOf("projects") + 1);
 });
 
 // Comprueba que una huella remota (fingerprint: identificador de con qué base remota se sincroniza)

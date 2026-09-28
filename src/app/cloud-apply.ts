@@ -20,6 +20,7 @@ type Outcome = "applied" | "skipped" | "conflict" | "own";
 // Clave natural de cada tabla viajera (D6-D9): la columna (o columnas) que identifica una fila entre instalaciones distintas, sin depender de un id autonumérico local.
 const NATURAL_KEY: Record<string, readonly string[]> = {
   projects: ["projectId"],
+  project_remotes: ["project_id"],
   ecosystem_groups: ["id"],
   ecosystem_memberships: ["projectId"],
   ecosystem_sources: ["groupId"],
@@ -35,6 +36,7 @@ const NATURAL_KEY: Record<string, readonly string[]> = {
 // Tablas donde gana la fila más reciente según esta columna de fecha (el empate se rompe con el JSON canónico, D6).
 const DATED_COLUMN: Record<string, string> = {
   projects: "updatedAt",
+  project_remotes: "updated_at",
   ecosystem_memberships: "boundAt",
   ecosystem_sources: "setAt",
   memory_meta: "updated_at",
@@ -103,6 +105,7 @@ function secretPatternOf(kind: string, payload: Row): string | null {
   const check = (text: unknown): string | null => (typeof text === "string" ? findSecret(text) : null);
   if (kind === "memories") return check(payload.title) ?? check(payload.content) ?? check(payload.topic_key);
   if (kind === "projects") return check(payload.name);
+  if (kind === "project_remotes") return check(payload.origin);
   if (kind === "memory_meta") {
     const short = check(payload.short);
     if (short) return short;
