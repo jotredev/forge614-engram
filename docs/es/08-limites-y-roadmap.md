@@ -61,6 +61,10 @@ Límites de esta entrega: (1) una sesión que trabaja más de 30 minutos sin gua
 
 Límites de esta entrega: la tabla de cambios en Neon (`forge614_sync.changes`) no se poda todavía; una consulta bloqueada en Neon no se corta antes de su `lock_timeout` (5 s), y por eso el servidor MCP puede tardar hasta 5 s en cerrar si una conexión quedó a medio abrir; los textos que ve la persona (salida de terminal, `help`) siguen en español fijo, la salida bilingüe es/en de esos textos llega en 1.9.0.
 
+## Capacidades incorporadas en v1.8.1
+
+- Manual del protocolo v4, regla 4 (nueva): pide contarle a la persona, en la primera respuesta, qué significa un aviso «Cloud sync:» de `sessionNotice`. Va solo en `instructions` (`mcp: false`): `instructions` pasa de 2 386 a 2 485 caracteres (tope 2 500) y `mcpInstructions` sigue en 1 997 (tope menor a 2 000). Las reglas siguientes se renumeran.
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.

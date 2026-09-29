@@ -120,10 +120,28 @@ test("version 4 tells previous and parallel apart, asks for a reason when keepin
   expect(v4.mcpInstructions).toContain("If it returns previous, say it was left open and when, and offer to continue from its summary, without inventing what it did; if parallel, only say another session is open now.");
   expect(v4.instructions).toContain("keep yours apart telling the person why,");
   expect(v4.mcpInstructions).toContain("keep yours apart telling the person why,");
-  expect(count(v4.instructions)).toBe(2386);
+  // 1.8.1: el manual completo pasó de 2386 a 2485 caracteres por la regla de los avisos de la nube (97 más
+  // el separador); las instrucciones MCP siguen en 1997.
+  expect(count(v4.instructions)).toBe(2485);
   expect(count(v4.mcpInstructions)).toBe(1997);
   expect(count(v4.instructions)).toBeLessThanOrEqual(MANUAL_MAX);
   expect(count(v4.mcpInstructions)).toBeLessThan(MCP_INSTRUCTIONS_MAX);
+});
+
+// 1.8.1: los avisos «Cloud sync:» llegan solo por sessionNotice; el manual completo (CLAUDE.md/AGENTS.md)
+// pide contarlos justo después de la regla de sesión, y las instrucciones MCP (tope de 2000) no la llevan.
+test("version 4 asks to relay a Cloud sync notice right after the session rule, only in the complete manual", () => {
+  const v4 = memoryProtocol(4);
+  const count = (text: string) => Array.from(text).length;
+  const notice = "If sessionNotice carries a Cloud sync notice, tell the person what it means in your first answer.";
+  expect(count(notice)).toBe(97);
+  const full = v4.instructions.split("\n\n");
+  const sessionRule = full.findIndex(rule => rule.startsWith("Call memory_session_start"));
+  expect(sessionRule).toBeGreaterThanOrEqual(0);
+  expect(full[sessionRule + 1]).toBe(notice);
+  expect(v4.mcpInstructions).not.toContain(notice);
+  expect(v4.mcpInstructions).not.toContain("sessionNotice");
+  expect(count(v4.mcpInstructions)).toBe(1997);
 });
 
 // Cada descripción de campo debe ser corta (cabe en la ficha de una herramienta MCP), estar congelada
