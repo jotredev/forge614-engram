@@ -61,6 +61,10 @@ Limits of this delivery: (1) a session that works more than 30 minutes without s
 
 Limits of this delivery: Neon's changes table (`forge614_sync.changes`) is not pruned yet; a query blocked on Neon is not cut short before its `lock_timeout` (5 s), and because of that the MCP server can take up to 5 s to close if a connection was left half-open; the text a person sees (terminal output, `help`) stays fixed in Spanish, the bilingual es/en output for that text arrives in 1.9.0.
 
+## Capabilities added in v1.8.1
+
+- Protocol v4 manual, rule 4 (new): it asks to tell the person, in the first answer, what a "Cloud sync:" notice in `sessionNotice` means. It goes only in `instructions` (`mcp: false`): `instructions` goes from 2,386 to 2,485 characters (cap 2,500) and `mcpInstructions` stays at 1,997 (cap under 2,000). The following rules are renumbered.
+
 ## Explicit non-goals
 
 - No Engram TUI or full-screen terminal control center.
