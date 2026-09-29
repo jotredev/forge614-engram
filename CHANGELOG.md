@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.1
+
+El manual completo de la memoria le pide al asistente contar los avisos de la nube.
+
+- **Manual v4, regla 4 (nueva):** el manual completo pide contarle a la persona, en la primera respuesta, qué significa un aviso «Cloud sync:» de `sessionNotice`; las instrucciones MCP no cambian (siguen en 1 997 caracteres). `instructions` pasa de 2 386 a 2 485 caracteres (tope 2 500). El protocolo sigue en v4.
+- **Cómo tenerlo en cada Mac:** actualizar Engram y luego `forge614-engines plan memory-install --agent claude-code` (y `--agent codex`) con `forge614-engines apply --plan-id <id>`, porque ninguna actualización reescribe sola el bloque de CLAUDE.md/AGENTS.md.
+
 ## 1.8.0
 
 La misma memoria (proyecto, libreta personal y tablero del ecosistema) en dos Mac: `cloud on/off/status`, una cola de pendientes local y una lista de cambios numerada en Neon, sin escritura simultánea y sin que el arranque se sienta más lento.
