@@ -73,9 +73,9 @@ Límites de esta entrega: los paquetes de Shell y de Engines sí se verifican co
 
 ## Capacidades incorporadas en v1.8.3
 
-- `sync` sube cada lote de hasta 500 cambios en una sola ida y vuelta a la nube (antes, una por cambio) y, solo cuando stderr es una terminal, muestra en una línea de stderr «Subiendo N de M cambios…» y «Bajando cambios de la nube: N leídos…», que se borra al terminar. stdout no cambia; el servidor MCP y su tarea de fondo no muestran avance.
+- `sync` sube cada lote de hasta 500 cambios con una sola inserción en bloque (antes, una por cambio) y, con la nube activada y solo cuando stderr es una terminal (y `TERM` no es `dumb`), muestra en una línea de stderr «Subiendo N de M cambios…» y «Bajando cambios de la nube: N leídos…», que se borra al terminar. stdout no cambia; el servidor MCP y su tarea de fondo no muestran avance.
 
-Límites de esta entrega: los textos del avance están en español fijo (la salida bilingüe es/en llega en 1.9.0); `cloud on` y `sync-watch` no muestran avance.
+Límites de esta entrega: los textos del avance están en español fijo (la salida bilingüe es/en llega en 1.9.0); `cloud on`, `sync-watch`, `sync` sin la nube activada y `sync --upgrade-format` no muestran avance.
 
 ## No objetivos explícitos
 

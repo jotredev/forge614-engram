@@ -2,10 +2,10 @@
 
 ## 1.8.3
 
-`sync` sube cada lote en una sola ida y vuelta y muestra su avance en la terminal.
+`sync` sube cada lote con una sola inserción en bloque y muestra su avance en la terminal.
 
-- **Subida en bloque:** `sync` sube cada lote de hasta 500 cambios en una sola ida y vuelta a la nube (antes, una por cambio).
-- **Avance en la terminal:** solo cuando stderr es una terminal, `sync` muestra en una línea de stderr «Subiendo N de M cambios…» y «Bajando cambios de la nube…», que se borra al terminar. stdout y la tarea de fondo del servidor MCP no cambian.
+- **Subida en bloque:** `sync` sube cada lote de hasta 500 cambios con una sola inserción en bloque (antes, una por cambio), así que el número de consultas por lote es fijo y no crece con los cambios.
+- **Avance en la terminal:** con la nube activada y solo cuando stderr es una terminal (y `TERM` no es `dumb`), `sync` muestra en una línea de stderr «Subiendo N de M cambios…» y «Bajando cambios de la nube: N leídos…», que se borra al terminar. stdout y la tarea de fondo del servidor MCP no cambian.
 
 ## 1.8.2
 
