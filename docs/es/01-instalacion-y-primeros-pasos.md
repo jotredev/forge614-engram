@@ -2,11 +2,11 @@
 
 ## Sistemas soportados
 
-Los releases oficiales soportan actualmente macOS y Linux. El instalador descarga el binario correspondiente, lo valida contra `SHA256SUMS` y lo instala en `~/.forge614/engram/bin/`. Además instala como dependencias obligatorias Forge614 Shell (que trae Forge614 Engines) y, si Engines aún falta, Engines, cada una desde su release publicado. Windows todavía no tiene instalador de Engram ni de Shell.
+Los releases oficiales soportan actualmente macOS y Linux. El instalador descarga el binario correspondiente, lo valida contra `SHA256SUMS` y lo instala en `~/.forge614/engram/bin/`. También instala la dependencia obligatoria Forge614 Shell (que trae Forge614 Engines) cuando `~/.forge614/shell/bin/forge614-shell` aún no existe, y Engines si aún falta; una Shell o un Engines ya instalados se dejan como están, no se actualizan. Windows todavía no tiene instalador de Engram ni de Shell.
 
 ## Requisitos
 
-Como se instala Forge614 Shell, el instalador necesita **Node.js 22.19 o más nuevo** y `tar`, además de Bash, `curl` y una utilidad SHA-256. Si falta alguno, **no instala nada**: revisa esto antes de bajar cualquier archivo, para no dejar una instalación a medias, y te dice cómo cumplirlo. La revisión corre siempre, también si Shell ya estaba instalado.
+Como se instala Forge614 Shell, el instalador necesita **Node.js 22.19 o más nuevo** y `tar`, además de Bash, `curl` y una utilidad SHA-256. Si falta alguno, **no instala nada**: revisa esto antes de bajar cualquier archivo, así que un requisito faltante nunca deja una instalación parcial, y te dice cómo cumplirlo. La revisión corre siempre, también si Shell ya estaba instalado.
 
 ## Instalar
 
@@ -14,22 +14,22 @@ Como se instala Forge614 Shell, el instalador necesita **Node.js 22.19 o más nu
 curl -fsSL https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh | bash
 ```
 
-El instalador trabaja en este orden: revisa los requisitos, baja y verifica el binario de Engram, instala Forge614 Shell (que trae Engines) y, si aún falta, Engines, y por último coloca Engram. Si Shell no se puede instalar, Engram no se cambia.
+El instalador trabaja en este orden: revisa los requisitos, baja y verifica el binario de Engram, instala Forge614 Shell (que trae Engines) si aún no está instalado y, si Engines aún falta, Engines, y por último coloca Engram. Si Shell no se puede instalar, Engram no se cambia.
 
-Al terminar te dice el siguiente paso. Abre una terminal nueva y ejecútalo:
+Al terminar te dice el siguiente paso con la ruta absoluta (por defecto es la de abajo; si definiste `FORGE614_HOME`, es la misma ruta dentro de esa carpeta). Abre una terminal nueva y ejecútalo:
 
 ```bash
 ~/.forge614/shell/bin/forge614-shell init --product engram
 ```
 
-Ese comando ya corre el `init` de Engram (inicialización guiada de la memoria local), así que no hace falta ejecutar `forge614-engram init` por separado. Después verifica:
+Ese comando ya incluye inicializar la memoria de Engram, dentro de sus propias pantallas guiadas, y necesita una terminal interactiva (por eso el instalador solo lo imprime), así que no hace falta ejecutar `forge614-engram init` por separado. Después verifica:
 
 ```bash
 forge614-engram --version
 forge614-engram help
 ```
 
-El instalador solo crea o repara los directorios propios de Engram, Shell y Engines, y la ruta del ejecutable. Nunca inicializa una base, crea recuerdos ni configura en silencio un cliente de IA.
+El instalador solo crea o repara los directorios propios de Engram, Shell y Engines, y la ruta del ejecutable (el instalador de Shell también agrega su propia línea de PATH a tu perfil de terminal). Nunca inicializa una base, crea recuerdos ni configura en silencio un cliente de IA.
 
 ## Inicializar la memoria
 
@@ -136,7 +136,7 @@ forge614-engram update --json
 forge614-engram uninstall --confirm 'REMOVE FORGE614-ENGRAM'
 ```
 
-`update` descarga el instalador estable más reciente, verifica el release y reemplaza solo el ejecutable de Engram, mostrando el progreso habitual. Usa la misma raíz efectiva que Engram e instala en `FORGE614_HOME/engram/bin/` cuando la variable está definida; sin ella conserva `~/.forge614/engram/bin/`. `update --json` no muestra ese progreso y, si termina correctamente, escribe únicamente un JSON compacto: `{"updated":true,"previousVersion":"<versión anterior>","installedVersion":"<versión instalada>"}`. Si la versión instalada no cambió, `updated` es `false`.
+`update` descarga el instalador estable más reciente y lo ejecuta con `--force`: verifica el release y reemplaza el ejecutable de Engram, mostrando el progreso habitual. Como en una instalación nueva, necesita Node.js 22.19+ y `tar` (si falta alguno no cambia nada y conserva el binario anterior) e instala Forge614 Shell (y Engines) si faltan. Nunca toca `.env`, `engram.db` ni los recuerdos. Usa la misma raíz efectiva que Engram e instala en `FORGE614_HOME/engram/bin/` cuando la variable está definida; sin ella conserva `~/.forge614/engram/bin/`. `update --json` no muestra ese progreso y, si termina correctamente, escribe únicamente un JSON compacto: `{"updated":true,"previousVersion":"<versión anterior>","installedVersion":"<versión instalada>"}`. Si la versión instalada no cambió, `updated` es `false`.
 
 Ambos modos conservan `.env`, `engram.db`, recuerdos y configuración. En `--json`, un fallo devuelve solamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` por stderr y código `1`; no expone diagnósticos del instalador, URLs ni secretos. Esta interfaz está disponible desde la release estable `v1.4.0`.
 

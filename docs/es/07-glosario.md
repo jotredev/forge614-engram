@@ -82,6 +82,6 @@ Engines es dueño de la detección y adaptadores de IA instalada. Shell es dueñ
 
 ## `forge614-engram update`
 
-Descarga el instalador oficial estable más reciente, verifica el checksum del release y reemplaza solo el binario instalado de Engram. No cambia base de datos, configuración ni recuerdos.
+Descarga el instalador oficial estable más reciente y lo ejecuta con `--force`: verifica el checksum del release y reemplaza el binario de Engram. Como en una instalación nueva, necesita Node.js 22.19+ y `tar` (si falta alguno no cambia nada y conserva el binario anterior) e instala Forge614 Shell (y Engines) si faltan. No cambia base de datos, configuración ni recuerdos.
 
 Sin opciones, es el modo para personas y muestra el progreso del instalador. Con `--json`, es una interfaz no interactiva para herramientas: emite solo `updated`, `previousVersion` e `installedVersion` como JSON compacto, o el error seguro `UPDATE_FAILED` por stderr. Esta interfaz está disponible desde la release estable `v1.4.0`.

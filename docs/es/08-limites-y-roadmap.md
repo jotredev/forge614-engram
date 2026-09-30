@@ -67,9 +67,9 @@ Límites de esta entrega: la tabla de cambios en Neon (`forge614_sync.changes`) 
 
 ## Capacidades incorporadas en v1.8.2
 
-- El instalador publicado instala también Forge614 Shell (que trae Engines) y termina diciendo el siguiente paso: `~/.forge614/shell/bin/forge614-shell init --product engram`, que ya corre el `init` de Engram. Antes de bajar nada revisa Node.js 22.19+ y `tar`; si falta alguno no instala nada y dice cómo cumplirlo.
+- El instalador publicado instala también Forge614 Shell (que trae Engines) si aún no está instalado y termina diciendo el siguiente paso (por defecto `~/.forge614/shell/bin/forge614-shell init --product engram`, con la ruta absoluta si usas `FORGE614_HOME`), que ya incluye inicializar la memoria de Engram en sus propias pantallas guiadas, en una terminal interactiva. Antes de bajar nada revisa Node.js 22.19+ y `tar`; si falta alguno no instala nada y dice cómo cumplirlo.
 
-Límites de esta entrega: los scripts de instalación de Shell y de Engines se ejecutan sin verificar su huella (sus releases no la publican); solo el binario de Engram se verifica contra `SHA256SUMS`. Windows no tiene instalador de Engram ni de Shell.
+Límites de esta entrega: los paquetes de Shell y de Engines sí se verifican con su `.sha256` (lo hacen sus propios instaladores), pero los `install.sh` de Shell y de Engines se ejecutan sin verificar su propia huella, porque sus releases no publican una huella de esos scripts; el binario de Engram se verifica contra `SHA256SUMS`. Windows no tiene instalador de Engram ni de Shell.
 
 ## No objetivos explícitos
 
