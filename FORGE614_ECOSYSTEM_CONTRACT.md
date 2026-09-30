@@ -172,6 +172,7 @@ Installation rules:
 5. No product deletes `~/.forge614/` as a whole.
 6. Each product repairs permissions only inside its own directory.
 7. Installing a binary never silently configures AI integrations or creates memories.
+8. The published Engram installer installs Shell as a required dependency (Shell brings Engines). It checks Shell's requirements (Node.js 22.19+ and `tar`) before downloading anything and installs nothing when one is missing; its next step is `forge614-shell init --product engram`.
 
 After one-time configuration, connected AI clients may use Engram directly through MCP. Shell does not need to remain running and is not a runtime requirement for Orca or another supported coding client.
 

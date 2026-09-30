@@ -65,6 +65,12 @@ Limits of this delivery: Neon's changes table (`forge614_sync.changes`) is not p
 
 - Protocol v4 manual, rule 4 (new): it asks to tell the person, in the first answer, what a "Cloud sync:" notice in `sessionNotice` means. It goes only in `instructions` (`mcp: false`): `instructions` goes from 2,386 to 2,485 characters (cap 2,500) and `mcpInstructions` stays at 1,997 (cap under 2,000). The following rules are renumbered.
 
+## Capabilities added in v1.8.2
+
+- The published installer also installs Forge614 Shell (which brings Engines) and ends by printing the next step: `~/.forge614/shell/bin/forge614-shell init --product engram`, which already runs Engram's `init`. Before downloading anything it checks for Node.js 22.19+ and `tar`; if either is missing it installs nothing and says how to fix it.
+
+Limits of this delivery: the Shell and Engines install scripts run without verifying their digest (their releases do not publish one); only the Engram binary is verified against `SHA256SUMS`. Windows has no Engram or Shell installer.
+
 ## Explicit non-goals
 
 - No Engram TUI or full-screen terminal control center.

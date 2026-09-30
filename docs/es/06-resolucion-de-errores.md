@@ -4,6 +4,15 @@
 
 Usa una terminal macOS/Linux soportada con Bash, `curl` y una utilidad SHA-256. `forge614-engram update` usa el instalador oficial `latest` y conserva el binario anterior si falla validación o instalación. Reintenta después de recuperar conectividad; no reemplaces `engram.db` manualmente.
 
+El instalador publicado revisa sus requisitos antes de bajar nada; si falla, **no instaló nada** y puedes volver a correrlo cuando lo resuelvas:
+
+- `…which needs Node.js 22.19 or newer. Nothing was installed…` (Node falta): instala Node.js desde https://nodejs.org (o `brew install node`) y vuelve a correr el instalador.
+- `…which needs Node.js 22.19 or newer; found <versión>…` (Node es viejo o ilegible): actualiza Node.js (por ejemplo `brew upgrade node`) hasta que `node --version` muestre v22.19 o más nuevo, y vuelve a correr el instalador.
+- `…which needs tar…` (falta `tar`): instala `tar` con el gestor de paquetes de tu sistema y vuelve a correr el instalador.
+- `Could not download the Forge614 Shell installer.`: no se pudo bajar el instalador de Forge614 Shell; revisa la conectividad y reintenta. Engram no se cambió.
+- `Forge614 Shell could not be installed; Engram was not changed.`: el instalador de Shell terminó con error (sus mensajes salen justo arriba); corrige lo que indique y vuelve a correr el instalador. Engram no se cambió.
+- `Forge614 Shell installation did not provide its required command.`: el instalador de Shell terminó sin dejar `~/.forge614/shell/bin/forge614-shell`; reintenta y, si se repite, reporta el problema en el repositorio de Forge614 Shell.
+
 Para automatización, usa `forge614-engram update --json`. Su éxito es un único JSON compacto en stdout; no debe contener progreso. Si falla, devuelve código `1` y únicamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` en stderr. Ese mensaje deliberadamente no revela diagnósticos del instalador, URLs, credenciales ni secretos.
 
 ## Inicialización

@@ -65,6 +65,12 @@ Límites de esta entrega: la tabla de cambios en Neon (`forge614_sync.changes`) 
 
 - Manual del protocolo v4, regla 4 (nueva): pide contarle a la persona, en la primera respuesta, qué significa un aviso «Cloud sync:» de `sessionNotice`. Va solo en `instructions` (`mcp: false`): `instructions` pasa de 2 386 a 2 485 caracteres (tope 2 500) y `mcpInstructions` sigue en 1 997 (tope menor a 2 000). Las reglas siguientes se renumeran.
 
+## Capacidades incorporadas en v1.8.2
+
+- El instalador publicado instala también Forge614 Shell (que trae Engines) y termina diciendo el siguiente paso: `~/.forge614/shell/bin/forge614-shell init --product engram`, que ya corre el `init` de Engram. Antes de bajar nada revisa Node.js 22.19+ y `tar`; si falta alguno no instala nada y dice cómo cumplirlo.
+
+Límites de esta entrega: los scripts de instalación de Shell y de Engines se ejecutan sin verificar su huella (sus releases no la publican); solo el binario de Engram se verifica contra `SHA256SUMS`. Windows no tiene instalador de Engram ni de Shell.
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.

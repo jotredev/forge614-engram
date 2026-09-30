@@ -2,7 +2,11 @@
 
 ## Supported systems
 
-Official releases currently support macOS and Linux. The installer downloads a platform-specific binary, validates it against `SHA256SUMS`, and installs it under `~/.forge614/engram/bin/`. It also installs the required Forge614 Engines dependency from its verified release when it is absent. Windows support is not currently published.
+Official releases currently support macOS and Linux. The installer downloads a platform-specific binary, validates it against `SHA256SUMS`, and installs it under `~/.forge614/engram/bin/`. It also installs the required Forge614 Shell dependency (which brings Forge614 Engines) and, if Engines is still absent, Engines, each from its published release. Windows has no Engram or Shell installer yet.
+
+## Requirements
+
+Because Forge614 Shell is installed, the installer needs **Node.js 22.19 or newer** and `tar`, in addition to Bash, `curl`, and a SHA-256 utility. If any is missing it **installs nothing**: it checks this before downloading any file, so an installation is never left half-done, and it tells you how to fix it. The check always runs, even when Shell is already installed.
 
 ## Install
 
@@ -10,14 +14,22 @@ Official releases currently support macOS and Linux. The installer downloads a p
 curl -fsSL https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh | bash
 ```
 
-Open a new terminal, then verify:
+The installer works in this order: it checks the requirements, downloads and verifies the Engram binary, installs Forge614 Shell (which brings Engines) and, if still absent, Engines, and finally places Engram. If Shell cannot be installed, Engram is left unchanged.
+
+When it finishes it prints the next step. Open a new terminal and run it:
+
+```bash
+~/.forge614/shell/bin/forge614-shell init --product engram
+```
+
+That command already runs Engram's `init` (guided local memory initialization), so there is no need to run `forge614-engram init` separately. Then verify:
 
 ```bash
 forge614-engram --version
 forge614-engram help
 ```
 
-The installer only creates or repairs Engram's product directory and executable path. It never initializes a memory database, creates memories, or silently configures an AI client.
+The installer only creates or repairs the product directories of Engram, Shell, and Engines, and the executable path. It never initializes a memory database, creates memories, or silently configures an AI client.
 
 ## Initialize memory
 
