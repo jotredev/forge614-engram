@@ -19,7 +19,7 @@ import * as sessions from "../infrastructure/sqlite/sessions";
 import { startupBlock } from "../infrastructure/sqlite/startup";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
 import * as writes from "../infrastructure/sqlite/writes";
-import { downloadChanges,runCloudCycle,type CloudReplica } from "./cloud-sync";
+import { downloadChanges,runCloudCycle,type CloudProgress,type CloudReplica } from "./cloud-sync";
 import type { Group,GroupSource,GroupSummary,IdentityEvent,MembershipSource,ProjectGroup } from "../modules/ecosystem";
 import { type Memory,type MemoryVersion,type SaveInput,type SearchResult,type SearchScope } from "../modules/memory";
 import { type Project } from "../modules/projects";
@@ -198,7 +198,7 @@ export class MemoryStore {
   /** Si el nivel de esquema de esta base ya tiene activada la nube (nivel 12): la bandeja de salida y sus disparadores están activos. */
   cloudEnabled(): boolean { return cloudEnabled(this.db); }
   /** Un ciclo completo de sincronización (D7): sube la cola pendiente y baja y aplica los cambios nuevos; da cuántas filas se subieron y cuántas se bajaron y aplicaron de verdad (nunca el avance de `lastAppliedId`, que también cuenta filas propias y saltadas). Lo usa la tarea de fondo del servidor MCP (`startCloudBackground`, `src/app/cloud-background.ts`) en cada intervalo y al guardar. */
-  syncCloudCycle(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<{ uploaded: number; downloaded: number }> { return runCloudCycle(this.db, replica, installationId, signal); }
+  syncCloudCycle(replica: CloudReplica, installationId: string, signal?: AbortSignal, onProgress?: (progress: CloudProgress) => void): Promise<{ uploaded: number; downloaded: number }> { return runCloudCycle(this.db, replica, installationId, signal, onProgress); }
   /** Solo la bajada del ciclo (sin subir la cola): baja y aplica los cambios nuevos, cancelable con `signal`. La usa la espera de arranque (`waitForCloud`, D8) antes de leer el contexto local. */
   async downloadCloudChanges(replica: CloudReplica, installationId: string, signal?: AbortSignal): Promise<void> { await downloadChanges(this.db, replica, installationId, signal); }
   /** Recoge (y marca como mostrados) los avisos de nube pendientes: conflictos, cambios saltados y cola vieja (D4, D5, D11); vacío si no hay nube o no hay nada que avisar. */

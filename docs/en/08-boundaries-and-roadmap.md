@@ -71,6 +71,12 @@ Limits of this delivery: Neon's changes table (`forge614_sync.changes`) is not p
 
 Limits of this delivery: the Shell and Engines packages are verified against their `.sha256` (their own installers do it), but the Shell and Engines `install.sh` scripts run without verifying their own digest, because their releases do not publish a digest of those scripts; the Engram binary is verified against `SHA256SUMS`. Windows has no Engram or Shell installer.
 
+## Capabilities added in v1.8.3
+
+- `sync` uploads each batch of up to 500 changes in a single round trip to the cloud (before, one per change) and, only when stderr is a terminal, shows "Subiendo N de M cambios…" and "Bajando cambios de la nube: N leídos…" on one stderr line that is erased when it finishes. stdout does not change; the MCP server and its background task show no progress.
+
+Limits of this delivery: the progress texts stay fixed in Spanish (the bilingual es/en output arrives in 1.9.0); `cloud on` and `sync-watch` show no progress.
+
 ## Explicit non-goals
 
 - No Engram TUI or full-screen terminal control center.

@@ -499,3 +499,17 @@ test("sync --upgrade-format keeps its old behavior and reports its own obsolesce
   expect(notice).toEqual({ code: "SYNC_UPGRADE_FORMAT_DEPRECATED", error: "sync --upgrade-format es obsoleto; se retira el 2027-03-31." });
   expect(error.code).toBe("SYNC_DISABLED");
 }, 40000);
+
+// Con nube y cambios pendientes, `sync` en un proceso real (stderr es una tubería, no una terminal) no escribe nada en stderr y su stdout sigue siendo el mismo JSON.
+integration("sync with cloud and pending changes leaves stderr empty when it is not a terminal", async () => {
+  const dir = workspace();
+  expect((await run(dir, "init", "--json")).code).toBe(0);
+  const url = await freshDatabase("cli_sync_progress_quiet");
+  expect((await run(dir, "cloud", "on", "--postgres-url", url)).code).toBe(0);
+  expect((await run(dir, "save", "--scope", "shared", "--title", "Quiet upload", "--content", "Queued")).code).toBe(0);
+  expect(pendingOutboxCount(join(dir, "user"))).toBeGreaterThan(0);
+  const result = await run(dir, "sync");
+  expect(result.code).toBe(0);
+  expect(result.stderr).toBe("");
+  expect(result.stdout).toMatch(/^\{"uploaded":\d+,"downloaded":\d+\}\n$/);
+}, postgresTestTimeoutMs);

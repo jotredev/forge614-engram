@@ -11,7 +11,7 @@ import { expect, test } from "bun:test";
 import { enableCloud, initialize } from "../infrastructure/sqlite/schema";
 import { createProject } from "../infrastructure/sqlite/projects";
 import type { ChangeRow } from "../infrastructure/postgres/replica";
-import { downloadChanges, runCloudCycle, uploadOutbox, type CloudReplica } from "./cloud-sync";
+import { downloadChanges, runCloudCycle, uploadOutbox, type CloudProgress, type CloudReplica } from "./cloud-sync";
 
 /** Una base SQLite en memoria, ya en el nivel 12 (nube activada). */
 function freshCloudDb(): Database {
@@ -141,4 +141,67 @@ test("runCloudCycle uploads the pending queue and then downloads and applies new
   expect(replica.pushCalls).toHaveLength(1);
   expect(outboxCount(db)).toBe(0);
   expect(db.query("SELECT projectId FROM projects WHERE projectId=?").get("p-remote-cycle")).toEqual({ projectId: "p-remote-cycle" });
+});
+
+/** Doble de `pullChanges` que sirve `count` filas propias (`installationId` "local"), con ids 1..count, en lotes según `limit`. */
+function ownRowsPull(count: number): CloudReplica["pullChanges"] {
+  return async (since, limit = 1000) => Array.from({ length: Math.min(limit, Math.max(0, count - since)) }, (_, i): ChangeRow => ({
+    id: since + i + 1, changeId: `own-${since + i + 1}`, installationId: "local", kind: "projects", op: "insert", payload: {}, createdAt: "2026-01-01T00:00:00.000Z",
+  }));
+}
+
+// Con 1 200 pendientes, los avisos de subida son exactamente tres, y luego los de bajada con lo leído acumulado.
+test("runCloudCycle reports upload progress per batch and then download progress", async () => {
+  const db = freshCloudDb();
+  db.exec("DELETE FROM cloud_outbox");
+  for (let i = 0; i < 1200; i++) createProject(db, `p${i}`);
+  expect(outboxCount(db)).toBe(1200);
+  const events: CloudProgress[] = [];
+  await runCloudCycle(db, fakeReplica({ pullChanges: ownRowsPull(1200) }), "local", undefined, p => events.push(p));
+  expect(events).toEqual([
+    { phase: "upload", done: 500, total: 1200 },
+    { phase: "upload", done: 1000, total: 1200 },
+    { phase: "upload", done: 1200, total: 1200 },
+    { phase: "download", done: 1000 },
+    { phase: "download", done: 1200 },
+  ]);
+});
+
+// Si la cola crece durante la subida, el total se ajusta: nunca hay un aviso con `done` mayor que `total`.
+test("upload progress raises the total when the queue grows mid-upload, never reporting done above total", async () => {
+  const db = freshCloudDb();
+  db.exec("DELETE FROM cloud_outbox");
+  for (let i = 0; i < 600; i++) createProject(db, `p${i}`);
+  let grown = false;
+  const replica = fakeReplica({
+    async pushChanges(_installationId, rows) {
+      if (!grown) { grown = true; for (let i = 0; i < 100; i++) createProject(db, `late${i}`); }
+      return { ids: rows.map((_, i) => i + 1) };
+    },
+  });
+  const events: CloudProgress[] = [];
+  await runCloudCycle(db, replica, "local", undefined, p => events.push(p));
+  const uploads = events.filter((e): e is Extract<CloudProgress, { phase: "upload" }> => e.phase === "upload");
+  expect(uploads.length).toBeGreaterThanOrEqual(2);
+  for (const event of uploads) expect(event.done).toBeLessThanOrEqual(event.total);
+  const last = uploads[uploads.length - 1]!;
+  expect(last.done).toBe(700);
+  expect(last.total).toBe(last.done);
+});
+
+// Sin nada que subir ni bajar, no hay ningún aviso.
+test("runCloudCycle reports nothing when there is nothing to upload or download", async () => {
+  const db = freshCloudDb();
+  db.exec("DELETE FROM cloud_outbox");
+  const events: CloudProgress[] = [];
+  await runCloudCycle(db, fakeReplica(), "local", undefined, p => events.push(p));
+  expect(events).toEqual([]);
+});
+
+// Sin `onProgress`, el resultado es el mismo de siempre.
+test("runCloudCycle without onProgress returns the same uploaded and downloaded counts", async () => {
+  const db = freshCloudDb();
+  db.exec("DELETE FROM cloud_outbox");
+  createProject(db, "one"); createProject(db, "two");
+  expect(await runCloudCycle(db, fakeReplica(), "local")).toEqual({ uploaded: 2, downloaded: 0 });
 });

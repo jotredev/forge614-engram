@@ -71,6 +71,12 @@ Límites de esta entrega: la tabla de cambios en Neon (`forge614_sync.changes`) 
 
 Límites de esta entrega: los paquetes de Shell y de Engines sí se verifican con su `.sha256` (lo hacen sus propios instaladores), pero los `install.sh` de Shell y de Engines se ejecutan sin verificar su propia huella, porque sus releases no publican una huella de esos scripts; el binario de Engram se verifica contra `SHA256SUMS`. Windows no tiene instalador de Engram ni de Shell.
 
+## Capacidades incorporadas en v1.8.3
+
+- `sync` sube cada lote de hasta 500 cambios en una sola ida y vuelta a la nube (antes, una por cambio) y, solo cuando stderr es una terminal, muestra en una línea de stderr «Subiendo N de M cambios…» y «Bajando cambios de la nube: N leídos…», que se borra al terminar. stdout no cambia; el servidor MCP y su tarea de fondo no muestran avance.
+
+Límites de esta entrega: los textos del avance están en español fijo (la salida bilingüe es/en llega en 1.9.0); `cloud on` y `sync-watch` no muestran avance.
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.
