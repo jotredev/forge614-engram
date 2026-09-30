@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.3
+
+`sync` sube cada lote en una sola ida y vuelta y muestra su avance en la terminal.
+
+- **Subida en bloque:** `sync` sube cada lote de hasta 500 cambios en una sola ida y vuelta a la nube (antes, una por cambio).
+- **Avance en la terminal:** solo cuando stderr es una terminal, `sync` muestra en una línea de stderr «Subiendo N de M cambios…» y «Bajando cambios de la nube…», que se borra al terminar. stdout y la tarea de fondo del servidor MCP no cambian.
+
 ## 1.8.2
 
 El instalador publicado instala también Forge614 Shell y dice el siguiente paso.
