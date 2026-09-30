@@ -1,7 +1,7 @@
 # 02. Recorrido Guiado
 
-1. Instala Engram y abre una terminal nueva.
-2. Ejecuta `forge614-engram init` para inicialización guiada de memoria local, o `init --json` para automatización.
+1. Instala Engram (el instalador termina diciendo el siguiente paso) y abre una terminal nueva.
+2. Ejecuta `~/.forge614/shell/bin/forge614-shell init --product engram` (o la ruta que imprimió el instalador si definiste `FORGE614_HOME`), que ya incluye inicializar la memoria de Engram en una terminal interactiva. Sin Shell, o para automatización, ejecuta `forge614-engram init` para inicialización guiada de memoria local, o `init --json`.
 3. Crea un proyecto con `project-create --name <nombre>` y conserva el `projectId` devuelto.
 4. Guarda conocimiento durable con `save --project-id <UUID> --title <título> --content <texto>`. Agrega `--topic <clave>` para un tema reemplazable.
 5. Busca conocimiento de proyecto y compartido con `search --project-id <UUID> --query <palabras>`. Usa `--scope shared` para resultados solo compartidos.

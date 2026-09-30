@@ -2,16 +2,21 @@
 
 ## Installation or update
 
-Use a supported macOS/Linux terminal with Bash, `curl`, and a SHA-256 utility. `forge614-engram update` uses the official `latest` installer and preserves the previous binary when verification or installation fails. Retry after restoring connectivity; do not manually replace `engram.db`.
+Use a supported macOS/Linux terminal with Bash, `curl`, a SHA-256 utility, `tar`, and Node.js 22.19 or newer. `forge614-engram update` uses the official `latest` installer and preserves the previous binary when verification or installation fails. Retry after restoring connectivity; do not manually replace `engram.db`.
 
-The published installer checks its requirements before downloading anything; if it fails, it **installed nothing** and you can run it again once you fix the cause:
+The published installer checks its requirements before downloading anything. If a requirement is missing (first three items) it **installed nothing**. If Shell or Engines fails (last six items) only Engram is guaranteed unchanged (Forge614 Engines or part of Shell may already be installed). In every case you can run the installer again once you fix the cause:
 
 - `…which needs Node.js 22.19 or newer. Nothing was installed…` (Node is missing): install Node.js from https://nodejs.org (or `brew install node`) and run the installer again.
 - `…which needs Node.js 22.19 or newer; found <version>…` (Node is too old or unreadable): update Node.js (for example `brew upgrade node`) until `node --version` shows v22.19 or newer, then run the installer again.
 - `…which needs tar…` (`tar` is missing): install `tar` with your system's package manager and run the installer again.
 - `Could not download the Forge614 Shell installer.`: the Forge614 Shell installer could not be downloaded; check connectivity and retry. Engram was not changed.
 - `Forge614 Shell could not be installed; Engram was not changed.`: the Shell installer exited with an error (its messages appear just above); fix what it reports and run the installer again. Engram was not changed.
-- `Forge614 Shell installation did not provide its required command.`: the Shell installer finished without leaving `~/.forge614/shell/bin/forge614-shell`; retry and, if it repeats, report it in the Forge614 Shell repository.
+- `Forge614 Shell installation did not provide its required command.`: the Shell installer finished without leaving `<FORGE614_HOME>/shell/bin/forge614-shell` (by default `~/.forge614/shell/bin/forge614-shell`); retry and, if it repeats, report it in the Forge614 Shell repository.
+- `Could not download the Forge614 Engines installer.`: the Forge614 Engines installer could not be downloaded; check connectivity and retry. Engram was not changed.
+- `Forge614 Engines could not be installed; Engram was not changed.`: the Engines installer exited with an error (its messages appear just above); fix what it reports and run the installer again. Engram was not changed.
+- `Forge614 Engines installation did not provide its required command.`: the Engines installer finished without leaving `<FORGE614_HOME>/engines/bin/forge614-engines` (by default `~/.forge614/engines/bin/forge614-engines`); retry and, if it repeats, report it in the Forge614 Engines repository.
+
+With `update --json` these messages are not shown; run `forge614-engram update` without `--json` to see them.
 
 For automation, use `forge614-engram update --json`. Its success is one compact JSON object on stdout and must not contain progress. On failure it exits with code `1` and writes only `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` to stderr. That deliberately safe message does not reveal installer diagnostics, URLs, credentials, or secrets.
 
