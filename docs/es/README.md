@@ -12,4 +12,4 @@
 10. [Contexto de Inicio para Hosts](10-contexto-de-inicio.md)
 11. [Ámbitos y Ecosistemas](11-ambitos-y-ecosistemas.md)
 
-Engram no tiene TUI ni detecta/configura clientes de IA. Shell es dueño del setup visual de Forge614 y Engines de detectar motores y adaptadores de IA. Los binarios oficiales actuales soportan macOS y Linux.
+Engram no tiene TUI ni detecta/configura clientes de IA. Shell es dueño del setup visual de Forge614 y Engines de detectar motores y adaptadores de IA. Los binarios oficiales actuales soportan macOS y Linux. El instalador publicado también instala Forge614 Shell (que trae Engines) y por eso pide Node.js 22.19+ y `tar`.

@@ -12,4 +12,4 @@
 10. [Startup Context for Hosts](10-startup-context.md)
 11. [Scopes and Ecosystems](11-scopes-and-ecosystems.md)
 
-Engram has no TUI and does not detect or configure AI clients. Shell owns Forge614's visual setup; Engines owns AI-engine detection and adapters. Official binaries currently support macOS and Linux.
+Engram has no TUI and does not detect or configure AI clients. Shell owns Forge614's visual setup; Engines owns AI-engine detection and adapters. Official binaries currently support macOS and Linux. The published installer also installs Forge614 Shell (which brings Engines), so it needs Node.js 22.19+ and `tar`.

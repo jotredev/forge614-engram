@@ -2,7 +2,11 @@
 
 ## Sistemas soportados
 
-Los releases oficiales soportan actualmente macOS y Linux. El instalador descarga el binario correspondiente, lo valida contra `SHA256SUMS` y lo instala en `~/.forge614/engram/bin/`. Si Forge614 Engines falta, instala su dependencia desde un release verificado. Windows todavía no tiene distribución publicada.
+Los releases oficiales soportan actualmente macOS y Linux. El instalador descarga el binario correspondiente, lo valida contra `SHA256SUMS` y lo instala en `~/.forge614/engram/bin/`. Además instala como dependencias obligatorias Forge614 Shell (que trae Forge614 Engines) y, si Engines aún falta, Engines, cada una desde su release publicado. Windows todavía no tiene instalador de Engram ni de Shell.
+
+## Requisitos
+
+Como se instala Forge614 Shell, el instalador necesita **Node.js 22.19 o más nuevo** y `tar`, además de Bash, `curl` y una utilidad SHA-256. Si falta alguno, **no instala nada**: revisa esto antes de bajar cualquier archivo, para no dejar una instalación a medias, y te dice cómo cumplirlo. La revisión corre siempre, también si Shell ya estaba instalado.
 
 ## Instalar
 
@@ -10,14 +14,22 @@ Los releases oficiales soportan actualmente macOS y Linux. El instalador descarg
 curl -fsSL https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh | bash
 ```
 
-Abre una terminal nueva y verifica:
+El instalador trabaja en este orden: revisa los requisitos, baja y verifica el binario de Engram, instala Forge614 Shell (que trae Engines) y, si aún falta, Engines, y por último coloca Engram. Si Shell no se puede instalar, Engram no se cambia.
+
+Al terminar te dice el siguiente paso. Abre una terminal nueva y ejecútalo:
+
+```bash
+~/.forge614/shell/bin/forge614-shell init --product engram
+```
+
+Ese comando ya corre el `init` de Engram (inicialización guiada de la memoria local), así que no hace falta ejecutar `forge614-engram init` por separado. Después verifica:
 
 ```bash
 forge614-engram --version
 forge614-engram help
 ```
 
-El instalador solo crea o repara el directorio propio de Engram y la ruta del ejecutable. Nunca inicializa una base, crea recuerdos ni configura en silencio un cliente de IA.
+El instalador solo crea o repara los directorios propios de Engram, Shell y Engines, y la ruta del ejecutable. Nunca inicializa una base, crea recuerdos ni configura en silencio un cliente de IA.
 
 ## Inicializar la memoria
 

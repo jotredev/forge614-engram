@@ -143,6 +143,31 @@ install_engines_dependency() {
   [ -x "$engines_command" ] || fail 'Forge614 Engines installation did not provide its required command.'
 }
 
+# Instala Forge614 Shell (que trae su propio Engines) como dependencia obligatoria. Va justo antes de
+# Engines porque Shell ya instala un Engines compatible y así Engines queda solo como respaldo, y antes de
+# crear el destino de Engram para que, si Shell falla, Engram no quede cambiado ni a medias.
+install_shell_dependency() {
+  local shell_command shell_installer installer_url
+  shell_command="$forge_home/shell/bin/forge614-shell"
+  if [ -x "$shell_command" ]; then
+    printf '%s\n' "Forge614 Shell is already available: $shell_command"
+    return 0
+  fi
+
+  installer_url='https://github.com/jotredev/forge614-shell/releases/latest/download/install.sh'
+  if [ -n "${FORGE614_SHELL_INSTALLER_TEST_URL:-}" ]; then
+    [ "${FORGE614_ENGRAM_INSTALLER_TEST:-}" = '1' ] || fail 'The Shell installer override is reserved for test fixtures.'
+    installer_url="$FORGE614_SHELL_INSTALLER_TEST_URL"
+    case "$installer_url" in file:///*) ;; *) fail 'The Shell test installer must be a local file URL.' ;; esac
+  fi
+
+  shell_installer="$download_dir/forge614-shell-install.sh"
+  curl --fail --location --proto '=https,file' --tlsv1.2 --silent --show-error "$installer_url" --output "$shell_installer" \
+    || fail 'Could not download the Forge614 Shell installer.'
+  FORGE614_HOME="$forge_home" bash "$shell_installer" --latest || fail 'Forge614 Shell could not be installed; Engram was not changed.'
+  [ -x "$shell_command" ] || fail 'Forge614 Shell installation did not provide its required command.'
+}
+
 home="${HOME:?HOME must be set}"
 if [ "${FORGE614_HOME+x}" = x ]; then
   case "${FORGE614_HOME}" in
@@ -207,6 +232,19 @@ elif command -v sha256sum >/dev/null 2>&1; then
 else
   fail 'A SHA-256 command is required: shasum or sha256sum.'
 fi
+
+# Forge614 Shell necesita Node.js 22.19 o más nuevo y tar. Se revisa aquí, antes de bajar o crear nada:
+# una instalación no se deja a medias. Corre siempre, también si Shell ya está instalado.
+command -v node >/dev/null 2>&1 || fail 'Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer. Nothing was installed. Install Node.js from https://nodejs.org (or run: brew install node) and run this installer again.'
+node_version="$(node --version 2>/dev/null || true)"
+node_is_supported=0
+if [[ "$node_version" =~ ^v([0-9]+)\.([0-9]+)\.[0-9]+ ]]; then
+  node_major="${BASH_REMATCH[1]}"
+  node_minor="${BASH_REMATCH[2]}"
+  if (( 10#$node_major > 22 || (10#$node_major == 22 && 10#$node_minor >= 19) )); then node_is_supported=1; fi
+fi
+[ "$node_is_supported" -eq 1 ] || fail "Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer; found ${node_version}. Nothing was installed. Update Node.js from https://nodejs.org (or run: brew upgrade node) and run this installer again."
+command -v tar >/dev/null 2>&1 || fail 'Forge614 Engram installs Forge614 Shell, which needs tar. Nothing was installed. Install tar and run this installer again.'
 
 selector='latest'
 if [ -n "$version" ]; then selector="tags/$version"; fi
@@ -276,6 +314,7 @@ else
 fi
 [ "$expected_digest" = "$actual_digest" ] || fail "Checksum verification failed for ${artifact}."
 
+install_shell_dependency
 install_engines_dependency
 prepare_bin_directory || fail 'Could not safely create the selected Engram installation directory.'
 [ ! -d "$destination" ] || fail 'The destination is a directory; choose a different --bin-dir.'
@@ -297,4 +336,5 @@ if ! publish_path_for_future_shell "$bin_dir"; then
   printf '%s\n' 'Could not update PATH configuration automatically.'
   manual_path_guidance "$bin_dir"
 fi
-printf '%s\n' 'forge614-engram init'
+printf '%s\n' 'Next step: open a new terminal and run:'
+printf '%q init --product engram\n' "$forge_home/shell/bin/forge614-shell"

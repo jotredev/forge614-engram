@@ -59,37 +59,101 @@ async function runInstaller(args: string[]) {
   };
 }
 
+interface FixtureOptions {
+  /** Versión que imprime el `node` falso; `null` no agrega ningún `node` al PATH. */
+  nodeVersion?: string | null;
+  /** Código de salida del instalador falso de Shell. */
+  shellExit?: number;
+  /** Reemplaza por completo el PATH del proceso hijo (sin `node` falso). */
+  path?: string;
+}
+
+function installerLogPath(home: string) {
+  return join(home, "installer-calls.log");
+}
+
+function installerLog(home: string) {
+  const path = installerLogPath(home);
+  return existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : [];
+}
+
+function writeFakeNode(directory: string, version: string) {
+  mkdirSync(directory, { recursive: true });
+  const node = join(directory, "node");
+  writeFileSync(node, `#!/bin/sh\nprintf '%s\\n' '${version}'\n`);
+  chmodSync(node, 0o755);
+}
+
+// Una carpeta con enlaces solo a las herramientas que usa el instalador, para probar un PATH sin `node` o sin `tar`.
+function restrictedPathDirectory(root: string, options: { without?: string[]; nodeVersion?: string } = {}) {
+  const directory = join(root, "restricted-path");
+  mkdirSync(directory, { recursive: true });
+  const tools = ["bash", "env", "uname", "curl", "shasum", "sha256sum", "mktemp", "awk", "sed", "tr", "cat", "cp", "chmod", "mkdir", "ln", "rm", "mv", "dirname", "tar"];
+  for (const tool of tools) {
+    if (options.without?.includes(tool)) continue;
+    const found = Bun.which(tool);
+    if (found) symlinkSync(found, join(directory, tool));
+  }
+  if (options.nodeVersion) writeFakeNode(directory, options.nodeVersion);
+  return directory;
+}
+
 async function withFixtureEnvironment<T>(
   home: string,
   releaseBaseUrl: string,
   operation: () => Promise<T>,
   includeTestSentinel = true,
   shell?: string,
+  options: FixtureOptions = {},
 ) {
   const saved = {
     home: process.env.HOME,
     shell: process.env.SHELL,
+    path: process.env.PATH,
     releaseBaseUrl: process.env[testReleaseBaseUrl],
     testMode: process.env[testMode],
     enginesInstaller: process.env.FORGE614_ENGINES_INSTALLER_TEST_URL,
+    shellInstaller: process.env.FORGE614_SHELL_INSTALLER_TEST_URL,
   };
+  const log = installerLogPath(home);
   process.env.HOME = home;
   if (shell === undefined) delete process.env.SHELL;
   else process.env.SHELL = shell;
   process.env[testReleaseBaseUrl] = releaseBaseUrl;
   if (includeTestSentinel) process.env[testMode] = "1";
   else delete process.env[testMode];
+  if (options.path !== undefined) {
+    process.env.PATH = options.path;
+  } else if (options.nodeVersion !== null) {
+    const nodeDirectory = join(home, "fake-node-bin");
+    writeFakeNode(nodeDirectory, options.nodeVersion ?? "v22.19.0");
+    process.env.PATH = `${nodeDirectory}:${saved.path ?? ""}`;
+  }
   if (includeTestSentinel && process.env.FORGE614_ENGINES_INSTALLER_TEST_URL === undefined) {
     const enginesInstaller = join(home, "forge614-engines-test-installer.sh");
     writeFileSync(enginesInstaller, [
       "#!/usr/bin/env bash",
       "set -euo pipefail",
       'forge_home="${FORGE614_HOME:-$HOME/.forge614}"',
+      `printf 'engines args=%s home=%s\\n' "$*" "$forge_home" >> '${log}'`,
       'mkdir -p "$forge_home/engines/bin"',
       "printf '#!/usr/bin/env sh\\nexit 0\\n' > \"$forge_home/engines/bin/forge614-engines\"",
       'chmod 700 "$forge_home/engines/bin/forge614-engines"',
     ].join("\n"));
     process.env.FORGE614_ENGINES_INSTALLER_TEST_URL = `file://${enginesInstaller}`;
+  }
+  if (includeTestSentinel && process.env.FORGE614_SHELL_INSTALLER_TEST_URL === undefined) {
+    const shellInstaller = join(home, "forge614-shell-test-installer.sh");
+    writeFileSync(shellInstaller, [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      `printf 'shell args=%s home=%s\\n' "$*" "$FORGE614_HOME" >> '${log}'`,
+      `if [ ${options.shellExit ?? 0} -ne 0 ]; then exit ${options.shellExit ?? 0}; fi`,
+      'mkdir -p "$FORGE614_HOME/shell/bin"',
+      "printf '#!/usr/bin/env sh\\nexit 0\\n' > \"$FORGE614_HOME/shell/bin/forge614-shell\"",
+      'chmod 700 "$FORGE614_HOME/shell/bin/forge614-shell"',
+    ].join("\n"));
+    process.env.FORGE614_SHELL_INSTALLER_TEST_URL = `file://${shellInstaller}`;
   }
   try {
     return await operation();
@@ -97,9 +161,11 @@ async function withFixtureEnvironment<T>(
     for (const [name, value] of Object.entries({
       HOME: saved.home,
       SHELL: saved.shell,
+      PATH: saved.path,
       [testReleaseBaseUrl]: saved.releaseBaseUrl,
       [testMode]: saved.testMode,
       FORGE614_ENGINES_INSTALLER_TEST_URL: saved.enginesInstaller,
+      FORGE614_SHELL_INSTALLER_TEST_URL: saved.shellInstaller,
     })) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
@@ -109,10 +175,12 @@ async function withFixtureEnvironment<T>(
 
 function fixtureReleaseServer(artifact: string, fixturePath: string) {
   const digest = sha256(fixturePath);
+  let requests = 0;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
+      requests += 1;
       const url = new URL(request.url);
       const mismatch = url.pathname.startsWith("/mismatch/");
       const unsafeAssets = url.pathname.startsWith("/unsafe-assets/");
@@ -137,7 +205,7 @@ function fixtureReleaseServer(artifact: string, fixturePath: string) {
       return new Response("not found", { status: 404 });
     },
   });
-  return server;
+  return Object.assign(server, { requestCount: () => requests });
 }
 
 afterEach(() => {
@@ -398,7 +466,7 @@ test("downloads verified Engram and Engines binaries without configuring an AI c
     expect(readFileSync(join(destination, "forge614-engram"), "utf8")).toBe(fixtureBytes);
     expect(existsSync(join(fakeHome, ".forge614", "engines", "bin", "forge614-engines"))).toBe(true);
     expect(existsSync(join(fakeHome, ".claude.json"))).toBe(false);
-    expect(result.stdout).toContain("forge614-engram init");
+    expect(result.stdout).toContain("forge614-shell init --product engram");
   } finally {
     server.stop(true);
   }
@@ -612,6 +680,245 @@ test("installs Forge614 Engines as a dependency without configuring an AI client
   } finally {
     if (previous === undefined) delete process.env.FORGE614_ENGINES_INSTALLER_TEST_URL;
     else process.env.FORGE614_ENGINES_INSTALLER_TEST_URL = previous;
+    server.stop(true);
+  }
+});
+
+const nodeMissingMessage = "Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer. Nothing was installed. Install Node.js from https://nodejs.org (or run: brew install node) and run this installer again.";
+const nodeOldMessage = (found: string) => `Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer; found ${found}. Nothing was installed. Update Node.js from https://nodejs.org (or run: brew upgrade node) and run this installer again.`;
+const tarMissingMessage = "Forge614 Engram installs Forge614 Shell, which needs tar. Nothing was installed. Install tar and run this installer again.";
+
+function shellQuote(value: string) {
+  return Bun.spawnSync(["bash", "-c", 'printf "%q" "$1"', "bash", value]).stdout.toString();
+}
+
+// Afirmaciones comunes de «no se instaló nada»: ni una petición al servidor de releases, ni carpeta
+// de Forge614, ni binario de Engram, y ningún instalador falso (Shell o Engines) fue llamado.
+function expectNothingInstalled(home: string, destination: string, requests: number) {
+  expect(requests).toBe(0);
+  expect(existsSync(join(home, ".forge614"))).toBe(false);
+  expect(existsSync(join(destination, "forge614-engram"))).toBe(false);
+  expect(installerLog(home)).toEqual([]);
+}
+
+// Sin `node` en el PATH, el instalador se detiene antes de bajar nada y explica cómo cumplir el requisito.
+test("stops before downloading anything when Node.js is missing", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "chosen-bin");
+  const fakeHome = join(root, "home");
+  mkdirSync(fakeHome);
+  writeFileSync(fixture, fixtureBytes);
+  const path = restrictedPathDirectory(root);
+  expect(Bun.spawnSync(["/bin/sh", "-c", "command -v node"], { env: { PATH: path } }).exitCode).not.toBe(0);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, undefined, { path });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toBe(`${nodeMissingMessage}\n`);
+    expectNothingInstalled(fakeHome, destination, server.requestCount());
+  } finally {
+    server.stop(true);
+  }
+});
+
+// Con un Node menor que 22.19 (o una versión ilegible), el instalador se detiene igual y dice qué encontró.
+test.each(["v22.18.0", "v21.20.0", "not-a-version"])("stops before downloading anything when Node.js reports %s", async (version) => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "chosen-bin");
+  const fakeHome = join(root, "home");
+  mkdirSync(fakeHome);
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, undefined, { nodeVersion: version });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toBe(`${nodeOldMessage(version)}\n`);
+    expectNothingInstalled(fakeHome, destination, server.requestCount());
+  } finally {
+    server.stop(true);
+  }
+});
+
+// Sin `tar` (con un Node válido) tampoco se instala nada.
+test("stops before downloading anything when tar is missing", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "chosen-bin");
+  const fakeHome = join(root, "home");
+  mkdirSync(fakeHome);
+  writeFileSync(fixture, fixtureBytes);
+  const path = restrictedPathDirectory(root, { without: ["tar"], nodeVersion: "v22.19.0" });
+  expect(Bun.spawnSync(["/bin/sh", "-c", "command -v tar"], { env: { PATH: path } }).exitCode).not.toBe(0);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, undefined, { path });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toBe(`${tarMissingMessage}\n`);
+    expectNothingInstalled(fakeHome, destination, server.requestCount());
+  } finally {
+    server.stop(true);
+  }
+});
+
+// Node 22.19.0 (el mínimo) y 23.0.0 (mayor superior) son aceptados y la instalación termina bien.
+test.each(["v22.19.0", "v23.0.0"])("accepts Node.js %s", async (version) => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "chosen-bin");
+  const fakeHome = join(root, "home");
+  mkdirSync(fakeHome);
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, undefined, { nodeVersion: version });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(existsSync(join(destination, "forge614-engram"))).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});
+
+// Si el instalador de Shell falla (sale con 69), Engram no se instala y Engines no se llama.
+test("does not change Engram when the Forge614 Shell installer fails", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "chosen-bin");
+  const fakeHome = join(root, "home");
+  mkdirSync(fakeHome);
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, undefined, { shellExit: 69 });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("Forge614 Shell could not be installed; Engram was not changed.");
+    expect(existsSync(join(destination, "forge614-engram"))).toBe(false);
+    expect(installerLog(fakeHome).map((line) => line.split(" ")[0])).toEqual(["shell"]);
+  } finally {
+    server.stop(true);
+  }
+});
+
+// Con Forge614 Shell ya instalado, el instalador de Shell no se llama y Engram se instala igual.
+test("reuses an already installed Forge614 Shell without calling its installer", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "chosen-bin");
+  const fakeHome = join(root, "home");
+  const shellCommand = join(fakeHome, ".forge614", "shell", "bin", "forge614-shell");
+  mkdirSync(resolve(shellCommand, ".."), { recursive: true });
+  writeFileSync(shellCommand, "#!/usr/bin/env sh\nexit 0\n");
+  chmodSync(shellCommand, 0o755);
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]));
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain(`Forge614 Shell is already available: ${shellCommand}`);
+    expect(installerLog(fakeHome).some((line) => line.startsWith("shell "))).toBe(false);
+    expect(existsSync(join(destination, "forge614-engram"))).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});
+
+// Camino completo: Shell se instala antes que Engines (con `--latest` y el FORGE614_HOME de la prueba)
+// y el mensaje final indica el siguiente paso con la ruta absoluta de Shell.
+test("installs Forge614 Shell before Engines and prints the next step", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "chosen-bin");
+  const fakeHome = join(root, "home");
+  const forgeHome = join(root, "forge614-root");
+  mkdirSync(fakeHome);
+  writeFileSync(fixture, fixtureBytes);
+  const server = fixtureReleaseServer(targetArtifact(), fixture);
+  const previous = process.env.FORGE614_HOME;
+  process.env.FORGE614_HOME = forgeHome;
+  try {
+    const result = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]), true, "/bin/unknown");
+    expect(result.exitCode, result.stderr).toBe(0);
+    const log = installerLog(fakeHome);
+    expect(log[0]).toBe(`shell args=--latest home=${forgeHome}`);
+    expect(log[1]?.startsWith("engines ")).toBe(true);
+    expect(log).toHaveLength(2);
+    expect(existsSync(join(destination, "forge614-engram"))).toBe(true);
+    const lines = result.stdout.split("\n").filter(Boolean);
+    expect(lines.slice(-2)).toEqual([
+      "Next step: open a new terminal and run:",
+      `${shellQuote(join(forgeHome, "shell", "bin", "forge614-shell"))} init --product engram`,
+    ]);
+    expect(lines).not.toContain("forge614-engram init");
+  } finally {
+    if (previous === undefined) delete process.env.FORGE614_HOME;
+    else process.env.FORGE614_HOME = previous;
+    server.stop(true);
+  }
+});
+
+// La variable de prueba de Shell solo se acepta con el centinela y con una URL `file:///`: sin centinela
+// se rechaza como reservada, y con centinela pero URL `http://` se rechaza por no ser local.
+test("rejects unsafe Forge614 Shell test installer overrides without installing anything", async () => {
+  const root = temporaryDirectory();
+  const fixture = join(root, "fixture-binary");
+  const destination = join(root, "chosen-bin");
+  const fakeHome = join(root, "home");
+  const curlDirectory = join(root, "fake-curl-bin");
+  mkdirSync(fakeHome);
+  mkdirSync(curlDirectory);
+  writeFileSync(fixture, fixtureBytes);
+  const artifact = targetArtifact();
+  writeFileSync(join(root, "release.json"), JSON.stringify({
+    assets: [
+      { name: "SHA256SUMS", browser_download_url: "https://assets.test/download/SHA256SUMS" },
+      { name: artifact, browser_download_url: `https://assets.test/download/${artifact}` },
+    ],
+  }));
+  writeFileSync(join(root, "SHA256SUMS"), `${sha256(fixture)}  ${artifact}\n`);
+  // Un `curl` falso que responde desde archivos locales, para llegar hasta la dependencia de Shell sin red.
+  const fakeCurl = join(curlDirectory, "curl");
+  writeFileSync(fakeCurl, [
+    "#!/bin/sh",
+    "out=''; url=''",
+    'while [ "$#" -gt 0 ]; do',
+    '  case "$1" in',
+    '    --output) out="$2"; shift 2 ;;',
+    '    --proto) shift 2 ;;',
+    '    -*) shift ;;',
+    '    *) url="$1"; shift ;;',
+    "  esac",
+    "done",
+    'case "$url" in',
+    `  */releases/latest) cp '${join(root, "release.json")}' "$out" ;;`,
+    `  */SHA256SUMS) cp '${join(root, "SHA256SUMS")}' "$out" ;;`,
+    `  */${artifact}) cp '${fixture}' "$out" ;;`,
+    "  *) exit 22 ;;",
+    "esac",
+  ].join("\n"));
+  chmodSync(fakeCurl, 0o755);
+  const server = fixtureReleaseServer(artifact, fixture);
+  const savedPath = process.env.PATH;
+  const savedOverride = process.env.FORGE614_SHELL_INSTALLER_TEST_URL;
+  process.env.FORGE614_SHELL_INSTALLER_TEST_URL = "http://127.0.0.1:1/install.sh";
+  try {
+    process.env.PATH = `${curlDirectory}:${savedPath ?? ""}`;
+    const withoutSentinel = await withFixtureEnvironment(fakeHome, "", () => runInstaller(["--bin-dir", destination]), false);
+    process.env.PATH = savedPath;
+    const notLocal = await withFixtureEnvironment(fakeHome, `${server.url}good`, () => runInstaller(["--bin-dir", destination]));
+
+    expect(withoutSentinel.exitCode).not.toBe(0);
+    expect(withoutSentinel.stderr).toContain("The Shell installer override is reserved for test fixtures.");
+    expect(notLocal.exitCode).not.toBe(0);
+    expect(notLocal.stderr).toContain("The Shell test installer must be a local file URL.");
+    for (const result of [withoutSentinel, notLocal]) expect(result.stdout).not.toContain("Installed:");
+    expect(existsSync(join(destination, "forge614-engram"))).toBe(false);
+    expect(existsSync(join(fakeHome, ".forge614"))).toBe(false);
+    expect(installerLog(fakeHome)).toEqual([]);
+  } finally {
+    process.env.PATH = savedPath;
+    if (savedOverride === undefined) delete process.env.FORGE614_SHELL_INSTALLER_TEST_URL;
+    else process.env.FORGE614_SHELL_INSTALLER_TEST_URL = savedOverride;
     server.stop(true);
   }
 });
