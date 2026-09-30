@@ -13,6 +13,7 @@ import { sessionNotice } from "../../modules/sessions";
 import { readCloudPostgresUrl } from "../terminal/cloud-input";
 import { initTerminal } from "../terminal/setup";
 import { watchSync } from "../terminal/sync-watch";
+import { createSyncProgress } from "../terminal/sync-progress";
 import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
 
 // Texto exacto del aviso de obsolescencia de D10 (sync --upgrade-format, formatos 1-3): se retira en la fecha dada, sin cambiar su código.
@@ -78,7 +79,13 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
       return;
     }
     // Con `cloud on` ya hecho (installationId presente), sync usa el ciclo nuevo; si no, sigue igual que hoy (D10).
-    console.log(JSON.stringify(cloudSettings() ? await runCloudSync() : await syncWorkspace()));
+    if (!cloudSettings()) { console.log(JSON.stringify(await syncWorkspace())); return; }
+    // El avance solo existe en una terminal; se borra en `finally` para que no quede pegado a un error que imprima main.ts.
+    const progress = createSyncProgress();
+    let result;
+    try { result = await runCloudSync({ onProgress: progress?.update }); }
+    finally { progress?.finish(); }
+    console.log(JSON.stringify(result));
     return;
   }
   if(command==="sync-watch"&&values.has("upgrade-format"))invalid("sync-watch no acepta --upgrade-format.");

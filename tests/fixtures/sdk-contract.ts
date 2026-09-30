@@ -18,7 +18,7 @@ import type {
 import type { SyncSnapshot } from "../../src/modules/synchronization";
 import type { CloudNotice } from "../../src/modules/sessions";
 import type { CloudEnrolment } from "../../src/infrastructure/sqlite/schema";
-import type { CloudReplica } from "../../src/app/cloud-sync";
+import type { CloudProgress, CloudReplica } from "../../src/app/cloud-sync";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
@@ -65,7 +65,8 @@ interface ExpectedStore {
   parallelSessions(projectId:string,sessionId:string):ParallelSession[];
   // Agregado en 1.8.0 (nube, nivel de esquema 12, D1/D7/D8). Puramente aditivo: nada de lo de arriba cambió.
   enableCloud(remoteFingerprint?:string|null):CloudEnrolment;cloudEnabled():boolean;
-  syncCloudCycle(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<{uploaded:number;downloaded:number}>;
+  // Agregado en 1.8.3: `onProgress` opcional (avance de `sync` en la terminal). Puramente aditivo.
+  syncCloudCycle(replica:CloudReplica,installationId:string,signal?:AbortSignal,onProgress?:(progress:CloudProgress)=>void):Promise<{uploaded:number;downloaded:number}>;
   downloadCloudChanges(replica:CloudReplica,installationId:string,signal?:AbortSignal):Promise<void>;
   takeCloudNotices(now?:Date):CloudNotice[];
   // Agregado en 1.8.0 T5 (CLI cloud status, D9). Puramente aditivo: nada de lo de arriba cambió.

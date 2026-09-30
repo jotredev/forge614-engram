@@ -235,6 +235,14 @@ function safe(error:unknown):never {
   throw new MemoryError("POSTGRES_UNAVAILABLE","PostgreSQL no disponible o sin permisos. Los datos locales se conservan; comprueba conexión y TLS sin compartir credenciales.");
 }
 /**
+ * Arma un literal de arreglo de PostgreSQL (`{"a","b"}`) a partir de textos, escapando barras y comillas.
+ * `Bun.SQL.unsafe` no serializa arreglos de JavaScript, así que se pasan como este texto y el SQL los
+ * convierte con `::text[]`.
+ */
+function textArray(values:string[]):string {
+  return "{"+values.map(v=>`"${v.replace(/\\/g,"\\\\").replace(/"/g,'\\"')}"`).join(",")+"}";
+}
+/**
  * Cliente de la réplica de sincronización sobre PostgreSQL: mantiene una conexión abierta y expone la
  * lectura y publicación de instantáneas, y el envío y consumo de la cola de cambios individuales.
  */
@@ -341,10 +349,13 @@ export class PostgresReplica {
    * Envía un lote de cambios individuales a la cola compartida, ignorando en silencio los que ya se habían
    * enviado antes (mismo `changeId`), para que reintentar un envío con respuesta perdida no duplique filas.
    * Todo el lote se serializa bajo un bloqueo consultivo, así que dos lotes concurrentes nunca intercalan
-   * sus identificadores. El parámetro llega como texto (`row.payload` ya pasado por `JSON.stringify`) y el
-   * SQL lo convierte a `jsonb` con `::text::jsonb`; convertirlo directo con `::jsonb` guardaría el texto
-   * JSON como una cadena dentro de la columna (doble codificación), en vez del objeto, y el contenido
-   * quedaría inconsultable en Neon.
+   * sus identificadores. Va en bloque, con una sola ida y vuelta por lote en vez de una por fila (subir 2 400
+   * cambios fila por fila tardaba minutos): una inserción `INSERT … SELECT … FROM unnest(…) WITH ORDINALITY`
+   * numera las filas nuevas en el orden de `rows`, y una sola consulta posterior recupera el id de las que
+   * ya existían. Los ids se emparejan por `change_id`, no por la posición del `RETURNING`. Los parámetros
+   * llegan como literales de arreglo de texto (ver {@link textArray}; `row.payload` ya pasado por `JSON.stringify`) y el SQL convierte cada
+   * payload con `::jsonb`; así se guarda como objeto, no como cadena con doble codificación, y el contenido
+   * queda consultable en Neon.
    * @param installationId Identificador de la instalación que origina los cambios.
    * @param rows Cambios a enviar, en el orden en que deben quedar numerados.
    * @returns Los identificadores numéricos asignados a cada fila, en el mismo orden que `rows` (el de una
@@ -356,19 +367,21 @@ export class PostgresReplica {
     try {
       const ids=await this.db.begin(async tx=>{
         await tx.unsafe("SELECT pg_advisory_xact_lock(1177956660,8)");
-        const out:number[]=[];
-        for(const row of rows) {
-          const inserted=await tx.unsafe(
-            "INSERT INTO forge614_sync.changes(change_id,installation_id,kind,op,payload) VALUES($1,$2,$3,$4,$5::text::jsonb) ON CONFLICT (change_id) DO NOTHING RETURNING id",
-            [row.changeId,installationId,row.kind,row.op,JSON.stringify(row.payload)]);
-          if(inserted.length) out.push(Number(inserted[0].id));
-          else {
-            // La fila ya existía (mismo changeId de un envío anterior): se devuelve su id ya asignado, sin insertar de nuevo.
-            const existing=await tx.unsafe("SELECT id FROM forge614_sync.changes WHERE change_id=$1",[row.changeId]);
-            out.push(Number(existing[0].id));
-          }
+        const inserted=await tx.unsafe(
+          `INSERT INTO forge614_sync.changes(change_id,installation_id,kind,op,payload)
+           SELECT r.change_id,$1,r.kind,r.op,r.payload::jsonb
+           FROM unnest($2::text[],$3::text[],$4::text[],$5::text[]) WITH ORDINALITY AS r(change_id,kind,op,payload,ord)
+           ORDER BY r.ord ON CONFLICT (change_id) DO NOTHING RETURNING id,change_id`,
+          [installationId,textArray(rows.map(r=>r.changeId)),textArray(rows.map(r=>r.kind)),textArray(rows.map(r=>r.op)),textArray(rows.map(r=>JSON.stringify(r.payload)))]);
+        const byChangeId=new Map<string,number>();
+        for(const row of inserted) byChangeId.set(row.change_id,Number(row.id));
+        // Las filas que ya existían (mismo changeId de un envío anterior) no vuelven en el RETURNING: se recupera su id ya asignado, sin insertar de nuevo.
+        const missing=[...new Set(rows.map(r=>r.changeId).filter(changeId=>!byChangeId.has(changeId)))];
+        if(missing.length) {
+          const existing=await tx.unsafe("SELECT id,change_id FROM forge614_sync.changes WHERE change_id=ANY($1::text[])",[textArray(missing)]);
+          for(const row of existing) byChangeId.set(row.change_id,Number(row.id));
         }
-        return out;
+        return rows.map(r=>byChangeId.get(r.changeId)!);
       });
       return {ids};
     } catch(error) { return safe(error); }

@@ -12,6 +12,7 @@ import { PostgresReplica } from "../infrastructure/postgres/replica";
 import { MemoryError } from "../shared/errors";
 import { MemoryWorkspace } from "./workspace";
 import { cloudSettings, connectCloudReplica } from "./cloud-settings";
+import type { CloudProgress } from "./cloud-sync";
 
 /** Resultado de `cloud on`: el id de instalación (nuevo o ya existente) y que la nube quedó activa. */
 export interface CloudOnResult { readonly installationId: string; readonly enabled: true }
@@ -112,11 +113,12 @@ export function runCloudStatus(config = new WorkspaceConfig()): CloudStatusResul
  * nuevos, usando `connectCloudReplica` sobre la conexión ya validada por `cloud on`. La usan `sync`
  * y `sync-watch` cuando `cloudSettings()` da datos completos (la instalación ya pasó por `cloud
  * on`); sin eso, ambos siguen con el mecanismo local anterior (formatos 1-3).
+ * @param options `onProgress` opcional, para mostrar el avance; solo `sync` lo pasa.
  * @throws MemoryError con código `SYNC_DISABLED` si no hay nube configurada en el `.env`, o si el
  * `.env` la tiene pero la base local nunca pasó por `cloud on` (nivel de esquema 12): sin esta
  * comprobación, la base fallaría con un error crudo de SQLite («no such table») en vez de un aviso claro.
  */
-export async function runCloudSync(): Promise<CloudSyncResult> {
+export async function runCloudSync(options?: { onProgress?: ((progress: CloudProgress) => void) | undefined }): Promise<CloudSyncResult> {
   const settings = cloudSettings();
   if (!settings) throw new MemoryError("SYNC_DISABLED", "La sincronización con la nube no está configurada. Ejecuta cloud on.");
   const workspace = new MemoryWorkspace();
@@ -126,7 +128,7 @@ export async function runCloudSync(): Promise<CloudSyncResult> {
     const replica = await connectCloudReplica(settings.postgresUrl);
     // "Subidos" y "bajados" son los que de verdad subió y aplicó el ciclo, no el avance de `lastAppliedId`
     // (que también cuenta filas propias que vuelven al bajar y filas saltadas, y por eso mentía antes).
-    try { return await store.syncCloudCycle(replica, settings.installationId); }
+    try { return await store.syncCloudCycle(replica, settings.installationId, undefined, options?.onProgress); }
     finally { await replica.close(); }
   } finally { store.close(); }
 }

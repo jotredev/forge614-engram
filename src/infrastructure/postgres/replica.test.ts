@@ -416,3 +416,84 @@ integration("cloud on accepts a local PostgreSQL URL with channel_binding and a 
     expect((await run("sync")).code).toBe(0);
   } finally { rmSync(home, { recursive: true, force: true }); }
 }, postgresTestTimeoutMs);
+
+/** Envuelve `begin` de la réplica para anotar cada sentencia `unsafe` de la transacción (la del bloqueo, la inserción, la consulta de existentes). */
+function spyStatements(replica: PostgresReplica): string[] {
+  const statements: string[] = [];
+  const db = (replica as unknown as { db: { begin: (fn: (tx: any) => Promise<unknown>) => Promise<unknown> } }).db;
+  const original = db.begin.bind(db);
+  db.begin = (fn) => original((tx: any) => fn(new Proxy(tx, {
+    get(target, property) {
+      if (property === "unsafe") return (...args: unknown[]) => { statements.push(String(args[0])); return target.unsafe(...args); };
+      const value = target[property];
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  })));
+  return statements;
+}
+
+// Tres filas nuevas: ids estrictamente crecientes en el orden de `rows`, guardadas en ese orden de id y con el payload como objeto.
+integration("pushChanges of new rows returns strictly increasing ids in rows order and stores payload as an object", async () => {
+  const url = await freshDatabase("push_batch_new");
+  const replica = await PostgresReplica.connect(url, true);
+  const db = new SQL(url);
+  try {
+    const rows = ["b-1", "b-2", "b-3"].map((changeId, i) => ({ changeId, kind: "memory", op: "insert" as const, payload: { n: i, label: `row-${i}` } }));
+    const { ids } = await replica.pushChanges(crypto.randomUUID(), rows);
+    expect(ids).toHaveLength(3);
+    expect(ids[0]!).toBeLessThan(ids[1]!);
+    expect(ids[1]!).toBeLessThan(ids[2]!);
+    const stored = await db.unsafe("SELECT id, change_id, jsonb_typeof(payload) AS type, payload->>'label' AS label FROM forge614_sync.changes ORDER BY id");
+    expect(stored.map((r: any) => r.change_id)).toEqual(["b-1", "b-2", "b-3"]);
+    expect(stored.map((r: any) => Number(r.id))).toEqual(ids);
+    expect(stored.map((r: any) => r.type)).toEqual(["object", "object", "object"]);
+    expect(stored.map((r: any) => r.label)).toEqual(["row-0", "row-1", "row-2"]);
+  } finally { await db.close(); await replica.close(); }
+}, postgresTestTimeoutMs);
+
+// Una fila ya existente puesta en medio conserva su id viejo en esa posición, las nuevas crecen alrededor y nada se duplica.
+integration("pushChanges keeps the old id of an existing row placed in the middle of a batch", async () => {
+  const url = await freshDatabase("push_batch_middle");
+  const replica = await PostgresReplica.connect(url, true);
+  try {
+    const installationId = crypto.randomUUID();
+    const make = (changeId: string) => ({ changeId, kind: "memory", op: "insert" as const, payload: { changeId } });
+    const { ids: [oldId] } = await replica.pushChanges(installationId, [make("m-old")]);
+    const { ids } = await replica.pushChanges(installationId, [make("m-new-1"), make("m-old"), make("m-new-2")]);
+    expect(ids).toHaveLength(3);
+    expect(ids[1]).toBe(oldId!);
+    expect(ids[0]!).toBeGreaterThan(oldId!);
+    expect(ids[2]!).toBeGreaterThan(ids[0]!);
+    const all = await replica.pullChanges(0);
+    expect(all.map(r => r.changeId)).toEqual(["m-old", "m-new-1", "m-new-2"]);
+  } finally { await replica.close(); }
+}, postgresTestTimeoutMs);
+
+// Un lote de 500 filas nuevas cuesta a lo más 3 sentencias dentro de la transacción (bloqueo, inserción y, solo si faltó alguna, consulta de existentes): una ida y vuelta por lote, no por fila.
+integration("pushChanges sends 500 new rows with at most 3 statements", async () => {
+  const url = await freshDatabase("push_batch_statements");
+  const replica = await PostgresReplica.connect(url, true);
+  try {
+    const statements = spyStatements(replica);
+    const rows = Array.from({ length: 500 }, (_, i) => ({ changeId: `s-${i}`, kind: "memory", op: "insert" as const, payload: { i } }));
+    const { ids } = await replica.pushChanges(crypto.randomUUID(), rows);
+    expect(ids).toHaveLength(500);
+    expect(statements.length).toBeLessThanOrEqual(3);
+    expect(statements.length).toBeGreaterThanOrEqual(2);
+  } finally { await replica.close(); }
+}, postgresTestTimeoutMs);
+
+// Comillas, barras, llaves, comas, saltos de línea y acentos en ids y payloads sobreviven al paso por el arreglo de texto.
+integration("pushChanges round-trips awkward characters in change ids and payloads", async () => {
+  const url = await freshDatabase("push_batch_escaping");
+  const replica = await PostgresReplica.connect(url, true);
+  try {
+    const awkward = 'q"uote \\ back, {brace} NULL\nnew é';
+    const rows = [{ changeId: `id-${awkward}`, kind: "memory", op: "insert" as const, payload: { text: awkward } }, { changeId: "", kind: "memory", op: "update" as const, payload: { text: "" } }];
+    const { ids } = await replica.pushChanges(crypto.randomUUID(), rows);
+    const stored = await replica.pullChanges(0);
+    expect(stored.map(r => r.id)).toEqual(ids);
+    expect(stored.map(r => r.changeId)).toEqual(rows.map(r => r.changeId));
+    expect(stored.map(r => r.payload)).toEqual(rows.map(r => r.payload));
+  } finally { await replica.close(); }
+}, postgresTestTimeoutMs);

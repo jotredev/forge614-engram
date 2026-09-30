@@ -234,3 +234,17 @@ test("nothing is applied when the download resolves 50 ms after the cutoff", asy
     expect(unhandled).toEqual([]);
   } finally { process.off("unhandledRejection", onUnhandled); }
 }, 5000);
+
+// La tarea de fondo nunca pasa `onProgress` al ciclo: el servidor MCP no escribe avance en ninguna parte.
+test("the background task calls syncCloudCycle without an onProgress callback", async () => {
+  const seen: unknown[] = [];
+  const task = startCloudBackground(fakeStore({
+    syncCloudCycle: (async (_replica: unknown, _installationId: unknown, _signal: unknown, onProgress: unknown) => {
+      seen.push(onProgress); return { uploaded: 0, downloaded: 0 };
+    }) as unknown as MemoryStore["syncCloudCycle"],
+  }), { connect: async () => noopReplica(), intervalMs: 100_000 });
+  await sleep(30);
+  task?.stop();
+  expect(seen.length).toBeGreaterThanOrEqual(1);
+  expect(seen.every(value => value === undefined)).toBe(true);
+});
