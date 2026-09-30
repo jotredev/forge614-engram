@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.2
+
+El instalador publicado instala también Forge614 Shell y dice el siguiente paso.
+
+- **Shell como dependencia (nueva):** el instalador instala Forge614 Shell (que trae Engines) antes de colocar Engram y termina diciendo el siguiente paso: `forge614-shell init --product engram` (con la ruta absoluta), que ya corre el `init` de Engram. Si Shell no se puede instalar, Engram no se cambia.
+- **Requisitos antes de bajar nada:** si falta Node.js 22.19+ o `tar`, el instalador no instala nada y dice cómo cumplirlo.
+
 ## 1.8.1
 
 El manual completo de la memoria le pide al asistente contar los avisos de la nube.
