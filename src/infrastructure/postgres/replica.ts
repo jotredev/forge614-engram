@@ -349,8 +349,8 @@ export class PostgresReplica {
    * Envía un lote de cambios individuales a la cola compartida, ignorando en silencio los que ya se habían
    * enviado antes (mismo `changeId`), para que reintentar un envío con respuesta perdida no duplique filas.
    * Todo el lote se serializa bajo un bloqueo consultivo, así que dos lotes concurrentes nunca intercalan
-   * sus identificadores. Va en bloque, con una sola ida y vuelta por lote en vez de una por fila (subir 2 400
-   * cambios fila por fila tardaba minutos): una inserción `INSERT … SELECT … FROM unnest(…) WITH ORDINALITY`
+   * sus identificadores. Va en bloque, con una sola inserción por lote y un número fijo de consultas en vez de una
+   * inserción por fila (subir 2 400 cambios fila por fila tardaba minutos): una inserción `INSERT … SELECT … FROM unnest(…) WITH ORDINALITY`
    * numera las filas nuevas en el orden de `rows`, y una sola consulta posterior recupera el id de las que
    * ya existían. Los ids se emparejan por `change_id`, no por la posición del `RETURNING`. Los parámetros
    * llegan como literales de arreglo de texto (ver {@link textArray}; `row.payload` ya pasado por `JSON.stringify`) y el SQL convierte cada

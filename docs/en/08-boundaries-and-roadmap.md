@@ -73,9 +73,9 @@ Limits of this delivery: the Shell and Engines packages are verified against the
 
 ## Capabilities added in v1.8.3
 
-- `sync` uploads each batch of up to 500 changes in a single round trip to the cloud (before, one per change) and, only when stderr is a terminal, shows "Subiendo N de M cambios…" and "Bajando cambios de la nube: N leídos…" on one stderr line that is erased when it finishes. stdout does not change; the MCP server and its background task show no progress.
+- `sync` uploads each batch of up to 500 changes with a single bulk insert (before, one per change) and, with the cloud on and only when stderr is a terminal (and `TERM` is not `dumb`), shows "Subiendo N de M cambios…" and "Bajando cambios de la nube: N leídos…" on one stderr line that is erased when it finishes. stdout does not change; the MCP server and its background task show no progress.
 
-Limits of this delivery: the progress texts stay fixed in Spanish (the bilingual es/en output arrives in 1.9.0); `cloud on` and `sync-watch` show no progress.
+Limits of this delivery: the progress texts stay fixed in Spanish (the bilingual es/en output arrives in 1.9.0); `cloud on`, `sync-watch`, `sync` without the cloud on, and `sync --upgrade-format` show no progress.
 
 ## Explicit non-goals
 
