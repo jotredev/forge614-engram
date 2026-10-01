@@ -2,10 +2,10 @@
 
 ## 1.8.5
 
-Buscar en una carpeta sin proyecto da 0 resultados con una nota, no un error.
+Buscar en una carpeta sin proyecto ya no da error: devuelve una nota y solo lo de `shared` (nada de proyecto ni de grupo).
 
-- **Lecturas de orientación sin error:** en una carpeta que todavía no tiene proyecto, `memory_search` (scope `project` o `ecosystem`) devuelve `results: []` y, con scope `all` o sin scope, los resultados de `shared`; `memory_context` sin scope devuelve el contexto de `shared` y con scope `ecosystem` un contexto vacío de grupo. Todas traen `project: { status: "unbound", message }`, y ninguna registra la carpeta.
-- **Sin cambios:** `memory_get`, `memory_history`, `memory_timeline`, `memory_session_end`, `memory_session_summary` y `memory_save` con scope `ecosystem` siguen dando `PROJECT_NOT_BOUND`.
+- **Lecturas de orientación sin error:** en una carpeta que todavía no tiene proyecto, `memory_search` (scope `project` o `ecosystem`) devuelve `results: []` y, con scope `all` o sin scope, los resultados de `shared`; `memory_context` sin scope devuelve el contexto de `shared` y con scope `ecosystem` un contexto vacío de grupo. Todas traen `project: { status: "unbound", message }` con la nota «Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.», y ninguna registra la carpeta.
+- **Sin cambios:** `memory_get` y `memory_history` (salvo con scope `shared`), `memory_timeline`, `memory_session_end`, `memory_session_summary` y `memory_save` con scope `ecosystem` siguen dando `PROJECT_NOT_BOUND`.
 
 ## 1.8.4
 
