@@ -53,7 +53,7 @@ import { endRuntimeSession,inferredSessions,manualSession,requireSessions,sessio
  * @returns el proyecto encontrado o creado (o null si no existe y `create` es falso) y si se creó.
  * @throws MemoryError con código MIGRATION_REQUIRED si los vínculos de proyecto no están
  *   habilitados, INVALID_INPUT si `directory` o `name` están vacíos, o PROJECT_BINDING_REQUIRED
- *   si hace falta vincular a mano (nombre repetido sin remoto coincidente, o carpetas registradas ausentes).
+ *   si hace falta vincular a mano (nombre repetido sin remoto coincidente, o carpeta nueva que puede ser un proyecto cuyas carpetas registradas ya no existen).
  */
 export function resolveProjectDirectory(db: Database, directory: string, name: string, create: boolean,
     bindingAvailable?: (directory:string)=>boolean, origin?: string | null): { project: Project | null; created: boolean } {

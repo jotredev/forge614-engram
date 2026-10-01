@@ -77,6 +77,13 @@ Límites de esta entrega: los paquetes de Shell y de Engines sí se verifican co
 
 Límites de esta entrega: los textos del avance están en español fijo (la salida bilingüe es/en llega en 1.9.0); `cloud on`, `sync-watch`, `sync` sin la nube activada y `sync --upgrade-format` no muestran avance.
 
+## Capacidades incorporadas en v1.8.4
+
+- Una carpeta nueva ya no queda bloqueada por la carpeta perdida de otro proyecto: solo se pide `project-bind` si la carpeta nueva puede ser ese proyecto (mismo nombre que su carpeta perdida o, con la nube activada, el mismo remoto de Git); en cualquier otro caso se registra sola. Los errores `PROJECT_BINDING_REQUIRED` dicen qué proyecto es (nombre e `id`) y el comando exacto para resolverlo.
+- `scripts/release-smoke.sh <binario>` verifica la publicación con un `FORGE614_HOME` y un `HOME` temporales propios (se detiene sin escribir nada si ya hay un `FORGE614_HOME` fuera de la carpeta temporal del sistema) y lo corre el workflow de release con cada binario, además de `--help`.
+
+Límites de esta entrega: una carpeta movida y renombrada a otro nombre, sin `.forge614/project.json` y sin remoto reconocido, ya no se bloquea: se crea un proyecto nuevo. No hay `project-delete`: un proyecto cuya carpeta se perdió sigue apareciendo en `project-list`.
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.

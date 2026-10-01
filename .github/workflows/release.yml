@@ -68,7 +68,9 @@ jobs:
         run: bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.artifact }}
       - name: Smoke-test the native standalone artifact
         shell: bash
-        run: ./dist/${{ matrix.artifact }} --help
+        run: |
+          ./dist/${{ matrix.artifact }} --help
+          bash scripts/release-smoke.sh ./dist/${{ matrix.artifact }}
       - name: Preserve the artifact mode for collection
         run: tar -C dist -czf dist/${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
       - uses: actions/upload-artifact@v4

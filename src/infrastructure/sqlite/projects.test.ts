@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import { createProject, getProject, listProjects, projectForDirectory, resolveProjectDirectory } from "./projects";
 import { enableCloud, enableProjectBindings } from "./schema";
 import { withDatabase } from "../__test-support__/fixtures";
+import type { MemoryError } from "../../shared/errors";
 
 // Crear un proyecto debe recortar (trim) espacios del nombre visible, y listProjects debe ordenar por
 // nombre sin importar en qué orden se crearon.
@@ -127,4 +128,100 @@ test("D6: un remoto con un secreto que sobrevive a la normalización no se anota
   const result = resolveProjectDirectory(db, "/mac-1/leaky", "Leaky", true, undefined, "https://github.com/org/AKIAABCDEFGHIJKLMNOP");
   expect(result.created).toBe(true);
   expect(db.query("SELECT * FROM project_remotes WHERE project_id=?").get(result.project!.projectId)).toBeNull();
+}));
+
+// Ejecuta una resolución que debe fallar y devuelve el código y el texto exactos del error, para
+// comparar el mensaje completo que ve la persona y no solo una parte.
+function failure(run: () => unknown): { code: string; message: string } {
+  try { run(); } catch (error) { return { code: (error as MemoryError).code, message: (error as Error).message }; }
+  throw new Error("se esperaba un error PROJECT_BINDING_REQUIRED");
+}
+// Dice que ninguna carpeta registrada existe: así todos los proyectos quedan perdidos.
+const nothingExists = () => false;
+
+// Fija que la carpeta perdida de OTRO proyecto, con un nombre que no tiene nada que ver, ya no impide
+// registrar una carpeta nueva (el caso «Release probe»: un proyecto de prueba cuya carpeta temporal se borró).
+test("una carpeta perdida de otro proyecto con nombre distinto no bloquea una carpeta nueva", () => withDatabase(db => {
+  enableProjectBindings(db);
+  const lost = resolveProjectDirectory(db, "/gone/git-bound/.git", "Release probe", true);
+  const fresh = resolveProjectDirectory(db, "/work/prueba-shell", "prueba-shell", true, nothingExists);
+  expect(fresh.created).toBe(true);
+  expect(fresh.project!.projectId).not.toBe(lost.project!.projectId);
+  expect(projectForDirectory(db, "/work/prueba-shell")?.projectId).toBe(fresh.project!.projectId);
+}));
+
+// Fija que la protección sigue donde hay evidencia: una carpeta nueva con el mismo nombre que la carpeta
+// perdida (para una clave .git, la carpeta que la contiene) sí bloquea, con el mensaje exacto, que nombra
+// el proyecto, su id, la carpeta perdida sin «/.git» y el comando con la carpeta nueva. Con el mismo
+// nombre que el proyecto perdido bloquea antes el error de nombre repetido (mismo código, su propio texto).
+test("una carpeta nueva con el nombre de la carpeta perdida bloquea con el mensaje exacto", () => withDatabase(db => {
+  enableProjectBindings(db);
+  const lost = resolveProjectDirectory(db, "/gone/git-bound/.git", "Release probe", true).project!;
+  expect(failure(() => resolveProjectDirectory(db, "/work/git-bound", "git-bound", true, nothingExists))).toEqual({
+    code: "PROJECT_BINDING_REQUIRED",
+    message: `Esta carpeta podría ser el proyecto «Release probe» (${lost.projectId}), cuya carpeta registrada (/gone/git-bound) ya no existe. `
+      + `Si es el mismo proyecto, vincúlala con: forge614-engram project-bind --directory /work/git-bound --project-id ${lost.projectId}. `
+      + "Si es otro proyecto, créalo con forge614-engram project-create --name <nombre> y vincúlalo con project-bind.",
+  });
+  expect(failure(() => resolveProjectDirectory(db, "/work/otra", "Release probe", true, nothingExists)).message)
+    .toStartWith(`Ya existe un proyecto llamado «Release probe» (${lost.projectId}).`);
+  expect(listProjects(db)).toHaveLength(1);
+}));
+
+// Fija que un proyecto con una carpeta que existe y otra perdida no cuenta como perdido (como siempre):
+// ni siquiera una carpeta nueva con el nombre de la carpeta perdida se bloquea.
+test("un proyecto con una carpeta existente y otra perdida no cuenta como perdido", () => withDatabase(db => {
+  enableProjectBindings(db);
+  const project = resolveProjectDirectory(db, "/exists/a", "Alive", true).project!;
+  db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)").run("/gone/b", project.projectId, "2020-01-01T00:00:00.000Z");
+  const result = resolveProjectDirectory(db, "/work/b", "b", true, directory => directory.startsWith("/exists"));
+  expect(result.created).toBe(true);
+}));
+
+// Fija que una comprobación de existencia que lanza cuenta la carpeta como perdida (como hoy), pero que
+// eso solo bloquea con coincidencia de nombre: una carpeta de otro nombre se registra sola.
+test("una comprobación que lanza cuenta como carpeta perdida pero solo bloquea con el mismo nombre", () => withDatabase(db => {
+  enableProjectBindings(db);
+  resolveProjectDirectory(db, "/unreadable/git-bound/.git", "Release probe", true);
+  const throwing = () => { throw new Error("EACCES"); };
+  expect(resolveProjectDirectory(db, "/work/other-name", "other-name", true, throwing).created).toBe(true);
+  expect(failure(() => resolveProjectDirectory(db, "/work/git-bound", "git-bound", true, throwing)).message)
+    .toStartWith("Esta carpeta podría ser el proyecto «Release probe»");
+}));
+
+// Fija el texto exacto del error de nombre repetido: dice qué proyecto es (nombre e id) y qué hacer, y
+// muestra la carpeta de trabajo, nunca la ruta interna «/.git» de una carpeta con Git.
+test("el error de nombre repetido dice qué proyecto es y cómo resolverlo, sin la ruta .git", () => withDatabase(db => {
+  enableProjectBindings(db);
+  const existing = resolveProjectDirectory(db, "/new", "New", true).project!;
+  const expected = (folder: string) => ({
+    code: "PROJECT_BINDING_REQUIRED",
+    message: `Ya existe un proyecto llamado «New» (${existing.projectId}). Si esta carpeta es ese proyecto, vincúlala con: `
+      + `forge614-engram project-bind --directory ${folder} --project-id ${existing.projectId}. `
+      + "Si es otro, créalo con forge614-engram project-create --name <otro nombre> y vincúlalo con project-bind.",
+  });
+  expect(failure(() => resolveProjectDirectory(db, "/other", "New", true))).toEqual(expected("/other"));
+  expect(failure(() => resolveProjectDirectory(db, "/repo/.git", "New", true))).toEqual(expected("/repo"));
+}));
+
+// Fija, con nube y un remoto igual al de un proyecto perdido, que la carpeta nueva NUNCA crea un proyecto
+// aparte. Con un único proyecto con ese remoto, la regla de 177-183 (D6) la liga a él antes de llegar a
+// la comprobación de carpetas perdidas, aunque el nombre sea distinto; con dos proyectos que lo comparten,
+// esa regla no adivina y es la decisión 1b la que bloquea, nombrando al primero en orden estable.
+test("con nube y el remoto de un proyecto perdido, la carpeta nueva se liga a él o se bloquea, nunca crea otro", () => withDatabase(db => {
+  enableCloud(db);
+  const when = "2020-01-01T00:00:00.000Z";
+  const lost = resolveProjectDirectory(db, "/gone/lost-name", "Lost", true).project!;
+  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(lost.projectId, "github.com/org/lost", when);
+  const linked = resolveProjectDirectory(db, "/work/other-name", "other-name", true, nothingExists, "https://github.com/org/lost.git");
+  expect(linked).toEqual({ project: lost, created: false });
+  expect(listProjects(db)).toHaveLength(1);
+
+  // Segundo proyecto con el mismo remoto y con carpeta existente: ya no hay coincidencia única.
+  const alive = resolveProjectDirectory(db, "/exists/alive", "Alive", true).project!;
+  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(alive.projectId, "github.com/org/lost", when);
+  const blocked = failure(() => resolveProjectDirectory(db, "/work/third", "third", true, directory => directory.startsWith("/exists"), "git@github.com:org/lost.git"));
+  expect(blocked.code).toBe("PROJECT_BINDING_REQUIRED");
+  expect(blocked.message).toStartWith(`Esta carpeta podría ser el proyecto «Lost» (${lost.projectId}), cuya carpeta registrada (/gone/lost-name) ya no existe.`);
+  expect(listProjects(db)).toHaveLength(2);
 }));

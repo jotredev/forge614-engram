@@ -196,33 +196,66 @@ test("same-name existing projects require an explicit binding instead of identit
   const value = store(); value.enableProjectBindings();
   const directory = temporary();
   const existing = value.createProject(basename(directory));
-  expect(() => resolveProjectContext(value, directory, true)).toThrow("vinculación explícita");
+  expect(() => resolveProjectContext(value, directory, true)).toThrow(`Ya existe un proyecto llamado «${basename(directory)}» (${existing.projectId})`);
   expect(value.listProjects()).toHaveLength(1);
   expect(bindProjectContext(value, directory, existing.projectId).projectId).toBe(existing.projectId);
   expect(resolveProjectContext(value, directory, false).projectId).toBe(existing.projectId);
 });
 
 
-// Verifica, con y sin Git, que renombrar una carpeta sin archivo de identidad (o que lo perdió) no reconoce el proyecto por accidente: exige un vínculo explícito, y una vez ligada de nuevo conserva la identidad de las memorias ya guardadas.
-test.each([false,true])("renaming a %s Git directory without an identity file requires explicit binding and preserves memory identity", (withGit) => {
+// Verifica, con y sin Git, que mover una carpeta sin archivo de identidad (o que lo perdió) a otro lugar conservando su nombre no reconoce el proyecto por accidente: exige un vínculo explícito, y una vez ligada de nuevo conserva la identidad de las memorias ya guardadas. Una carpeta no relacionada ya no queda bloqueada por esa carpeta perdida y se registra sola.
+test.each([false,true])("moving a %s Git directory without an identity file keeps requiring explicit binding and preserves memory identity", (withGit) => {
   const value=store();value.enableProjectBindings();
-  const root=temporary(),old=join(root,"old-name"),moved=join(root,"new-name");mkdirSync(old);
+  const root=temporary(),old=join(root,"old-name"),elsewhere=join(root,"elsewhere"),moved=join(elsewhere,"old-name");mkdirSync(old);mkdirSync(elsewhere);
   if(withGit)git(old,"init","--quiet");
   const saved=saveProjectMemory(value,old,{title:"Before",content:"Keep identity",type:"fact"});
   // Una carpeta anterior al archivo de identidad portátil (o que lo perdió) sigue necesitando un vínculo explícito.
   rmSync(join(old,".forge614"),{recursive:true});
   renameSync(old,moved);
   expect(resolveProjectContext(value,moved,false).projectId).toBeNull();
-  expect(()=>saveProjectMemory(value,moved,{title:"After",content:"Do not split",type:"fact"})).toThrow("vinculación explícita");
-  expect(()=>resolveProjectContext(value,moved,true)).toThrow("vinculación explícita");
-  const unrelated=join(root,"unrelated");mkdirSync(unrelated);
-  expect(()=>resolveProjectContext(value,unrelated,true)).toThrow("vinculación explícita");
+  expect(()=>saveProjectMemory(value,moved,{title:"After",content:"Do not split",type:"fact"})).toThrow("project-bind");
+  expect(()=>resolveProjectContext(value,moved,true)).toThrow("project-bind");
   expect(value.listProjects()).toHaveLength(1);
   bindProjectContext(value,moved,saved.projectId!);
   expect(saveProjectMemory(value,moved,{title:"After",content:"Same identity",type:"fact"}).projectId).toBe(saved.projectId);
   expect(value.get(saved.projectId,saved.id)?.content).toBe("Keep identity");
+  // Cambiado a propósito (antes: lanzaba «vinculación explícita»): una carpeta sin relación con el proyecto ya no se bloquea.
+  const unrelated=join(root,"unrelated");mkdirSync(unrelated);
   expect(saveProjectMemory(value,unrelated,{title:"New",content:"New project",type:"fact"}).projectId).not.toBe(saved.projectId);
   expect(JSON.stringify(value.syncSnapshot())).not.toContain(root);
+});
+
+
+// Fija el límite documentado de 1.8.4: una carpeta renombrada a OTRO nombre, sin archivo de identidad y sin remoto, ya no se bloquea; se registra sola como proyecto nuevo (la memoria anterior queda en el proyecto viejo y se recupera con project-bind).
+test.each([false,true])("renaming a %s Git directory to another name without an identity file registers it alone (documented limit)", (withGit) => {
+  const value=store();value.enableProjectBindings();
+  const root=temporary(),old=join(root,"old-name"),renamed=join(root,"new-name");mkdirSync(old);
+  if(withGit)git(old,"init","--quiet");
+  const saved=saveProjectMemory(value,old,{title:"Before",content:"Keep identity",type:"fact"});
+  rmSync(join(old,".forge614"),{recursive:true});
+  renameSync(old,renamed);
+  expect(resolveProjectContext(value,renamed,false).projectId).toBeNull();
+  const created=saveProjectMemory(value,renamed,{title:"After",content:"Separate project",type:"fact"});
+  expect(created.projectId).not.toBe(saved.projectId);
+  expect(value.listProjects()).toHaveLength(2);
+  expect(value.get(saved.projectId,saved.id)?.content).toBe("Keep identity");
+});
+
+
+// Reproduce el caso «Release probe»: un proyecto de prueba vinculado a una carpeta temporal con Git que ya no existe no debe impedir que una carpeta nueva con Git y otro nombre abra sesión y se registre sola; después, buscar ya no da PROJECT_NOT_BOUND. Una carpeta con el mismo nombre que la carpeta perdida sigue bloqueada.
+test("a lost folder of another project does not block a new Git folder with another name (Release probe)", () => {
+  const value=store();value.enableProjectBindings();value.enableSessions();
+  const gone=join(temporary(),"git-bound");
+  const probe=value.resolveProjectDirectory(join(gone,".git"),"Release probe",true).project!;
+  const fresh=temporary("forge614-shell-");git(fresh,"init","--quiet");
+  expect(resolveProjectContext(value,fresh,false).projectId).toBeNull();
+  const session=startProjectSession(value,fresh,"probe-session");
+  expect(session.projectId).not.toBe(probe.projectId);
+  expect(resolveProjectContext(value,fresh,false)).toMatchObject({projectId:session.projectId,source:"file"});
+  expect(value.listProjects()).toHaveLength(2);
+  const sameName=join(temporary(),"git-bound");mkdirSync(sameName);git(sameName,"init","--quiet");
+  expect(()=>startProjectSession(value,sameName,"other-session")).toThrow(`Esta carpeta podría ser el proyecto «Release probe» (${probe.projectId}), cuya carpeta registrada (${gone}) ya no existe.`);
+  expect(()=>startProjectSession(value,sameName,"other-session")).toThrow(`--directory ${realpathSync(sameName)} --project-id ${probe.projectId}`);
 });
 
 
@@ -239,13 +272,16 @@ test.each([false,true])("renaming a %s Git directory that carries its identity f
 });
 
 
-// Verifica que un vínculo ya registrado pero inaccesible en disco (una ruta cuyo padre es un archivo, no una carpeta) falla cerrado en vez de dar error confuso, mientras que otros vínculos sintéticos de la base siguen funcionando con normalidad.
+// Verifica que un vínculo ya registrado pero inaccesible en disco (una ruta cuyo padre es un archivo, no una carpeta) cuenta como carpeta perdida: bloquea solo a una carpeta que podría ser ese proyecto (mismo nombre), mientras que una carpeta nueva con otro nombre se registra sola y otros vínculos sintéticos de la base siguen funcionando con normalidad.
 test("an inaccessible recorded binding fails closed but synthetic store bindings remain usable", async () =>{
   const value=store();value.enableProjectBindings();const root=temporary();
   const notDirectory=join(root,"file");writeFileSync(notDirectory,"fixture");
   value.resolveProjectDirectory(join(notDirectory,"child"),"Synthetic",true);
   // stat falla con ENOTDIR, y eso debe tratarse como "no disponible", nunca como prueba de que hay un proyecto vivo ahí.
-  expect(()=>resolveProjectContext(value,temporary(),true)).toThrow("vinculación explícita");
+  const sameName=join(temporary(),"child");mkdirSync(sameName);
+  expect(()=>resolveProjectContext(value,sameName,true)).toThrow("Esta carpeta podría ser el proyecto «Synthetic»");
+  // Cambiado a propósito (antes: lanzaba «vinculación explícita»): una carpeta nueva con otro nombre se registra aunque el vínculo previo sea ilegible.
+  expect(resolveProjectContext(value,temporary(),true).source).toBe("created");
   expect(value.resolveProjectDirectory("synthetic/second","Second",true).created).toBe(true);
 });
 

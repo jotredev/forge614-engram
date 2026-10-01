@@ -77,6 +77,13 @@ Limits of this delivery: the Shell and Engines packages are verified against the
 
 Limits of this delivery: the progress texts stay fixed in Spanish (the bilingual es/en output arrives in 1.9.0); `cloud on`, `sync-watch`, `sync` without the cloud on, and `sync --upgrade-format` show no progress.
 
+## Capabilities added in v1.8.4
+
+- A new folder is no longer blocked by another project's lost folder: `project-bind` is asked for only if the new folder might be that project (same name as its lost folder or, with the cloud on, the same Git remote); in any other case it registers itself. The `PROJECT_BINDING_REQUIRED` errors say which project it is (name and `id`) and the exact command to resolve it.
+- `scripts/release-smoke.sh <binary>` verifies the release with its own temporary `FORGE614_HOME` and `HOME` (it stops without writing anything if a `FORGE614_HOME` outside the system temporary directory is already set), and the release workflow runs it with each binary, in addition to `--help`.
+
+Limits of this delivery: a folder that was moved and renamed to another name, without `.forge614/project.json` and without a recognized remote, is no longer blocked: a new project is created. There is no `project-delete`: a project whose folder was lost still appears in `project-list`.
+
 ## Explicit non-goals
 
 - No Engram TUI or full-screen terminal control center.

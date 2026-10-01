@@ -59,6 +59,8 @@ project-bind --directory <path> --project-id <UUID>
 
 `project-rename` also updates the name inside the `.forge614/project.json` of every folder bound to that project on this machine; the `id` never changes. `project-bind` writes the file when it does not exist and returns `PROJECT_FILE_CONFLICT` if the folder already declares another project identity.
 
+A new folder registers itself on its first `session-start`, save or `init --json --directory` (reads, such as `startup-context`, never register it). Engram asks for `project-bind` only when that folder might be a project that already exists: it has the name of an existing project or the name of the registered folder of a project whose folders no longer exist (or, with the cloud on, the same Git remote). See [06. Troubleshooting](06-troubleshooting.md) for the messages.
+
 ## Groups and ecosystem
 
 Available since version 1.6.0. A **group** gathers related repositories that share memory (see [11. Scopes and Ecosystems](11-scopes-and-ecosystems.md)).
