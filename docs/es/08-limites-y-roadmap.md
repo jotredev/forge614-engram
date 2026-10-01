@@ -86,9 +86,9 @@ Límites de esta entrega: una carpeta movida y renombrada a otro nombre, sin `.f
 
 ## Capacidades incorporadas en v1.8.5
 
-- Buscar o leer el contexto en una carpeta que todavía no tiene proyecto ya no da `PROJECT_NOT_BOUND`: `memory_search` (scope `project` o `ecosystem`) responde `results: []`, y con scope `all` o sin scope, los resultados de `shared`; `memory_context` sin scope devuelve el contexto de `shared` y con scope `ecosystem` un contexto vacío de grupo. En los dos casos la respuesta trae `project: { status: "unbound", message }`, con una nota que explica que el proyecto se crea al iniciar sesión (`memory_session_start`) o al guardar. Las lecturas no registran la carpeta.
+- Buscar o leer el contexto en una carpeta que todavía no tiene proyecto ya no da `PROJECT_NOT_BOUND`: `memory_search` (scope `project` o `ecosystem`) responde `results: []`, y con scope `all` o sin scope, los resultados de `shared`; `memory_context` sin scope devuelve el contexto de `shared` y con scope `ecosystem` un contexto vacío de grupo. En los dos casos la respuesta trae `project: { status: "unbound", message }`, con la nota «Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.» Las lecturas no registran la carpeta.
 
-Límites de esta entrega: `memory_get`, `memory_history`, `memory_timeline`, `memory_session_end`, `memory_session_summary` y `memory_save` con scope `ecosystem` siguen dando `PROJECT_NOT_BOUND` en una carpeta sin proyecto, porque necesitan uno real. El manual de la memoria, las descripciones MCP y el formato 2 de los resultados no cambian (solo se agrega el campo `project` cuando la carpeta no tiene proyecto).
+Límites de esta entrega: `memory_get` y `memory_history` (salvo con scope `shared`), `memory_timeline`, `memory_session_end`, `memory_session_summary` y `memory_save` con scope `ecosystem` siguen dando `PROJECT_NOT_BOUND` en una carpeta sin proyecto, porque necesitan uno real. El manual de la memoria, las descripciones MCP y el formato 2 de los resultados de búsqueda y el formato 1 del contexto no cambian (solo se agrega el campo `project` cuando la carpeta no tiene proyecto).
 
 ## No objetivos explícitos
 

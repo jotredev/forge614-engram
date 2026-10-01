@@ -86,9 +86,9 @@ Limits of this delivery: a folder that was moved and renamed to another name, wi
 
 ## Capabilities added in v1.8.5
 
-- Searching or reading the context in a folder that has no project yet no longer gives `PROJECT_NOT_BOUND`: `memory_search` (scope `project` or `ecosystem`) answers `results: []`, and with scope `all` or no scope, the `shared` results; `memory_context` with no scope returns the `shared` context and with scope `ecosystem` an empty group context. In both cases the answer carries `project: { status: "unbound", message }`, a note explaining that the project is created when a session starts (`memory_session_start`) or on save. Reads do not register the folder.
+- Searching or reading the context in a folder that has no project yet no longer gives `PROJECT_NOT_BOUND`: `memory_search` (scope `project` or `ecosystem`) answers `results: []`, and with scope `all` or no scope, the `shared` results; `memory_context` with no scope returns the `shared` context and with scope `ecosystem` an empty group context. In both cases the answer carries `project: { status: "unbound", message }`, a note whose text is always in Spanish: «Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.» (it says there are no project or group memories, and that the project is created when a session starts or on save). Reads do not register the folder.
 
-Limits of this delivery: `memory_get`, `memory_history`, `memory_timeline`, `memory_session_end`, `memory_session_summary` and `memory_save` with scope `ecosystem` still give `PROJECT_NOT_BOUND` in a folder without a project, because they need a real one. The memory manual, the MCP descriptions and the format 2 of the results do not change (the `project` field is only added when the folder has no project).
+Limits of this delivery: `memory_get` and `memory_history` (except with scope `shared`), `memory_timeline`, `memory_session_end`, `memory_session_summary` and `memory_save` with scope `ecosystem` still give `PROJECT_NOT_BOUND` in a folder without a project, because they need a real one. The memory manual, the MCP descriptions and format 2 of the search results and format 1 of the context do not change (the `project` field is only added when the folder has no project).
 
 ## Explicit non-goals
 
