@@ -59,6 +59,8 @@ project-bind --directory <ruta> --project-id <UUID>
 
 `project-rename` también actualiza el nombre en el `.forge614/project.json` de cada carpeta vinculada a ese proyecto en esta máquina; el `id` nunca cambia. `project-bind` escribe el archivo si no existe y devuelve `PROJECT_FILE_CONFLICT` si la carpeta ya declara otra identidad de proyecto.
 
+Una carpeta nueva se registra sola en su primer `session-start`, guardado o `init --json --directory` (las lecturas, como `startup-context`, nunca la registran). Engram pide `project-bind` solo cuando esa carpeta podría ser un proyecto que ya existe: tiene el nombre de un proyecto existente o el de la carpeta registrada de un proyecto cuyas carpetas ya no existen (o, con la nube activada, su mismo remoto de Git). Consulta [06. Resolución de Problemas](06-resolucion-de-errores.md) para los mensajes.
+
 ## Grupos y ecosistema
 
 Disponible desde la versión 1.6.0. Un **grupo** reúne repositorios relacionados que comparten memoria (consulta [11. Ámbitos y Ecosistemas](11-ambitos-y-ecosistemas.md)).
