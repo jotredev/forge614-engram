@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.6
+
+Buscar en el tablero de grupo en un proyecto sin grupo ya no da error: devuelve una nota y cero resultados.
+
+- **Lecturas de orientación sin error:** en un proyecto ligado que no pertenece a ningún grupo, `memory_search` con scope `ecosystem` devuelve `results: []` y `memory_context` con scope `ecosystem` un contexto vacío de grupo. Las dos traen `ecosystem: { status: "none", message }` con la nota «Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind.»
+- **Sin cambios:** `memory_save`, `memory_get`, `memory_history` y `memory_session_summary` con scope `ecosystem` siguen dando `GROUP_REQUIRED`, igual que la CLI `search --scope ecosystem`; con scope `all`, `project` o `shared`, y en un proyecto que sí tiene grupo, no hay nota.
+
 ## 1.8.5
 
 Buscar en una carpeta sin proyecto ya no da error: devuelve una nota y solo lo de `shared` (nada de proyecto ni de grupo).
