@@ -84,6 +84,12 @@ Límites de esta entrega: los textos del avance están en español fijo (la sali
 
 Límites de esta entrega: una carpeta movida y renombrada a otro nombre, sin `.forge614/project.json` y sin remoto reconocido, ya no se bloquea: se crea un proyecto nuevo. No hay `project-delete`: un proyecto cuya carpeta se perdió sigue apareciendo en `project-list`.
 
+## Capacidades incorporadas en v1.8.5
+
+- Buscar o leer el contexto en una carpeta que todavía no tiene proyecto ya no da `PROJECT_NOT_BOUND`: `memory_search` (scope `project` o `ecosystem`) responde `results: []`, y con scope `all` o sin scope, los resultados de `shared`; `memory_context` sin scope devuelve el contexto de `shared` y con scope `ecosystem` un contexto vacío de grupo. En los dos casos la respuesta trae `project: { status: "unbound", message }`, con una nota que explica que el proyecto se crea al iniciar sesión (`memory_session_start`) o al guardar. Las lecturas no registran la carpeta.
+
+Límites de esta entrega: `memory_get`, `memory_history`, `memory_timeline`, `memory_session_end`, `memory_session_summary` y `memory_save` con scope `ecosystem` siguen dando `PROJECT_NOT_BOUND` en una carpeta sin proyecto, porque necesitan uno real. El manual de la memoria, las descripciones MCP y el formato 2 de los resultados no cambian (solo se agrega el campo `project` cuando la carpeta no tiene proyecto).
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.

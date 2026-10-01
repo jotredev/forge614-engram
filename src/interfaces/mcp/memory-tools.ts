@@ -17,6 +17,14 @@ export async function ecosystemTarget({memoryStore,projectDirectory}:ToolContext
   return {projectId:context.projectId,group:context.group};
 }
 
+/** Texto de la nota que acompaña a las lecturas de orientación (`memory_search`, `memory_context`) en una carpeta que todavía no tiene proyecto. */
+export const UNBOUND_PROJECT_MESSAGE="Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.";
+
+/** Campo `project` que se agrega a la respuesta de una lectura de orientación en una carpeta sin proyecto; mismo `status` "unbound" que usa `startup-context`. */
+export function unboundProjectNote():{status:"unbound";message:string} {
+  return {status:"unbound",message:UNBOUND_PROJECT_MESSAGE};
+}
+
 /** Da de alta las cinco herramientas de lectura y guardado de recuerdos sobre el `ToolContext` recibido. */
 export function registerMemoryTools(tools:ToolContext):void {
   const {register,safely,memoryStore,projectDirectory}=tools;
@@ -35,10 +43,11 @@ export function registerMemoryTools(tools:ToolContext):void {
     const selected = scope ?? "all";
     // El alcance shared no necesita proyecto vinculado: se busca directamente con projectId nulo.
     if (selected === "shared") return {format:2,results:memoryStore().searchPreviews(null,query,limit ?? 10,"shared")};
-    // Cualquier otro alcance (project, ecosystem o all) exige resolver primero el proyecto de la carpeta.
+    // Cualquier otro alcance (project, ecosystem o all) resuelve primero el proyecto de la carpeta.
     const directoryPath = await projectDirectory(directory);
     const context = resolveProjectContext(memoryStore(),directoryPath,false);
-    if (!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta todavía no está vinculada; guardar puede crearla o project-bind puede recuperarla.");
+    // Una carpeta sin proyecto no es un error: no tiene recuerdos de proyecto ni de grupo. Con scope all quedan los de shared; en ambos casos se agrega la nota y la lectura no registra la carpeta.
+    if (!context.projectId) return {format:2,results:selected === "all" ? memoryStore().searchPreviews(null,query,limit ?? 10,"shared") : [],project:unboundProjectNote()};
     return {format:2,results:memoryStore().searchPreviews(context.projectId,query,limit ?? 10,selected as SearchScope),...(context.notices?{notices:context.notices}:{})};
   }));
 

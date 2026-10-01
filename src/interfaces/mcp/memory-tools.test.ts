@@ -1,9 +1,40 @@
 /** Comprueba las herramientas MCP de `memory-tools.ts`: guardado, lectura, búsqueda e historial en cada alcance (project, shared, ecosystem). */
 import { expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FIELD_DESCRIPTIONS } from "../../modules/memory-protocol";
+import { resolveProjectContext } from "../../app";
 import { registerMemoryTools } from "./memory-tools";
+
+/** Texto exacto de la nota que acompaña a las lecturas de orientación en una carpeta sin proyecto (fijado a propósito, sin importarlo del código). */
+const UNBOUND_MESSAGE="Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.";
+
+/**
+ * En una carpeta sin proyecto, memory_search con scope project o ecosystem devuelve results [] más la nota; con scope all (o sin scope) devuelve los mismos
+ * resultados que scope shared más la nota; scope shared no cambia. Existe porque el manual de memoria manda buscar antes de iniciar sesión y eso no debe
+ * fallar con PROJECT_NOT_BOUND. Después de todo eso la carpeta sigue sin proyecto y sin .forge614 (leer nunca la registra); memory_get sigue exigiendo proyecto.
+ */
+test("memory_search in a folder without a project returns no project results and a note, and never registers the folder", async () => {
+  const h=await sdkHarness(registerMemoryTools);
+  try {
+    const shared=h.store.save({scope:"shared",projectId:null,title:"Shared orientation",content:"Global orientation fact",type:"fact"});
+    const note={status:"unbound",message:UNBOUND_MESSAGE};
+    expect((await h.call("memory_search",{query:"orientation",scope:"project"})).data).toEqual({format:2,results:[],project:note});
+    expect((await h.call("memory_search",{query:"orientation",scope:"ecosystem"})).data).toEqual({format:2,results:[],project:note});
+    const onlyShared=(await h.call("memory_search",{query:"orientation",scope:"shared"})).data;
+    expect(onlyShared).not.toHaveProperty("project");
+    expect(onlyShared.results.map((row:any)=>row.memory.id)).toEqual([shared.id]);
+    const ids=(data:any)=>data.results.map((row:any)=>row.memory.id);
+    const all=(await h.call("memory_search",{query:"orientation",scope:"all"})).data;
+    expect(ids(all)).toEqual([shared.id]);expect(all).toMatchObject({format:2,project:note});
+    const unscoped=(await h.call("memory_search",{query:"orientation"})).data;
+    expect(ids(unscoped)).toEqual([shared.id]);expect(unscoped).toMatchObject({format:2,project:note});
+    expect(resolveProjectContext(h.store,h.directory,false).projectId).toBeNull();
+    expect(h.store.listProjects()).toEqual([]);
+    expect(existsSync(join(h.directory,".forge614"))).toBe(false);
+    expect((await h.call("memory_get",{id:shared.id})).data.code).toBe("PROJECT_NOT_BOUND");
+  } finally {await h.close();}
+});
 
 // Al nivel 11 (inteligencia activa), memory_get añade marcas como "superseded" y un secreto detectado se rechaza con SECRET_REJECTED en vez de guardarse.
 test("memory_save passes metadata through and memory_get returns it with marks at level 11", async () => {
@@ -34,12 +65,12 @@ test("memory_save writes the ecosystem status note only from the group's source 
   } finally {await h.close();}
 });
 
-// Sin proyecto vinculado, memory_search falla con PROJECT_NOT_BOUND; una vez guardado el primer recuerdo, memory_get, memory_history y memory_search por scope project funcionan sobre esa versión.
+// Sin proyecto vinculado, memory_search ya no falla: devuelve 0 resultados con la nota de carpeta sin proyecto (antes daba PROJECT_NOT_BOUND; cambiada a propósito en 1.8.5); una vez guardado el primer recuerdo, memory_get, memory_history y memory_search por scope project funcionan sobre esa versión.
 test("memory handlers resolve projects, save revisions and expose owner-scoped previews and history", async () => {
   const h=await sdkHarness(registerMemoryTools);
   try {
     expect((await h.call("memory_current_project")).data).toMatchObject({projectId:null,source:"unbound"});
-    expect((await h.call("memory_search",{query:"decision"})).data.code).toBe("PROJECT_NOT_BOUND");
+    expect((await h.call("memory_search",{query:"decision"})).data).toEqual({format:2,results:[],project:{status:"unbound",message:UNBOUND_MESSAGE}});
     const saved=(await h.call("memory_save",{title:"Decision",content:"SQLite decision",type:"decision",topicKey:"storage",requestKey:"one",pinned:true})).data;
     expect(saved).toMatchObject({title:"Decision",content:"SQLite decision",version:1,scope:"project",pinned:true});
     expect(h.store.get(saved.projectId,saved.id)?.content).toBe("SQLite decision");
