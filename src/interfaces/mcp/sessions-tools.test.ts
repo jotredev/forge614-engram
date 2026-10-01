@@ -106,6 +106,8 @@ test("memory_session_start adds a readable sessionNotice fact only when previous
   } finally {setSystemTime(); await h.close();}
 });
 
+/** Texto exacto de la nota «sin grupo» de memory_context con scope ecosystem en un proyecto ligado sin grupo (fijado a propósito, sin importarlo del código). */
+const NO_GROUP_MESSAGE = "Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind.";
 /** Registra a la vez las herramientas de memoria y de sesión; lo usan las pruebas de este archivo que necesitan memory_save y memory_context/memory_session_summary juntos. */
 const both = (context: Parameters<typeof registerMemoryTools>[0]) => { registerMemoryTools(context); registerSessionTools(context); };
 /** Crea el primer recuerdo del proyecto y lo une a un grupo de ecosistema recién creado; lo usan las pruebas de scope ecosystem de este archivo. */
@@ -117,12 +119,12 @@ async function member(h: Awaited<ReturnType<typeof sdkHarness>>) {
   return { projectId: seed.projectId as string, group };
 }
 
-// memory_context con scope ecosystem exige un proyecto en un grupo (GROUP_REQUIRED antes de eso) y devuelve solo el bloque de ecosistema, sin la forma del contexto de proyecto.
-test("memory_context on the ecosystem scope needs a group and returns only its block", async () => {
+// memory_context con scope ecosystem en un proyecto sin grupo ya no da error: devuelve el contexto vacío de grupo con la nota ecosystem (cambiada a propósito en 1.8.6); una vez en un grupo, devuelve solo el bloque de ecosistema, sin la forma del contexto de proyecto.
+test("memory_context on the ecosystem scope returns an empty context with a note without a group and only its block with one", async () => {
   const h = await sdkHarness(both);
   try {
     await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" });
-    expect((await h.call("memory_context", { scope: "ecosystem" })).data.code).toBe("GROUP_REQUIRED");
+    expect((await h.call("memory_context", { scope: "ecosystem" })).data).toEqual({ format: 1, pinned: [], recent: [], summaries: [], omitted: { pinned: 0, recent: 0, summaries: 0 }, truncated: false, ecosystem: { status: "none", message: NO_GROUP_MESSAGE } });
     const { group } = await member(h);
     h.store.save({ scope: "ecosystem", projectId: null, groupId: group.id, title: "Grupo", content: "regla", type: "decision", pinned: true });
     const block = (await h.call("memory_context", { scope: "ecosystem" })).data;

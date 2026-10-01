@@ -25,6 +25,14 @@ export function unboundProjectNote():{status:"unbound";message:string} {
   return {status:"unbound",message:UNBOUND_PROJECT_MESSAGE};
 }
 
+/** Texto de la nota que acompaña a `memory_search` y `memory_context` con scope ecosystem cuando el proyecto está ligado pero no pertenece a ningún grupo. */
+export const NO_GROUP_MESSAGE="Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind.";
+
+/** Campo `ecosystem` que se agrega a la respuesta de una lectura de orientación en un proyecto sin grupo; mismo `status` "none" que usa `startup-context`. */
+export function noGroupNote():{status:"none";message:string} {
+  return {status:"none",message:NO_GROUP_MESSAGE};
+}
+
 /** Da de alta las cinco herramientas de lectura y guardado de recuerdos sobre el `ToolContext` recibido. */
 export function registerMemoryTools(tools:ToolContext):void {
   const {register,safely,memoryStore,projectDirectory}=tools;
@@ -48,6 +56,8 @@ export function registerMemoryTools(tools:ToolContext):void {
     const context = resolveProjectContext(memoryStore(),directoryPath,false);
     // Una carpeta sin proyecto no es un error: no tiene recuerdos de proyecto ni de grupo. Con scope all quedan los de shared; en ambos casos se agrega la nota y la lectura no registra la carpeta.
     if (!context.projectId) return {format:2,results:selected === "all" ? memoryStore().searchPreviews(null,query,limit ?? 10,"shared") : [],project:unboundProjectNote()};
+    // Un proyecto ligado sin grupo tampoco es un error en scope ecosystem: no tiene recuerdos de tablero. Se comprueba aquí y no en la capa SQLite, que sigue lanzando GROUP_REQUIRED a los demás llamadores (la CLI).
+    if (selected === "ecosystem" && !context.group) return {format:2,results:[],ecosystem:noGroupNote(),...(context.notices?{notices:context.notices}:{})};
     return {format:2,results:memoryStore().searchPreviews(context.projectId,query,limit ?? 10,selected as SearchScope),...(context.notices?{notices:context.notices}:{})};
   }));
 

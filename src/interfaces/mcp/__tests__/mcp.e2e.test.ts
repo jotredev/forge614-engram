@@ -102,6 +102,21 @@ test("searching a new folder without a project answers without an error and with
   expect(existsSync(join(project, ".forge614"))).toBe(false);
 }, 40000);
 
+/**
+ * En un proyecto ligado que no pertenece a ningún grupo, memory_search con scope ecosystem responde sin error y con la nota «sin grupo», sobre un servidor real
+ * por stdio con FORGE614_HOME temporal. Existe porque el manual manda buscar una vez por scope y ese caso daba GROUP_REQUIRED aunque no fuera un error real.
+ */
+test("searching the ecosystem scope in a project without a group answers without an error and with a note", async () => {
+  const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  const { client } = await connect({ cwd: project, userDirectory });
+  expect((await call(client, "memory_save", { directory: project, title: "Seed", content: "creates the project", type: "fact" })).isError).not.toBe(true);
+  const result = await call(client, "memory_search", { directory: project, query: "anything", scope: "ecosystem" });
+  expect(result.isError).not.toBe(true);
+  expect(data(result)).toEqual({ format: 2, results: [], ecosystem: { status: "none",
+    message: "Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind." } });
+}, 40000);
+
 // Sin raíces anunciadas y con el directorio de trabajo del proceso sin Git, memory_current_project falla en vez de tratar esa carpeta como proyecto implícito.
 test("a non-Git process cwd is not treated as an implicit non-Git project root", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
