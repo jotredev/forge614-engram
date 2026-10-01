@@ -86,6 +86,22 @@ test("init enables project bindings and MCP resolves one client root without cre
   expect(JSON.parse((await runCli(root, userDirectory, "project-list")).stdout)).toEqual([]);
 }, 40000);
 
+/**
+ * En una carpeta nueva (sin proyecto), memory_search con scope project responde sin error y con la nota de carpeta sin proyecto, sobre un servidor real por stdio
+ * con FORGE614_HOME temporal. Existe porque el error PROJECT_NOT_BOUND en esa búsqueda de orientación confundía al asistente; además comprueba que leer no registra la carpeta.
+ */
+test("searching a new folder without a project answers without an error and with a note", async () => {
+  const root = temporary(); const userDirectory = join(root, "user"); const project = temporary();
+  expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
+  const { client } = await connect({ cwd: root, userDirectory, roots: [project] });
+  const result = await call(client, "memory_search", { query: "anything", scope: "project" });
+  expect(result.isError).not.toBe(true);
+  expect(data(result)).toEqual({ format: 2, results: [], project: { status: "unbound",
+    message: "Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar." } });
+  expect(JSON.parse((await runCli(root, userDirectory, "project-list")).stdout)).toEqual([]);
+  expect(existsSync(join(project, ".forge614"))).toBe(false);
+}, 40000);
+
 // Sin raíces anunciadas y con el directorio de trabajo del proceso sin Git, memory_current_project falla en vez de tratar esa carpeta como proyecto implícito.
 test("a non-Git process cwd is not treated as an implicit non-Git project root", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
@@ -167,7 +183,10 @@ test("owner mismatch, unbound default search, multiple roots and oversized input
     directory: a, title: "Owned", content: "Only A", type: "fact",
   })) as { id: string };
   expect((await call(client, "memory_get", { directory: b, id: saved.id })).isError).toBe(true);
-  expect((await call(client, "memory_search", { directory: b, query: "Only" })).isError).toBe(true);
+  // Cambiada a propósito en 1.8.5: buscar desde la carpeta b (sin proyecto) ya no da error, pero sigue sin ver el recuerdo de a: 0 resultados y la nota.
+  const foreignSearch = await call(client, "memory_search", { directory: b, query: "Only" });
+  expect(foreignSearch.isError).not.toBe(true);
+  expect(data(foreignSearch)).toMatchObject({ format: 2, results: [], project: { status: "unbound" } });
   expect((await call(client, "memory_search", { directory: a, query: "x".repeat(501) })).isError).toBe(true);
   const invalid = await call(client, "memory_search", { directory: a, query: "Owned", unexpected: "SECRET_MARKER" });
   expect(invalid.isError).toBe(true);

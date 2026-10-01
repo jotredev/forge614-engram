@@ -22,11 +22,35 @@ test("session handlers start, summarize and close the selected project's convers
     expect(h.store.getSession(project.projectId,"chat")?.endedAt).not.toBeNull();
   } finally {await h.close();}
 });
-// memory_timeline usa la versión exacta del dueño (version:2 sin existir da error); memory_context con scope shared funciona sin proyecto vinculado.
+/** Texto exacto de la nota de carpeta sin proyecto (fijado a propósito, sin importarlo del código). */
+const UNBOUND_MESSAGE="Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.";
+
+/**
+ * En una carpeta sin proyecto, memory_context sin scope devuelve el contexto shared más la nota, y con scope ecosystem un contexto vacío de grupo más la nota;
+ * scope shared no cambia (sin nota). Existe porque el manual de memoria manda leer el contexto antes de iniciar sesión y eso no debe fallar. Las herramientas
+ * que necesitan un proyecto real (memory_session_end, memory_session_summary) siguen dando PROJECT_NOT_BOUND, y ninguna lectura registra la carpeta.
+ */
+test("memory_context in a folder without a project returns the shared context or an empty group context plus a note", async () => {
+  const h=await sdkHarness(registerSessionTools);
+  try {
+    const shared=h.store.save({scope:"shared",projectId:null,title:"Shared",content:"Global orientation",type:"fact",pinned:true});
+    const note={status:"unbound",message:UNBOUND_MESSAGE};
+    const sharedContext=(await h.call("memory_context",{scope:"shared"})).data;
+    expect(sharedContext).not.toHaveProperty("project");
+    expect(sharedContext.pinned.map((row:any)=>row.id)).toEqual([shared.id]);
+    expect((await h.call("memory_context")).data).toEqual({...sharedContext,project:note});
+    expect((await h.call("memory_context",{scope:"ecosystem"})).data).toEqual({format:1,pinned:[],recent:[],summaries:[],omitted:{pinned:0,recent:0,summaries:0},truncated:false,project:note});
+    expect((await h.call("memory_session_end",{sessionId:"chat"})).data.code).toBe("PROJECT_NOT_BOUND");
+    expect((await h.call("memory_session_summary",{sessionId:"chat",requestKey:"s",summary:{goal:"x",instructions:"",discoveries:"",accomplishments:"",nextSteps:"",files:[]}})).data.code).toBe("PROJECT_NOT_BOUND");
+    expect(h.store.listProjects()).toEqual([]);
+  } finally {await h.close();}
+});
+
+// memory_timeline usa la versión exacta del dueño (version:2 sin existir da error); memory_context con scope shared funciona sin proyecto vinculado y, sin scope, ya no da error: devuelve la nota de carpeta sin proyecto (antes daba PROJECT_NOT_BOUND; cambiada a propósito en 1.8.5).
 test("timeline uses the exact owner/version and context supports shared scope without a binding", async () => {
   const h=await sdkHarness(registerSessionTools);
   try {
-    expect((await h.call("memory_context")).data.code).toBe("PROJECT_NOT_BOUND");
+    expect((await h.call("memory_context")).data).toMatchObject({project:{status:"unbound",message:UNBOUND_MESSAGE}});
     const shared=h.store.save({scope:"shared",projectId:null,title:"Shared",content:"Global orientation",type:"fact",pinned:true});
     const context=await h.call("memory_context",{scope:"shared",compact:true,maxBytes:1024});
     expect(context.result.isError).not.toBe(true);

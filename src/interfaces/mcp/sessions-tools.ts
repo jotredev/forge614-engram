@@ -8,7 +8,14 @@ import { MemoryError } from "../../shared/errors";
 import { sessionNotice } from "../../modules/sessions";
 import { toolSchemas } from "./schemas";
 import type { ToolContext } from "./context";
-import { ecosystemTarget } from "./memory-tools";
+import { ecosystemTarget, unboundProjectNote } from "./memory-tools";
+import type { ContextResult } from "../../modules/search";
+
+/**
+ * Forma vacía de `contextForGroup` (`ContextResult`: formato 1, sin fijadas, recientes ni resúmenes, nada omitido ni truncado). `memory_context` con scope
+ * ecosystem la devuelve, junto con la nota `project`, cuando la carpeta todavía no tiene proyecto y por eso no tiene grupo.
+ */
+const EMPTY_GROUP_CONTEXT:ContextResult={format:1,pinned:[],recent:[],summaries:[],omitted:{pinned:0,recent:0,summaries:0},truncated:false};
 
 /** Da de alta las cinco herramientas de sesión y contexto sobre el `ToolContext` recibido. */
 export function registerSessionTools(tools:ToolContext):void {
@@ -66,11 +73,16 @@ export function registerSessionTools(tools:ToolContext):void {
     // Espera de arranque (D8): con nube prendida, baja y aplica lo nuevo con un tope de 1000 ms antes de leer; sin nube, vuelve enseguida sin conectar.
     await waitForCloud(store);
     const options={...(compact===undefined?{}:{compact}),...(maxBytes===undefined?{}:{maxBytes})};
-    // shared y ecosystem no dependen de resolver el proyecto de la carpeta; sin scope explícito, cae al contexto del proyecto (con su bloque de ecosistema si pertenece a un grupo).
+    // shared no depende de resolver el proyecto de la carpeta; sin scope explícito, cae al contexto del proyecto (con su bloque de ecosistema si pertenece a un grupo).
     if(scope==="shared") return store.context(null,options);
-    if(scope==="ecosystem") return store.contextForGroup((await ecosystemTarget(tools,directory)).group.id,options);
+    // En una carpeta sin proyecto, ecosystem devuelve el contexto vacío de grupo (EMPTY_GROUP_CONTEXT) más la nota; un proyecto sin grupo sigue dando GROUP_REQUIRED.
+    if(scope==="ecosystem") {
+      try {return store.contextForGroup((await ecosystemTarget(tools,directory)).group.id,options);}
+      catch(error) {if(error instanceof MemoryError&&error.code==="PROJECT_NOT_BOUND") return {...EMPTY_GROUP_CONTEXT,project:unboundProjectNote()}; throw error;}
+    }
     const context=resolveProjectContext(store,await projectDirectory(directory),false);
-    if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
+    // Sin proyecto, el contexto es el de shared más la nota (lo mismo que scope shared, sin registrar la carpeta).
+    if(!context.projectId) return {...store.context(null,options),project:unboundProjectNote()};
     const result=readProjectContext(store,context.projectId,options);
     return context.notices ? {...result,notices:context.notices} : result;
   }));
