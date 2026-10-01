@@ -84,6 +84,12 @@ Limits of this delivery: the progress texts stay fixed in Spanish (the bilingual
 
 Limits of this delivery: a folder that was moved and renamed to another name, without `.forge614/project.json` and without a recognized remote, is no longer blocked: a new project is created. There is no `project-delete`: a project whose folder was lost still appears in `project-list`.
 
+## Capabilities added in v1.8.6
+
+- Searching or reading the context with scope `ecosystem` in a bound project that belongs to no group no longer gives `GROUP_REQUIRED`: `memory_search` answers `results: []` and `memory_context` an empty group context. In both cases the answer carries `ecosystem: { status: "none", message }`, a note whose text is always in Spanish: «Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind.» (it says the project belongs to no group, so there are no group memories, and that it is bound to one with `forge614-engram group-bind`; the `status` is the same one the startup context already uses).
+
+Limits of this delivery: `memory_save`, `memory_get`, `memory_history` and `memory_session_summary` with scope `ecosystem` still give `GROUP_REQUIRED` (they save or read a specific memory), and so does the CLI `search --scope ecosystem`. With scope `all`, `project` or `shared`, and in a project that does belong to a group, nothing changes and no note is added; a folder without a project keeps the 1.8.5 `project` note. The memory manual, the MCP descriptions and format 2 of the results and format 1 of the context do not change (the `ecosystem` field is only added in this case).
+
 ## Capabilities added in v1.8.5
 
 - Searching or reading the context in a folder that has no project yet no longer gives `PROJECT_NOT_BOUND`: `memory_search` (scope `project` or `ecosystem`) answers `results: []`, and with scope `all` or no scope, the `shared` results; `memory_context` with no scope returns the `shared` context and with scope `ecosystem` an empty group context. In both cases the answer carries `project: { status: "unbound", message }`, a note whose text is always in Spanish: «Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.» (it says there are no project or group memories, and that the project is created when a session starts or on save). Reads do not register the folder.

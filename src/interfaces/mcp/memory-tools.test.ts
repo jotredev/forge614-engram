@@ -9,6 +9,9 @@ import { registerMemoryTools } from "./memory-tools";
 /** Texto exacto de la nota que acompaña a las lecturas de orientación en una carpeta sin proyecto (fijado a propósito, sin importarlo del código). */
 const UNBOUND_MESSAGE="Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.";
 
+/** Texto exacto de la nota que acompaña a memory_search con scope ecosystem en un proyecto ligado sin grupo (fijado a propósito, sin importarlo del código). */
+const NO_GROUP_MESSAGE="Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind.";
+
 /**
  * En una carpeta sin proyecto, memory_search con scope project o ecosystem devuelve results [] más la nota; con scope all (o sin scope) devuelve los mismos
  * resultados que scope shared más la nota; scope shared no cambia. Existe porque el manual de memoria manda buscar antes de iniciar sesión y eso no debe
@@ -147,16 +150,60 @@ test("ecosystem saves need a truthful groupIntent and a project that belongs to 
   } finally { await h.close(); }
 });
 
-// Un proyecto que no pertenece a ningún grupo no puede guardar, buscar, leer ni listar el historial en scope ecosystem: las cuatro herramientas devuelven GROUP_REQUIRED.
-test("a project outside any group cannot save, search or read the ecosystem scope", async () => {
+// Un proyecto que no pertenece a ningún grupo no puede guardar, leer ni listar el historial en scope ecosystem: esas tres herramientas devuelven GROUP_REQUIRED (guardan o leen un recuerdo concreto). memory_search ya no falla: devuelve 0 resultados con la nota ecosystem (cambiada a propósito en 1.8.6).
+test("a project outside any group cannot save or read the ecosystem scope, and searching it returns a note", async () => {
   const h = await sdkHarness(registerMemoryTools);
   try {
     await h.call("memory_save", { title: "Seed", content: "creates the project", type: "fact" });
     const intent = { groupIntent: "Applies to every repo" };
     expect((await h.call("memory_save", { title: "R", content: "c", type: "fact", scope: "ecosystem", ...intent })).data.code).toBe("GROUP_REQUIRED");
-    expect((await h.call("memory_search", { query: "anything", scope: "ecosystem" })).data.code).toBe("GROUP_REQUIRED");
+    expect((await h.call("memory_search", { query: "anything", scope: "ecosystem" })).data).toEqual({ format: 2, results: [], ecosystem: { status: "none", message: NO_GROUP_MESSAGE } });
     expect((await h.call("memory_get", { id: "x", scope: "ecosystem" })).data.code).toBe("GROUP_REQUIRED");
     expect((await h.call("memory_history", { id: "x", scope: "ecosystem" })).data.code).toBe("GROUP_REQUIRED");
+  } finally { await h.close(); }
+});
+
+/**
+ * En un proyecto ligado que no pertenece a ningún grupo, memory_search con scope all (o sin scope) sigue devolviendo sus resultados de proyecto y no trae
+ * el campo ecosystem. Existe para fijar que la nota de 1.8.6 se limita a scope ecosystem y no ensucia las búsquedas que ya funcionaban.
+ */
+test("searching all scopes in a project without a group keeps its project results and carries no ecosystem note", async () => {
+  const h = await sdkHarness(registerMemoryTools);
+  try {
+    const seed = (await h.call("memory_save", { title: "Orientation", content: "project orientation fact", type: "fact" })).data;
+    for (const args of [{ query: "orientation", scope: "all" }, { query: "orientation" }, { query: "orientation", scope: "project" }]) {
+      const found = (await h.call("memory_search", args)).data;
+      expect(found.results.map((row: any) => row.memory.id)).toEqual([seed.id]);
+      expect(found).not.toHaveProperty("ecosystem");
+    }
+  } finally { await h.close(); }
+});
+
+/**
+ * En un proyecto que SÍ pertenece a un grupo con un recuerdo de tablero guardado, memory_search con scope ecosystem lo encuentra y no trae el campo
+ * ecosystem. Existe como regresión: la nota «sin grupo» nunca debe aparecer para un proyecto miembro.
+ */
+test("searching the ecosystem scope in a project that belongs to a group finds the board memory and carries no note", async () => {
+  const h = await sdkHarness(registerMemoryTools);
+  try {
+    const { group } = await grouped(h);
+    const saved = (await h.call("memory_save", { title: "Board rule", content: "tablero despliegue", type: "decision", scope: "ecosystem", topicKey: "board", groupIntent: "Applies to every repo" })).data;
+    const found = (await h.call("memory_search", { query: "despliegue", scope: "ecosystem" })).data;
+    expect(found.results.map((row: any) => [row.memory.id, row.memory.groupId])).toEqual([[saved.id, group.id]]);
+    expect(found).not.toHaveProperty("ecosystem");
+  } finally { await h.close(); }
+});
+
+/**
+ * En una carpeta sin proyecto, memory_search con scope ecosystem conserva la respuesta de 1.8.5 (results [] más la nota project «unbound») y no trae el
+ * campo ecosystem. Existe para fijar que la nota «sin grupo» es solo del proyecto ligado sin grupo y no pisa la de carpeta sin proyecto.
+ */
+test("searching the ecosystem scope in a folder without a project keeps the unbound project note and carries no ecosystem note", async () => {
+  const h = await sdkHarness(registerMemoryTools);
+  try {
+    const data = (await h.call("memory_search", { query: "anything", scope: "ecosystem" })).data;
+    expect(data).toEqual({ format: 2, results: [], project: { status: "unbound", message: UNBOUND_MESSAGE } });
+    expect(data).not.toHaveProperty("ecosystem");
   } finally { await h.close(); }
 });
 

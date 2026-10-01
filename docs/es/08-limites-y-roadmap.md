@@ -84,6 +84,12 @@ Límites de esta entrega: los textos del avance están en español fijo (la sali
 
 Límites de esta entrega: una carpeta movida y renombrada a otro nombre, sin `.forge614/project.json` y sin remoto reconocido, ya no se bloquea: se crea un proyecto nuevo. No hay `project-delete`: un proyecto cuya carpeta se perdió sigue apareciendo en `project-list`.
 
+## Capacidades incorporadas en v1.8.6
+
+- Buscar o leer el contexto con scope `ecosystem` en un proyecto ligado que no pertenece a ningún grupo ya no da `GROUP_REQUIRED`: `memory_search` responde `results: []` y `memory_context` un contexto vacío de grupo. En los dos casos la respuesta trae `ecosystem: { status: "none", message }`, con la nota «Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind.» (el mismo `status` que ya usa el contexto de inicio).
+
+Límites de esta entrega: `memory_save`, `memory_get`, `memory_history` y `memory_session_summary` con scope `ecosystem` siguen dando `GROUP_REQUIRED` (guardan o leen un recuerdo concreto), igual que la CLI `search --scope ecosystem`. Con scope `all`, `project` o `shared`, y en un proyecto que sí pertenece a un grupo, no cambia nada ni se agrega nota; la carpeta sin proyecto conserva la nota `project` de 1.8.5. El manual de la memoria, las descripciones MCP y el formato 2 de los resultados y el formato 1 del contexto no cambian (solo se agrega el campo `ecosystem` en este caso).
+
 ## Capacidades incorporadas en v1.8.5
 
 - Buscar o leer el contexto en una carpeta que todavía no tiene proyecto ya no da `PROJECT_NOT_BOUND`: `memory_search` (scope `project` o `ecosystem`) responde `results: []`, y con scope `all` o sin scope, los resultados de `shared`; `memory_context` sin scope devuelve el contexto de `shared` y con scope `ecosystem` un contexto vacío de grupo. En los dos casos la respuesta trae `project: { status: "unbound", message }`, con la nota «Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.» Las lecturas no registran la carpeta.
