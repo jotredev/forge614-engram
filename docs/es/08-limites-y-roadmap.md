@@ -79,8 +79,8 @@ Límites de esta entrega: los textos del avance están en español fijo (la sali
 
 ## Capacidades incorporadas en v1.8.4
 
-- Una carpeta nueva ya no queda bloqueada por la carpeta perdida de otro proyecto: solo se pide `project-bind` si la carpeta nueva puede ser ese proyecto (mismo nombre que su carpeta perdida o, con la nube activada, el mismo remoto de Git); en cualquier otro caso se registra sola. Los errores `PROJECT_BINDING_REQUIRED` dicen qué proyecto es (nombre e `id`) y el comando exacto para resolverlo.
-- `scripts/release-smoke.sh <binario>` verifica la publicación con un `FORGE614_HOME` y un `HOME` temporales propios (se detiene sin escribir nada si ya hay un `FORGE614_HOME` fuera de la carpeta temporal del sistema) y lo corre el workflow de release con cada binario, además de `--help`.
+- Una carpeta nueva ya no queda bloqueada por la carpeta perdida de otro proyecto: solo se pide `project-bind` si la carpeta nueva puede ser ese proyecto (mismo nombre que su carpeta perdida o, con la nube activada, el mismo remoto de Git compartido con otro proyecto) o si ya existe un proyecto con el nombre de la carpeta (sin `.forge614/project.json` que la identifique); en cualquier otro caso se registra sola. Los errores `PROJECT_BINDING_REQUIRED` dicen qué proyecto es (nombre e `id`) y el comando exacto para resolverlo.
+- `scripts/release-smoke.sh <binario>` verifica la publicación con un `FORGE614_HOME` y un `HOME` temporales propios (se detiene con código 2 sin escribir en él si ya hay un `FORGE614_HOME` que no sea una carpeta existente dentro de la carpeta temporal del sistema; si está dentro de ella, lo ignora y usa el suyo; también se detiene con código 2 si falta el binario, y con código 1 en el primer caso que falle) y lo corre el workflow de release con cada binario, además de `--help`.
 
 Límites de esta entrega: una carpeta movida y renombrada a otro nombre, sin `.forge614/project.json` y sin remoto reconocido, ya no se bloquea: se crea un proyecto nuevo. No hay `project-delete`: un proyecto cuya carpeta se perdió sigue apareciendo en `project-list`.
 
