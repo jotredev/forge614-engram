@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.4
+
+Una carpeta nueva ya no queda bloqueada por la carpeta perdida de otro proyecto.
+
+- **Registro de carpetas nuevas:** una carpeta perdida de otro proyecto solo bloquea si la carpeta nueva puede ser ese proyecto (mismo nombre que su carpeta perdida o, con la nube activada, el mismo remoto de Git); si no, se registra sola. Una carpeta movida y renombrada, sin `.forge614/project.json` y sin remoto, ya no se bloquea.
+- **Errores que dicen qué hacer:** `PROJECT_BINDING_REQUIRED` nombra el proyecto (nombre e `id`) y trae el comando `project-bind` con la carpeta de trabajo.
+- **Verificación de publicación:** `scripts/release-smoke.sh` corre con un `FORGE614_HOME` y un `HOME` temporales, y el workflow de release lo ejecuta con cada binario.
+
 ## 1.8.3
 
 `sync` sube cada lote con una sola inserción en bloque y muestra su avance en la terminal.
