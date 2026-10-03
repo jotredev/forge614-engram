@@ -100,7 +100,7 @@ Limits of this delivery: `memory_get` and `memory_history` (except with scope `s
 
 - No Engram TUI or full-screen terminal control center.
 - No installed-AI detection, client selection, hooks, plugins, or MCP configuration writes.
-- No OpenCode, Antigravity, Cursor, Claude Code, Codex, or Gemini adapter catalogue in this product.
+- There is no AI client adapter catalogue in this product: detecting and configuring assistants is Forge614 Engines' job.
 - No Windows release or installer at this stage. Official release binaries currently target macOS and Linux.
 - No embeddings or cloud-only search. FTS5 and SQLite remain the primary local path.
 - No automatic creation or selection of projects during initialization.
@@ -111,7 +111,7 @@ Limits of this delivery: `memory_get` and `memory_history` (except with scope `s
 
 The `forge614-engram-memory` version `1` contract is available from release `v1.3.0` and can be inspected with `forge614-engram memory-protocol --json`. Its publication does not mean that an AI-client integration is already installed. Version 4 (since 1.7.0) is the memory-intelligence manual and the default stays at 1 until Engines accepts it.
 
-It does **not yet** install MCP, instructions, hooks, or plugins in Claude Code, Codex, or Cursor. Forge614 Engines will consume the public command and apply the protocol through each assistant's safe mechanism. Forge614 Shell will show a preview and request human confirmation. Engram does not configure AI clients directly.
+Engram does not install MCP, instructions, hooks, or plugins in assistants (today Claude Code and Codex): Forge614 Engines consumes the public command and applies the protocol through each assistant's safe mechanism. Forge614 Shell will show a preview and request human confirmation. Engram does not configure AI clients directly.
 
 PostgreSQL remains an optional replica synchronized explicitly through `sync` or `sync-watch`; this delivery does not add permanent automatic synchronization or a TUI.
 

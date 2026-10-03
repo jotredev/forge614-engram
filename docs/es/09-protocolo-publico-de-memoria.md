@@ -71,7 +71,7 @@ Nunca se guardan en Engram ni se incluyen en logs, errores, títulos, contenido,
 
 ## Límites aún no implementados
 
-El protocolo no instala MCP, instrucciones, hooks ni plugins en Claude Code, Codex o Cursor. Forge614 Engines consumirá este JSON e instalará el protocolo con el mecanismo seguro de cada asistente; Forge614 Shell mostrará una vista previa y pedirá confirmación humana. Engram no configura asistentes directamente.
+Engram no instala MCP, instrucciones, hooks ni plugins en los asistentes (hoy Claude Code y Codex): Forge614 Engines consume este JSON e instala el protocolo con el mecanismo seguro de cada asistente; Forge614 Shell mostrará una vista previa y pedirá confirmación humana. Engram no configura asistentes directamente.
 
 PostgreSQL sigue siendo una réplica opcional con sincronización explícita mediante `sync` o `sync-watch`. Esta entrega no agrega sincronización automática permanente hacia PostgreSQL ni una TUI.
 

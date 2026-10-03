@@ -50,7 +50,7 @@ Se inventaron para la **búsqueda semántica** (*búsqueda por significado*). Su
 
 ## 3. ¿Por qué los Embeddings son un Problema para un Programador?
 
-En desarrollo de software y en asistentes de código (Claude Code, Cursor, Codex), los embeddings introducen cinco dolores de cabeza:
+En desarrollo de software y en asistentes de código (Claude Code, Codex), los embeddings introducen cinco dolores de cabeza:
 
 1. **Pérdida de precisión quirúrgica (*Exact Keyword Loss*):** En programación no buscas poesía; buscas identificadores exactos. Si buscas el error `ERR_HTTP2_INVALID_STREAM`, un sistema con embeddings te devuelve artículos generales sobre "problemas de red" porque semánticamente "vibran parecido".<br>👉 **En Engram:** Coincidencia exacta de funciones, variables y errores.
 2. **Costo continuo:** Cada recuerdo y cada búsqueda requiere llamadas a APIs de pago. En miles de operaciones al mes, el gasto se acumula.<br>👉 **En Engram:** Costo <span color="green">**$0.00**</span>.

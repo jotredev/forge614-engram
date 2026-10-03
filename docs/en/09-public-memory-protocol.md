@@ -71,7 +71,7 @@ Never store in Engram, or include in logs, errors, titles, content, `topicKey`, 
 
 ## Not yet implemented
 
-The protocol does not install MCP, instructions, hooks, or plugins in Claude Code, Codex, or Cursor. Forge614 Engines will consume this JSON and install the protocol through each assistant's safe mechanism; Forge614 Shell will show a preview and request human confirmation. Engram does not configure AI clients directly.
+Engram does not install MCP, instructions, hooks, or plugins in assistants (today Claude Code and Codex): Forge614 Engines consumes this JSON and installs the protocol through each assistant's safe mechanism; Forge614 Shell will show a preview and request human confirmation. Engram does not configure AI clients directly.
 
 PostgreSQL remains an optional replica with explicit synchronization through `sync` or `sync-watch`. This delivery does not add permanent automatic PostgreSQL synchronization or a TUI.
 

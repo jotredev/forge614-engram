@@ -50,7 +50,7 @@ They were invented for **semantic search** (*meaning-based search*). Their advan
 
 ## 3. Why are Embeddings a Problem for a Programmer?
 
-In software development and AI code assistants (Claude Code, Cursor, Codex), embeddings introduce five critical headaches:
+In software development and AI code assistants (Claude Code, Codex), embeddings introduce five critical headaches:
 
 1. **Loss of surgical precision (*Exact Keyword Loss*):** In programming, you don't search for poetry; you search for exact identifiers. If you search for error `ERR_HTTP2_INVALID_STREAM`, a system with embeddings returns generic articles about "network issues" because semantically they "vibe similarly".<br>👉 **In Engram:** Exact match for functions, variables, and errors.
 2. **Continuous cost:** Every memory stored and queried requires paid API calls. Across thousands of operations a month, fees add up.<br>👉 **In Engram:** Cost is <span color="green">**$0.00**</span>.

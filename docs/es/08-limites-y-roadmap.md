@@ -100,7 +100,7 @@ Límites de esta entrega: `memory_get` y `memory_history` (salvo con scope `shar
 
 - No hay TUI ni centro de control de terminal en Engram.
 - No hay detección de IA instalada, selección de clientes, hooks, plugins ni escrituras de configuración MCP.
-- No existe catálogo de adaptadores de OpenCode, Antigravity, Cursor, Claude Code, Codex o Gemini en este producto.
+- No existe catálogo de adaptadores de clientes de IA en este producto: detectar y configurar asistentes es tarea de Forge614 Engines.
 - Aún no hay release ni instalador de Windows. Los binarios oficiales actuales son para macOS y Linux.
 - No hay embeddings ni búsqueda exclusiva en nube. FTS5 y SQLite siguen siendo la ruta local primaria.
 - La inicialización no crea ni selecciona proyectos automáticamente.
@@ -111,7 +111,7 @@ Límites de esta entrega: `memory_get` y `memory_history` (salvo con scope `shar
 
 El contrato `forge614-engram-memory` versión `1` está disponible desde la release `v1.3.0` y se puede inspeccionar con `forge614-engram memory-protocol --json`. Su publicación no significa que una integración de asistentes ya esté instalada. La versión 4 (desde 1.7.0) es el manual de la memoria inteligente y el valor por defecto sigue en 1 hasta que Engines la acepte.
 
-Todavía **no** instala MCP, instrucciones, hooks ni plugins en Claude Code, Codex o Cursor. Forge614 Engines será quien consuma el comando público y aplique el protocolo mediante el mecanismo seguro de cada asistente. Forge614 Shell mostrará una vista previa y pedirá confirmación humana. Engram no configura asistentes directamente.
+Engram no instala MCP, instrucciones, hooks ni plugins en los asistentes (hoy Claude Code y Codex): Forge614 Engines consume el comando público y aplica el protocolo mediante el mecanismo seguro de cada asistente. Forge614 Shell mostrará una vista previa y pedirá confirmación humana. Engram no configura asistentes directamente.
 
 PostgreSQL sigue siendo una réplica opcional, sincronizada explícitamente con `sync` o `sync-watch`; esta entrega no añade sincronización automática permanente ni una TUI.
 
