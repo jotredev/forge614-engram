@@ -198,7 +198,7 @@ El entorno de implementación fue macOS con Bun 1.3.8 y SQLite 3.51.0.
 Pendiente: sesiones, MCP, HTTP, embeddings, RRF, MMR, recall con presupuesto,
 feedback, relaciones de conocimiento, consolidación y exportación/importación.
 En particular, esta etapa usa memoria versionada y búsqueda textual; todavía
-no implementa la combinación semántica completa de Gentleman y Softmax.
+no implementa la combinación semántica completa de la referencia externa y otro producto externo.
 
 Estructura sugerida por idioma: README.md (índice y estado), getting-started.md,
 guide.md (recorrido), cli.md, sdk.md, internals.md, troubleshooting.md,

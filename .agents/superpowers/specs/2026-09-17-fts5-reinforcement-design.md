@@ -8,16 +8,16 @@ Entrega sin commit ni push; evidencia y prompt en docs/handoffs/11-fts5-reinforc
 
 ## Objetivo y límites
 
-Completar la búsqueda textual local inspirada en Gentleman Engram, sin embeddings,
+Completar la búsqueda textual local inspirada en la referencia externa, sin embeddings,
 sin modelos adicionales y sin revisión de contradicciones con IA. Una sola
 `~/.forge614/engram.db`, un `.env`, projectId estable y shared únicamente explícito.
 No cambiar las reglas de sustitución por tema, visibilidad ni propiedad.
 
-Referencia inspeccionada: Gentleman-Programming/engram, main
-2cdda9041c1bff86f6b769171fd407fa677027cb. No afirmar equivalencia con todas sus
-versiones publicadas. Pesos y fórmula verificados en `internal/store/store.go`.
+Referencia externa inspeccionada (identificación retirada de este registro).
+No afirmar equivalencia con todas sus versiones publicadas. Pesos y fórmula
+verificados en su código fuente.
 Esta entrega adapta la gestión de confirmaciones a nuestro historial y protocolo
-de sincronización; no copia automáticamente el modelo de datos de Gentleman.
+de sincronización; no copia automáticamente el modelo de datos de la referencia externa.
 
 ## Situación actual
 

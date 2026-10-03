@@ -1,10 +1,8 @@
 /**
  * Reglas sobre qué archivos son código de prueba (en lugar de producción) y sobre la exigencia
  * de que cada archivo de producción con lógica propia tenga su prueba hermana (`<nombre>.test.ts`
- * junto a él); usadas por `import-rules.ts`, `final-tree.test.ts`, `test-layout.test.ts` y
- * `check.ts` de `.superpowers/colocated-tests`. `auditTestLayout` usa `isTestSource` para no
- * exigir prueba hermana a las pruebas mismas; `check.ts` la usa para dejar fuera las pruebas al
- * buscar código de producción que cambió.
+ * junto a él); usadas por `import-rules.ts`, `final-tree.test.ts` y `test-layout.test.ts`.
+ * `auditTestLayout` usa `isTestSource` para no exigir prueba hermana a las pruebas mismas.
  */
 /** Dice si una ruta es código de prueba: vive bajo `tests/`, termina en `.test.ts`/`.spec.ts`, o
  * está dentro de una carpeta `__tests__`, `__fixtures__` o `__test-support__`. */

@@ -10,10 +10,9 @@ La búsqueda sigue siendo textual y local (SQLite FTS5). Esta entrega añade un
 refuerzo pequeño y explicable por revisiones y repeticiones, conserva historial
 y permite sincronizar las confirmaciones sin contarlas dos veces.
 
-Referencia inspeccionada: Gentleman-Programming/engram, commit
-`2cdda9041c1bff86f6b769171fd407fa677027cb`, en particular
-`internal/store/store.go`. La entrega adapta ideas a los contratos de Forge614;
-no afirma equivalencia completa con Gentleman ni con todas sus publicaciones.
+Referencia externa inspeccionada (identificación retirada de este registro).
+La entrega adapta ideas a los contratos de Forge614;
+no afirma equivalencia completa con ella ni con todas sus publicaciones.
 La ventana de deduplicación y los eventos inmutables son decisiones explícitas
 de nuestro diseño. No atribuirles resultados de calidad medidos que no existen.
 
@@ -292,7 +291,7 @@ Cubre todos estos puntos:
     No equiparar organización de pruebas con 100% de cobertura de ramas.
 12. Comandos y resultados exactos de verificación, revisiones y límites conocidos.
     Distingue cambios implementados de ideas futuras y evidencia de mejoras
-    de orden de cualquier mejora de calidad no medida. Cita Gentleman por el
+    de orden de cualquier mejora de calidad no medida. Cita la referencia externa por el
     commit inspeccionado y no prometas paridad total con versiones desconocidas.
 
 English requirements: deliver matching complete English documentation and Notion
