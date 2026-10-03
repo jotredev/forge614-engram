@@ -124,7 +124,7 @@ Cuando `pending` sea `0` en ambas, las dos Mac tienen la misma memoria. A partir
 
 ## MCP y trabajo diario con IA
 
-Inicia el servidor local por `stdio` con `forge614-engram mcp`. La detección y configuración de clientes de IA no pertenecen a Engram: son responsabilidad de Forge614 Engines y Shell. Tras configurar una integración mediante sus contratos públicos, puedes trabajar en ADE Orca, Claude Code, Codex u otro entorno nativo sin mantener Shell abierto.
+Inicia el servidor local por `stdio` con `forge614-engram mcp`. La detección y configuración de clientes de IA no pertenecen a Engram: son responsabilidad de Forge614 Engines y Shell. Tras configurar una integración mediante sus contratos públicos, puedes trabajar en Claude Code, Codex u otro entorno nativo sin mantener Shell abierto.
 
 ## Actualizar y desinstalar
 

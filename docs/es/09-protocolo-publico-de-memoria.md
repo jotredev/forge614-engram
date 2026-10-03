@@ -51,7 +51,7 @@ Además, `startupContext` anuncia `forge614-engram startup-context --directory <
 
 **Descripciones de campos.** `tools/list` publica una descripción por campo, salida del mismo manual: en `memory_save`, `directory`, `scope`, `globalIntent`, `groupIntent`, `title`, `content`, `type`, `topicKey`, `pinned`, `expectedVersion`, `requestKey`, `short`, `supersedes`, `affects`, `sessionId` y `sessionProjectId` (solo con ámbito `shared` y un `sessionId`: el `projectId` que devolvió `memory_session_start`); en `memory_search`, `query` y `scope`; en `memory_get`, `id`; y las mismas piezas en las demás herramientas que las usan (`directory`, `id`, `sessionId`, `summary`, `requestKey`, `expectedVersion` y `groupIntent`). Las validaciones no cambian.
 
-**Inmutabilidad y valor por defecto.** Las versiones 1, 2 y 3 quedan byte-idénticas: una prueba fija sus huellas SHA-256, ahora también la de la versión 3 (antes solo las de 1 y 2). El valor por defecto de `--protocol-version` sigue en 1 y cambiará solo cuando Engines acepte la versión 4. Desde el SDK, `memoryProtocol(4)` devuelve la versión 4.
+**Inmutabilidad y valor por defecto.** Las versiones 1, 2 y 3 quedan byte-idénticas: una prueba fija sus huellas SHA-256, ahora también la de la versión 3 (antes solo las de 1 y 2). El valor por defecto de `--protocol-version` sigue en 1 por compatibilidad; Forge614 Engines ya pide la versión 4 de forma explícita. Desde el SDK, `memoryProtocol(4)` devuelve la versión 4.
 
 ## Ciclo de vida para asistentes compatibles
 
@@ -69,9 +69,9 @@ Si Engram falla, el asistente puede seguir trabajando, pero informa el fallo rea
 
 Nunca se guardan en Engram ni se incluyen en logs, errores, títulos, contenido, `topicKey`, resúmenes o archivos alternos: contraseñas, tokens, claves privadas, credenciales ni cadenas de conexión que contengan credenciales.
 
-## Límites aún no implementados
+## Límites del protocolo
 
-Engram no instala MCP, instrucciones, hooks ni plugins en los asistentes (hoy Claude Code y Codex): Forge614 Engines consume este JSON e instala el protocolo con el mecanismo seguro de cada asistente; Forge614 Shell mostrará una vista previa y pedirá confirmación humana. Engram no configura asistentes directamente.
+Engram no instala MCP, instrucciones, hooks ni plugins en los asistentes (los que hoy soporta Engines: Claude Code y Codex): Forge614 Engines consume este JSON e instala el protocolo con el mecanismo seguro de cada asistente; Forge614 Shell muestra una vista previa y pide confirmación humana antes de aplicar nada. Engram no configura asistentes directamente.
 
 PostgreSQL sigue siendo una réplica opcional con sincronización explícita mediante `sync` o `sync-watch`. Esta entrega no agrega sincronización automática permanente hacia PostgreSQL ni una TUI.
 

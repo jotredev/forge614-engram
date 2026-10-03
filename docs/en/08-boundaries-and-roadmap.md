@@ -109,21 +109,21 @@ Limits of this delivery: `memory_get` and `memory_history` (except with scope `s
 
 ## Public memory protocol: integration status
 
-The `forge614-engram-memory` version `1` contract is available from release `v1.3.0` and can be inspected with `forge614-engram memory-protocol --json`. Its publication does not mean that an AI-client integration is already installed. Version 4 (since 1.7.0) is the memory-intelligence manual and the default stays at 1 until Engines accepts it.
+The `forge614-engram-memory` version `1` contract is available from release `v1.3.0` and can be inspected with `forge614-engram memory-protocol --json`. Its publication does not mean that an AI-client integration is already installed. Version 4 (since 1.7.0) is the memory-intelligence manual: Forge614 Engines already requests it explicitly with `--protocol-version 4`, and Engram's default stays at 1 for compatibility.
 
-Engram does not install MCP, instructions, hooks, or plugins in assistants (today Claude Code and Codex): Forge614 Engines consumes the public command and applies the protocol through each assistant's safe mechanism. Forge614 Shell will show a preview and request human confirmation. Engram does not configure AI clients directly.
+Engram does not install MCP, instructions, hooks, or plugins in assistants (the ones Engines supports today: Claude Code and Codex): Forge614 Engines consumes the public command and applies the protocol through each assistant's safe mechanism. Forge614 Shell shows a preview and asks for human confirmation before anything is applied. Engram does not configure AI clients directly.
 
 PostgreSQL remains an optional replica synchronized explicitly through `sync` or `sync-watch`; this delivery does not add permanent automatic synchronization or a TUI.
 
-`update --json` is an Engram machine interface, not evidence that Forge614 Shell already consumes it. Shell or another consumer must verify and integrate that contract separately. This interface is available from stable release `v1.4.0`.
+`update --json` is an Engram machine interface; Forge614 Shell consumes it in `forge614-shell update` to refresh Engram. Any other consumer must verify and integrate that contract separately. This interface is available from stable release `v1.4.0`.
 
-Likewise, `startup-context` enables pre-session host reads, but this branch does not prove that Shell or Engines already consume it. Engram exposes the read-only public contract; it does not configure AI clients or give them direct SQLite access.
+Likewise, `startup-context` enables pre-session host reads, and today Forge614 Engines (in the session-start hook) and Forge614 Shell (when a conversation opens) consume it. Engram exposes the read-only public contract; it does not configure AI clients or give them direct SQLite access.
 
 ## Operational model
 
 `forge614-engram init` remains a small terminal-only memory initialization flow for compatibility. It asks only about PostgreSQL synchronization and search reinforcement; it does not configure AI clients. `forge614-engram init --json` is the automation contract.
 
-Forge614 Shell is the Forge614-owned visual setup and lifecycle experience. After integrations have been configured through the appropriate public contracts, a person may continue daily work directly in ADE Orca, Claude Code, Codex, or another native environment. Shell does not need to remain open.
+Forge614 Shell is the Forge614-owned visual setup and lifecycle experience. After integrations have been configured through the appropriate public contracts, a person may continue daily work directly in Claude Code, Codex, or another native environment. Shell does not need to remain open.
 
 ## Roadmap dependencies
 

@@ -51,7 +51,7 @@ In addition, `startupContext` announces `forge614-engram startup-context --direc
 
 **Field descriptions.** `tools/list` publishes one description per field, output of the same manual: in `memory_save`, `directory`, `scope`, `globalIntent`, `groupIntent`, `title`, `content`, `type`, `topicKey`, `pinned`, `expectedVersion`, `requestKey`, `short`, `supersedes`, `affects`, `sessionId`, and `sessionProjectId` (only with scope `shared` and a `sessionId`: the `projectId` that `memory_session_start` returned); in `memory_search`, `query` and `scope`; in `memory_get`, `id`; and the same pieces in the other tools that use them (`directory`, `id`, `sessionId`, `summary`, `requestKey`, `expectedVersion`, and `groupIntent`). Validations do not change.
 
-**Immutability and default.** Versions 1, 2, and 3 remain byte-identical: a test pins their SHA-256 digests, now including version 3's (before, only 1 and 2). The default value of `--protocol-version` stays at 1 and will change only when Engines accepts version 4. From the SDK, `memoryProtocol(4)` returns version 4.
+**Immutability and default.** Versions 1, 2, and 3 remain byte-identical: a test pins their SHA-256 digests, now including version 3's (before, only 1 and 2). The default value of `--protocol-version` stays at 1 for compatibility; Forge614 Engines already requests version 4 explicitly. From the SDK, `memoryProtocol(4)` returns version 4.
 
 ## Lifecycle for compatible assistants
 
@@ -69,9 +69,9 @@ If Engram fails, the assistant may continue working, but it reports the actual f
 
 Never store in Engram, or include in logs, errors, titles, content, `topicKey`, summaries, or fallback files: passwords, tokens, private keys, credentials, or connection strings containing credentials.
 
-## Not yet implemented
+## Protocol boundaries
 
-Engram does not install MCP, instructions, hooks, or plugins in assistants (today Claude Code and Codex): Forge614 Engines consumes this JSON and installs the protocol through each assistant's safe mechanism; Forge614 Shell will show a preview and request human confirmation. Engram does not configure AI clients directly.
+Engram does not install MCP, instructions, hooks, or plugins in assistants (the ones Engines supports today: Claude Code and Codex): Forge614 Engines consumes this JSON and installs the protocol through each assistant's safe mechanism; Forge614 Shell shows a preview and asks for human confirmation before anything is applied. Engram does not configure AI clients directly.
 
 PostgreSQL remains an optional replica with explicit synchronization through `sync` or `sync-watch`. This delivery does not add permanent automatic PostgreSQL synchronization or a TUI.
 

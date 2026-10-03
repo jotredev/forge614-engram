@@ -2,11 +2,11 @@
 
 ## 1.8.7
 
-El repositorio se alinea con el ecosistema: sin menciones de productos externos, con su identidad de grupo versionada y con README, SECURITY y LICENSE.
+El repositorio se alinea con el ecosistema: sin referencias a los productos de referencia externos, con su identidad de grupo versionada y con README, SECURITY y LICENSE.
 
 - **Sin cambios de comportamiento:** el binario, los comandos, el servidor MCP y los esquemas de datos son los de 1.8.6.
-- **Manuales y pruebas:** se retira la mención de un cliente de IA no soportado de la prueba de desinstalación y de los manuales 08, 09 y de embeddings (es/en); los manuales 08 y 09 dejan claro que detectar y configurar asistentes es tarea de Forge614 Engines.
-- **Registros históricos:** se retiran las referencias a productos externos de los planes, especificaciones y entregas de `.agents/`, y se renombra la entrega 03 con un nombre neutro. Se retiran los restos de la reorganización de pruebas (`.superpowers/colocated-tests/`) y `.superpowers/` pasa a ignorarse.
+- **Manuales y pruebas:** se retira la mención de un cliente de IA no soportado de la prueba de desinstalación y de los manuales 08, 09 y de embeddings (es/en); los manuales 08 y 09 dejan claro que detectar y configurar asistentes es tarea de Forge614 Engines; los manuales 01, 08 y 09 se ponen al día (Shell ya muestra la vista previa, Engines ya pide la versión 4 del protocolo, Shell ya consume `update --json`, y Shell y Engines ya consumen `startup-context`), y los comentarios de `tests/architecture` dejan de apuntar a `.superpowers/colocated-tests`.
+- **Registros históricos:** se retiran las referencias a los productos de referencia externos de los planes, especificaciones y entregas de `.agents/`, y se renombra la entrega 03 con un nombre neutro. Se retiran los restos de la reorganización de pruebas (`.superpowers/colocated-tests/`) y `.superpowers/` pasa a ignorarse.
 - **Repositorio:** `.forge614/project.json` queda versionado con el grupo `forge614` (se quita su regla de `.gitignore`); se agregan `README.md`, `README.en.md`, `SECURITY.md` y `LICENSE`.
 
 ## 1.8.6

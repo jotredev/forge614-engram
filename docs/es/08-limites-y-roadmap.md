@@ -109,21 +109,21 @@ Límites de esta entrega: `memory_get` y `memory_history` (salvo con scope `shar
 
 ## Protocolo público de memoria: estado de integración
 
-El contrato `forge614-engram-memory` versión `1` está disponible desde la release `v1.3.0` y se puede inspeccionar con `forge614-engram memory-protocol --json`. Su publicación no significa que una integración de asistentes ya esté instalada. La versión 4 (desde 1.7.0) es el manual de la memoria inteligente y el valor por defecto sigue en 1 hasta que Engines la acepte.
+El contrato `forge614-engram-memory` versión `1` está disponible desde la release `v1.3.0` y se puede inspeccionar con `forge614-engram memory-protocol --json`. Su publicación no significa que una integración de asistentes ya esté instalada. La versión 4 (desde 1.7.0) es el manual de la memoria inteligente: Forge614 Engines ya la pide de forma explícita con `--protocol-version 4`, y el valor por defecto de Engram sigue en 1 por compatibilidad.
 
-Engram no instala MCP, instrucciones, hooks ni plugins en los asistentes (hoy Claude Code y Codex): Forge614 Engines consume el comando público y aplica el protocolo mediante el mecanismo seguro de cada asistente. Forge614 Shell mostrará una vista previa y pedirá confirmación humana. Engram no configura asistentes directamente.
+Engram no instala MCP, instrucciones, hooks ni plugins en los asistentes (los que hoy soporta Engines: Claude Code y Codex): Forge614 Engines consume el comando público y aplica el protocolo mediante el mecanismo seguro de cada asistente. Forge614 Shell muestra una vista previa y pide confirmación humana antes de aplicar nada. Engram no configura asistentes directamente.
 
 PostgreSQL sigue siendo una réplica opcional, sincronizada explícitamente con `sync` o `sync-watch`; esta entrega no añade sincronización automática permanente ni una TUI.
 
-`update --json` es una interfaz de máquina de Engram, no una señal de que Forge614 Shell ya la consuma. Shell u otro consumidor deberá comprobar e integrar ese contrato por separado. Esta interfaz está disponible desde la release estable `v1.4.0`.
+`update --json` es una interfaz de máquina de Engram; Forge614 Shell la consume en `forge614-shell update` para actualizar Engram. Cualquier otro consumidor debe comprobar e integrar ese contrato por separado. Esta interfaz está disponible desde la release estable `v1.4.0`.
 
-Del mismo modo, `startup-context` habilita una lectura previa por hosts, pero esta rama no demuestra que Shell o Engines ya la consuman. Engram expone el contrato público de solo lectura; no configura asistentes ni les da acceso directo a SQLite.
+Del mismo modo, `startup-context` habilita una lectura previa por hosts, y hoy la consumen Forge614 Engines (en el hook de inicio de sesión) y Forge614 Shell (al abrir una conversación). Engram expone el contrato público de solo lectura; no configura asistentes ni les da acceso directo a SQLite.
 
 ## Modelo operativo
 
 `forge614-engram init` permanece como un flujo pequeño de inicialización de memoria en terminal por compatibilidad. Solo pregunta sobre sincronización PostgreSQL y refuerzo de búsqueda; no configura clientes de IA. `forge614-engram init --json` es el contrato para automatización.
 
-Forge614 Shell es la experiencia visual propia de Forge614 para instalación y ciclo de vida. Después de configurar integraciones mediante los contratos públicos correspondientes, la persona puede trabajar diariamente desde ADE Orca, Claude Code, Codex u otro entorno nativo. Shell no necesita permanecer abierto.
+Forge614 Shell es la experiencia visual propia de Forge614 para instalación y ciclo de vida. Después de configurar integraciones mediante los contratos públicos correspondientes, la persona puede trabajar diariamente desde Claude Code, Codex u otro entorno nativo. Shell no necesita permanecer abierto.
 
 ## Dependencias de la hoja de ruta
 
