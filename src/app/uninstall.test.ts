@@ -53,11 +53,11 @@ test("PATH cleanup failure leaves the Engram product directory intact", async ()
   expect(existsSync(join(root,'keep'))).toBe(true);
 }));
 
-// Verifica que la desinstalación no toca la configuración de otro programa (aquí, la de Cursor).
+// Verifica que la desinstalación no toca la configuración de otro programa (aquí, la de otro cliente cualquiera).
 test("does not inspect or modify external client configuration during removal", async () => withHome(async home => {
-  const root=join(home,'.forge614','engram'),cursor=join(home,'.cursor');mkdirSync(root,{recursive:true});mkdirSync(cursor,{recursive:true});
+  const root=join(home,'.forge614','engram'),other=join(home,'.other-client');mkdirSync(root,{recursive:true});mkdirSync(other,{recursive:true});
   writeFileSync(join(root,'keep'),'memory');
-  const configuration=join(cursor,'mcp.json');writeFileSync(configuration,'{"mcpServers":{"forge614-engram":{"command":"edited","args":["mcp"]}}}\n');
+  const configuration=join(other,'mcp.json');writeFileSync(configuration,'{"mcpServers":{"forge614-engram":{"command":"edited","args":["mcp"]}}}\n');
   await uninstallEngram({confirmation:'REMOVE FORGE614-ENGRAM'},dependencies(home));
   expect(existsSync(root)).toBe(false);
   expect(existsSync(configuration)).toBe(true);
