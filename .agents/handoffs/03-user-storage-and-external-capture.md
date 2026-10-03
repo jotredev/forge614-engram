@@ -1,4 +1,4 @@
-# Prompt documental — base del usuario y guardado de Gentleman
+# Prompt documental — base del usuario y guardado de la referencia externa
 
 Actualiza `docs/es/`, `docs/en/` y las páginas correspondientes de Notion
 (solo si tienes acceso al destino autorizado). No cambies código. Este encargo
@@ -62,9 +62,9 @@ No afirmar que se creó una base real en el usuario durante nuestras pruebas:
 se usaron carpetas temporales y una carpeta de usuario simulada en los procesos
 de prueba; no se modificó HOME ni se escribieron recuerdos de prueba en su cuenta.
 
-## Respuesta comprensible: Gentleman no exige guardar manualmente
+## Respuesta comprensible: la referencia externa no exige guardar manualmente
 
-Gentleman proporciona instrucciones persistentes al asistente para que identifique
+La referencia externa proporciona instrucciones persistentes al asistente para que identifique
 decisiones, soluciones y descubrimientos y llame a mem_save sin esperar una petición
 explícita. Quien decide el aprendizaje es el propio asistente/modelo ya en uso.
 No se necesita un segundo modelo extractor en ese recorrido de mem_save.
@@ -77,15 +77,11 @@ el servidor busca secciones de aprendizajes y listas con reglas de texto.
 Esa captura concreta no es una lectura universal por IA de toda conversación.
 
 Referencias verificadas:
-- https://github.com/Gentleman-Programming/engram/blob/main/plugin/codex/skills/memory/SKILL.md
-- https://github.com/Gentleman-Programming/engram/blob/main/plugin/claude-code/hooks/hooks.json
-- https://github.com/Gentleman-Programming/engram/blob/main/plugin/claude-code/scripts/subagent-stop.sh
-- https://github.com/Gentleman-Programming/engram/blob/main/internal/store/store.go
-  Funciones ExtractLearnings y PassiveCapture.
+- (enlaces a la referencia externa retirados de este registro histórico)
 
-Diferencia conceptual con Softmax: su ruta de ingestión envía el texto recibido
+Diferencia conceptual con otro producto externo: su ruta de ingestión envía el texto recibido
 a un modelo extractor configurado en el servidor (Reflector) antes de procesar
-candidatos de memoria. Gentleman puede recibir un recuerdo ya seleccionado y
+candidatos de memoria. La referencia externa puede recibir un recuerdo ya seleccionado y
 redactado por el asistente. En ambos casos una integración entrega la información;
 no basta instalar el programa para observar cualquier chat.
 

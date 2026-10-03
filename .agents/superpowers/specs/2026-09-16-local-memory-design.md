@@ -3,7 +3,7 @@
 ## Objetivo y alcance
 
 Construir por pasos un sistema propio en TypeScript y Bun, inspirado en Engram
-de Gentleman y Softmax. Servirá a asistentes por MCP y a aplicaciones mediante
+de la referencia externa y otro producto externo. Servirá a asistentes por MCP y a aplicaciones mediante
 SDK y HTTP local. El usuario aprobó el diseño conversacional y pidió documentación
 detallada en español e inglés, separada en `docs/es/` y `docs/en/`, y publicada
 también en Notion. Lenguaje sencillo primero, término técnico entre paréntesis.

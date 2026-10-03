@@ -93,7 +93,7 @@ test("integration suites import implementations rather than other test suites", 
 });
 
 // Sobre el árbol real de `src/`, ningún archivo de producción con conducta propia debe estar sin
-// su prueba hermana: la migración a pruebas colocadas (ver `context.md`) debe seguir completa.
+// su prueba hermana: la migración a pruebas colocadas debe seguir completa.
 test("every current implementation has its own colocated suite", () => {
   const files=Object.fromEntries([...new Bun.Glob("src/**/*.ts").scanSync('.')].map(path=>[path,readFileSync(path,'utf8')]));
   expect(auditTestLayout(files)).toEqual([]);

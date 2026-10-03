@@ -80,7 +80,7 @@ También se desea que la memoria mejore con el uso: identificar conocimiento út
 revisar lo obsoleto, resolver contradicciones y recuperar mejor. Eso es evolución
 del conocimiento almacenado y su recuperación; no entrenamiento del modelo.
 Feedback, recuperación semántica, RRF/MMR y evaluación comparativa siguen pendientes.
-No afirmar que ya supera a Gentleman o Softmax. Esa superioridad debe medirse.
+No afirmar que ya supera a la referencia externa o otro producto externo. Esa superioridad debe medirse.
 
 ## Explicar qué significa MemoryStore
 

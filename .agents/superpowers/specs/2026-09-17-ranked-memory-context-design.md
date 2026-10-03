@@ -1,4 +1,4 @@
-# Entrega 09 — Recuperación progresiva inspirada en Gentleman Engram
+# Entrega 09 — Recuperación progresiva inspirada en la referencia externa
 
 Estado: diseño aprobado e implementado; revisiones y verificación final completadas el 2026-09-17.
 Base: main 193e89a, versión 0.5.0.
@@ -6,7 +6,7 @@ Rama existente: feat/ranked-memory-context. Sin commit ni push.
 
 ## 1. Cambio solicitado por el usuario
 
-El usuario pidió seguir el funcionamiento de Gentleman Engram. Esta revisión
+El usuario pidió seguir el funcionamiento de la referencia externa. Esta revisión
 sustituye la propuesta anterior de paquetes de recuerdos completos con una
 fórmula nueva de puntuación.
 
@@ -21,8 +21,8 @@ final y al almacenamiento; las vistas previas se identifican como parciales.
 
 ## 2. Referencia verificada, no equivalencia supuesta
 
-Referencia fijada: Gentleman-Programming/engram, commit
-ca12c5a00687b98a2c55635495f93f51a642fe79, consultado 2026-09-17.
+Referencia externa pública fijada, consultada 2026-09-17; su identificación
+se retiró de este registro.
 
 Su flujo documentado es búsqueda, vecindad cronológica de la misma sesión y
 lectura completa por ID. El código MCP usa SearchPreviewsContext; distingue
@@ -36,9 +36,7 @@ pero eso no convierte nuestro algoritmo de empaquetado en el suyo. No asumir
 que main coincide con una versión estable publicada.
 
 Fuentes:
-- https://github.com/Gentleman-Programming/engram/blob/ca12c5a00687b98a2c55635495f93f51a642fe79/internal/mcp/mcp.go
-- https://github.com/Gentleman-Programming/engram/blob/ca12c5a00687b98a2c55635495f93f51a642fe79/DOCS.md
-- https://github.com/Gentleman-Programming/engram/blob/ca12c5a00687b98a2c55635495f93f51a642fe79/docs/ARCHITECTURE.md
+- (enlaces a la referencia externa retirados de este registro histórico)
 
 ## 3. Qué se conserva de Forge614
 
@@ -80,7 +78,7 @@ vistas previas y una opción CLI explícita, sin truncar silenciosamente APIs pr
 
 ### Contextualizar: memory_timeline cuando exista información de sesión
 
-Para equivalencia real con Gentleman se requiere saber a qué sesión pertenece
+Para equivalencia real con la referencia externa se requiere saber a qué sesión pertenece
 cada recuerdo. Nuestra base actual NO tiene sesiones ni asociación memory-session.
 memory_history es historial de versiones de un recuerdo, no una sesión; no usarlo
 como sustituto ni llamar sesión a recuerdos cercanos por fecha.
@@ -91,7 +89,7 @@ mantenerse íntegros, sin asignarles una sesión inventada. Esa ampliación nece
 su propio diseño de datos antes de implementación.
 
 El usuario eligió incluir sesiones y timeline en esta entrega. Se implementan
-las tres capas; no afirmar equivalencia de todos los subsistemas de Gentleman.
+las tres capas; no afirmar equivalencia de todos los subsistemas de la referencia externa.
 Las sesiones no autorizan guardar transcripciones ni todos los prompts.
 
 ### Leer: memory_get
@@ -140,7 +138,7 @@ con store.ts. El handoff debe pedir corregirla con el código como fuente:
 
 Otro modelo actualizará docs/es, docs/en y Notion. Entregar prompt detallado,
 lenguaje sencillo con términos técnicos entre paréntesis, ejemplos y distinción
-entre comportamiento de Gentleman y adaptación propia. No commit/push.
+entre comportamiento de la referencia externa y adaptación propia. No commit/push.
 
 Sesiones y timeline quedan incluidos por aprobación del usuario. Después de
 revisar las decisiones técnicas siguientes se elaborará el plan; este documento
@@ -219,7 +217,7 @@ versión, entrada cronológica o proyecto parcialmente creados.
 SDK y CLI mantienen el guardado independiente: sin sessionId no se unen a una
 conversación MCP; en esquema 6 usan la sesión manual del proyecto. Un ID explícito
 permite asociación deliberada. Esto ofrece la misma vía de salida independiente
-que propone Gentleman ante varias sesiones runtime abiertas.
+que propone la referencia externa ante varias sesiones runtime abiertas.
 
 El resultado MCP indica sessionId y sessionSource (explicit, inferred o manual)
 para guardados de proyecto. En shared evitar revelar asociación de origen a otro
@@ -250,7 +248,7 @@ Esquema SQLite 6 aditivo sobre la estructura validada 5:
 
 Los IDs manuales son UUID generados una vez por proyecto/equipo y persistidos en
 local_manual_sessions. Distintos equipos pueden tener sesiones manuales distintas
-del mismo proyecto sin colisionar en inicio o contenido. Gentleman usa un nombre
+del mismo proyecto sin colisionar en inicio o contenido. La referencia externa usa un nombre
 manual-save por proyecto; nuestro ID es una adaptación necesaria para no confundir
 ese contenedor local con una conversación compartida al reconciliar snapshots.
 Ni kind manual ni local_manual_sessions autorizan inferir una sesión runtime.
@@ -323,7 +321,7 @@ maxBytes por defecto 16384, rango 1024–65536; validación estricta propia. Lim
 JSON completo del resultado, metadatos incluidos, no el envoltorio JSON-RPC.
 Eliminar filas completas de la presentación en orden de prioridad de sección
 antes de exceder el límite, devolver omitted/truncated; no emitir JSON cortado.
-Esta adaptación no copia el truncado de texto renderizado de Gentleman. No afecta
+Esta adaptación no copia el truncado de texto renderizado de la referencia externa. No afecta
 a originales, ni se presenta como presupuesto exacto de tokens del cliente.
 
 ## 11. Sincronización compatible y sin pérdida
@@ -395,7 +393,7 @@ No modificar docs/es, docs/en ni Notion; entregar handoff y prompt al finalizar.
 
 ## 13. Resultado de la revisión de paridad
 
-Patrón tomado de Gentleman: preview/timeline/full-get; sesiones explícitas con
+Patrón tomado de la referencia externa: preview/timeline/full-get; sesiones explícitas con
 resolución omitida cero/una/varias candidatas; filtro de directorio y siete días;
 contenedor manual separado para guardados sin sesión runtime identificada.
 
