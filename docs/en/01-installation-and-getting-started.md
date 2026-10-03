@@ -124,7 +124,7 @@ Once `pending` is `0` on both, the two Macs hold the same memory. From here on, 
 
 ## MCP and everyday AI work
 
-Start the local stdio server with `forge614-engram mcp`. AI-client detection and configuration are not Engram features; Forge614 Engines and Shell own them. Once an integration has been configured through their public contracts, work can continue in ADE Orca, Claude Code, Codex, or another native environment without keeping Shell open.
+Start the local stdio server with `forge614-engram mcp`. AI-client detection and configuration are not Engram features; Forge614 Engines and Shell own them. Once an integration has been configured through their public contracts, work can continue in Claude Code, Codex, or another native environment without keeping Shell open.
 
 ## Update and uninstall
 

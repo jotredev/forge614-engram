@@ -18,7 +18,7 @@ macOS / Linux:
 curl -fsSL https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh | bash
 ```
 
-Requisitos: Bash, `curl`, una utilidad SHA-256, `tar` y Node.js 22.19 o superior (el instalador también instala Forge614 Shell y Forge614 Engines). Si falta algo, no instala nada.
+Requisitos: Bash, `curl`, una utilidad SHA-256 (`shasum` o `sha256sum`), `tar` y Node.js 22.19 o superior (los pide Forge614 Shell, que el instalador instala junto con Forge614 Engines si aún no los tienes). Si falta alguno de estos requisitos, se detiene antes de bajar o crear nada y no instala nada.
 
 Al terminar, abre una terminal nueva y ejecuta el siguiente paso:
 ```bash
@@ -47,8 +47,8 @@ La lista completa está en la [referencia CLI](docs/es/03-referencia-cli.md).
 | 02 | [Recorrido guiado](docs/es/02-recorrido-guiado.md) | [Guided walkthrough](docs/en/02-guided-walkthrough.md) |
 | 03 | [Referencia CLI](docs/es/03-referencia-cli.md) | [CLI reference](docs/en/03-cli-reference.md) |
 | 04 | [SDK de TypeScript](docs/es/04-sdk-typescript.md) | [TypeScript SDK](docs/en/04-typescript-sdk.md) |
-| 05 | [Arquitectura interna y fórmulas](docs/es/05-arquitectura-interna-y-formulas.md) | [Internal architecture and formulas](docs/en/05-internal-architecture-and-formulas.md) |
-| 06 | [Resolución de errores](docs/es/06-resolucion-de-errores.md) | [Troubleshooting](docs/en/06-troubleshooting.md) |
+| 05 | [Arquitectura Interna y Búsqueda](docs/es/05-arquitectura-interna-y-formulas.md) | [Architecture and Search](docs/en/05-internal-architecture-and-formulas.md) |
+| 06 | [Resolución de Problemas](docs/es/06-resolucion-de-errores.md) | [Troubleshooting](docs/en/06-troubleshooting.md) |
 | 07 | [Glosario](docs/es/07-glosario.md) | [Glossary](docs/en/07-glossary.md) |
 | 08 | [Límites vigentes y hoja de ruta](docs/es/08-limites-y-roadmap.md) | [Current boundaries and roadmap](docs/en/08-boundaries-and-roadmap.md) |
 | 09 | [Protocolo público de memoria](docs/es/09-protocolo-publico-de-memoria.md) | [Public memory protocol](docs/en/09-public-memory-protocol.md) |
