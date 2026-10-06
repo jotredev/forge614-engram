@@ -68,8 +68,8 @@ test("removing the group from a file that established the membership removes the
   expect(groupOf(db, id)).toEqual(group);
 });
 
-// Verifica que una carpeta sin permiso de escritura no rompe la operación: solo genera un aviso PROJECT_FILE_NOT_WRITTEN.
-test("an unwritable folder degrades to a notice instead of failing the operation", () => {
+/** Comprueba la degradación de una carpeta sin escritura POSIX; Windows no expone este permiso mediante `chmod`. */
+test.skipIf(process.platform === "win32")("an unwritable folder degrades to a notice instead of failing the operation", () => {
   if (typeof process.getuid === "function" && process.getuid() === 0) return;
   const db = store(), folder = root(), project = db.createProject("Solo lectura");
   chmodSync(folder, 0o555);
