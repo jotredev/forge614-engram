@@ -8,6 +8,21 @@ permissions:
   contents: read
 
 jobs:
+  # Windows usa los binarios de PostgreSQL ya instalados por la imagen del ejecutor.
+  windows:
+    name: Windows checks
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Configurar los binarios de PostgreSQL para las pruebas
+        shell: bash
+        run: echo "FORGE614_TEST_POSTGRES_BIN=$PGBIN" >> "$GITHUB_ENV"
+      - run: bun test
   unix:
     name: Unix checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
