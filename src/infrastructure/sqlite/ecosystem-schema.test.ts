@@ -13,6 +13,7 @@ import { requireProjectBindings } from "./projects";
 import { sessionsEnabled } from "./sessions";
 import { exportSnapshot } from "./snapshots";
 import { enableEcosystem, enableProjectBindings, enableSearchReinforcement, enableSessionLifecycle, enableSynchronization, initialize, schemaState } from "./schema";
+import { expectPosixMode } from "../__test-support__/permissions";
 
 const FIXTURES = join(import.meta.dir, "../../../tests/fixtures/v1.5.3");
 const temporary: string[] = [];
@@ -151,8 +152,7 @@ test("enabling ecosystem twice changes nothing and writes a single backup", () =
   } finally { db.close(); }
 });
 
-// Comprueba que la copia de respaldo automática sea completa (igual a la base antes de migrar), esté
-// marcada con la versión de origen y solo pueda leerla su dueño (permisos restringidos).
+/** Comprueba que el respaldo automático es completo, conserva la versión de origen y es privado en POSIX. */
 test("the automatic backup is a private, complete copy of the pre-migration database", () => {
   const { db, directory } = fixture("schema-7.db");
   try {
@@ -161,7 +161,7 @@ test("the automatic backup is a private, complete copy of the pre-migration data
     const name = readdirSync(directory).find(entry => entry.includes("pre-ecosystem"))!;
     expect(name).toContain("v7");
     const path = join(directory, name);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expectPosixMode(path, 0o600);
     const backup = new Database(path, { readonly: true });
     try {
       expect(version(backup)).toBe(7);

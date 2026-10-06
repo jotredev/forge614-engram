@@ -10,6 +10,7 @@ import { copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSyn
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
+import { expectPosixMode } from "../infrastructure/__test-support__/permissions";
 import { MemoryWorkspace } from "./workspace";
 import { MemoryStore } from "./memory-store";
 
@@ -198,10 +199,10 @@ test("SQLite auxiliary file links are rejected before initialization", () => {
   }
 });
 
-// Verifica que el archivo de base de datos nuevo se crea con permisos privados (0o600), legible y escribible solo por su dueño.
+/** Comprueba que la base nueva tiene permisos privados POSIX (0o600) cuando el sistema los expone. */
 test("new workspace database is created with private file permissions", () => {
   const f = fixture(); f.workspace.init();
-  expect(statSync(f.db).mode & 0o777).toBe(0o600);
+  expectPosixMode(f.db, 0o600);
 });
 
 // Verifica el ciclo completo de grupos a través del workspace: crear, listar, ligar (dos veces, detectando si cambió), renombrar y desligar, además de los nombres inválidos o duplicados.

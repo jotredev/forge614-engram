@@ -4,6 +4,7 @@ import { chmodSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSy
 import { join } from "node:path";
 import { assertSafePath, guardedWrite, readSafeFile } from "./private-files";
 import { withDirectory } from "../__test-support__/fixtures";
+import { expectPosixMode } from "../__test-support__/permissions";
 
 type Equal<Left,Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Value>() => Value extends Right ? 1 : 2) ? true : false;
 type Expect<Condition extends true> = Condition;
@@ -15,14 +16,14 @@ test("assertSafePath exposes no checker bypass in its public API", () => {
   expect(signature).toBe(true);
 });
 
-// Tras una escritura guardada, el archivo debe quedar con el contenido nuevo, el respaldo debe conservar el contenido anterior exacto, los permisos deben ser privados y no debe quedar ningún archivo temporal.
+/** Comprueba que una escritura guardada conserva respaldo y contenido, y aplica permisos POSIX privados si están disponibles. */
 test("guarded replacement retains exact backup and private published bytes", () => withDirectory(dir => {
   const path = join(dir, "config"); writeFileSync(path, "old");
   const backups: string[] = [], published: string[] = [];
   guardedWrite({ path, before: "old", after: "new", kind: "config" }, p => backups.push(p), p => published.push(p));
   expect(readSafeFile(path)).toBe("new"); expect(published).toEqual([path]);
   expect(backups).toHaveLength(1); expect(readFileSync(backups[0]!, "utf8")).toBe("old");
-  if(process.platform!=="win32") expect(statSync(path).mode & 0o777).toBe(0o600);
+  expectPosixMode(path, 0o600);
   expect(readdirSync(dir).some(p => p.includes("-tmp-"))).toBe(false);
 }));
 

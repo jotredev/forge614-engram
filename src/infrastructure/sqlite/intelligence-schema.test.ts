@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { createProject } from "./projects";
 import { enableIntelligence, initialize, schemaState } from "./schema";
 import { save } from "./writes";
+import { expectPosixMode } from "../__test-support__/permissions";
 
 const FIXTURES = join(import.meta.dir, "../../../tests/fixtures");
 const temporary: string[] = [];
@@ -42,7 +43,7 @@ const version = (db: Database) => (db.query("PRAGMA user_version").get() as { us
 const words = (db: Database, match: string) =>
   (db.query("SELECT m.title FROM memories_words w JOIN memories m ON m.rowid = w.rowid WHERE memories_words MATCH ? ORDER BY m.title").all(match) as { title: string }[]).map(r => r.title);
 
-// Migrar del nivel 10 al 11 conserva cada fila, escribe un respaldo y deja las tablas nuevas vacías pero válidas.
+/** Comprueba que migrar de 10 a 11 conserva filas, deja tablas válidas y crea un respaldo privado en POSIX. */
 test("level 10 base migrates to 11: every row kept, backup written, new structure empty and valid", () => {
   const { db, file, directory } = fixture("v1.6.0/schema-10.db");
   try {
@@ -50,7 +51,7 @@ test("level 10 base migrates to 11: every row kept, backup written, new structur
     const result = enableIntelligence(db);
     expect(result.migrated).toBe(true);
     expect(result.backup).toStartWith(`${file}.v10-pre-intelligence-`);
-    expect(statSync(result.backup!).mode & 0o777).toBe(0o600);
+    expectPosixMode(result.backup!, 0o600);
     expect(version(db)).toBe(11);
     expect(schemaState(db)).toEqual({ base: 7, ecosystem: true, intelligence: true, cloud: false });
     expect(dump(db)).toEqual(before);
