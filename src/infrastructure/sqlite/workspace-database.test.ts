@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { openWorkspaceDatabase } from "./workspace-database";
 import { openDatabase } from "./connection";
 import { withDirectory } from "../__test-support__/fixtures";
+import { expectPosixMode } from "../__test-support__/permissions";
 
-// Comprueba que sin permiso de crear falle en vez de inventar la base, y que al crearla quede con permisos 0o600 (solo el dueño lee y escribe).
+/** Comprueba que sin crear falla y que una base nueva queda privada en POSIX sin reemplazar una ausente. */
 test("workspace creation produces private SQLite storage and never replaces a missing configured database", () => withDirectory(dir => {
   const path = join(dir, "db");
   expect(() => openWorkspaceDatabase(path, false, false, openDatabase)).toThrow(expect.objectContaining({ code: "DATABASE_MISSING" }));
@@ -14,7 +15,7 @@ test("workspace creation produces private SQLite storage and never replaces a mi
   const db = openWorkspaceDatabase(path, true, false, openDatabase);
   try { expect(db.query("SELECT count(*) AS n FROM projects").get()).toEqual({ n: 0 }); }
   finally { db.close(); }
-  expect(statSync(path).mode & 0o777).toBe(0o600);
+  expectPosixMode(path, 0o600);
 }));
 
 // Comprueba que un enlace simbólico (symlink) puesto como archivo auxiliar (-wal) se rechace antes de crear la base principal.

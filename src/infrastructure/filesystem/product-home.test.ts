@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withDirectory } from "../__test-support__/fixtures";
+import { expectPosixMode } from "../__test-support__/permissions";
 import { EngramProductHome } from "./product-home";
 import { MemoryError } from "../../shared/errors";
 
@@ -47,7 +48,7 @@ test("rejects a destination conflict without moving any legacy file", () => with
   expect(readFileSync(join(product, "engram.db"), "utf8")).toBe("different");
 }));
 
-// `prepare` no debe modificar los permisos del padre compartido, solo los de la carpeta propia de Engram.
+/** Comprueba que `prepare` conserva el padre compartido y restringe la carpeta propia de Engram. */
 test("keeps the shared Forge614 parent permissions unchanged while securing only Engram", () => withDirectory(directory => {
   const { parent, product, home } = fixture(directory);
   mkdirSync(join(parent, "shell"), { recursive: true, mode: 0o755 });
@@ -59,7 +60,7 @@ test("keeps the shared Forge614 parent permissions unchanged while securing only
   expect(home.root).toBe(product);
   expect(existsSync(product)).toBe(true);
   expect(statSync(parent).mode & 0o777).toBe(0o755);
-  expect(statSync(product).mode & 0o777).toBe(0o700);
+  expectPosixMode(product, 0o700);
   expect(readFileSync(join(parent, "shell", "keep"), "utf8")).toBe("unchanged");
 }));
 

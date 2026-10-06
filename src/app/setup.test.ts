@@ -9,6 +9,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
+import { expectPosixMode } from "../infrastructure/__test-support__/permissions";
 import { MemoryWorkspace } from "./workspace";
 import { runSetup, type SetupIO } from "./setup";
 import { legacyConfiguredWorkspace } from "../../tests/fixtures/legacy-workspace";
@@ -41,7 +42,7 @@ test("setup cancellation leaves a fresh workspace absent", async () => {
   }
 });
 
-// Verifica que una carpeta de espacio de trabajo ya existente con permisos abiertos se restringe a 0o700 antes de preguntar nada, sin crear ni configuración ni base.
+/** Comprueba que una carpeta existente se restringe a 0o700 antes de preguntar, sin crear configuración ni base. */
 test("setup automatically restricts an existing user-owned workspace directory before prompting", async () => {
   const { config } = fixture();
   mkdirSync(config.root, { mode: 0o755 });
@@ -49,7 +50,7 @@ test("setup automatically restricts an existing user-owned workspace directory b
 
   expect(await runSetup(conversation(["q"]).io, config)).toEqual({ cancelled: true });
 
-  expect(statSync(config.root).mode & 0o777).toBe(0o700);
+  expectPosixMode(config.root, 0o700);
   expect(existsSync(join(config.root, ".env"))).toBe(false);
   expect(existsSync(config.databasePath)).toBe(false);
 });

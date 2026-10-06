@@ -4,6 +4,7 @@ import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorkspaceConfig } from "../../infrastructure/filesystem/workspace-config";
+import { expectPosixMode } from "../__test-support__/permissions";
 
 const dirs: string[] = [];
 function fixture() {
@@ -19,13 +20,13 @@ test("missing config inspection does not create files", () => {
   expect(() => f.config.read()).toThrow(); expect(existsSync(f.root)).toBe(false);
 });
 
-// Configurar PostgreSQL debe quedar global (no por proyecto) y rechazar un reemplazo con una huella `revision` desactualizada, sin tocar el archivo.
+/** Comprueba que PostgreSQL queda global y rechaza una revisión obsoleta sin cambiar el archivo. */
 test("PostgreSQL synchronization config stays global and rejects stale replacements", () => {
   const f=fixture();f.config.save();
   const revision=f.config.revision();
   f.config.configurePostgres("postgresql://u:SECRET@127.0.0.1/db?sslmode=disable",revision);
   expect(f.config.read()).toEqual({storage:"sqlite",postgresUrl:"postgresql://u:SECRET@127.0.0.1/db?sslmode=disable"});
-  expect(statSync(f.path).mode&0o777).toBe(0o600);
+  expectPosixMode(f.path, 0o600);
   const before=readFileSync(f.path);
   expect(()=>f.config.configurePostgres(null,revision)).toThrow();
   expect(readFileSync(f.path)).toEqual(before);
@@ -74,13 +75,13 @@ test("configurePostgres(null, ..., id) drops the URL but keeps the given id; the
   expect(f.config.read()).toEqual({ storage: "sqlite", postgresUrl: "postgresql://u@127.0.0.1/db?sslmode=disable", installationId: id });
 });
 
-// La configuración es única por instalación: no debe guardar identidad de proyecto ni una ruta de base de datos propia de un proyecto.
+/** Comprueba que la configuración global es única y conserva permisos POSIX privados si están disponibles. */
 test("one private config contains no project identity or project-specific database path", () => {
   const f = fixture(); f.config.save();
   expect(f.config.read()).toEqual({ storage: "sqlite" });
   expect(readdirSync(f.root)).toEqual([".env"]);
-  expect(statSync(f.root).mode & 0o777).toBe(0o700);
-  expect(statSync(f.path).mode & 0o777).toBe(0o600);
+  expectPosixMode(f.root, 0o700);
+  expectPosixMode(f.path, 0o600);
   expect(f.config.databasePath).toBe(join(f.root, "engram.db"));
 });
 
