@@ -6,7 +6,7 @@
  * fuera de esas pruebas.
  */
 import ts from "typescript";
-import { dirname, posix, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { isTestSource } from "./test-layout";
 
 // Cada archivo de `src/` pertenece como mucho a una de estas piezas (o a ninguna, fuera de `src/`).
@@ -52,7 +52,7 @@ function resolveLocal(from: string, specifier: string, files: Record<string,stri
   const host:ts.ModuleResolutionHost={
     fileExists:path=>absoluteFiles.has(resolve(path))||ts.sys.fileExists(path),
     readFile:path=>{const virtual=absoluteFiles.get(resolve(path));return virtual===undefined?ts.sys.readFile(path):files[virtual];},
-    directoryExists:path=>[...absoluteFiles.keys()].some(file=>file.startsWith(resolve(path)+posix.sep))||(ts.sys.directoryExists?.(path)??false),
+    directoryExists:path=>[...absoluteFiles.keys()].some(file=>file.startsWith(resolve(path)+sep))||(ts.sys.directoryExists?.(path)??false),
     realpath:path=>path,
     getCurrentDirectory:()=>root,
   };

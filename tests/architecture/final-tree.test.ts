@@ -9,12 +9,10 @@ import { readFileSync } from "node:fs";
 import { auditImports } from "./import-rules";
 import { isTestSource } from "./test-layout";
 
-// Bajo `src/` solo deben quedar dos archivos sueltos (no de prueba) a un solo nivel de
-// profundidad: `cli.ts` e `index.ts`; todo lo demás debe vivir dentro de una carpeta de capa. El
-// árbol real, además, no debe tener ninguna infracción de `auditImports` (ni siquiera un ciclo).
+/** Comprueba los dos archivos raíz de `src` con separadores de ruta portables y audita sus importaciones. */
 test("the actual production tree has only stable root entries and respects all boundaries", () => {
   const paths = [...new Bun.Glob("src/**/*.ts").scanSync(".")];
-  expect(paths.filter(path => !isTestSource(path) && path.split("/").length === 2).sort()).toEqual(["src/cli.ts", "src/index.ts"]);
+  expect(paths.filter(path => !isTestSource(path) && path.split(/[\\/]/).length === 2).sort()).toEqual(["src/cli.ts", "src/index.ts"]);
   expect(auditImports(Object.fromEntries([...paths, "package.json"].map(path => [path, readFileSync(path, "utf8")])))).toEqual([]);
 });
 
