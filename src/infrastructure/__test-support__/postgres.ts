@@ -6,6 +6,7 @@
  * `src/infrastructure/postgres/replica.test.ts`.
  */
 import { mkdtempSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,11 +25,9 @@ export type PostgresCluster =
  * @throws Error con el mensaje de error estándar del proceso, o indicando que se agotó el tiempo límite.
  */
 function command(bin: string, name: string, args: string[]) {
-  const result = Bun.spawnSync([join(bin, name), ...args], {
-    stdout: "pipe", stderr: "pipe", timeout: postgresTestTimeoutMs,
-  });
-  if (result.success) return;
-  const detail = result.exitedDueToTimeout ? `timed out after ${postgresTestTimeoutMs}ms` : result.stderr.toString().trim();
+  const result = spawnSync(join(bin, name), args, { encoding: "utf8", timeout: postgresTestTimeoutMs });
+  if (result.status === 0) return;
+  const detail = result.error?.message ?? result.stderr?.trim();
   throw new Error(`${name} ${detail || "failed"}`);
 }
 
