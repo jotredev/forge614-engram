@@ -1,0 +1,2 @@
+# En Windows Git convierte los finales de línea a CRLF al descargar, y las pruebas y scripts esperan LF.
+* text=auto eol=lf
