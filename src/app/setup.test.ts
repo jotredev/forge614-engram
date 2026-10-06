@@ -55,7 +55,7 @@ test("setup automatically restricts an existing user-owned workspace directory b
   expect(existsSync(config.databasePath)).toBe(false);
 });
 
-// Verifica que sin elegir PostgreSQL se inicializa el almacenamiento global sin crear ningún proyecto, y que la base nueva ya reporta el refuerzo activado sin haber preguntado por él.
+/** Comprueba que SQLite inicializa el almacenamiento global sin proyecto y publica su ruta con separadores portables. */
 test("setup defaults to no PostgreSQL and initializes global storage without a project", async () => {
   const { config, workspace } = fixture();
   // La base nueva nace ya en el esquema 11: no se pregunta por el refuerzo, y lo reporta activado desde el principio.
@@ -64,7 +64,7 @@ test("setup defaults to no PostgreSQL and initializes global storage without a p
   expect(questions).toHaveLength(2);
   expect(workspace.listProjects()).toEqual([]);
   expect(readFileSync(join(config.root, ".env"), "utf8")).toBe('FORMAT_VERSION="2"\nSTORAGE="sqlite"\n');
-  expect(output.join("\n")).toContain(config.databasePath);
+  expect(output.join("\n").replaceAll("\\", "/")).toContain(config.databasePath.replaceAll("\\", "/"));
   expect(output.join("\n")).toContain("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
   const store = workspace.open(true);
   try { expect(store.reinforcementEnabled()).toBe(true); }
