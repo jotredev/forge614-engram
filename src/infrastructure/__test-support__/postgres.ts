@@ -33,7 +33,8 @@ function command(bin: string, name: string, args: string[]) {
 
 /**
  * Levanta un clúster de PostgreSQL desechable, solo accesible por loopback (`127.0.0.1`), en una carpeta
- * temporal: crea la base con `initdb` y la arranca con `pg_ctl` en un puerto libre elegido al vuelo.
+ * temporal: crea la base con `initdb`, la arranca con `pg_ctl` en un puerto libre y confirma con
+ * `pg_isready` que acepta conexiones antes de exponerla a la integración.
  * @param bin Carpeta de binarios de PostgreSQL a usar; por defecto, `FORGE614_TEST_POSTGRES_BIN`.
  * @returns Un {@link PostgresCluster} con sus datos de conexión si se levantó, o con el motivo por el que
  * no se pudo levantar (binario no configurado, o cualquier fallo al inicializar o arrancar), sin lanzar en
@@ -49,6 +50,7 @@ export function startPostgresCluster(bin = process.env.FORGE614_TEST_POSTGRES_BI
     const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
     const port = listener.port; listener.stop(true);
     command(bin, "pg_ctl", ["-D", join(directory, "data"), "-l", join(directory, "log"), "-o", `-h 127.0.0.1 -p ${port} -k ${directory}`, "-w", "start"]);
+    command(bin, "pg_isready", ["-h", "127.0.0.1", "-p", String(port), "-U", "postgres", "-t", "5"]);
     started = true;
     return { available: true, directory, url: `postgresql://postgres@127.0.0.1:${port}/postgres?sslmode=disable`, bin };
   } catch (error) {
