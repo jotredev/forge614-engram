@@ -1,6 +1,6 @@
 /** Comprueba que `assertSafePath` no permite atajos por tipos y que `guardedWrite`/`readSafeFile` protegen bytes y respaldos. */
 import { expect, test } from "bun:test";
-import { chmodSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { assertSafePath, guardedWrite, readSafeFile } from "./private-files";
 import { withDirectory } from "../__test-support__/fixtures";
@@ -33,4 +33,30 @@ test("stale preview and symlink reads fail without changing target bytes", () =>
   const link = join(dir, "link"); symlinkSync(path, link);
   expect(() => readSafeFile(link)).toThrow(expect.objectContaining({ code: "UNSAFE_PATH" }));
   expect(readFileSync(path, "utf8")).toBe("external"); expect(readdirSync(dir).sort()).toEqual(["config", "link"]);
+}));
+
+/**
+ * En Windows, como el sistema no devuelve permisos de grupo y otros comparables a POSIX,
+ * una carpeta padre con permisos 0o777 no causa que la ruta se rechace por considerarse
+ * escribible por otros usuarios.
+ */
+test("Windows platform accepts 0o777 parent directories because group permissions are not reported", () => withDirectory(dir => {
+  const realDir = realpathSync(dir);
+  const path = join(realDir, "config");
+  writeFileSync(path, "content");
+  chmodSync(realDir, 0o777);
+
+  if (process.platform !== "win32") {
+    expect(() => assertSafePath(path)).toThrow(expect.objectContaining({ code: "UNSAFE_PATH" }));
+  }
+
+  const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  try {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    expect(() => assertSafePath(path)).not.toThrow();
+  } finally {
+    if (originalPlatformDescriptor) {
+      Object.defineProperty(process, "platform", originalPlatformDescriptor);
+    }
+  }
 }));

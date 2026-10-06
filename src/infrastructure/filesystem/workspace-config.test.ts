@@ -139,3 +139,24 @@ test("unsupported backends, legacy fields and malformed config fail without echo
     expect(() => f.config.save()).toThrow(); expect(readFileSync(f.path,"utf8")).toBe(text);
   }
 });
+
+/**
+ * En Windows, como el sistema no devuelve permisos de grupo y otros comparables a POSIX, una
+ * configuración guardada se lee aunque el sistema de archivos indique un modo 0o666 y la carpeta 0o777,
+ * siempre que sea propiedad del usuario actual.
+ */
+test("Windows platform accepts open filesystem permissions due to lack of strict mode bits", () => {
+  const f = fixture(); f.config.save();
+  chmodSync(f.root, 0o777);
+  chmodSync(f.path, 0o666);
+  const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  try {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    expect(f.config.read()).toEqual({ storage: "sqlite" });
+    expect(() => f.config.save()).not.toThrow();
+  } finally {
+    if (originalPlatformDescriptor) {
+      Object.defineProperty(process, "platform", originalPlatformDescriptor);
+    }
+  }
+});

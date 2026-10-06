@@ -75,7 +75,9 @@ export function assertSafePath(path:string):void{
     const systemAlias=process.platform==='darwin'&&['/var','/tmp'].includes(current)&&entry?.uid===0;
     if(entry?.isSymbolicLink()&&!systemAlias)fail('UNSAFE_PATH','Configuration paths must not traverse symbolic links.');
     if(entry&&current!==path&&!entry.isDirectory()&&!systemAlias)fail('UNSAFE_PATH','A configuration parent is not a directory.');
-    if(entry&&current!==path&&!systemAlias&&(entry.mode&0o002)&&!(entry.mode&0o1000))fail('UNSAFE_PATH','A configuration parent is writable by other users.');
+    // En Windows, `stat.mode` no trae permisos de grupo y otros como macOS y Linux: un archivo con `chmod 0o600` se lee `0o666` (corrida 37511442141).
+    const windowsBase=process.platform==='win32';
+    if(entry&&current!==path&&!systemAlias&&!windowsBase&&(entry.mode&0o002)&&!(entry.mode&0o1000))fail('UNSAFE_PATH','A configuration parent is writable by other users.');
   }
 }
 /**

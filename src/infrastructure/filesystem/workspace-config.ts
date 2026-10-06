@@ -42,10 +42,12 @@ function errno(error: unknown, code: string): boolean { return (error as NodeJS.
 function ownedByCurrentUser(stat: Stats): boolean { return typeof process.getuid !== "function" || stat.uid === process.getuid(); }
 /**
  * Comprueba que una ruta es privada: sin permisos para grupo ni otros (`0o077` en cero) y del usuario actual.
+ * En Windows (`win32`) los bits de modo no se comparan porque el sistema no tiene permisos de grupo y otros
+ * que se mapeen igual; solo exige que sea del usuario actual.
  * @param stat Resultado de `lstatSync` sobre la ruta a comprobar.
  * @returns `true` si la ruta es privada del usuario actual.
  */
-function privateOwned(stat: Stats): boolean { return (stat.mode & 0o077) === 0 && ownedByCurrentUser(stat); }
+function privateOwned(stat: Stats): boolean { return (process.platform === "win32" || (stat.mode & 0o077) === 0) && ownedByCurrentUser(stat); }
 
 /**
  * Representa el único archivo de configuración privado de Engram por instalación (no por proyecto): no
