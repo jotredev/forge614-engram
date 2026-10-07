@@ -18,14 +18,17 @@ export type PostgresCluster =
   | { available: false; reason: string };
 
 /**
- * Ejecuta una herramienta de PostgreSQL (`initdb` o `pg_ctl`) y lanza si falla o excede el tiempo límite.
+ * Ejecuta una herramienta de PostgreSQL y lanza si falla o excede el tiempo límite; `pg_ctl` usa
+ * tuberías ignoradas porque en Windows el servidor hijo las hereda y `spawnSync` queda esperando
+ * su cierre (corrida 37525384707), mientras que `initdb` conserva su diagnóstico.
  * @param bin Carpeta de binarios de PostgreSQL (`FORGE614_TEST_POSTGRES_BIN`).
  * @param name Nombre del ejecutable dentro de esa carpeta.
  * @param args Argumentos de línea de comandos para el ejecutable.
+ * @param stdio Destino de las tuberías del proceso; se ignoran solo para arrancar o detener el servidor.
  * @throws Error con el mensaje de error estándar del proceso, o indicando que se agotó el tiempo límite.
  */
-function command(bin: string, name: string, args: string[]) {
-  const result = spawnSync(join(bin, name), args, { encoding: "utf8", timeout: postgresTestTimeoutMs });
+function command(bin: string, name: string, args: string[], stdio: "pipe" | "ignore" = "pipe") {
+  const result = spawnSync(join(bin, name), args, { encoding: "utf8", stdio, timeout: postgresTestTimeoutMs });
   if (result.status === 0) return;
   const detail = result.error?.message ?? result.stderr?.trim();
   throw new Error(`${name} ${detail || "failed"}`);
@@ -33,8 +36,7 @@ function command(bin: string, name: string, args: string[]) {
 
 /**
  * Levanta un clúster de PostgreSQL desechable, solo accesible por loopback (`127.0.0.1`), en una carpeta
- * temporal: crea la base con `initdb`, la arranca con `pg_ctl` en un puerto libre y confirma con
- * `pg_isready` que acepta conexiones antes de exponerla a la integración.
+ * temporal: crea la base con `initdb` y la arranca con `pg_ctl` en un puerto libre elegido al vuelo.
  * @param bin Carpeta de binarios de PostgreSQL a usar; por defecto, `FORGE614_TEST_POSTGRES_BIN`.
  * @returns Un {@link PostgresCluster} con sus datos de conexión si se levantó, o con el motivo por el que
  * no se pudo levantar (binario no configurado, o cualquier fallo al inicializar o arrancar), sin lanzar en
@@ -49,13 +51,13 @@ export function startPostgresCluster(bin = process.env.FORGE614_TEST_POSTGRES_BI
     command(bin, "initdb", ["-D", join(directory, "data"), "-U", "postgres", "-A", "trust", "--no-locale", "--encoding=UTF8"]);
     const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
     const port = listener.port; listener.stop(true);
-    command(bin, "pg_ctl", ["-D", join(directory, "data"), "-l", join(directory, "log"), "-o", `-h 127.0.0.1 -p ${port} -k ${directory}`, "-w", "start"]);
-    command(bin, "pg_isready", ["-h", "127.0.0.1", "-p", String(port), "-U", "postgres", "-t", "5"]);
+    const socket = process.platform === "win32" ? "" : ` -k ${directory}`;
+    command(bin, "pg_ctl", ["-D", join(directory, "data"), "-l", join(directory, "log"), "-o", `-h 127.0.0.1 -p ${port}${socket}`, "-w", "start"], "ignore");
     started = true;
     return { available: true, directory, url: `postgresql://postgres@127.0.0.1:${port}/postgres?sslmode=disable`, bin };
   } catch (error) {
     if (started) {
-      try { command(bin, "pg_ctl", ["-D", join(directory, "data"), "-m", "fast", "-w", "stop"]); }
+      try { command(bin, "pg_ctl", ["-D", join(directory, "data"), "-m", "fast", "-w", "stop"], "ignore"); }
       catch { /* La instalación desechable que falló se elimina más abajo de todos modos. */ }
     }
     rmSync(directory, { recursive: true, force: true });
@@ -70,7 +72,7 @@ export function startPostgresCluster(bin = process.env.FORGE614_TEST_POSTGRES_BI
  */
 export function stopPostgresCluster(cluster: PostgresCluster) {
   if (!cluster.available) return;
-  try { command(cluster.bin, "pg_ctl", ["-D", join(cluster.directory, "data"), "-m", "fast", "-w", "stop"]); }
+  try { command(cluster.bin, "pg_ctl", ["-D", join(cluster.directory, "data"), "-m", "fast", "-w", "stop"], "ignore"); }
   finally { rmSync(cluster.directory, { recursive: true, force: true }); }
 }
 
