@@ -12,7 +12,7 @@ import { isTestSource } from "./test-layout";
 /** Comprueba los dos archivos raíz de `src` con separadores de ruta portables y audita sus importaciones. */
 test("the actual production tree has only stable root entries and respects all boundaries", () => {
   const paths = [...new Bun.Glob("src/**/*.ts").scanSync(".")];
-  expect(paths.filter(path => !isTestSource(path) && path.split(/[\\/]/).length === 2).sort()).toEqual(["src/cli.ts", "src/index.ts"]);
+  expect(paths.filter(path => !isTestSource(path) && path.split(/[\\/]/).length === 2).map(p => p.replace(/\\/g, "/")).sort()).toEqual(["src/cli.ts", "src/index.ts"]);
   expect(auditImports(Object.fromEntries([...paths, "package.json"].map(path => [path, readFileSync(path, "utf8")])))).toEqual([]);
 });
 

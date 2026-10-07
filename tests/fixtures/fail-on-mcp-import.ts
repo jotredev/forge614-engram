@@ -11,7 +11,7 @@ import { appendFileSync } from "node:fs";
 Bun.plugin({
   name: "fail-on-mcp-import",
   setup(build) {
-    build.onLoad({ filter: /node_modules\/(zod|@modelcontextprotocol)\// }, (args) => {
+    build.onLoad({ filter: /node_modules[\\/](zod|@modelcontextprotocol)[\\/]/ }, (args) => {
       // main.ts oculta a propósito el texto interno del error en stderr, así que este golpe se
       // registra en un canal aparte que la prueba puede leer directamente, en vez de analizar la
       // salida de la CLI.

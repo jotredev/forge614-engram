@@ -59,7 +59,7 @@ test("keeps the shared Forge614 parent permissions unchanged while securing only
 
   expect(home.root).toBe(product);
   expect(existsSync(product)).toBe(true);
-  expect(statSync(parent).mode & 0o777).toBe(0o755);
+  expectPosixMode(parent, 0o755);
   expectPosixMode(product, 0o700);
   expect(readFileSync(join(parent, "shell", "keep"), "utf8")).toBe("unchanged");
 }));

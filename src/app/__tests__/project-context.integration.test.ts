@@ -16,7 +16,7 @@ import { bindProjectContext, resolveProjectContext, saveProjectMemory, startProj
 const directories: string[] = [];
 const stores: MemoryStore[] = [];
 function temporary(prefix = "forge614-context-"): string {
-  const directory = mkdtempSync(join(tmpdir(), prefix));
+  const directory = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
   directories.push(directory);
   return directory;
 }

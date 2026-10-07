@@ -101,10 +101,15 @@ test("publication remains readable while the private staging link exists", () =>
   expect(() => f.config.save()).not.toThrow();
 });
 
-// Permisos abiertos o un enlace simbólico en el archivo o en la carpeta raíz deben rechazarse sin seguir el enlace ni tocar su destino.
-test("unsafe permissions and symlinked root or config are rejected", () => {
+// Permisos abiertos deben rechazarse.
+test.skipIf(process.platform === "win32")("unsafe permissions are rejected", () => {
   const f = fixture(); f.config.save();
   chmodSync(f.path, 0o644); expect(() => f.config.read()).toThrow(); chmodSync(f.path, 0o600);
+});
+
+// Un enlace simbólico en el archivo o en la carpeta raíz deben rechazarse sin seguir el enlace ni tocar su destino.
+test("symlinked root or config are rejected", () => {
+  const f = fixture(); f.config.save();
   const secret = join(f.dir, "secret"); const text = readFileSync(f.path);
   writeFileSync(secret, text, { mode: 0o600 }); rmSync(f.path); symlinkSync(secret, f.path);
   expect(() => f.config.read()).toThrow(); expect(() => f.config.save()).toThrow();

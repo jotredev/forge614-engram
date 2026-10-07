@@ -17,14 +17,18 @@ import { expectPosixMode } from "../__test-support__/permissions";
 
 const FIXTURES = join(import.meta.dir, "../../../tests/fixtures/v1.5.3");
 const temporary: string[] = [];
-afterEach(() => { while (temporary.length) rmSync(temporary.pop()!, { recursive: true, force: true }); });
+const databases: Database[] = [];
+afterEach(() => {
+  while (databases.length) databases.pop()!.close();
+  while (temporary.length) rmSync(temporary.pop()!, { recursive: true, force: true });
+});
 
 function fixture(name: "schema-5.db" | "schema-7.db"): { db: Database; file: string; directory: string } {
   const directory = mkdtempSync(join(tmpdir(), "engram-eco-"));
   temporary.push(directory);
   const file = join(directory, "engram.db");
   copyFileSync(join(FIXTURES, name), file);
-  const db = new Database(file, { strict: true });
+  const db = new Database(file, { strict: true }); databases.push(db);
   initialize(db, false, false);
   return { db, file, directory };
 }
@@ -248,7 +252,7 @@ test("migrates 50,000 memories quickly and verifies the whole content", () => {
   const directory = mkdtempSync(join(tmpdir(), "engram-eco-perf-"));
   temporary.push(directory);
   const file = join(directory, "engram.db");
-  const db = new Database(file, { create: true, strict: true });
+  const db = new Database(file, { create: true, strict: true }); databases.push(db);
   try {
     initialize(db);
     enableSearchReinforcement(db);
