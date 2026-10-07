@@ -265,6 +265,9 @@ test("migrates 50,000 memories quickly and verifies the whole content", () => {
         memory.run(`m-${index}`, `topic/${index}`, `Título ${index}`, `Contenido de prueba número ${index} con algo de texto para indexar`);
         versions.run(`m-${index}`, JSON.stringify({ id: `m-${index}` }));
       }
+      // Una sentencia preparada viva puede dejar el archivo abierto después de close(); Windows no permite borrar un archivo abierto.
+      memory.finalize();
+      versions.finalize();
     }).immediate();
     const before = db.query("SELECT count(*) AS n FROM memories").get();
     const started = performance.now();
