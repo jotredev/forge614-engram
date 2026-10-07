@@ -56,6 +56,10 @@ jobs:
             target: bun-linux-arm64
             artifact: forge614-engram-linux-arm64
             bun_version: 1.4.2
+          - runner: windows-latest
+            target: bun-windows-x64
+            artifact: forge614-engram-windows-x64.exe
+            bun_version: 1.4.2
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -67,10 +71,21 @@ jobs:
       - name: Compile standalone artifact
         run: bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.artifact }}
       - name: Smoke-test the native standalone artifact
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           ./dist/${{ matrix.artifact }} --help
           bash scripts/release-smoke.sh ./dist/${{ matrix.artifact }}
+      - name: Smoke-test the Windows standalone artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # release-smoke.sh es de bash; la prueba completa de Windows llega con install.ps1 (T4).
+          & ".\\dist\\${{ matrix.artifact }}" --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = & ".\\dist\\${{ matrix.artifact }}" --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($version -notmatch '^forge614-engram ') { throw "Unexpected --version output: $version" }
       - name: Preserve the artifact mode for collection
         run: tar -C dist -czf dist/${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
       - uses: actions/upload-artifact@v4
@@ -90,14 +105,14 @@ jobs:
           pattern: release-*
           merge-multiple: true
           path: dist
-      - name: Extract the four standalone artifacts with their original modes
+      - name: Extract the five standalone artifacts with their original modes
         shell: bash
         run: |
           set -euo pipefail
           for archive in dist/*.tar.gz; do
             tar -xzf "$archive" -C dist
           done
-      - name: Generate SHA256SUMS for the four release artifacts
+      - name: Generate SHA256SUMS for the five release artifacts
         shell: bash
         run: |
           cd dist
@@ -105,23 +120,25 @@ jobs:
             forge614-engram-darwin-arm64 \
             forge614-engram-darwin-x64 \
             forge614-engram-linux-x64 \
-            forge614-engram-linux-arm64 > SHA256SUMS
+            forge614-engram-linux-arm64 \
+            forge614-engram-windows-x64.exe > SHA256SUMS
       - name: Validate release artifacts and manifest
         shell: bash
         run: |
           set -euo pipefail
           for artifact in forge614-engram-darwin-arm64 forge614-engram-darwin-x64 \
-            forge614-engram-linux-x64 forge614-engram-linux-arm64; do
+            forge614-engram-linux-x64 forge614-engram-linux-arm64 forge614-engram-windows-x64.exe; do
             test -s "dist/$artifact" || { echo "missing or empty artifact: $artifact" >&2; exit 1; }
           done
+          # El .tar.gz de Windows se hace con tar de Windows y no conserva el bit de ejecución, que en Windows no existe.
           for artifact in forge614-engram-darwin-arm64 forge614-engram-darwin-x64 \
             forge614-engram-linux-x64 forge614-engram-linux-arm64; do
             test -x "dist/$artifact" || { echo "artifact is not executable: $artifact" >&2; exit 1; }
           done
           test -s dist/SHA256SUMS || { echo "missing or empty SHA256SUMS" >&2; exit 1; }
-          test "$(wc -l < dist/SHA256SUMS | tr -d ' ')" = 4
+          test "$(wc -l < dist/SHA256SUMS | tr -d ' ')" = 5
           for artifact in forge614-engram-darwin-arm64 forge614-engram-darwin-x64 \
-            forge614-engram-linux-x64 forge614-engram-linux-arm64; do
+            forge614-engram-linux-x64 forge614-engram-linux-arm64 forge614-engram-windows-x64.exe; do
             grep -Eq "^[0-9a-f]{64}  ${artifact}$" dist/SHA256SUMS || { echo "invalid checksum entry: $artifact" >&2; exit 1; }
           done
           (cd dist && sha256sum --check SHA256SUMS)
@@ -133,6 +150,7 @@ jobs:
             dist/forge614-engram-darwin-x64
             dist/forge614-engram-linux-x64
             dist/forge614-engram-linux-arm64
+            dist/forge614-engram-windows-x64.exe
             dist/SHA256SUMS
           if-no-files-found: error
 
@@ -165,6 +183,7 @@ jobs:
             dist/forge614-engram-darwin-x64 \
             dist/forge614-engram-linux-x64 \
             dist/forge614-engram-linux-arm64 \
+            dist/forge614-engram-windows-x64.exe \
             dist/SHA256SUMS \
             scripts/install.sh#install.sh \
             --title "$GITHUB_REF_NAME" \
