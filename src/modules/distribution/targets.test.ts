@@ -14,17 +14,20 @@ test("selects the exact standalone artifact for every supported host", () => {
   expect(selectReleaseTarget("darwin", "x64")).toBe("forge614-engram-darwin-x64");
   expect(selectReleaseTarget("linux", "x64")).toBe("forge614-engram-linux-x64");
   expect(selectReleaseTarget("linux", "arm64")).toBe("forge614-engram-linux-arm64");
+  expect(selectReleaseTarget("win32", "x64")).toBe("forge614-engram-windows-x64.exe");
   expect(() => selectReleaseTarget("freebsd", "x64")).toThrow("Unsupported platform");
   expect(() => selectReleaseTarget("linux", "x86_64")).toThrow("Unsupported architecture");
+  expect(() => selectReleaseTarget("win32", "arm64")).toThrow("Unsupported architecture");
 });
 
-// La lista de binarios publicados es fija: solo los cuatro combos darwin/linux × arm64/x64.
-test("defines only the four supported release targets", () => {
+// La lista de binarios publicados es fija: cuatro combos darwin/linux × arm64/x64 y Windows x64.
+test("defines only the five supported release targets", () => {
   expect(RELEASE_TARGETS).toEqual([
     { platform: "darwin", architecture: "arm64", artifact: "forge614-engram-darwin-arm64" },
     { platform: "darwin", architecture: "x64", artifact: "forge614-engram-darwin-x64" },
     { platform: "linux", architecture: "x64", artifact: "forge614-engram-linux-x64" },
     { platform: "linux", architecture: "arm64", artifact: "forge614-engram-linux-arm64" },
+    { platform: "win32", architecture: "x64", artifact: "forge614-engram-windows-x64.exe" },
   ]);
 });
 
@@ -33,6 +36,7 @@ test("accepts one exact SHA256SUMS entry", () => {
   const manifest = parseSha256Sums("a".repeat(64) + "  forge614-engram-linux-x64\n");
 
   expect(verifyManifestEntry(manifest, "forge614-engram-linux-x64", "a".repeat(64))).toBe(true);
+  expect(parseSha256Sums("a".repeat(64) + "  forge614-engram-windows-x64.exe\n")).toEqual(new Map([["forge614-engram-windows-x64.exe", "a".repeat(64)]]));
 });
 
 // Formato roto, mayúsculas, un solo espacio, binario duplicado o binario desconocido deben rechazarse
