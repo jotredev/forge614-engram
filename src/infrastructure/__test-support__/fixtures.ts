@@ -4,7 +4,7 @@
  * al terminar aunque la prueba lance. La usan pruebas de `src/infrastructure` (20 de `sqlite`, 2 de
  * `filesystem` y 1 de `git`); ninguna de `src/app` ni de `src/interfaces`.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
@@ -23,9 +23,9 @@ export function withDatabase(run: (db: Database) => void): void {
 /**
  * Crea una carpeta temporal única, la pasa a la función dada y la borra por completo al terminar, incluso
  * si `run` lanza.
- * @param run Función de prueba que recibe la ruta de la carpeta temporal.
+ * @param run Función de prueba que recibe la ruta de la carpeta temporal, expandida en Windows con su nombre largo.
  */
 export function withDirectory(run: (directory: string) => void): void {
-  const directory = mkdtempSync(join(tmpdir(), "engram-adapter-"));
+  const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "engram-adapter-")));
   try { run(directory); } finally { rmSync(directory, { recursive: true, force: true }); }
 }

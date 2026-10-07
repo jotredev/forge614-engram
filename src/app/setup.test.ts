@@ -64,7 +64,7 @@ test("setup defaults to no PostgreSQL and initializes global storage without a p
   expect(questions).toHaveLength(2);
   expect(workspace.listProjects()).toEqual([]);
   expect(readFileSync(join(config.root, ".env"), "utf8")).toBe('FORMAT_VERSION="2"\nSTORAGE="sqlite"\n');
-  expect(output.join("\n").replaceAll("\\", "/")).toContain(config.databasePath.replaceAll("\\", "/"));
+  expect(output.join("\n")).toContain(JSON.stringify(config.databasePath));
   expect(output.join("\n")).toContain("La base nueva se creará con la memoria inteligente (esquema 11), que ya incluye sesiones y el refuerzo de recuerdos.");
   const store = workspace.open(true);
   try { expect(store.reinforcementEnabled()).toBe(true); }

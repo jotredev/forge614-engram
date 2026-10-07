@@ -1,7 +1,7 @@
 /** Comprueba que las rutas de `paths.ts` respetan `FORGE614_HOME` y fallan cerrado si es inválida. */
 import { expect, test } from "bun:test";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { defaultDatabasePath, engramBinDirectory, engramHome, forge614Home, legacyDatabasePath, userStorageDirectory } from "./paths";
 
 function withForge614Home(value: string | undefined, run: () => void): void {
@@ -27,14 +27,17 @@ test("default paths remain byte-identical without FORGE614_HOME", () => withForg
 }));
 
 // Con una ruta absoluta configurada, esa ruta debe ser la única raíz de la que cuelgan todas las demás.
-test("absolute FORGE614_HOME is the single root for every derived Engram path", () => withForge614Home("/tmp/forge614-root", () => {
-  expect(forge614Home()).toBe("/tmp/forge614-root");
-  expect(engramHome()).toBe("/tmp/forge614-root/engram");
-  expect(engramBinDirectory()).toBe("/tmp/forge614-root/engram/bin");
-  expect(userStorageDirectory()).toBe("/tmp/forge614-root/engram");
-  expect(defaultDatabasePath()).toBe("/tmp/forge614-root/engram/engram.db");
-  expect(legacyDatabasePath()).toBe("/tmp/forge614-root/engram.db");
-}));
+test("absolute FORGE614_HOME is the single root for every derived Engram path", () => {
+  const root = resolve("/tmp/forge614-root");
+  withForge614Home(root, () => {
+    expect(forge614Home()).toBe(root);
+    expect(engramHome()).toBe(join(root, "engram"));
+    expect(engramBinDirectory()).toBe(join(root, "engram", "bin"));
+    expect(userStorageDirectory()).toBe(join(root, "engram"));
+    expect(defaultDatabasePath()).toBe(join(root, "engram", "engram.db"));
+    expect(legacyDatabasePath()).toBe(join(root, "engram.db"));
+  });
+});
 
 // Una cadena vacía o una ruta relativa no deben aceptarse en silencio: deben lanzar con el código correcto.
 test("empty or relative FORGE614_HOME fails closed", () => {

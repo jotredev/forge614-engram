@@ -1,13 +1,15 @@
 /** Comprueba cómo `directoryResolver` elige el directorio de proyecto a partir de lo explícito y de las raíces MCP anunciadas. */
 import { expect, test } from "bun:test";
 import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 import { directoryResolver } from "./project-directory";
 import { sdkHarness } from "./__tests__/sdk-harness";
 
 // Con una sola raíz, se decodifica su URL de archivo (incluso con espacios); con varias, solo sirve un directorio explícito.
 test("explicit directories override ambiguous roots and a single root is decoded from its file URL", async () => {
-  const one=await sdkHarness(undefined,[pathToFileURL("/tmp/project with spaces").href]);
-  try {expect(await directoryResolver(one.server)()).toBe("/tmp/project with spaces");}
+  const root = resolve("/tmp/project with spaces");
+  const one=await sdkHarness(undefined,[pathToFileURL(root).href]);
+  try {expect(await directoryResolver(one.server)()).toBe(root);}
   finally {await one.close();}
   const many=await sdkHarness(undefined,["file:///tmp/one","file:///tmp/two"]);
   try {

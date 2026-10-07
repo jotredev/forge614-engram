@@ -238,7 +238,8 @@ test("startup-context rejects missing, regular-file, and unreadable paths with s
   const file = join(root, "file-STARTUP_PATH_SECRET"); writeFileSync(file, "not a directory");
   const unreadable = temporary("forge614-startup-context-unreadable-"); chmodSync(unreadable, 0o000);
   try {
-    for (const directory of [missing, file, unreadable]) {
+    const targets = process.platform === "win32" ? [missing, file] : [missing, file, unreadable];
+    for (const directory of targets) {
       const result = (await runCli(root, userDirectory, "startup-context", "--directory", directory, "--json"));
       expect(result.code).toBe(1);
       expect(result.stdout).toBe("");
