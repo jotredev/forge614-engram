@@ -150,7 +150,7 @@ export class WorkspaceConfig {
     if (!this.directory(false, false)) failure("CONFIG_NOT_FOUND");
     let fd: number | undefined;
     try {
-      fd = openSync(join(this.root, ".env"), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+      fd = openConfigWithoutFollowing(join(this.root, ".env"));
       const stat = fstatSync(fd);
       if (!stat.isFile() || !privateOwned(stat) || stat.size > 16384) failure();
       const values = new Map<string, string>();
@@ -194,7 +194,7 @@ export class WorkspaceConfig {
   revision(): string | null {
     if(!this.exists()) return null;
     this.read();
-    const fd=openSync(join(this.root,".env"),constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+    const fd=openConfigWithoutFollowing(join(this.root,".env"));
     try {
       const stat=fstatSync(fd);if(!stat.isFile()||!privateOwned(stat)||stat.size>16384) failure();
       return createHash("sha256").update(readFileSync(fd)).digest("hex");
@@ -270,4 +270,34 @@ export class WorkspaceConfig {
       if (ownsTemporary) unlinkSync(temporary);
     }
   }
+}
+
+/**
+ * Abre un archivo de configuración de forma segura, rechazando enlaces simbólicos.
+ * En sistemas POSIX esto se logra con `O_NOFOLLOW`. En Windows, como `O_NOFOLLOW` no está definido,
+ * se emula usando `lstat` para comprobar si es un enlace, seguido de la apertura y `fstat` para
+ * verificar que el inodo y el dispositivo coinciden, evitando la carrera de sustitución.
+ *
+ * @param path Ruta absoluta del archivo a abrir.
+ * @param noFollowFlag Bandera `O_NOFOLLOW` o `null` si la plataforma no lo soporta (Windows). Las pruebas pasan `null` para ejercitar este camino en cualquier sistema.
+ * @returns El descriptor de archivo abierto en modo solo lectura (`O_RDONLY`).
+ * @throws MemoryError `CONFIG_INVALID` si el archivo es un enlace simbólico, no es un archivo regular o cambió entre la revisión y la apertura; el error del sistema (`ENOENT`) si el archivo no existe.
+ */
+export function openConfigWithoutFollowing(path: string, noFollowFlag: number | null = constants.O_NOFOLLOW ?? null): number {
+  if (noFollowFlag !== null) {
+    let flag = constants.O_RDONLY | noFollowFlag;
+    if (typeof constants.O_NONBLOCK === "number") flag |= constants.O_NONBLOCK;
+    return openSync(path, flag);
+  }
+  const entry = lstatSync(path);
+  if (entry.isSymbolicLink() || !entry.isFile()) failure();
+  let flag = constants.O_RDONLY;
+  if (typeof constants.O_NONBLOCK === "number") flag |= constants.O_NONBLOCK;
+  const fd = openSync(path, flag);
+  const opened = fstatSync(fd);
+  if (opened.ino !== entry.ino || opened.dev !== entry.dev) {
+    closeSync(fd);
+    failure();
+  }
+  return fd;
 }
