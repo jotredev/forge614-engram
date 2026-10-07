@@ -1,9 +1,9 @@
 /** Comprueba que `WorkspaceConfig` guarda, lee y actualiza la configuración global sin sobrescribir bytes válidos ni exponer secretos en errores. */
 import { afterEach, expect, test } from "bun:test";
-import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { WorkspaceConfig } from "../../infrastructure/filesystem/workspace-config";
+import { WorkspaceConfig, openConfigWithoutFollowing } from "../../infrastructure/filesystem/workspace-config";
 import { expectPosixMode } from "../__test-support__/permissions";
 
 const dirs: string[] = [];
@@ -164,5 +164,45 @@ test("Windows platform accepts open filesystem permissions due to lack of strict
     if (originalPlatformDescriptor) {
       Object.defineProperty(process, "platform", originalPlatformDescriptor);
     }
+  }
+});
+
+// Comprueba que sin `O_NOFOLLOW`, como en Windows, un enlace simbólico se rechaza.
+test("a symlinked config is rejected where the platform has no O_NOFOLLOW", () => {
+  const f = fixture(); f.config.save();
+  const secret = join(f.dir, "secret");
+  const text = readFileSync(f.path);
+  writeFileSync(secret, text, { mode: 0o600 });
+  rmSync(f.path);
+  symlinkSync(secret, f.path);
+  try {
+    openConfigWithoutFollowing(f.path, null);
+    throw new Error("Expected openConfigWithoutFollowing to reject the symlink");
+  } catch (error) {
+    expect((error as { code?: string }).code).toBe("CONFIG_INVALID");
+  }
+});
+
+// Comprueba que sin `O_NOFOLLOW`, como en Windows, un archivo regular de configuración se abre y puede leerse.
+test("a regular private config opens where the platform has no O_NOFOLLOW", () => {
+  const f = fixture(); f.config.save();
+  const text = readFileSync(f.path, "utf8");
+  const fd = openConfigWithoutFollowing(f.path, null);
+  try {
+    const content = readFileSync(fd, "utf8");
+    expect(content).toEqual(text);
+  } finally {
+    closeSync(fd);
+  }
+});
+
+// Comprueba que sin `O_NOFOLLOW`, como en Windows, un archivo que no existe lanza error.
+test("a missing config fails where the platform has no O_NOFOLLOW", () => {
+  const f = fixture();
+  try {
+    openConfigWithoutFollowing(f.path, null);
+    throw new Error("Expected openConfigWithoutFollowing to reject the missing config");
+  } catch (error) {
+    expect((error as { code?: string }).code).toBe("ENOENT");
   }
 });
