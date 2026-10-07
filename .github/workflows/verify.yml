@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  # Windows usa los binarios de PostgreSQL ya instalados por la imagen del ejecutor.
+  # PostgreSQL en Windows queda para T6 porque el arranque desechable cuelga la suite (corridas 37525384707 y 37550350220).
   windows:
     name: Windows checks
     runs-on: windows-latest
@@ -19,9 +19,6 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Configurar los binarios de PostgreSQL para las pruebas
-        shell: bash
-        run: echo "FORGE614_TEST_POSTGRES_BIN=$PGBIN" >> "$GITHUB_ENV"
       - run: bun test
   unix:
     name: Unix checks (${{ matrix.os }})
