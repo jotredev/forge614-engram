@@ -1,6 +1,6 @@
 /**
- * Define los binarios que se publican en cada versión (una por sistema operativo y arquitectura de
- * procesador) y valida el archivo `SHA256SUMS` (lista de huellas digitales, una por binario, que sirve
+ * Define los cinco binarios que se publican en cada versión (uno por sistema operativo y arquitectura de
+ * procesador, incluido el `.exe` de Windows) y valida el archivo `SHA256SUMS` (lista de huellas digitales, una por binario, que sirve
  * para comprobar que el archivo descargado es exactamente el que se publicó). Hoy ningún archivo lo usa
  * fuera de su prueba (`targets.test.ts`): el actualizador (`src/infrastructure/updater.ts`) no lo importa.
  * Piezas principales: `RELEASE_TARGETS` (la lista fija de
@@ -12,6 +12,7 @@ export const RELEASE_TARGETS = [
   { platform: "darwin", architecture: "x64", artifact: "forge614-engram-darwin-x64" },
   { platform: "linux", architecture: "x64", artifact: "forge614-engram-linux-x64" },
   { platform: "linux", architecture: "arm64", artifact: "forge614-engram-linux-arm64" },
+  { platform: "win32", architecture: "x64", artifact: "forge614-engram-windows-x64.exe" },
 ] as const;
 
 /** Uno de los elementos de `RELEASE_TARGETS`: una combinación concreta de plataforma, arquitectura y nombre de binario. */
