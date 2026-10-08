@@ -46,39 +46,20 @@ function diag(message) {
 diag("Iniciando scripts/verify-windows-self-update.mjs...");
 
 const forgeHome = join(runnerTemp, "forge614-engram-self-update-home");
-const tempRepo = join(runnerTemp, "forge614-engram-self-update-repo");
+const assetDir = join(runnerTemp, "forge614-engram-self-update-asset");
+const assetPath = join(assetDir, "forge614-engram-windows-x64.exe");
 const launcherDir = join(forgeHome, "engram", "bin");
 const launcherPath = join(launcherDir, "forge614-engram.exe");
 
 // Limpiar restos previos si existieran
 rmSync(forgeHome, { recursive: true, force: true });
-rmSync(tempRepo, { recursive: true, force: true });
+rmSync(assetDir, { recursive: true, force: true });
 
 mkdirSync(forgeHome, { recursive: true });
+mkdirSync(assetDir, { recursive: true });
 mkdirSync(launcherDir, { recursive: true });
 
-diag("Clonando repositorio localmente para aislar únicamente archivos versionados...");
-execFileSync("git", ["clone", "--local", process.cwd(), tempRepo], {
-  stdio: "inherit",
-});
-// Eliminar tempRepo/.git antes de instalar
-rmSync(join(tempRepo, ".git"), { recursive: true, force: true });
-diag("Copia aislada creada y .git eliminado.");
-
-diag("Ejecutando bun install en la copia temporal...");
-execFileSync("bun", ["install", "--frozen-lockfile", "--ignore-scripts"], {
-  cwd: tempRepo,
-  stdio: "inherit",
-});
-diag("bun install finalizado.");
-
-const pkgPath = join(tempRepo, "package.json");
-const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-pkg.version = "0.0.0";
-writeFileSync(pkgPath, JSON.stringify(pkg, null, 2), "utf8");
-diag("package.json actualizado con versión 0.0.0 en el fixture.");
-
-diag(`Compilando binario inicial en ${launcherPath}...`);
+diag(`Compilando CLI real del checkout como asset de destino en ${assetPath}...`);
 execFileSync(
   "bun",
   [
@@ -86,17 +67,43 @@ execFileSync(
     "./src/cli.ts",
     "--compile",
     "--target=bun-windows-x64",
+    `--outfile=${assetPath}`,
+  ],
+  { stdio: "inherit" },
+);
+diag("Compilación del asset completada.");
+
+if (!existsSync(assetPath)) {
+  diag("Error crítico: el asset compilado no existe en destino.");
+  process.exit(1);
+}
+
+const assetVersionOutput = execFileSync(assetPath, ["--version"], { encoding: "utf8" }).trim();
+diag(`Versión reportada por el asset real: ${assetVersionOutput}`);
+const assetVersionMatch = /^forge614-engram\s+([0-9]+\.[0-9]+\.[0-9]+.*)$/.exec(assetVersionOutput);
+if (!assetVersionMatch || assetVersionMatch[1] === "0.0.0") {
+  diag(`Error: la versión del asset (${assetVersionOutput}) debe ser válida y distinta de 0.0.0.`);
+  process.exit(1);
+}
+const expectedPendingVersion = assetVersionMatch[1];
+diag(`Versión esperada para el relevo: ${expectedPendingVersion}`);
+
+diag(`Compilando fixture de launcher activo en ${launcherPath}...`);
+execFileSync(
+  "bun",
+  [
+    "build",
+    "./scripts/fixtures/windows-self-update-entry.mjs",
+    "--compile",
+    "--target=bun-windows-x64",
     `--outfile=${launcherPath}`,
   ],
-  {
-    cwd: tempRepo,
-    stdio: "inherit",
-  },
+  { stdio: "inherit" },
 );
-diag("Compilación finalizada.");
+diag("Compilación del launcher completada.");
 
 if (!existsSync(launcherPath)) {
-  diag("Error crítico: el ejecutable compilado no existe en destino.");
+  diag("Error crítico: el launcher compilado no existe en destino.");
   process.exit(1);
 }
 
@@ -104,7 +111,7 @@ const initialVersion = execFileSync(launcherPath, ["--version"], {
   encoding: "utf8",
   env: { ...process.env, FORGE614_HOME: forgeHome },
 }).trim();
-diag(`Versión reportada por el binario recién compilado: ${initialVersion}`);
+diag(`Versión reportada por el launcher activo inicial: ${initialVersion}`);
 if (initialVersion !== "forge614-engram 0.0.0") {
   diag(`Error: se esperaba 'forge614-engram 0.0.0' pero se obtuvo '${initialVersion}'.`);
   process.exit(1);
@@ -117,7 +124,11 @@ diag("Lanzando proceso hijo real: forge614-engram.exe update --json...");
 let child;
 try {
   child = spawn(launcherPath, ["update", "--json"], {
-    env: { ...process.env, FORGE614_HOME: forgeHome },
+    env: {
+      ...process.env,
+      FORGE614_HOME: forgeHome,
+      FORGE614_TEST_WINDOWS_ASSET: assetPath,
+    },
     stdio: ["ignore", "pipe", "pipe"],
   });
 } catch (err) {
@@ -196,16 +207,13 @@ if (
   updateResult.updated !== false ||
   updateResult.previousVersion !== "0.0.0" ||
   updateResult.installedVersion !== "0.0.0" ||
-  typeof updateResult.pendingVersion !== "string" ||
-  updateResult.pendingVersion === "0.0.0" ||
-  !updateResult.pendingVersion
+  updateResult.pendingVersion !== expectedPendingVersion
 ) {
   diag(`Contrato de actualización inválido en la respuesta: ${JSON.stringify(updateResult)}`);
   process.exit(1);
 }
 
-const pendingVersion = updateResult.pendingVersion;
-diag(`Versión pendiente programada para el relevo: ${pendingVersion}`);
+diag(`Versión pendiente confirmada: ${updateResult.pendingVersion}`);
 
 diag("Esperando señal de relevo en el log del ayudante PowerShell (hasta 60s)...");
 const engramHome = join(forgeHome, "engram");
@@ -254,7 +262,6 @@ if (!swapCompleted) {
   process.exit(1);
 }
 
-// Ahora que el ayudante confirmó el swap, verificar el ejecutable una sola vez
 diag("Comprobando huella SHA-256 del ejecutable activo tras la señal del ayudante...");
 if (!existsSync(launcherPath)) {
   diag(`Error: el ejecutable ${launcherPath} no existe tras el relevo.`);
@@ -281,7 +288,7 @@ try {
 }
 
 diag(`Salida de --version post-reemplazo: ${finalVersionOutput}`);
-const expectedVersionOutput = `forge614-engram ${pendingVersion}`;
+const expectedVersionOutput = `forge614-engram ${expectedPendingVersion}`;
 if (finalVersionOutput !== expectedVersionOutput) {
   diag(`Discrepancia en versión: se esperaba '${expectedVersionOutput}' pero se obtuvo '${finalVersionOutput}'.`);
   process.exit(1);
