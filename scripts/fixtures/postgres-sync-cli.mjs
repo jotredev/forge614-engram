@@ -4,9 +4,10 @@
  * FORGE614_HOME temporal. Devuelve las salidas como JSON sin imprimirlas en el log de CI.
  */
 import { execFile } from "node:child_process";
+import { writeFileSync } from "node:fs";
 
-const [bunExe, cliFile, forgeHome, projectId] = process.argv.slice(2);
-if (!bunExe || !cliFile || !forgeHome || !projectId) {
+const [bunExe, cliFile, forgeHome, projectId, resultPath] = process.argv.slice(2);
+if (!bunExe || !cliFile || !forgeHome || !projectId || !resultPath) {
   console.error("[diag-cli] Faltan argumentos para ejecutar la CLI de prueba.");
   process.exit(1);
 }
@@ -32,8 +33,10 @@ try {
   const search = await run("search", ["--project-id", projectId, "--query", "persistent"]);
   const save = await run("save", ["--project-id", projectId, "--title", "Later", "--content", "offline writes"]);
   const sync = await run("sync");
-  process.stdout.write(JSON.stringify({ search, save, sync }));
+  writeFileSync(resultPath, JSON.stringify({ search, save, sync }), "utf8");
 } catch (error) {
-  console.error(`[diag-cli] ${error instanceof Error ? error.message : "Fallo desconocido."}`);
+  const message = error instanceof Error ? error.message : "Fallo desconocido.";
+  console.error(`[diag-cli] ${message}`);
+  writeFileSync(resultPath, JSON.stringify({ error: message }), "utf8");
   process.exitCode = 1;
 }
