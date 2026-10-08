@@ -4,7 +4,7 @@
  * adecuada, imprimiendo el resultado como JSON. `main.ts` llama a `dispatch` con el resultado de `parseArguments`.
  */
 import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud, runCloudOn, runCloudOff, runCloudStatus, runCloudSync } from "../../app";
-import type { EngramUpdateResult } from "../../app";
+import type { EngramUpdateResult, UninstallInput, UninstallDependencies, UninstallResult } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { memoryProtocol } from "../../modules/memory-protocol";
@@ -45,6 +45,21 @@ export async function runUpdateCommand(
   else if (result.pendingVersion) print("El reemplazo a la versión " + result.pendingVersion + " queda pendiente hasta que salga el proceso.");
 }
 
+/**
+ * Ejecuta el comando `uninstall`: desinstala Engram e imprime el resultado estructurado en JSON.
+ * @param confirmation Frase de confirmación aportada por el usuario.
+ * @param uninstall Función que ejecuta la desinstalación (por defecto `uninstallEngram`).
+ * @param print Función de impresión (por defecto `console.log`).
+ */
+export async function runUninstallCommand(
+  confirmation: string,
+  uninstall: (input: UninstallInput, dependencies: UninstallDependencies) => Promise<UninstallResult> = uninstallEngram,
+  print: (value: string) => void = console.log,
+): Promise<void> {
+  const result = await uninstall({ confirmation }, { executable: process.execPath });
+  print(JSON.stringify(result, null, 2));
+}
+
 /** Ejecuta el comando ya analizado: resuelve los comandos que no necesitan abrir la base primero, luego los que sí, y termina con el grupo save/search/get/history/archive/restore que comparte la validación de scope. */
 export async function dispatch({command,values,need}:ParsedCommand, currentVersion = "0.0.0"):Promise<void> {
   if (command === "init" && !values.has("json")) { await initTerminal(); return; }
@@ -58,8 +73,8 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     return;
   }
   if (command === "uninstall") {
-    const result=await uninstallEngram({confirmation:need("confirm")},{executable:process.execPath});
-    console.log(JSON.stringify(result,null,2));return;
+    await runUninstallCommand(need("confirm"));
+    return;
   }
   if (command === "cloud-on") {
     const url = values.get("postgres-url") ?? await readCloudPostgresUrl();

@@ -77,6 +77,65 @@ jobs:
           Write-Host "--- cleaning fixtures ---"
           Remove-Item -Path "${{ runner.temp }}\forge614-engram-self-update-home" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "${{ runner.temp }}\forge614-engram-self-update-asset" -Recurse -Force -ErrorAction SilentlyContinue
+  windows-uninstall:
+    name: Windows uninstall integration
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Disable Windows Defender real-time scanning for this job
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # Best-effort: la compilación y ejecución de un ejecutable no firmado que manipula
+          # carpetas y lanza procesos hijos sufre escrutinio intensivo de Defender en Windows CI.
+          # Solo para este job de CI, nunca en instalaciones de usuario.
+          Set-MpPreference -DisableRealtimeMonitoring $true
+      - name: Syntax-check verification scripts
+        run: |
+          node --check scripts/fixtures/windows-uninstall-entry.mjs
+          node --check scripts/verify-windows-uninstall.mjs
+      - name: Verify native uninstall on Windows
+        run: bun scripts/verify-windows-uninstall.mjs
+      - name: Print uninstall diagnostics and clean fixtures
+        if: always()
+        shell: pwsh
+        run: |
+          $diag = "${{ runner.temp }}\forge614-engram-uninstall-diag.log"
+          Write-Host "--- diagnostic log ($diag) ---"
+          if (Test-Path $diag) { Get-Content $diag -Tail 100 } else { Write-Host "No diagnostic log found." }
+
+          $tempDir = "${{ runner.temp }}\forge614-engram-uninstall-temp"
+          if (Test-Path $tempDir) {
+            $helperLogs = Get-ChildItem -Path $tempDir -Filter "forge614-engram-uninstall-*.log" -Exclude "*.spawn.log" -ErrorAction SilentlyContinue
+            if ($helperLogs) {
+              foreach ($log in $helperLogs) {
+                Write-Host "--- helper log ($($log.FullName)) ---"
+                Get-Content $log.FullName -Tail 100
+              }
+            } else {
+              Write-Host "No uninstall helper log files found under $tempDir"
+            }
+
+            $spawnLogs = Get-ChildItem -Path $tempDir -Filter "forge614-engram-uninstall-*.spawn.log" -ErrorAction SilentlyContinue
+            if ($spawnLogs) {
+              foreach ($log in $spawnLogs) {
+                Write-Host "--- wmi spawn log ($($log.FullName)) ---"
+                Get-Content $log.FullName -Tail 100
+              }
+            } else {
+              Write-Host "No uninstall wmi spawn log files found under $tempDir"
+            }
+          }
+
+          Write-Host "--- cleaning fixtures ---"
+          Remove-Item -Path "${{ runner.temp }}\forge614-engram-uninstall-home" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "${{ runner.temp }}\forge614-engram-uninstall-temp" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "${{ runner.temp }}\forge614-engram-test-userpath" -Recurse -Force -ErrorAction SilentlyContinue
   unix:
     name: Unix checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
