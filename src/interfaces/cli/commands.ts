@@ -42,6 +42,7 @@ export async function runUpdateCommand(
 ): Promise<void> {
   const result = await update();
   if (json) print(updateResultJson(result));
+  else if (result.pendingVersion) print("El reemplazo a la versión " + result.pendingVersion + " queda pendiente hasta que salga el proceso.");
 }
 
 /** Ejecuta el comando ya analizado: resuelve los comandos que no necesitan abrir la base primero, luego los que sí, y termina con el grupo save/search/get/history/archive/restore que comparte la validación de scope. */

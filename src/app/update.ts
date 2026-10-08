@@ -15,6 +15,8 @@ export interface EngramUpdateResult {
   previousVersion: string;
   /** Versión que quedó instalada tras el intento (igual a `previousVersion` si no hubo cambio). */
   installedVersion: string;
+  /** En Windows, la nueva versión que el relevo programado instalará tras salir. */
+  pendingVersion?: string;
 }
 
 /**
