@@ -57,8 +57,11 @@ jobs:
       - name: Syntax-check verification scripts
         run: |
           node --check scripts/verify-windows-postgres.mjs
+          node --check scripts/diagnose-postgres-sync.mjs
       - name: Verify disposable PostgreSQL preflight
         run: bun scripts/verify-windows-postgres.mjs
+      - name: Diagnose postgres-sync e2e test with external timeout
+        run: bun scripts/diagnose-postgres-sync.mjs
       - run: bun test
   windows-self-update:
     name: Windows self-update integration
