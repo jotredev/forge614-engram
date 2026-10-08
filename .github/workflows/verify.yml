@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  # PostgreSQL en Windows queda para T6 porque el arranque desechable cuelga la suite (corridas 37525384707 y 37550350220).
+  # Clúster de PostgreSQL desechable obligatorio en Windows mediante fixture nativo (T6).
   windows:
     name: Windows checks
     runs-on: windows-latest
@@ -19,6 +19,46 @@ jobs:
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Discover and configure PostgreSQL binaries for disposable test fixture
+        shell: pwsh
+        run: |
+          $pgBin = $env:PGBIN
+          if (-not $pgBin -or -not (Test-Path (Join-Path $pgBin "initdb.exe"))) {
+            # Búsqueda alternativa bajo C:\Program Files\PostgreSQL si PGBIN no estuviera publicado directamente
+            $candidates = Get-ChildItem "C:\Program Files\PostgreSQL" -Directory -ErrorAction SilentlyContinue |
+              Sort-Object { [int]($_.Name -replace '\D') } -Descending |
+              ForEach-Object { Join-Path $_.FullName "bin" }
+            $pgBin = $candidates | Where-Object { (Test-Path (Join-Path $_ "initdb.exe")) -and (Test-Path (Join-Path $_ "pg_ctl.exe")) } | Select-Object -First 1
+          }
+
+          if (-not $pgBin) {
+            Write-Error "CRITICAL: Could not find PostgreSQL installation directory on Windows runner."
+            exit 1
+          }
+
+          $initdbPath = Join-Path $pgBin "initdb.exe"
+          $pgctlPath = Join-Path $pgBin "pg_ctl.exe"
+          $postgresPath = Join-Path $pgBin "postgres.exe"
+
+          if (-not (Test-Path $initdbPath) -or -not (Test-Path $pgctlPath) -or -not (Test-Path $postgresPath)) {
+            Write-Error "CRITICAL: Required PostgreSQL binaries ($initdbPath, $pgctlPath, $postgresPath) not found."
+            exit 1
+          }
+
+          $rawVersion = & $initdbPath --version
+          if ($LASTEXITCODE -ne 0 -or $rawVersion -notmatch 'PostgreSQL\) (17|18)(\.|\s|$)') {
+            Write-Error "CRITICAL: Expected PostgreSQL 17 or 18, found: $rawVersion"
+            exit 1
+          }
+          Write-Host "Discovered PostgreSQL binaries at: $pgBin ($rawVersion)"
+
+          "FORGE614_TEST_POSTGRES_BIN=$pgBin" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "FORGE614_REQUIRE_TEST_POSTGRES=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Syntax-check verification scripts
+        run: |
+          node --check scripts/verify-windows-postgres.mjs
+      - name: Verify disposable PostgreSQL preflight
+        run: bun scripts/verify-windows-postgres.mjs
       - run: bun test
   windows-self-update:
     name: Windows self-update integration

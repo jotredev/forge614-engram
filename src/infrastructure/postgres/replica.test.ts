@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { PostgresReplica, postgresOptions } from "./replica";
-import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../__test-support__/postgres";
+import { postgresBinaryName, postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../__test-support__/postgres";
 
 // URLs ambiguas o con TLS inseguro fuera de loopback deben rechazarse, y el error nunca debe repetir la credencial recibida.
 test("PostgreSQL URL parsing rejects ambiguous URLs and insecure remote TLS without leaking input",()=>{
@@ -60,7 +60,7 @@ if (!cluster.available) console.warn(`SKIP PostgreSQL integration: ${cluster.rea
 // Versión mayor del binario del clúster de pruebas (ej. 18 de "postgres (PostgreSQL) 18.6 (Homebrew)"),
 // leída de forma síncrona para poder decidir con test.skipIf si corresponde la prueba de PostgreSQL 18 de abajo.
 const serverMajor = cluster.available
-  ? Number(Bun.spawnSync([join(cluster.bin, "postgres"), "--version"]).stdout.toString().match(/PostgreSQL\)?\s+(\d+)/)?.[1] ?? 0)
+  ? Number(Bun.spawnSync([join(cluster.bin, postgresBinaryName("postgres")), "--version"]).stdout.toString().match(/PostgreSQL\)?\s+(\d+)/)?.[1] ?? 0)
   : 0;
 let admin!: SQL;
 if (cluster.available) admin = new SQL(cluster.url);
