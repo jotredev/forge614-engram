@@ -6,7 +6,7 @@
  */
 import { afterAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { SQL } from "bun";
 import { runSetup } from "../../src/app/setup";
@@ -97,7 +97,12 @@ integration("configured CLI stays local offline and sync failure preserves the s
   // Bun.spawn asíncrono en su lugar.
   const run=async(...args:string[])=>{
     console.log(`[diag] postgres-sync.test.ts: ejecutando CLI: ${args[0]}...`);
-    const child=Bun.spawn([process.execPath,cli,...args],{env:{...process.env,FORGE614_HOME:join(user,".forge614")},stdout:"pipe",stderr:"pipe"});
+    const stdoutPath=join(directory,`cli-${args[0]}.stdout`);
+    const stderrPath=join(directory,`cli-${args[0]}.stderr`);
+    const child=Bun.spawn([process.execPath,cli,...args],{
+      env:{...process.env,FORGE614_HOME:join(user,".forge614")},
+      stdout:Bun.file(stdoutPath),stderr:Bun.file(stderrPath),
+    });
     const timer=setTimeout(()=>{
       console.error(`[diag] postgres-sync.test.ts: CLI ${args[0]} (PID ${child.pid}) excedió 20s, ejecutando kill...`);
       if (process.platform === "win32") {
@@ -106,7 +111,9 @@ integration("configured CLI stays local offline and sync failure preserves the s
       try { child.kill("SIGKILL"); } catch {}
     },20_000);
     try {
-      const [exitCode,stdout,stderr]=await Promise.all([child.exited,new Response(child.stdout).text(),new Response(child.stderr).text()]);
+      const exitCode=await child.exited;
+      const stdout=existsSync(stdoutPath)?readFileSync(stdoutPath,"utf8"):"";
+      const stderr=existsSync(stderrPath)?readFileSync(stderrPath,"utf8"):"";
       console.log(`[diag] postgres-sync.test.ts: CLI ${args[0]} finalizado con código ${exitCode}.`);
       return {exitCode,stdout,stderr};
     } finally {clearTimeout(timer);}
