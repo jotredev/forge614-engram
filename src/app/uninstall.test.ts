@@ -30,7 +30,7 @@ test("Atlas failure leaves Engram intact before local cleanup", async () => with
   writeFileSync(join(atlas,'forge614-atlas'),'binary',{mode:0o700});
   await expect(uninstallEngram(
     {confirmation:'REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS'},
-    dependencies(home,{runAtlasUninstall:async()=>1}),
+    dependencies(home,{platform:"darwin",runAtlasUninstall:async()=>1}),
   )).rejects.toMatchObject({code:'ATLAS_UNINSTALL_FAILED'});
   expect(existsSync(join(root,'keep'))).toBe(true);
 }));

@@ -20,7 +20,7 @@ async function withHome(run: (home: string) => Promise<void>): Promise<void> {
 // El bloque de Engram debe desaparecer del archivo, dejando intactas las líneas que el usuario agregó alrededor.
 test("removes only the exact Engram PATH block and keeps user shell settings", async () => withHome(async home => {
   const path = join(home, ".zshrc");
-  const directory = join(home, ".forge614", "engram", "bin");
+  const directory = join(home, ".forge614", "engram", "bin").replace(/\\/g, "/");
   writeFileSync(path, `export KEEP_THIS=1\n${unixBlock(directory)}\nexport KEEP_THAT=1\n`);
   const removed = await removePathPublication({ home, binDirectory: directory, platform: "darwin" });
   expect(removed).toEqual([path]);
@@ -38,7 +38,7 @@ test("refuses an edited Engram PATH block without changing it", async () => with
 // La ruta de Fish usa su propia sintaxis y archivo separado; su ausencia de .zshrc no debe crear ese archivo.
 test("removes the dedicated Fish publication without touching an absent shell file", async () => withHome(async home => {
   const fish = join(home, ".config", "fish", "conf.d", "forge614-engram.fish");
-  const directory = join(home, ".forge614", "engram", "bin");
+  const directory = join(home, ".forge614", "engram", "bin").replace(/\\/g, "/");
   mkdirSync(join(home, ".config", "fish", "conf.d"), { recursive: true });
   writeFileSync(fish, `${start}\nif not contains -- ${directory} $PATH\n  set -gx PATH ${directory} $PATH\nend\n${end}\n`);
   const removed = await removePathPublication({ home, binDirectory: directory, platform: "darwin" });
@@ -52,7 +52,7 @@ test("removes the installer PATH block when the product path contains spaces", a
   const home = mkdtempSync(join(tmpdir(), "engram path publication-"));
   try {
     const path = join(home, ".zshrc");
-    const directory = join(home, ".forge614", "engram", "bin");
+    const directory = join(home, ".forge614", "engram", "bin").replace(/\\/g, "/");
     const escaped = directory.replace(/ /g, "\\ ");
     writeFileSync(path, `keep=1\n${start}\ncase ":$PATH:" in\n  *:${escaped}:*) ;;\n  *) export PATH=${escaped}:"$PATH" ;;\nesac\n${end}\n`);
     await expect(removePathPublication({ home, binDirectory: directory, platform: "darwin" })).resolves.toEqual([path]);
