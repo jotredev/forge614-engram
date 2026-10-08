@@ -59,11 +59,13 @@ jobs:
           node --check scripts/verify-windows-postgres.mjs
           node --check scripts/diagnose-postgres-sync.mjs
           node --check scripts/fixtures/postgres-sync-cli.mjs
+          node --check scripts/verify-windows-test-files.mjs
       - name: Verify disposable PostgreSQL preflight
         run: bun scripts/verify-windows-postgres.mjs
       - name: Diagnose postgres-sync e2e test with external timeout
         run: bun scripts/diagnose-postgres-sync.mjs
-      - run: bun test
+      - name: Run all Bun test files in isolated processes
+        run: node scripts/verify-windows-test-files.mjs
   windows-self-update:
     name: Windows self-update integration
     runs-on: windows-latest
