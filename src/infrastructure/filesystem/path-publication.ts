@@ -4,6 +4,7 @@
  * desde la terminal; solo quita el bloque si su contenido coincide exactamente con lo que Engram habría
  * escrito, para no borrar algo que el usuario haya editado a mano. La usa `src/app/uninstall.ts`.
  */
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { PrivateFileError, fail, guardedWrite, readSafeFile, type PrivateWrite } from "./private-files";
 import { engramBinDirectory } from "./paths";
@@ -11,12 +12,38 @@ import { engramBinDirectory } from "./paths";
 const START = "# >>> forge614-engram PATH >>>";
 const END = "# <<< forge614-engram PATH <<<";
 
+/** Identificador estable reportado cuando la publicación en el Path de usuario en Windows es retirada. */
+export const WINDOWS_PATH_IDENTIFIER = "User Path";
+
+/** Opciones para spawn al invocar PowerShell en Windows. */
+export interface WindowsSpawnOptions {
+  readonly input?: string | Uint8Array;
+  readonly encoding?: string;
+  readonly windowsHide?: boolean;
+}
+
+/** Resultado retornado por la ejecución de spawn en Windows. */
+export interface WindowsSpawnResult {
+  readonly status: number | null;
+  readonly stdout?: string | Buffer;
+  readonly stderr?: string | Buffer;
+  readonly error?: Error;
+}
+
 /** Opciones para {@link removePathPublication}. */
 export interface PathPublicationOptions {
   /** Carpeta personal del usuario donde buscar los archivos de perfil de shell. */
   readonly home: string;
   /** Carpeta de binarios de Engram que se esperaba publicar en el PATH; si se omite, se usa {@link engramBinDirectory}. */
   readonly binDirectory?: string;
+  /** Plataforma objetivo (por defecto `process.platform`). */
+  readonly platform?: string;
+  /** Función inyectable para leer el Path de usuario en Windows. */
+  readonly readUserPath?: () => Promise<string | null>;
+  /** Función inyectable para escribir el nuevo Path de usuario en Windows. */
+  readonly writeUserPath?: (newPath: string) => Promise<void>;
+  /** Función inyectable para ejecutar comandos en Windows (usada si no se inyectan read/write). */
+  readonly spawn?: (command: string, args: string[], options?: WindowsSpawnOptions) => WindowsSpawnResult;
 }
 
 /**
@@ -98,18 +125,129 @@ function unixWrites(home: string, directory: string): PrivateWrite[] {
 }
 
 /**
+ * Normaliza una ruta para la comparación insensible a mayúsculas y tolerante al separador final en Windows.
+ * @param entry Ruta a normalizar.
+ * @returns La ruta en minúsculas y sin separadores invertidos finales sobrantes.
+ */
+function normalizeWindowsPathEntry(entry: string): string {
+  let normalized = entry.trim().replace(/\//g, "\\");
+  while (normalized.length > 1 && normalized.endsWith("\\")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized.toLowerCase();
+}
+
+const WINDOWS_READ_PATH_COMMAND = "$val = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($null -ne $val) { [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($val)) }";
+
+const WINDOWS_WRITE_PATH_COMMAND = "$b64 = [Console]::In.ReadToEnd().Trim(); if ($b64) { $bytes = [Convert]::FromBase64String($b64); $val = [System.Text.Encoding]::Unicode.GetString($bytes); [Environment]::SetEnvironmentVariable('Path', $val, 'User') } else { [Environment]::SetEnvironmentVariable('Path', '', 'User') }";
+
+/**
+ * Lee el valor actual de la variable de entorno User Path mediante PowerShell y salida codificada en base64 de UTF-16LE.
+ * @param spawnFn Ejecutor opcional inyectado.
+ * @returns El contenido de la variable User Path, o lanza un error si la lectura falla.
+ */
+function defaultReadUserPath(spawnFn?: PathPublicationOptions["spawn"]): string | null {
+  const runner = spawnFn ?? spawnSync;
+  for (const shell of ["pwsh", "powershell.exe"]) {
+    try {
+      const res = runner(shell, ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_READ_PATH_COMMAND], { encoding: "utf8" });
+      if (res.status === 0 && res.stdout !== undefined) {
+        const trimmed = String(res.stdout).trim();
+        if (!trimmed) return null;
+        return Buffer.from(trimmed, "base64").toString("utf16le");
+      }
+    } catch {
+      // Intentar con el siguiente candidato
+    }
+  }
+  throw new Error("Could not read User Path environment variable.");
+}
+
+/**
+ * Escribe el nuevo valor de la variable de entorno User Path mediante PowerShell pasando los datos por stdin en base64 de UTF-16LE.
+ * @param newPath Nuevo valor a asignar a la variable.
+ * @param spawnFn Ejecutor opcional inyectado.
+ */
+function defaultWriteUserPath(newPath: string, spawnFn?: PathPublicationOptions["spawn"]): void {
+  const runner = spawnFn ?? spawnSync;
+  const input = Buffer.from(newPath, "utf16le").toString("base64");
+  for (const shell of ["pwsh", "powershell.exe"]) {
+    try {
+      const res = runner(shell, ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_WRITE_PATH_COMMAND], {
+        input,
+        encoding: "utf8",
+      });
+      if (res.status === 0) {
+        return;
+      }
+    } catch {
+      // Intentar con el siguiente candidato
+    }
+  }
+  throw new Error("Could not write User Path environment variable.");
+}
+
+/**
+ * Quita únicamente los elementos de User Path en Windows que coinciden de forma exacta con la carpeta de binarios de Engram.
+ * @param options Opciones de publicación de ruta.
+ * @returns Lista con el identificador estable si se eliminó una publicación, o lista vacía si no hubo coincidencia.
+ */
+async function removeWindowsPathPublication(options: PathPublicationOptions): Promise<string[]> {
+  const targetDir = options.binDirectory ?? engramBinDirectory();
+  const normalizedTarget = normalizeWindowsPathEntry(targetDir);
+
+  let currentPath: string | null;
+  if (options.readUserPath) {
+    currentPath = await options.readUserPath();
+  } else {
+    currentPath = defaultReadUserPath(options.spawn);
+  }
+
+  if (!currentPath) {
+    return [];
+  }
+
+  const rawElements = currentPath.split(";");
+  let matched = false;
+  const remainingElements: string[] = [];
+
+  for (const element of rawElements) {
+    if (element.trim() !== "" && normalizeWindowsPathEntry(element) === normalizedTarget) {
+      matched = true;
+    } else {
+      remainingElements.push(element);
+    }
+  }
+
+  if (!matched) {
+    return [];
+  }
+
+  const newPath = remainingElements.join(";");
+  if (options.writeUserPath) {
+    await options.writeUserPath(newPath);
+  } else {
+    defaultWriteUserPath(newPath, options.spawn);
+  }
+
+  return [WINDOWS_PATH_IDENTIFIER];
+}
+
+/**
  * Quita únicamente la publicación exacta de PATH que crearon los instaladores de Forge614 Engram, en cada
- * archivo de perfil de shell donde aparezca sin cambios; en plataformas distintas a macOS y Linux no hace
- * nada, porque esos instaladores no publican PATH ahí.
- * @param options Carpeta personal del usuario y, opcionalmente, la carpeta de binarios esperada.
- * @returns Las rutas de los archivos de los que se quitó el bloque.
+ * archivo de perfil de shell donde aparezca sin cambios en Unix o en la variable de entorno User Path en Windows.
+ * @param options Carpeta personal del usuario y, opcionalmente, la carpeta de binarios esperada y dependencias inyectables.
+ * @returns Las rutas de los archivos o identificadores de los que se quitó la publicación.
  * @throws PrivateFileError con código `PATH_CONFLICT` si algún archivo tiene el bloque duplicado,
- * incompleto o editado; con código `PATH_REMOVE_FAILED` si ocurre cualquier otro error al aplicar los
- * cambios (los `PrivateFileError` ya lanzados se propagan sin envolver).
+ * incompleto o editado; con código `PATH_REMOVE_FAILED` si ocurre cualquier otro error al aplicar los cambios.
  */
 export async function removePathPublication(options: PathPublicationOptions): Promise<string[]> {
+  const platform = options.platform ?? process.platform;
   try {
-    if (process.platform !== "darwin" && process.platform !== "linux") return [];
+    if (platform === "win32") {
+      return await removeWindowsPathPublication(options);
+    }
+    if (platform !== "darwin" && platform !== "linux") return [];
     const writes = unixWrites(options.home, options.binDirectory ?? engramBinDirectory());
     const applied: string[] = [];
     for (const write of writes) {

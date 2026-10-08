@@ -4,9 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { WorkspaceConfig } from "../../infrastructure/filesystem/workspace-config";
-import { MemoryWorkspace } from "../../app/workspace";
+import { MemoryWorkspace, type UninstallResult } from "../../app";
 import { parseArguments } from "./arguments";
-import { dispatch, runUpdateCommand, updateResultJson } from "./commands";
+import { dispatch, runUninstallCommand, runUpdateCommand, updateResultJson } from "./commands";
 import { procSnapshot } from "../../../tests/fixtures/proc-snapshot";
 import { legacyConfiguredWorkspace } from "../../../tests/fixtures/legacy-workspace";
 
@@ -19,7 +19,7 @@ const cli = resolve(import.meta.dir,"../../cli.ts");
 // y sin corregir en Bun (oven-sh/bun#34069), por eso aquí se usa el Bun.spawn asíncrono en su lugar.
 async function runAs(cwd: string, userDirectory: string, ...args: string[]) {
   const child = Bun.spawn([process.execPath,cli,...args], {
-    cwd, env: { ...process.env, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
+    cwd, env: { ...process.env, HOME: userDirectory, FORGE614_HOME: join(userDirectory,".forge614") }, stdout:"pipe", stderr:"pipe",
   });
   let killedByWatchdog = false;
   let procSnapshotResult: Record<string, unknown> | undefined;
@@ -297,4 +297,42 @@ test("update interactively prints pending replacement on Windows", async () => {
 
   await runUpdateCommand(false, "1.3.0", update, value => output.push(value));
   expect(output).toEqual(["El reemplazo a la versión 1.4.0 queda pendiente hasta que salga el proceso."]);
+});
+
+// runUninstallCommand imprime la respuesta estructurada en JSON y transmite pendingRemoval sin alterarlo.
+test("runUninstallCommand transmits pendingRemoval without alteration in JSON output", async () => {
+  const outputs: string[] = [];
+  const fakeUninstallWithPending = async () => ({
+    removed: false,
+    atlasRemoved: false,
+    pathPublications: ["User Path"],
+    pendingRemoval: true,
+  });
+
+  await runUninstallCommand("REMOVE FORGE614-ENGRAM", fakeUninstallWithPending, val => outputs.push(val));
+  expect(outputs.length).toBe(1);
+  const parsed = JSON.parse(outputs[0]!);
+  expect(parsed).toEqual({
+    removed: false,
+    atlasRemoved: false,
+    pathPublications: ["User Path"],
+    pendingRemoval: true,
+  });
+
+  // Caso sin borrado pendiente conserva el JSON estándar
+  const normalOutputs: string[] = [];
+  const fakeNormalUninstall = async () => ({
+    removed: true,
+    atlasRemoved: false,
+    pathPublications: [],
+  });
+  await runUninstallCommand("REMOVE FORGE614-ENGRAM", fakeNormalUninstall, val => normalOutputs.push(val));
+  expect(normalOutputs.length).toBe(1);
+  const normalParsed = JSON.parse(normalOutputs[0]!);
+  expect(normalParsed).toEqual({
+    removed: true,
+    atlasRemoved: false,
+    pathPublications: [],
+  });
+  expect(normalParsed.pendingRemoval).toBeUndefined();
 });
