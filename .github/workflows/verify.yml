@@ -58,6 +58,7 @@ jobs:
         run: |
           node --check scripts/verify-windows-postgres.mjs
           node --check scripts/diagnose-postgres-sync.mjs
+          node --check scripts/fixtures/postgres-sync-cli.mjs
       - name: Verify disposable PostgreSQL preflight
         run: bun scripts/verify-windows-postgres.mjs
       - name: Diagnose postgres-sync e2e test with external timeout

@@ -6,7 +6,7 @@
  */
 import { afterAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { SQL } from "bun";
 import { runSetup } from "../../src/app/setup";
@@ -92,47 +92,44 @@ integration("configured CLI stays local offline and sync failure preserves the s
   console.log("[diag] postgres-sync.test.ts: admin cerrado antes de lanzar CLI.");
 
   const cli=resolve(import.meta.dir,"../../src/cli.ts");
-  // Ver src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync tiene un error confirmado y
-  // sin corregir aguas arriba (oven-sh/bun#34069) que se queda colgado, así que aquí se usa
-  // Bun.spawn asíncrono en su lugar.
-  const run=async(...args:string[])=>{
-    console.log(`[diag] postgres-sync.test.ts: ejecutando CLI: ${args[0]}...`);
-    const stdoutPath=join(directory,`cli-${args[0]}.stdout`);
-    const stderrPath=join(directory,`cli-${args[0]}.stderr`);
-    const child=Bun.spawn([process.execPath,cli,...args],{
-      env:{...process.env,FORGE614_HOME:join(user,".forge614")},
-      stdout:Bun.file(stdoutPath),stderr:Bun.file(stderrPath),
-    });
-    const timer=setTimeout(()=>{
-      console.error(`[diag] postgres-sync.test.ts: CLI ${args[0]} (PID ${child.pid}) excedió 20s, ejecutando kill...`);
-      if (process.platform === "win32") {
-        try { spawnSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore", timeout: 5_000 }); } catch {}
-      }
-      try { child.kill("SIGKILL"); } catch {}
-    },20_000);
-    try {
-      const exitCode=await child.exited;
-      const stdout=existsSync(stdoutPath)?readFileSync(stdoutPath,"utf8"):"";
-      const stderr=existsSync(stderrPath)?readFileSync(stderrPath,"utf8"):"";
-      console.log(`[diag] postgres-sync.test.ts: CLI ${args[0]} finalizado con código ${exitCode}.`);
-      return {exitCode,stdout,stderr};
-    } finally {clearTimeout(timer);}
+  const helper=resolve(import.meta.dir,"../../scripts/fixtures/postgres-sync-cli.mjs");
+  const stdoutPath=join(directory,"cli-results.json");
+  console.log("[diag] postgres-sync.test.ts: ejecutando secuencia CLI en ayudante Node...");
+  const child=Bun.spawn(["node",helper,process.execPath,cli,join(user,".forge614"),p.projectId],{
+    stdout:Bun.file(stdoutPath),stderr:"inherit",
+  });
+  const timer=setTimeout(()=>{
+    console.error(`[diag] postgres-sync.test.ts: ayudante CLI (PID ${child.pid}) excedió 75s, ejecutando kill...`);
+    if (process.platform === "win32") {
+      try { spawnSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore", timeout: 5_000 }); } catch {}
+    }
+    try { child.kill("SIGKILL"); } catch {}
+  },75_000);
+  let helperExitCode:number;
+  try {
+    helperExitCode=await child.exited;
+  } finally {
+    clearTimeout(timer);
+  }
+  expect(helperExitCode).toBe(0);
+  const results=JSON.parse(readFileSync(stdoutPath,"utf8")) as {
+    search:{exitCode:number;stdout:string;stderr:string};
+    save:{exitCode:number;stdout:string;stderr:string};
+    sync:{exitCode:number;stdout:string;stderr:string};
   };
 
-  console.log("[diag] postgres-sync.test.ts: paso 7/8: ejecutando CLI 1/3 (search)...");
-  const read=await run("search","--project-id",p.projectId,"--query","persistent");
-  expect(read.exitCode).toBe(0);expect(JSON.parse(read.stdout)).toHaveLength(1);
+  console.log("[diag] postgres-sync.test.ts: paso 7/8: validando CLI 1/3 (search)...");
+  expect(results.search.exitCode).toBe(0);expect(JSON.parse(results.search.stdout)).toHaveLength(1);
   console.log("[diag] postgres-sync.test.ts: paso 7/8: CLI 1/3 (search) validado.");
 
-  console.log("[diag] postgres-sync.test.ts: paso 8/8a: ejecutando CLI 2/3 (save)...");
-  const saved=await run("save","--project-id",p.projectId,"--title","Later","--content","offline writes");
-  expect(saved.exitCode).toBe(0);
+  console.log("[diag] postgres-sync.test.ts: paso 8/8a: validando CLI 2/3 (save)...");
+  expect(results.save.exitCode).toBe(0);
   console.log("[diag] postgres-sync.test.ts: paso 8/8a: CLI 2/3 (save) validado.");
 
-  console.log("[diag] postgres-sync.test.ts: paso 8/8b: ejecutando CLI 3/3 (sync)...");
-  const failed=await run("sync");expect(failed.exitCode).toBe(1);expect(failed.stderr).not.toContain("SECRET");
+  console.log("[diag] postgres-sync.test.ts: paso 8/8b: validando CLI 3/3 (sync)...");
+  expect(results.sync.exitCode).toBe(1);expect(results.sync.stderr).not.toContain("SECRET");
   console.log("[diag] postgres-sync.test.ts: paso 8/8b: CLI 3/3 (sync) validado.");
 
   expect(output.join("\n")).not.toContain(testUrl);
   console.log("[diag] postgres-sync.test.ts: prueba finalizada exitosamente.");
-},postgresTestTimeoutMs);
+},90_000);
