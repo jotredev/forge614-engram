@@ -52,9 +52,12 @@ test("update JSON output contains only the structured update result", async () =
   expect(updateResultJson({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" })).toBe(
     '{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}',
   );
+  expect(updateResultJson({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0", pendingVersion: "1.4.0" })).toBe(
+    '{"updated":false,"previousVersion":"1.3.0","installedVersion":"1.3.0","pendingVersion":"1.4.0"}',
+  );
 }, 40000);
 
-// runUpdateCommand imprime el resultado solo cuando json es verdadero; sin --json no imprime nada.
+// runUpdateCommand imprime el resultado estructurado cuando json es verdadero; sin --json imprime notificaciones pendientes si las hay.
 test("update --json prints structured output while plain update remains silent", async () => {
   const output: string[] = [];
   const update = async () => ({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" });
@@ -286,3 +289,12 @@ test("startup-context loads zod only when the repository carries an identity fil
   expect(existsSync(withFile)).toBe(true);
   expect(readFileSync(withFile, "utf8")).toContain("zod");
 }, 40000);
+
+// runUpdateCommand imprime el mensaje interactivo en Windows cuando hay pendingVersion.
+test("update interactively prints pending replacement on Windows", async () => {
+  const output: string[] = [];
+  const update = async () => ({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0", pendingVersion: "1.4.0" });
+
+  await runUpdateCommand(false, "1.3.0", update, value => output.push(value));
+  expect(output).toEqual(["El reemplazo a la versión 1.4.0 queda pendiente hasta que salga el proceso."]);
+});

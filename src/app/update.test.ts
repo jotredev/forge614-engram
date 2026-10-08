@@ -35,3 +35,12 @@ test("application update masks installer diagnostics behind UPDATE_FAILED", asyn
 
   await expect(updateEngram("1.3.0", { run: async () => { throw new Error(secret); } })).rejects.not.toThrow(secret);
 });
+
+// Verifica que el objeto devuelto conserva pendingVersion en Windows.
+test("application update forwards pendingVersion for Windows CLI consumers", async () => {
+  const result = await updateEngram("1.3.0", {
+    run: async () => ({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0", pendingVersion: "1.4.0" }),
+  });
+
+  expect(result).toEqual({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0", pendingVersion: "1.4.0" });
+});
