@@ -38,8 +38,10 @@ jobs:
           # binarios y lanza procesos hijos sufre escrutinio intensivo de Defender en Windows CI.
           # Solo para este job de CI, nunca en instalaciones de usuario.
           Set-MpPreference -DisableRealtimeMonitoring $true
-      - name: Syntax-check verification script
-        run: node --check scripts/verify-windows-self-update.mjs
+      - name: Syntax-check verification scripts
+        run: |
+          node --check scripts/fixtures/windows-self-update-entry.mjs
+          node --check scripts/verify-windows-self-update.mjs
       - name: Verify native self-update on Windows
         run: bun scripts/verify-windows-self-update.mjs
       - name: Print self-update diagnostics and clean fixtures
@@ -74,7 +76,7 @@ jobs:
 
           Write-Host "--- cleaning fixtures ---"
           Remove-Item -Path "${{ runner.temp }}\forge614-engram-self-update-home" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item -Path "${{ runner.temp }}\forge614-engram-self-update-repo" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "${{ runner.temp }}\forge614-engram-self-update-asset" -Recurse -Force -ErrorAction SilentlyContinue
   unix:
     name: Unix checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

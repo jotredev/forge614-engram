@@ -22,7 +22,7 @@ async function withForge614Home(run: (home: string) => Promise<void> | void): Pr
 // El comando instalado debe derivarse de FORGE614_HOME, no de una ruta fija.
 test("updater derives its installed command from FORGE614_HOME", async () => {
   await withForge614Home(async (home) => {
-    expect(installedEngramCommand()).toBe(join(home, "engram/bin/forge614-engram"));
+    expect(installedEngramCommand("darwin")).toBe(join(home, "engram/bin/forge614-engram"));
   });
 });
 
@@ -32,6 +32,7 @@ test("update downloads the stable installer and explicitly replaces only the ins
   let cleaned = false;
 
   const result = await updateInstalledEngram("1.3.0", {
+    platform: "darwin",
     download: async (url) => {
       calls.push(`download ${url}`);
       return { installer: "/tmp/forge614-engram-install.sh", cleanup: () => { cleaned = true; } };
@@ -56,6 +57,7 @@ test("update preserves the installed command when the verified installer fails",
   let cleaned = false;
 
   await expect(updateInstalledEngram("1.3.0", {
+    platform: "darwin",
     download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => { cleaned = true; } }),
     spawn: () => ({ status: 1, stderr: "download failed" }),
   })).rejects.toThrow("download failed");
@@ -66,6 +68,7 @@ test("update preserves the installed command when the verified installer fails",
 // Si la versión instalada tras ejecutar el instalador coincide con la anterior, debe reportarse como no actualizada.
 test("update reports unchanged when the installed release already matches", async () => {
   const result = await updateInstalledEngram("1.3.0", {
+    platform: "darwin",
     download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => {} }),
     spawn: () => ({ status: 0 }),
     readInstalledVersion: () => "1.3.0",
@@ -79,6 +82,7 @@ test("quiet updates do not inherit installer output", async () => {
   let spawnOptions: SpawnOptions | undefined;
 
   await updateInstalledEngram("1.3.0", {
+    platform: "darwin",
     quiet: true,
     download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => {} }),
     spawn: (_command, _args, options) => {
@@ -96,6 +100,7 @@ test("interactive updates retain installer output", async () => {
   let spawnOptions: SpawnOptions | undefined;
 
   await updateInstalledEngram("1.3.0", {
+    platform: "darwin",
     download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => {} }),
     spawn: (_command, _args, options) => {
       spawnOptions = options;
