@@ -20,13 +20,14 @@ const cluster=startPostgresCluster();
 console.log(`[diag] postgres-sync.test.ts: clúster inicializado (available=${cluster.available}).`);
 const integration=cluster.available?test:test.skip;
 let directory="",url="",admin!:SQL;
+let adminClosed=false;
 if(cluster.available) { directory=cluster.directory;url=cluster.url;admin=new SQL(url); }
 else console.warn(`SKIP PostgreSQL integration: ${cluster.reason}`);
 afterAll(async()=>{
   if(!cluster.available) return;
   console.log("[diag] postgres-sync.test.ts: afterAll: cerrando admin...");
   try {
-    await admin.close();
+    if (!adminClosed) await admin.close();
     console.log("[diag] postgres-sync.test.ts: afterAll: admin cerrado.");
   }
   finally {
@@ -83,6 +84,12 @@ integration("configured CLI stays local offline and sync failure preserves the s
   await expect(syncWorkspace(config)).rejects.toMatchObject({code:"POSTGRES_UNAVAILABLE"});
   expect(readFileSync(config.databasePath)).toEqual(before);
   console.log("[diag] postgres-sync.test.ts: paso 6/8: fallo de sync verificado correctamente.");
+
+  // La conexión administrativa solo crea la base; los comandos CLI corren sin ella abierta.
+  console.log("[diag] postgres-sync.test.ts: cerrando admin antes de lanzar CLI...");
+  await admin.close();
+  adminClosed=true;
+  console.log("[diag] postgres-sync.test.ts: admin cerrado antes de lanzar CLI.");
 
   const cli=resolve(import.meta.dir,"../../src/cli.ts");
   // Ver src/interfaces/cli/__tests__/cli.e2e.test.ts: Bun.spawnSync tiene un error confirmado y
