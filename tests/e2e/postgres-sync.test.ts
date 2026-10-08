@@ -6,7 +6,7 @@
  */
 import { afterAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { SQL } from "bun";
 import { runSetup } from "../../src/app/setup";
@@ -93,30 +93,34 @@ integration("configured CLI stays local offline and sync failure preserves the s
 
   const cli=resolve(import.meta.dir,"../../src/cli.ts");
   const helper=resolve(import.meta.dir,"../../scripts/fixtures/postgres-sync-cli.mjs");
-  const stdoutPath=join(directory,"cli-results.json");
+  const resultPath=join(directory,"cli-results.json");
   console.log("[diag] postgres-sync.test.ts: ejecutando secuencia CLI en ayudante Node...");
-  const child=Bun.spawn(["node",helper,process.execPath,cli,join(user,".forge614"),p.projectId],{
-    stdout:Bun.file(stdoutPath),stderr:"inherit",
+  const child=Bun.spawn(["node",helper,process.execPath,cli,join(user,".forge614"),p.projectId,resultPath],{
+    stdout:"ignore",stderr:"inherit",
   });
-  const timer=setTimeout(()=>{
+  child.unref();
+  type CliOutput={exitCode:number;stdout:string;stderr:string};
+  type CliResults={search:CliOutput;save:CliOutput;sync:CliOutput}|{error:string};
+  let results:CliResults|undefined;
+  const deadline=Date.now()+75_000;
+  while(Date.now()<deadline) {
+    if(existsSync(resultPath)) {
+      try {
+        results=JSON.parse(readFileSync(resultPath,"utf8")) as CliResults;
+        break;
+      } catch { /* El ayudante puede estar terminando de escribir el JSON. */ }
+    }
+    await Bun.sleep(50);
+  }
+  if(!results) {
     console.error(`[diag] postgres-sync.test.ts: ayudante CLI (PID ${child.pid}) excedió 75s, ejecutando kill...`);
     if (process.platform === "win32") {
       try { spawnSync("taskkill", ["/F", "/T", "/PID", String(child.pid)], { stdio: "ignore", timeout: 5_000 }); } catch {}
     }
     try { child.kill("SIGKILL"); } catch {}
-  },75_000);
-  let helperExitCode:number;
-  try {
-    helperExitCode=await child.exited;
-  } finally {
-    clearTimeout(timer);
+    throw new Error("El ayudante CLI no publicó un resultado en 75s.");
   }
-  expect(helperExitCode).toBe(0);
-  const results=JSON.parse(readFileSync(stdoutPath,"utf8")) as {
-    search:{exitCode:number;stdout:string;stderr:string};
-    save:{exitCode:number;stdout:string;stderr:string};
-    sync:{exitCode:number;stdout:string;stderr:string};
-  };
+  if("error" in results) throw new Error(results.error);
 
   console.log("[diag] postgres-sync.test.ts: paso 7/8: validando CLI 1/3 (search)...");
   expect(results.search.exitCode).toBe(0);expect(JSON.parse(results.search.stdout)).toHaveLength(1);
