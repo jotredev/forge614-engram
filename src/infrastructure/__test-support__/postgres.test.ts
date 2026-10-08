@@ -83,8 +83,8 @@ test("startPostgresCluster invokes initdb and pg_ctl on Unix without .exe extens
   if (!cluster.available) return;
 
   expect(spawnedCommands.length).toBe(2);
-  expect(spawnedCommands[0]?.command).toBe("/opt/homebrew/opt/postgresql@18/bin/initdb");
-  expect(spawnedCommands[1]?.command).toBe("/opt/homebrew/opt/postgresql@18/bin/pg_ctl");
+  expect(spawnedCommands[0]?.command).toBe(join(fakeBin, "initdb"));
+  expect(spawnedCommands[1]?.command).toBe(join(fakeBin, "pg_ctl"));
   // En Unix incluye -k para el socket
   expect(spawnedCommands[1]?.args.some(a => /(?:^|\s)-k(?:\s|$)/.test(a))).toBe(true);
 
@@ -97,7 +97,7 @@ test("startPostgresCluster invokes initdb and pg_ctl on Unix without .exe extens
   });
 
   expect(spawnedCommands.length).toBe(3);
-  expect(spawnedCommands[2]?.command).toBe("/opt/homebrew/opt/postgresql@18/bin/pg_ctl");
+  expect(spawnedCommands[2]?.command).toBe(join(fakeBin, "pg_ctl"));
 });
 
 // En modo estricto lanza un error explícito cuando falta la variable de entorno en vez de omitir la suite.
