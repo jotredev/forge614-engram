@@ -2,17 +2,27 @@
 
 ## Supported systems
 
-Official releases currently support macOS and Linux. The installer downloads a platform-specific binary, validates it against `SHA256SUMS`, and installs it under `~/.forge614/engram/bin/`. It also installs the required Forge614 Shell dependency (which brings Forge614 Engines) when `~/.forge614/shell/bin/forge614-shell` is not already there, and Engines if it is still absent; an existing Shell or Engines is kept as is, not updated. Windows has no Engram or Shell installer yet.
+Official releases support macOS, Linux, and Windows x64. Each installer downloads the matching binary, validates it against `SHA256SUMS`, and installs it under `~/.forge614/engram/bin/` (on Windows, `%USERPROFILE%\.forge614\engram\bin\`). It also installs the required Forge614 Shell and Forge614 Engines dependencies when absent; an existing Shell or Engines is kept as is, not updated. Windows arm64 remains pending.
 
 ## Requirements
 
-Because Forge614 Shell is installed, the installer needs **Node.js 22.19 or newer** and `tar`, in addition to Bash, `curl`, and a SHA-256 utility. If any is missing it **installs nothing**: it checks this before downloading any file, so a missing requirement never leaves a partial installation, and it tells you how to fix it. The check always runs, even when Shell is already installed.
+Because Forge614 Shell is installed, the installer needs **Node.js 22.19 or newer** and `tar`. On macOS/Linux it also needs Bash, `curl`, and a SHA-256 utility. On Windows it needs PowerShell 5.1 or newer, `curl.exe`, and `tar.exe`. If any is missing it **does not change Engram**: it checks requirements before installing it and tells you how to fix them. The check always runs, even when Shell is already installed.
 
 ## Install
 
 ```bash
 curl -fsSL https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh | bash
 ```
+
+On Windows x64, open PowerShell and run:
+
+```powershell
+curl.exe -fsSL -o install.ps1 https://github.com/jotredev/forge614-engram/releases/latest/download/install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+Remove-Item install.ps1
+```
+
+`-ExecutionPolicy Bypass` applies only to the process that runs the installer; it does not change the machine's persistent policy. The installer publishes Engram's directory in the user PATH. Open a new terminal before running `forge614-engram`.
 
 The installer works in this order: it checks the requirements, downloads and verifies the Engram binary, installs Forge614 Shell (which brings Engines) unless it is already installed and, if Engines is still absent, Engines, and finally places Engram. If Shell cannot be installed, Engram is left unchanged.
 
@@ -136,7 +146,7 @@ forge614-engram update --json
 forge614-engram uninstall --confirm 'REMOVE FORGE614-ENGRAM'
 ```
 
-`update` downloads the latest stable installer and runs it with `--force`: it verifies the release and replaces the Engram executable while showing normal progress. Like a first install, it needs Node.js 22.19+ and `tar` (if either is missing it changes nothing and keeps the previous binary) and it installs Forge614 Shell (and Engines) if they are missing. It never touches `.env`, `engram.db`, or memories. It uses the same effective root as Engram and installs in `FORGE614_HOME/engram/bin/` when the variable is defined; without it, it keeps `~/.forge614/engram/bin/`. `update --json` suppresses that progress and, on success, writes only compact JSON: `{"updated":true,"previousVersion":"<previous version>","installedVersion":"<installed version>"}`. If the installed version did not change, `updated` is `false`.
+`update` downloads the latest stable release, verifies its checksum, and replaces the Engram executable while showing normal progress. On Windows x64, when the command runs from the installed executable, it schedules the handoff after that process exits; the JSON result may report a pending version. Like a first install, it needs Node.js 22.19+ and `tar` (if either is missing it changes nothing and keeps the previous binary) and it installs Forge614 Shell and Engines if they are missing. It never touches `.env`, `engram.db`, or memories. It uses the same effective root as Engram and installs in `FORGE614_HOME/engram/bin/` when the variable is defined; without it, it keeps `~/.forge614/engram/bin/`. `update --json` suppresses that progress and, on success, writes only compact JSON: `{"updated":true,"previousVersion":"<previous version>","installedVersion":"<installed version>"}`. If the installed version did not change, `updated` is `false`.
 
 Both modes preserve `.env`, `engram.db`, memories, and configuration. With `--json`, failure writes only `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` to stderr and exits with code `1`; it does not expose installer diagnostics, URLs, or secrets. This interface is available from stable release `v1.4.0`.
 

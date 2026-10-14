@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.0
+
+Forge614 Engram incorpora distribución e instalación verificadas para Windows x64.
+
+- **Instalación Windows:** descarga `install.ps1` desde el release oficial, valida `forge614-engram-windows-x64.exe` contra `SHA256SUMS`, instala Shell y Engines si faltan y publica el directorio de Engram en el PATH de usuario. El comando documentado es `curl.exe -fsSL -o install.ps1 https://github.com/jotredev/forge614-engram/releases/latest/download/install.ps1`, seguido de `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` y `Remove-Item install.ps1`.
+- **Actualización y desinstalación Windows:** `forge614-engram update` verifica y releva de forma segura el ejecutable cuando se ejecuta desde la instalación; `uninstall` retira su entrada de PATH y programa el borrado después de que el proceso salga. Ninguna actualización borra `.env`, `engram.db` ni recuerdos.
+- **Pruebas y límites:** la CI nativa de Windows verifica instalación, checksum, actualización y desinstalación. Windows x64 está soportado; Windows arm64 sigue pendiente. La reejecución única ante un fallo conocido de Bun existe solo en la CI y no cambia el producto.
+
 ## 1.8.7
 
 El repositorio se alinea con el ecosistema: sin referencias a los productos de referencia externos, con su identidad de grupo versionada y con README, SECURITY y LICENSE.

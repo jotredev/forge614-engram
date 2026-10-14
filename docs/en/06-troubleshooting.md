@@ -18,6 +18,17 @@ The published installer checks its requirements before downloading anything. If 
 
 With `update --json` these messages are not shown; run `forge614-engram update` without `--json` to see them.
 
+On Windows x64, use the installation command in [01. Installation and Getting Started](01-installation-and-getting-started.md). These literal installer messages identify what to resolve:
+
+- `Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer. Nothing was installed.`: Node.js is unavailable. Install it from https://nodejs.org or run `winget install OpenJS.NodeJS.LTS`, then run the installer again.
+- `Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer; found <version>. Nothing was installed.`: Node.js is old or unreadable. Update it to 22.19 or newer and retry.
+- `Forge614 Engram installs Forge614 Shell, which needs tar. Nothing was installed.`: install `tar.exe` and run the installer again.
+- `Release checksum verification failed.`: the downloaded digest does not match. Do not run the downloaded file; retry from the official command when the network is available.
+- `The command already exists. Use -Force to replace it explicitly.`: the executable already exists. Use `-Force` only when you intend to replace that installation.
+- `INVALID_FORGE614_HOME: FORGE614_HOME must be a non-empty absolute path.`: set `FORGE614_HOME` to a non-empty absolute path or remove it before installing.
+- The installer finishes with `Installed:` but `forge614-engram` is not recognized: open a new terminal so it reads the published user PATH.
+- If execution policy blocks the script, run the documented command with `-ExecutionPolicy Bypass`; that option affects only that PowerShell process.
+
 For automation, use `forge614-engram update --json`. Its success is one compact JSON object on stdout and must not contain progress. On failure it exits with code `1` and writes only `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` to stderr. That deliberately safe message does not reveal installer diagnostics, URLs, credentials, or secrets.
 
 ## Initialization
@@ -106,4 +117,4 @@ Engram does not detect or configure AI clients. If an MCP client is unavailable,
 
 ## Uninstall
 
-Use the exact confirmation phrase printed by help. If Atlas exists, Engram requires the combined confirmation and removes only `~/.forge614/engram/` and `~/.forge614/atlas/`.
+Use the exact confirmation phrase printed by help. If Atlas exists, Engram requires the combined confirmation and removes only `~/.forge614/engram/` and `~/.forge614/atlas/`. On Windows x64, if `uninstall` runs from `%USERPROFILE%\.forge614\engram\bin\forge614-engram.exe`, it schedules deletion after the process exits; the exact PATH entry is removed first.

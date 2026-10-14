@@ -36,4 +36,4 @@ Al aplicar lo bajado: un cambio de la propia instalación no se vuelve a escribi
 
 Con la dirección de Neon, el único parámetro que se acepta además de `sslmode` es `channel_binding` (`require`, `prefer` o `disable`): se acepta y se ignora, porque Engram ya exige TLS verificado fuera de loopback.
 
-El producto publica actualmente binarios autónomos verificados para macOS y Linux. No hay addon nativo, instalador ni artefacto de release para Windows en el producto actual.
+El producto publica binarios autónomos verificados para macOS, Linux y Windows x64. El release de Windows incluye `forge614-engram-windows-x64.exe`, su entrada en `SHA256SUMS` y `install.ps1`; el instalador valida la huella antes de instalar dependencias. Windows arm64 no tiene artefacto todavía.
