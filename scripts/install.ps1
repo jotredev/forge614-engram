@@ -139,7 +139,7 @@ if (Test-Path -LiteralPath $destination) {
 }
 if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") { Fail "Unsupported CPU architecture. Forge614 Engram for Windows supports x64 only." }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer. Nothing was installed. Install Node.js from https://nodejs.org (or run: winget install OpenJS.NodeJS.LTS) and run this installer again." }
-$nodeVersion = & node --version 2>$null
+$nodeVersion = [string](& node --version 2>$null)
 $nodeMatch = [regex]::Match($nodeVersion, '^v(\d+)\.(\d+)\.\d+$')
 if ($LASTEXITCODE -ne 0 -or -not $nodeMatch.Success -or [int]$nodeMatch.Groups[1].Value -lt 22 -or ([int]$nodeMatch.Groups[1].Value -eq 22 -and [int]$nodeMatch.Groups[2].Value -lt 19)) { Fail "Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer; found $nodeVersion. Nothing was installed. Update Node.js from https://nodejs.org (or run: winget install OpenJS.NodeJS.LTS) and run this installer again." }
 if (-not (Get-Command tar.exe -ErrorAction SilentlyContinue)) { Fail "Forge614 Engram installs Forge614 Shell, which needs tar. Nothing was installed. Install tar.exe and run this installer again." }
