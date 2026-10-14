@@ -6,7 +6,7 @@
  * directorio elegido al PATH del shell sin duplicar ni romper lo que ya había, instala
  * Forge614 Engines como dependencia, y rechaza endpoints de prueba inseguros o mal configurados.
  */
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -16,6 +16,9 @@ const temporaryDirectories: string[] = [];
 const fixtureBytes = "#!/usr/bin/env sh\nprintf 'fixture release binary\\n'\n";
 const testReleaseBaseUrl = "FORGE614_ENGRAM_TEST_RELEASE_BASE_URL";
 const testMode = "FORGE614_ENGRAM_INSTALLER_TEST";
+
+// Windows se prueba con install.ps1 en el job nuevo de integración nativa.
+describe.skipIf(process.platform === "win32")("scripts/install.sh", () => {
 
 function temporaryDirectory() {
   const directory = mkdtempSync(join(tmpdir(), "forge614-installer-"));
@@ -921,4 +924,6 @@ test("rejects unsafe Forge614 Shell test installer overrides without installing 
     else process.env.FORGE614_SHELL_INSTALLER_TEST_URL = savedOverride;
     server.stop(true);
   }
+});
+
 });

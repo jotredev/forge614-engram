@@ -80,7 +80,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # release-smoke.sh es de bash; la prueba completa de Windows llega con install.ps1 (T4).
+          # release-smoke.sh es de bash; Windows usa pruebas nativas de PowerShell.
           & ".\\dist\\${{ matrix.artifact }}" --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $version = & ".\\dist\\${{ matrix.artifact }}" --version
@@ -186,6 +186,7 @@ jobs:
             dist/forge614-engram-windows-x64.exe \
             dist/SHA256SUMS \
             scripts/install.sh#install.sh \
+            scripts/install.ps1#install.ps1 \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             "${release_flags[@]}"

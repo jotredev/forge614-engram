@@ -182,6 +182,36 @@ jobs:
           Remove-Item -Path "${{ runner.temp }}\forge614-engram-uninstall-home" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "${{ runner.temp }}\forge614-engram-uninstall-temp" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item -Path "${{ runner.temp }}\forge614-engram-test-userpath" -Recurse -Force -ErrorAction SilentlyContinue
+  windows-installer:
+    name: Windows installer integration
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Disable Windows Defender real-time scanning for this job
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # Solo en CI: el exe sin firmar se compila y ejecuta dentro del fixture temporal.
+          Set-MpPreference -DisableRealtimeMonitoring $true
+      - name: Syntax-check installer verification script
+        run: node --check scripts/verify-windows-installer.mjs
+      - name: Verify native Windows installer
+        run: bun scripts/verify-windows-installer.mjs
+      - name: Print installer diagnostics and clean fixtures
+        if: always()
+        shell: pwsh
+        run: |
+          $fixture = "${{ runner.temp }}\forge614-engram-installer"
+          if (Test-Path $fixture) { Get-ChildItem -Recurse -Force $fixture | Select-Object -First 100 | Format-Table -AutoSize }
+          Remove-Item -Path $fixture -Recurse -Force -ErrorAction SilentlyContinue
   unix:
     name: Unix checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
