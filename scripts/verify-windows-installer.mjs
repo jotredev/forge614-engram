@@ -90,10 +90,10 @@ async function serveRelease() {
 }
 
 /** Ejecuta un instalador sin bloquear el servidor loopback y limita cada caso a 120 segundos. */
-function runAsync(caseName, arguments_, options) {
+function runAsync(caseName, arguments_, options, executable = "powershell.exe") {
   console.log(`[${caseName}] inicio`);
   return new Promise((resolve, reject) => {
-    const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/install.ps1", ...arguments_], { ...options, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(executable, ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/install.ps1", ...arguments_], { ...options, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     const timeout = setTimeout(() => { child.kill(); reject(new Error(`[${caseName}] excedió el límite de 120 s.`)); }, 120_000);
@@ -110,14 +110,14 @@ function runAsync(caseName, arguments_, options) {
 }
 
 /** Ejecuta install.ps1 con fixtures locales y permite variar una condición por caso. */
-function install(caseName, baseUrl, extra = {}, arguments_ = []) {
+function install(caseName, baseUrl, extra = {}, arguments_ = [], executable = "powershell.exe") {
   return runAsync(caseName, arguments_, { env: {
     ...process.env, FORGE614_HOME: home, FORGE614_ENGRAM_INSTALLER_TEST: "1",
     FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: baseUrl,
     FORGE614_SHELL_INSTALLER_TEST_URL: `file:///${shellInstaller.replace(/\\/g, "/")}`,
     FORGE614_ENGINES_INSTALLER_TEST_URL: `file:///${enginesInstaller.replace(/\\/g, "/")}`,
     ...extra,
-  } });
+  } }, executable);
 }
 
 /** Espera la retirada diferida del exe que programa uninstall antes de afirmar el resultado. */
@@ -174,6 +174,21 @@ try {
   assert(uninstall.status === 0, `La desinstalación falló: ${uninstall.stderr}`);
   await waitForRemoval(installed);
   assert(countPathEntry(userPath(), bin) === 0, "La desinstalación no retiró la entrada exacta de PATH.");
+
+  if (!Bun.which("pwsh.exe")) throw new Error("pwsh.exe es obligatorio para verificar PowerShell 7 en Windows.");
+  const pwshHome = join(root, "pwsh-home");
+  const pwshBin = join(pwshHome, "engram", "bin");
+  const pwshInstalled = join(pwshBin, "forge614-engram.exe");
+  const pwshClean = await install("g instalación limpia con PowerShell 7", baseUrl, { FORGE614_HOME: pwshHome }, [], "pwsh.exe");
+  assert(pwshClean.status === 0 && existsSync(pwshInstalled), "PowerShell 7 no completó la instalación limpia.");
+  assert(run(pwshInstalled, ["--version"]).status === 0, "El exe instalado con PowerShell 7 no respondió a --version.");
+  assert(pwshClean.stdout.includes("init --product engram") && countPathEntry(userPath(), pwshBin) === 1, "PowerShell 7 no publicó una sola entrada PATH o el siguiente paso.");
+  console.log("[g uninstall PowerShell 7] inicio");
+  const pwshUninstall = run(pwshInstalled, ["uninstall", "--confirm", "REMOVE FORGE614-ENGRAM"], { input: "y\n", env: { ...process.env, FORGE614_HOME: pwshHome, FORGE614_TEST_UNINSTALL_TEMP_ROOT: join(runnerTemp, "forge614-engram-installer-pwsh-uninstall") } });
+  console.log(`[g uninstall PowerShell 7] fin: código ${pwshUninstall.status}`);
+  assert(pwshUninstall.status === 0, `La desinstalación de PowerShell 7 falló: ${pwshUninstall.stderr}`);
+  await waitForRemoval(pwshInstalled);
+  assert(countPathEntry(userPath(), pwshBin) === 0, "La desinstalación de PowerShell 7 no retiró su entrada PATH.");
 } finally {
   if (server) await new Promise(resolve => server.close(resolve));
   setUserPath(originalPath);

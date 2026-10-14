@@ -114,8 +114,22 @@ function Install-Dependency([string]$Name, [string]$CommandPath, [string]$Offici
     } else {
         Invoke-Download $url $installer
     }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Latest
+    # Conserva el intérprete actual para que PowerShell 7 no herede módulos incompatibles al abrir 5.1.
+    $currentPowerShell = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    & $currentPowerShell -NoProfile -ExecutionPolicy Bypass -File $installer -Latest
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $CommandPath -PathType Leaf)) { Fail "Forge614 $Name could not be installed; Engram was not changed." }
+}
+
+function Get-Sha256Hex([string]$Path) {
+    # Usa .NET y no el cmdlet de hash del módulo, que puede faltar con PSModulePath heredado de PowerShell 7.
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        return (($algorithm.ComputeHash($stream) | ForEach-Object { $_.ToString("x2") }) -join "")
+    } finally {
+        $stream.Dispose()
+        $algorithm.Dispose()
+    }
 }
 
 if ($Help) { Show-Usage; exit 0 }
@@ -167,7 +181,7 @@ try {
     $checksumLines = @($lines | Where-Object { $_ -match '^([a-fA-F0-9]{64})  forge614-engram-windows-x64\.exe$' })
     if ($checksumLines.Count -ne 1) { Fail "Release checksum is invalid." }
     $expected = ([regex]::Match($checksumLines[0], '^([a-fA-F0-9]{64})')).Groups[1].Value.ToLowerInvariant()
-    $actual = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actual = Get-Sha256Hex $download
     if ($expected -cne $actual) { Fail "Release checksum verification failed." }
 
     Install-Dependency "Shell" (Join-Path (Join-Path (Join-Path $forgeHome "shell") "bin") "forge614-shell.cmd") "https://github.com/jotredev/forge614-shell/releases/latest/download/install.ps1" "FORGE614_SHELL_INSTALLER_TEST_URL" $temporary
