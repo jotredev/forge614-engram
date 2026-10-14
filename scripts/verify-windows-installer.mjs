@@ -3,7 +3,7 @@
  * (c) huella, (d) fallo de Shell, (e) entradas inseguras y (f) uninstall con User Path.
  * Existe para ejercer PowerShell 5.1, el registro del usuario y un exe real en el runner.
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -89,9 +89,29 @@ async function serveRelease() {
   return server;
 }
 
+/** Ejecuta un instalador sin bloquear el servidor loopback y limita cada caso a 120 segundos. */
+function runAsync(caseName, arguments_, options) {
+  console.log(`[${caseName}] inicio`);
+  return new Promise((resolve, reject) => {
+    const child = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/install.ps1", ...arguments_], { ...options, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => { child.kill(); reject(new Error(`[${caseName}] excedió el límite de 120 s.`)); }, 120_000);
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", status => {
+      clearTimeout(timeout);
+      const tail = stderr.trim().split("\n").slice(-3).join("\n");
+      console.log(`[${caseName}] fin: código ${status}${status === 0 ? "" : `; stderr final: ${tail}`}`);
+      resolve({ status, stdout, stderr });
+    });
+  });
+}
+
 /** Ejecuta install.ps1 con fixtures locales y permite variar una condición por caso. */
-function install(baseUrl, extra = {}, arguments_ = []) {
-  return run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/install.ps1", ...arguments_], { env: {
+function install(caseName, baseUrl, extra = {}, arguments_ = []) {
+  return runAsync(caseName, arguments_, { env: {
     ...process.env, FORGE614_HOME: home, FORGE614_ENGRAM_INSTALLER_TEST: "1",
     FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: baseUrl,
     FORGE614_SHELL_INSTALLER_TEST_URL: `file:///${shellInstaller.replace(/\\/g, "/")}`,
@@ -119,36 +139,38 @@ try {
   const bin = join(home, "engram", "bin");
   const installed = join(bin, "forge614-engram.exe");
 
-  const clean = install(baseUrl);
+  const clean = await install("a instalación limpia", baseUrl);
   assert(clean.status === 0, `La instalación limpia falló: ${clean.stderr}`);
   assert(existsSync(installed), "La instalación limpia no creó el ejecutable.");
   assert(run(installed, ["--version"]).status === 0, "El ejecutable instalado no respondió a --version.");
   assert(clean.stdout.includes("Installed:") && clean.stdout.includes("init --product engram"), "Falta el resultado o siguiente paso.");
   assert(countPathEntry(userPath(), bin) === 1, "La instalación limpia no publicó una sola entrada PATH.");
 
-  const repeated = install(baseUrl);
+  const repeated = await install("b repetición sin Force", baseUrl);
   assert(repeated.status !== 0 && existsSync(installed), "La repetición sin -Force debió fallar sin alterar el destino.");
-  const forced = install(baseUrl, {}, ["-Force"]);
+  const forced = await install("b reemplazo con Force", baseUrl, {}, ["-Force"]);
   assert(forced.status === 0 && countPathEntry(userPath(), bin) === 1, "-Force no reemplazó sin duplicar PATH.");
 
   rmSync(home, { recursive: true, force: true });
   checksumIsInvalid = true;
-  const badChecksum = install(baseUrl);
+  const badChecksum = await install("c huella inválida", baseUrl);
   assert(badChecksum.status !== 0 && !existsSync(installed) && !existsSync(join(home, "shell")) && !existsSync(join(home, "engines")), "Una huella incorrecta debió fallar antes de crear Engram o dependencias.");
   checksumIsInvalid = false;
   rmSync(home, { recursive: true, force: true });
-  const shellFailure = install(baseUrl, { FORGE614_TEST_SHELL_FAIL: "1" });
+  const shellFailure = await install("d fallo de Shell", baseUrl, { FORGE614_TEST_SHELL_FAIL: "1" });
   assert(shellFailure.status !== 0 && !existsSync(installed) && !existsSync(join(home, "engines")), "Una falla de Shell debió dejar Engram y Engines sin crear.");
-  const invalidFixture = install(baseUrl, { FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: "http://example.invalid" });
+  const invalidFixture = await install("e URL no loopback", baseUrl, { FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: "http://example.invalid" });
   assert(invalidFixture.status !== 0 && !existsSync(installed), "Una URL de prueba no loopback debió fallar antes de crear destino.");
-  const withoutSentinel = run("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/install.ps1"], { env: { ...process.env, FORGE614_HOME: home, FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: baseUrl } });
+  const withoutSentinel = await runAsync("sin centinela", [], { env: { ...process.env, FORGE614_HOME: home, FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: baseUrl } });
   assert(withoutSentinel.status !== 0 && !existsSync(installed), "La URL de fixture sin centinela debió fallar sin crear destino.");
-  const relative = install(baseUrl, { FORGE614_HOME: "relative-home" });
+  const relative = await install("e FORGE614_HOME relativo", baseUrl, { FORGE614_HOME: "relative-home" });
   assert(relative.status !== 0, "FORGE614_HOME relativo debió fallar.");
 
-  const restored = install(baseUrl);
+  const restored = await install("f preparación de uninstall", baseUrl);
   assert(restored.status === 0 && existsSync(installed), "No se pudo restaurar una instalación válida para desinstalar.");
+  console.log("[f uninstall] inicio");
   const uninstall = run(installed, ["uninstall", "--confirm", "REMOVE FORGE614-ENGRAM"], { input: "y\n", env: { ...process.env, FORGE614_HOME: home, FORGE614_TEST_UNINSTALL_TEMP_ROOT: join(runnerTemp, "forge614-engram-installer-uninstall") } });
+  console.log(`[f uninstall] fin: código ${uninstall.status}`);
   assert(uninstall.status === 0, `La desinstalación falló: ${uninstall.stderr}`);
   await waitForRemoval(installed);
   assert(countPathEntry(userPath(), bin) === 0, "La desinstalación no retiró la entrada exacta de PATH.");

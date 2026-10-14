@@ -4,7 +4,7 @@
  * quien lo ejecuta), que los borra al salir, y que se niega a correr si el entorno ya apunta a un
  * FORGE614_HOME que no es temporal.
  */
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,6 +12,8 @@ import { join, resolve } from "node:path";
 const script = resolve(import.meta.dir, "../../scripts/release-smoke.sh");
 const entry = resolve(import.meta.dir, "../../src/cli.ts");
 const directories: string[] = [];
+// release-smoke.sh es de Bash y Windows hace su prueba de humo en PowerShell, en release.yml.
+describe.skipIf(process.platform === "win32")("release-smoke.sh", () => {
 function temporary(): string {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "forge614-smoke-test-")));
   directories.push(directory);
@@ -62,4 +64,6 @@ test("the release smoke refuses a FORGE614_HOME outside the system temporary dir
   expect(readdirSync(realLooking)).toEqual(["keep.txt"]);
   expect(readdirSync(fakeHome)).toEqual([]);
   expect(readdirSync(scratch)).toEqual([]);
+});
+
 });
