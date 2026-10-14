@@ -2,7 +2,7 @@
 
 ## Installation or update
 
-Use a supported macOS/Linux terminal with Bash, `curl`, a SHA-256 utility, `tar`, and Node.js 22.19 or newer. `forge614-engram update` uses the official `latest` installer and preserves the previous binary when verification or installation fails. Retry after restoring connectivity; do not manually replace `engram.db`.
+On macOS/Linux, use a terminal with Bash, `curl`, a SHA-256 utility, `tar`, and Node.js 22.19 or newer. There, `forge614-engram update` uses the official `latest` installer and preserves the previous binary when verification or installation fails. On Windows x64, `update` downloads and verifies only the executable and `SHA256SUMS`; it does not run the installer or check Node.js or `tar`. Retry after restoring connectivity; do not manually replace `engram.db`.
 
 The published installer checks its requirements before downloading anything. If a requirement is missing (first three items) it **installed nothing**. If Shell or Engines fails (last six items) only Engram is guaranteed unchanged (Forge614 Engines or part of Shell may already be installed). In every case you can run the installer again once you fix the cause:
 
