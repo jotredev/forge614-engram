@@ -36,4 +36,4 @@ When applying what was downloaded: a change from the installation's own device i
 
 With the Neon connection string, the only parameter accepted besides `sslmode` is `channel_binding` (`require`, `prefer`, or `disable`): it is accepted and ignored, because Engram already requires verified TLS outside loopback.
 
-The product currently ships verified macOS and Linux standalone binaries. There is no Windows native addon, installer, or release artifact in the current product.
+The product ships verified standalone binaries for macOS, Linux, and Windows x64. The Windows release includes `forge614-engram-windows-x64.exe`, its `SHA256SUMS` entry, and `install.ps1`; the installer validates the digest before installing dependencies. Windows arm64 has no artifact yet.

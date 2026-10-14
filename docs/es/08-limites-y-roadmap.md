@@ -69,7 +69,7 @@ Límites de esta entrega: la tabla de cambios en Neon (`forge614_sync.changes`) 
 
 - El instalador publicado instala también Forge614 Shell (que trae Engines) si aún no está instalado y termina diciendo el siguiente paso (por defecto `~/.forge614/shell/bin/forge614-shell init --product engram`, con la ruta absoluta si usas `FORGE614_HOME`), que ya incluye inicializar la memoria de Engram en sus propias pantallas guiadas, en una terminal interactiva. Antes de bajar nada revisa Node.js 22.19+ y `tar`; si falta alguno no instala nada y dice cómo cumplirlo.
 
-Límites de esta entrega: los paquetes de Shell y de Engines sí se verifican con su `.sha256` (lo hacen sus propios instaladores), pero los `install.sh` de Shell y de Engines se ejecutan sin verificar su propia huella, porque sus releases no publican una huella de esos scripts; el binario de Engram se verifica contra `SHA256SUMS`. Windows no tiene instalador de Engram ni de Shell.
+Límites de esta entrega: los paquetes de Shell y de Engines sí se verifican con su `.sha256` (lo hacen sus propios instaladores), pero los `install.sh` de Shell y de Engines se ejecutan sin verificar su propia huella, porque sus releases no publican una huella de esos scripts; el binario de Engram se verifica contra `SHA256SUMS`.
 
 ## Capacidades incorporadas en v1.8.3
 
@@ -96,12 +96,20 @@ Límites de esta entrega: `memory_save`, `memory_get`, `memory_history` y `memor
 
 Límites de esta entrega: `memory_get` y `memory_history` (salvo con scope `shared`), `memory_timeline`, `memory_session_end`, `memory_session_summary` y `memory_save` con scope `ecosystem` siguen dando `PROJECT_NOT_BOUND` en una carpeta sin proyecto, porque necesitan uno real. El manual de la memoria, las descripciones MCP y el formato 2 de los resultados de búsqueda y el formato 1 del contexto no cambian (solo se agrega el campo `project` cuando la carpeta no tiene proyecto).
 
+## Capacidades incorporadas en v1.9.0
+
+- Releases para Windows x64: `forge614-engram-windows-x64.exe`, `SHA256SUMS` e `install.ps1`. El instalador PowerShell valida la huella antes de instalar Shell y Engines, publica el directorio de binarios en el PATH de usuario y pide abrir una terminal nueva.
+- Actualización y desinstalación seguras desde el ejecutable instalado: el relevo o borrado se programa después de que ese proceso salga, y la desinstalación retira la entrada exacta de PATH.
+- CI nativa de Windows para instalador, checksum, actualización y desinstalación. Un reintento ante un fallo conocido de Bun se limita a la CI.
+
+Límite de esta entrega: Windows arm64 sigue sin binario publicado. `-ExecutionPolicy Bypass` en el comando de instalación solo afecta ese proceso de PowerShell.
+
 ## No objetivos explícitos
 
 - No hay TUI ni centro de control de terminal en Engram.
 - No hay detección de IA instalada, selección de clientes, hooks, plugins ni escrituras de configuración MCP.
 - No existe catálogo de adaptadores de clientes de IA en este producto: detectar y configurar asistentes es tarea de Forge614 Engines.
-- Aún no hay release ni instalador de Windows. Los binarios oficiales actuales son para macOS y Linux.
+- No hay binario de Windows arm64; los releases oficiales de Windows son x64.
 - No hay embeddings ni búsqueda exclusiva en nube. FTS5 y SQLite siguen siendo la ruta local primaria.
 - La inicialización no crea ni selecciona proyectos automáticamente.
 

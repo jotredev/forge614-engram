@@ -48,6 +48,8 @@ Sin opciones, `update` conserva la experiencia de terminal y muestra el progreso
 
 Un fallo de `update --json` escribe exclusivamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` en stderr y sale con código `1`. No incluye diagnósticos crudos, URLs, credenciales ni secretos. Esta interfaz está disponible desde la release estable `v1.4.0`.
 
+En Windows x64, `update` descarga el ejecutable publicado y su `SHA256SUMS`, verifica la huella y, cuando se lanzó desde el ejecutable instalado, programa su reemplazo al salir el proceso. `uninstall` retira la publicación de PATH y, en ese mismo caso, programa el borrado seguro después de salir; conserva `.env`, `engram.db` y los recuerdos porque esos datos no se borran durante una actualización.
+
 ## Proyectos
 
 ```text

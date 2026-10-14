@@ -8,7 +8,7 @@ La memoria persistente local de Forge614: una sola base SQLite con búsqueda de 
 ## Qué no es
 - No tiene TUI ni centro de control de terminal.
 - No detecta ni configura clientes de IA: eso es tarea de Forge614 Shell y Forge614 Engines.
-- No tiene versión para Windows todavía: los binarios oficiales son para macOS y Linux.
+- Publica binarios oficiales para macOS, Linux y Windows x64; Windows arm64 sigue pendiente.
 - No usa embeddings ni búsqueda exclusiva en la nube: SQLite y FTS5 son la ruta local principal.
 
 ## Instalación
@@ -18,7 +18,16 @@ macOS / Linux:
 curl -fsSL https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh | bash
 ```
 
-Requisitos: Bash, `curl`, una utilidad SHA-256 (`shasum` o `sha256sum`), `tar` y Node.js 22.19 o superior (los pide Forge614 Shell, que el instalador instala junto con Forge614 Engines si aún no los tienes). Si falta alguno de estos requisitos, se detiene antes de bajar o crear nada y no instala nada.
+Windows x64 (PowerShell):
+```powershell
+curl.exe -fsSL -o install.ps1 https://github.com/jotredev/forge614-engram/releases/latest/download/install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+Remove-Item install.ps1
+```
+
+En Windows, `-ExecutionPolicy Bypass` solo afecta ese proceso de PowerShell. El instalador valida el ejecutable contra `SHA256SUMS`, instala Shell y Engines si faltan, publica la carpeta de Engram en el PATH de usuario y requiere abrir una terminal nueva antes de usar el comando.
+
+En macOS/Linux los requisitos son Bash, `curl`, una utilidad SHA-256 (`shasum` o `sha256sum`), `tar` y Node.js 22.19 o superior. En Windows son PowerShell 5.1 o posterior, `curl.exe`, `tar.exe` y Node.js 22.19 o superior. Shell necesita Node.js y el instalador instala Shell junto con Engines si aún no los tienes. Si falta un requisito, se detiene antes de cambiar Engram.
 
 Al terminar, abre una terminal nueva y ejecuta el siguiente paso:
 ```bash
