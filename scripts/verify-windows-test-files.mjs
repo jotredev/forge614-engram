@@ -6,6 +6,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
+import { shouldRetryBunCrash } from "./verify-windows-test-retry.mjs";
 
 if (process.platform !== "win32") {
   console.error("Este verificador está diseñado exclusivamente para Windows.");
@@ -38,9 +39,9 @@ console.log(`[windows-tests] Ejecutando ${files.length} archivos, cada uno en su
 
 const totals = { pass: 0, skip: 0, fail: 0 };
 let failedFiles = 0;
+let retriedFiles = 0;
 
-for (const file of files) {
-  console.log(`[windows-tests] Iniciando ${file}`);
+async function runTestFile(file) {
   let output = "";
   const child = spawn("bun", ["test", file], { env: process.env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   for (const [stream, destination] of [[child.stdout, process.stdout], [child.stderr, process.stderr]]) {
@@ -70,6 +71,18 @@ for (const file of files) {
     child.once("error", error => finish({ code: null, reason: error.message }));
     child.once("close", code => finish({ code, reason: null }));
   });
+  return { output, outcome };
+}
+
+for (const file of files) {
+  console.log(`[windows-tests] Iniciando ${file}`);
+  let { output, outcome } = await runTestFile(file);
+  if (shouldRetryBunCrash(outcome.code, output)) {
+    retriedFiles++;
+    const report = output.split("\n").filter(line => /Bun has crashed|panic\(main thread\)/.test(line)).join("\n");
+    console.warn(`[windows-tests] Reintentando ${file} una vez por bun.report:\n${report}`);
+    ({ output, outcome } = await runTestFile(file));
+  }
 
   const plain = output.replace(/\x1b\[[0-9;]*m/g, "");
   const count = kind => Number(plain.match(new RegExp(`(?:^|\\n)\\s*(\\d+) ${kind}(?:\\r?\\n|$)`))?.[1] ?? 0);
@@ -82,5 +95,5 @@ for (const file of files) {
   console.log(`[windows-tests] ${file}: ${pass} pass, ${skip} skip, ${fail} fail, exit=${outcome.code ?? outcome.reason}.`);
 }
 
-console.log(`[windows-tests] TOTAL: ${totals.pass} pass, ${totals.skip} skip, ${totals.fail} fail; ${failedFiles} archivos fallidos de ${files.length}.`);
+console.log(`[windows-tests] TOTAL: ${totals.pass} pass, ${totals.skip} skip, ${totals.fail} fail; ${failedFiles} archivos fallidos de ${files.length}; ${retriedFiles} archivos reintentados.`);
 process.exitCode = failedFiles === 0 ? 0 : 1;
