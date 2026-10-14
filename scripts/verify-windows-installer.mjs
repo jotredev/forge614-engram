@@ -102,8 +102,10 @@ function runAsync(caseName, arguments_, options, executable = "powershell.exe") 
     child.on("error", reject);
     child.on("close", status => {
       clearTimeout(timeout);
-      const tail = stderr.trim().split("\n").slice(-3).join("\n");
-      console.log(`[${caseName}] fin: código ${status}${status === 0 ? "" : `; stderr final: ${tail}`}`);
+      const lines = stderr.trim().split("\n");
+      const first = lines.slice(0, 3).join("\n");
+      const tail = lines.slice(-3).join("\n");
+      console.log(`[${caseName}] fin: código ${status}${status === 0 ? "" : `; stderr inicial: ${first}; stderr final: ${tail}`}`);
       resolve({ status, stdout, stderr });
     });
   });
@@ -168,6 +170,22 @@ try {
 
   const restored = await install("f preparación de uninstall", baseUrl);
   assert(restored.status === 0 && existsSync(installed), "No se pudo restaurar una instalación válida para desinstalar.");
+  console.log("[h exe en uso] inicio");
+  const heldExe = spawn(installed, ["mcp"], { env: { ...process.env, FORGE614_HOME: home }, stdio: ["pipe", "pipe", "pipe"] });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    assert(heldExe.exitCode === null, "forge614-engram mcp no permaneció activo con stdin abierto.");
+    const inUse = await install("h reemplazo con exe en uso", baseUrl, {}, ["-Force"]);
+    assert(inUse.status !== 0 && inUse.stderr.includes("in-use Forge614 Engram executable"), "-Force con el exe en uso no informó la violación de uso compartido.");
+    assert(run(installed, ["--version"]).status === 0, "El exe anterior dejó de responder tras un -Force fallido.");
+    assert(countPathEntry(userPath(), bin) === 1, "-Force fallido con exe en uso alteró PATH.");
+  } finally {
+    if (heldExe.exitCode === null) {
+      heldExe.kill();
+      await new Promise(resolve => heldExe.once("close", resolve));
+    }
+    console.log("[h exe en uso] fin");
+  }
   console.log("[f uninstall] inicio");
   const uninstall = run(installed, ["uninstall", "--confirm", "REMOVE FORGE614-ENGRAM"], { input: "y\n", env: { ...process.env, FORGE614_HOME: home, FORGE614_TEST_UNINSTALL_TEMP_ROOT: join(runnerTemp, "forge614-engram-installer-uninstall") } });
   console.log(`[f uninstall] fin: código ${uninstall.status}`);

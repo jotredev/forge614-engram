@@ -195,10 +195,14 @@ try {
         Copy-Item -LiteralPath $download -Destination $temporaryDestination
         if (Test-Path -LiteralPath $destination) {
             try {
-                # Replace es atómico; un exe en uso falla y conserva la instalación activa.
-                [IO.File]::Replace($temporaryDestination, $destination, $null)
+                # NullString entrega un nulo real a .NET; $null se convertiría en una ruta de respaldo vacía.
+                [IO.File]::Replace($temporaryDestination, $destination, [NullString]::Value)
             } catch {
-                Fail "Could not replace an in-use Forge614 Engram executable. Use forge614-engram update or close open sessions."
+                $sharingViolation = $_.Exception -is [IO.IOException] -and ($_.Exception.HResult -eq -2147024864 -or $_.Exception.HResult -eq -2147024863)
+                if ($sharingViolation) {
+                    Fail "Could not replace an in-use Forge614 Engram executable. Use forge614-engram update or close open sessions."
+                }
+                Fail "Could not replace Forge614 Engram executable: $($_.Exception.Message)"
             }
         } else {
             [IO.File]::Move($temporaryDestination, $destination)
