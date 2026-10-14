@@ -198,7 +198,14 @@ try {
                 # NullString entrega un nulo real a .NET; $null se convertiría en una ruta de respaldo vacía.
                 [IO.File]::Replace($temporaryDestination, $destination, [NullString]::Value)
             } catch {
-                $sharingViolation = $_.Exception -is [IO.IOException] -and ($_.Exception.HResult -eq -2147024864 -or $_.Exception.HResult -eq -2147024863)
+                # PowerShell envuelve la IOException de Replace en MethodInvocationException; se recorre la cadena para identificar su HResult real.
+                $exception = $_.Exception
+                $ioException = $null
+                while ($null -ne $exception) {
+                    if ($exception -is [IO.IOException]) { $ioException = $exception; break }
+                    $exception = $exception.InnerException
+                }
+                $sharingViolation = $null -ne $ioException -and ($ioException.HResult -eq -2147024864 -or $ioException.HResult -eq -2147024863)
                 if ($sharingViolation) {
                     Fail "Could not replace an in-use Forge614 Engram executable. Use forge614-engram update or close open sessions."
                 }

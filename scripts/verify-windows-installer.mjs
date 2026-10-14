@@ -5,7 +5,7 @@
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -172,13 +172,17 @@ try {
   assert(restored.status === 0 && existsSync(installed), "No se pudo restaurar una instalación válida para desinstalar.");
   console.log("[h exe en uso] inicio");
   const heldExe = spawn(installed, ["mcp"], { env: { ...process.env, FORGE614_HOME: home }, stdio: ["pipe", "pipe", "pipe"] });
+  let heldExited = false;
+  heldExe.once("exit", () => { heldExited = true; });
   try {
     await new Promise(resolve => setTimeout(resolve, 250));
     assert(heldExe.exitCode === null, "forge614-engram mcp no permaneció activo con stdin abierto.");
-    const inUse = await install("h reemplazo con exe en uso", baseUrl, {}, ["-Force"]);
-    assert(inUse.status !== 0 && inUse.stderr.includes("in-use Forge614 Engram executable"), "-Force con el exe en uso no informó la violación de uso compartido.");
-    assert(run(installed, ["--version"]).status === 0, "El exe anterior dejó de responder tras un -Force fallido.");
-    assert(countPathEntry(userPath(), bin) === 1, "-Force fallido con exe en uso alteró PATH.");
+    const inUse = await install("h reemplazo con exe abierto", baseUrl, {}, ["-Force"]);
+    assert(inUse.status === 0, "-Force no reemplazó el exe mientras mcp seguía abierto.");
+    assert(heldExe.exitCode === null && !heldExited, "El proceso mcp abierto terminó durante el reemplazo.");
+    assert(run(installed, ["--version"]).status === 0, "El exe reemplazado no respondió a --version.");
+    assert(countPathEntry(userPath(), bin) === 1, "El reemplazo con exe abierto duplicó o alteró PATH.");
+    assert(!readdirSync(bin).some(name => /^\.forge614-engram-.*\.tmp$/.test(name)), "El reemplazo con exe abierto dejó temporales en bin.");
   } finally {
     if (heldExe.exitCode === null) {
       heldExe.kill();
