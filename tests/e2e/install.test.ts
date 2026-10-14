@@ -5,7 +5,7 @@
  * sesiones y escrituras/lecturas progresivas de memoria de verdad, además de los rechazos del
  * instalador cuando faltan Bun o Git, o las dependencias no están preparadas.
  */
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync, copyFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -17,6 +17,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 const installer = resolve(import.meta.dir,"../../scripts/install-from-source.sh");
 const dirs: string[] = [];
 const buildEnv: NodeJS.ProcessEnv = { ...process.env, PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin` };
+// Windows se prueba con install.ps1 en el job nuevo de integración nativa.
+describe.skipIf(process.platform === "win32")("scripts/install-from-source.sh", () => {
 function workspace() {
   const dir = mkdtempSync(join(tmpdir(),"forge614-install-"));
   dirs.push(dir);
@@ -184,4 +186,6 @@ test('developer installer fails closed when Git is unavailable before compilatio
   symlinkSync(process.execPath,join(path,'bun'));symlinkSync('/usr/bin/uname',join(path,'uname'));
   const result=install(dir,['--bin-dir',join(dir,'bin')],{...buildEnv,PATH:path});
   expect(result.code).toBe(1);expect(result.error).toContain('Git');expect(existsSync(join(dir,'bin'))).toBe(false);
+});
+
 });
