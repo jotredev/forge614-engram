@@ -46,7 +46,7 @@ The hosted PostgreSQL service Engram uses for syncing between Macs (`cloud on`).
 
 ## Connection string
 
-The full URL Engram uses to connect to Neon (`postgresql://<user>:<password>@<host>/<database>?sslmode=require&channel_binding=require`). It is a key: it is never stored in a memory or in a file inside the repository, only in `~/.forge614/engram/.env`; `cloud on` asks for it in the terminal without echoing it.
+The full URL Engram uses to connect to Neon (`postgresql://<user>:<password>@<host>/<database>?sslmode=require&channel_binding=require`). It is a key: it is never stored in a memory or in a file inside the repository, only in `~/.forge614/memory/.env` (or `FORGE614_HOME/memory/.env`); `cloud on` asks for it in the terminal without echoing it.
 
 ## Installation id
 

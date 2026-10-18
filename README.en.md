@@ -25,16 +25,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 Remove-Item install.ps1
 ```
 
-On Windows, `-ExecutionPolicy Bypass` applies only to that PowerShell process. The installer validates the executable against `SHA256SUMS`, installs Shell and Engines when absent, publishes Engram's directory in the user PATH, and requires opening a new terminal before using the command.
-
-On macOS/Linux, requirements are Bash, `curl`, a SHA-256 utility (`shasum` or `sha256sum`), `tar`, and Node.js 22.19 or newer. On Windows they are PowerShell 5.1 or newer, `curl.exe`, `tar.exe`, and Node.js 22.19 or newer. Shell needs Node.js, and the installer installs Shell together with Engines when they are absent. If a requirement is missing, it stops before changing Engram.
+The single installer requires Node.js 22.19.0 or newer on all three systems. It verifies files from the same release with `SHA256SUMS`, installs Shell and Engines when absent, and publishes the launcher in PATH. On Windows, `-ExecutionPolicy Bypass` applies only to that PowerShell process.
 
 When it finishes, open a new terminal and run the next step:
 ```bash
 ~/.forge614/shell/bin/forge614-shell init --product engram
 ```
 
-To verify: `forge614-engram --version` and `forge614-engram help`.
+To verify: `forge614-engram --version`, `forge614-engram --version --json`, and `forge614-engram help`.
+
+The database, `.env`, and backups live in `FORGE614_HOME/memory/` (by default, `~/.forge614/memory/`). The first time Engram 1.10.0 runs, it automatically moves a 1.9.0 installation's memory from `engram/` after verifying the copy.
+
+`update [--version X.Y.Z] [--json]` uses the installer from the selected release and preserves data. `uninstall` keeps `memory/`; `uninstall --purge-data` also removes that local folder after a separate confirmation. An optional PostgreSQL copy is not deleted. If Atlas is installed, the `uninstall` confirmation names both Engram and Atlas. `uninstall --self` removes only Engram integrations managed by Engines, keeps Atlas installed, and is used by the installer when removing the program.
 
 ## Main commands
 | Command | What it does |

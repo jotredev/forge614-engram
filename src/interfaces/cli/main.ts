@@ -29,8 +29,11 @@ export async function main(args:string[]):Promise<void> {
       throw new MemoryError("COMMAND_RETIRED", "El comando setup fue retirado. Usa forge614-engram init.");
     }
     if (command === "--version") {
-      if (args.length > 1) invalid("--version no acepta opciones.");
-      console.log(`forge614-engram ${version}`); return;
+      if (args.length === 1) { console.log(`forge614-engram ${version}`); return; }
+      if (args.length === 2 && args[1] === "--json") {
+        console.log(JSON.stringify({ schemaVersion: 1, name: "forge614-engram", version })); return;
+      }
+      invalid("--version solo acepta --json.");
     }
     if (command === "help" || command === "--help") {
       if (args.length > 1) invalid("help no acepta opciones.");
@@ -43,7 +46,7 @@ export async function main(args:string[]):Promise<void> {
     console.error(JSON.stringify(error instanceof MemoryError
       ? errorEnvelope(command, error.code, error.message)
       : errorEnvelope(command, "STORAGE_ERROR", "No se pudo completar la operación. Comprueba permisos, configuración y disponibilidad de la base. No se creó una base de reemplazo.")));
-    process.exitCode = 1;
+    process.exitCode = error instanceof MemoryError && error.code === "PURGE_REQUIRES_TTY" ? 2 : 1;
   }
   finally {
     // Experimento (coordinador de forge614-ai, investigación del bloqueo de 1.5.3): comprueba si el

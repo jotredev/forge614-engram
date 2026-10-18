@@ -3,9 +3,10 @@
  * por `parseArguments`, abre el espacio de trabajo (workspace) que corresponda y llama a la operación de `app`
  * adecuada, imprimiendo el resultado como JSON. `main.ts` llama a `dispatch` con el resultado de `parseArguments`.
  */
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud, runCloudOn, runCloudOff, runCloudStatus, runCloudSync } from "../../app";
-import type { EngramUpdateResult, UninstallInput, UninstallDependencies, UninstallResult } from "../../app";
+import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, uninstallEngramSelf, uninstallConfirmation, uninstallMemoryPath, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud, runCloudOn, runCloudOff, runCloudStatus, runCloudSync } from "../../app";
+import type { EngramUpdateResult, SelfUninstallResult, UninstallInput, UninstallDependencies, UninstallResult } from "../../app";
 import { MemoryError } from "../../shared/errors";
+import { createInterface } from "node:readline";
 import { memoryTypes, type SaveInput, type SearchScope } from "../../modules/memory";
 import { memoryProtocol } from "../../modules/memory-protocol";
 import { projectIdentity } from "../../modules/projects";
@@ -33,16 +34,19 @@ export function updateResultJson(result: EngramUpdateResult): string {
   return JSON.stringify(result);
 }
 
-/** Ejecuta el comando `update`: descarga y aplica la actualización, e imprime el resultado solo si se pidió `--json` (el modo interactivo ya muestra su propio progreso dentro de `updateEngram`). */
+/** Ejecuta `update` y presenta el resultado humano o el contrato JSON que consume Shell. */
 export async function runUpdateCommand(
   json: boolean,
   currentVersion: string,
-  update: () => Promise<EngramUpdateResult> = () => updateEngram(currentVersion, { quiet: json }),
+  update: () => Promise<EngramUpdateResult> = () => updateEngram(currentVersion, { quiet: json, ...(targetVersion ? { version: targetVersion } : {}) }),
   print: (value: string) => void = console.log,
+  targetVersion?: string,
 ): Promise<void> {
   const result = await update();
   if (json) print(updateResultJson(result));
   else if (result.pendingVersion) print("El reemplazo a la versión " + result.pendingVersion + " queda pendiente hasta que salga el proceso.");
+  else if (result.updated) print(`forge614-engram se actualizó de ${result.previousVersion} a ${result.installedVersion}.`);
+  else print(`forge614-engram ya está al día (${result.installedVersion}).`);
 }
 
 /**
@@ -51,13 +55,70 @@ export async function runUpdateCommand(
  * @param uninstall Función que ejecuta la desinstalación (por defecto `uninstallEngram`).
  * @param print Función de impresión (por defecto `console.log`).
  */
+export interface UninstallCommandOptions { json: boolean; purgeData: boolean; self: boolean; }
+
+/** Pide una confirmación de terminal; Ctrl+C se representa como `null` para salir con 130. */
+async function askUninstallConfirmation(phrase: string): Promise<string | null> {
+  const terminal = createInterface({ input: process.stdin, output: process.stdout });
+  return await new Promise(resolve => {
+    const cancel = () => { terminal.close(); resolve(null); };
+    terminal.once("SIGINT", cancel);
+    process.once("SIGINT", cancel);
+    terminal.question(`${phrase}\n> `, answer => {
+      process.off("SIGINT", cancel);
+      terminal.off("SIGINT", cancel);
+      terminal.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/** Ejecuta `uninstall` interactivo o en modo máquina, conservando la memoria por defecto. */
 export async function runUninstallCommand(
-  confirmation: string,
+  options: UninstallCommandOptions,
   uninstall: (input: UninstallInput, dependencies: UninstallDependencies) => Promise<UninstallResult> = uninstallEngram,
   print: (value: string) => void = console.log,
+  uninstallSelf: (dependencies: UninstallDependencies) => Promise<SelfUninstallResult> = uninstallEngramSelf,
+  ask: (phrase: string) => Promise<string | null> = askUninstallConfirmation,
 ): Promise<void> {
-  const result = await uninstall({ confirmation }, { executable: process.execPath });
-  print(JSON.stringify(result, null, 2));
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  if (options.purgeData && (options.json || !interactive)) {
+    throw new MemoryError("PURGE_REQUIRES_TTY", "--purge-data requiere una terminal interactiva y no acepta --json.");
+  }
+  const dependencies = { executable: process.execPath };
+  if (options.self) {
+    const result = await uninstallSelf(dependencies);
+    if (options.json) print(JSON.stringify({ schemaVersion: 1, result }));
+    else {
+      print("Se retiraron las integraciones de Engram administradas por Engines.");
+      print(`La memoria se conserva en ${result.memoryPath}.`);
+      if (result.atlasRemains) print("Aviso: Atlas sigue instalado, pero queda sin Engram.");
+    }
+    return;
+  }
+  const phrase = uninstallConfirmation(undefined, options.purgeData);
+  let confirmation = phrase;
+  if (interactive) {
+    if (options.purgeData) print(`Se borrarán la memoria local y la configuración de nube en ${uninstallMemoryPath()}. La copia en la nube no se borra.`);
+    else print(`La memoria se conservará en ${uninstallMemoryPath()}.`);
+    const answer = await ask(phrase);
+    if (answer === null) { process.exitCode = 130; return; }
+    confirmation = answer;
+  }
+  const result = await uninstall({ confirmation, purgeData: options.purgeData }, dependencies);
+  if (options.json) {
+    print(JSON.stringify({ schemaVersion: 1, result: {
+      removed: result.removed, memoryKept: result.memoryKept, memoryPath: result.memoryPath,
+      atlasRemoved: result.atlasRemoved, ...(result.pendingRemoval ? { pendingRemoval: true } : {}),
+      ...(result.remainingExecutablePath ? { remainingExecutablePath: result.remainingExecutablePath } : {}),
+    } }));
+  } else {
+    print(result.pendingRemoval ? "La desinstalación de Engram quedó programada." : "Engram se desinstaló.");
+    if (result.atlasRemoved) print("Atlas también se desinstaló.");
+    if (result.memoryKept) print(`La memoria se conserva en ${result.memoryPath}.`);
+    if (result.remainingExecutablePath) print(`No se pudo programar el borrado del ejecutable; quedó en ${result.remainingExecutablePath}.`);
+    else print("Se borró la memoria local. La copia en la nube se conserva.");
+  }
 }
 
 /** Ejecuta el comando ya analizado: resuelve los comandos que no necesitan abrir la base primero, luego los que sí, y termina con el grupo save/search/get/history/archive/restore que comparte la validación de scope. */
@@ -69,11 +130,11 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
     return;
   }
   if (command === "update") {
-    await runUpdateCommand(values.has("json"), currentVersion);
+    await runUpdateCommand(values.has("json"), currentVersion, undefined, undefined, values.get("version"));
     return;
   }
   if (command === "uninstall") {
-    await runUninstallCommand(need("confirm"));
+    await runUninstallCommand({ json: values.has("json"), purgeData: values.has("purge-data"), self: values.has("self") });
     return;
   }
   if (command === "cloud-on") {

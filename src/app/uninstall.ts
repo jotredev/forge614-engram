@@ -5,13 +5,14 @@
  * desde el propio binario a eliminar, programa el borrado diferido mediante WMI y PowerShell.
  */
 import { spawnSync } from "node:child_process";
-import { lstatSync, mkdtempSync, rmSync, writeFileSync, type Stats } from "node:fs";
+import { lstatSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync, type Stats } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { MemoryError } from "../shared/errors";
 import { removePathPublication } from "../infrastructure/filesystem/path-publication";
 import { assertSafePath } from "../infrastructure/filesystem/private-files";
-import { engramBinDirectory, engramHome, forge614Home } from "../infrastructure/filesystem/paths";
+import { engramBinDirectory, engramHome, forge614Home, memoryHome } from "../infrastructure/filesystem/paths";
+import { ensureMemoryBeforeUninstall } from "../infrastructure/filesystem/memory-location";
 
 /** Opciones para spawn al invocar el lanzador WMI en Windows. */
 export interface UninstallSpawnOptions {
@@ -25,7 +26,7 @@ export interface UninstallSpawnResult {
 }
 
 /** Lo que quien llama debe aportar para autorizar la desinstalación: `confirmation` es la frase exacta que la persona debe escribir para confirmar, que varía según si Atlas también se va a quitar. */
-export interface UninstallInput { confirmation: string; }
+export interface UninstallInput { confirmation: string; purgeData?: boolean; }
 /** Piezas que `uninstallEngram` necesita del entorno; sustituibles en las pruebas. */
 export interface UninstallDependencies {
   /** Carpeta personal a usar en vez de `homedir()`. */
@@ -44,21 +45,44 @@ export interface UninstallDependencies {
   processId?: number;
   /** Raíz temporal para crear los scripts y logs de paso (por defecto `tmpdir()`). */
   tempRoot?: string;
+  /** Directorio actual del proceso; permite rechazar desinstalarse desde dentro del nodo. */
+  cwd?: string;
   /** Función inyectable para ejecutar comandos (usada para lanzar WMI en Windows). */
   spawn?: (command: string, args: string[], options?: UninstallSpawnOptions) => UninstallSpawnResult;
+  /** Sustituye la retirada precisa de integraciones administradas por Engines en las pruebas. */
+  runEnginesSelf?: (command: string, args: string[]) => Promise<number>;
 }
 /** Resumen de lo que la desinstalación efectivamente hizo: `removed` si la carpeta de instalación de Engram existía y se borró; `atlasRemoved` si Forge614 Atlas estaba presente y se desinstaló como parte de este proceso; `pathPublications` las rutas o identificadores de los que se retiró la publicación en PATH; `pendingRemoval` si el borrado quedó programado en segundo plano en Windows. */
 export interface UninstallResult {
   removed: boolean;
   atlasRemoved: boolean;
+  memoryKept: boolean;
+  memoryPath: string;
   pathPublications: string[];
   pendingRemoval?: boolean;
+  remainingExecutablePath?: string;
 }
+
+/** Resultado del hook invocado por `install.mjs` antes de borrar `engram/`. */
+export interface SelfUninstallResult { integrationsRemoved: true; memoryKept: true; memoryPath: string; atlasRemains: boolean; }
+
+/** Da la frase localizada que confirma el alcance real de desinstalación y borrado de datos. */
+export function uninstallConfirmation(forgeHome = forge614Home(), purgeData = false): string {
+  const withAtlas = safeDirectory(join(forgeHome, 'atlas')) !== null;
+  if (purgeData) return withAtlas
+    ? 'BORRAR MEMORIA LOCAL Y CONFIGURACIÓN DE NUBE; DESINSTALAR ENGRAM Y ATLAS'
+    : 'BORRAR MEMORIA LOCAL Y CONFIGURACIÓN DE NUBE; DESINSTALAR ENGRAM';
+  return withAtlas ? 'DESINSTALAR ENGRAM Y ATLAS' : 'DESINSTALAR ENGRAM';
+}
+
+/** Devuelve la ruta privada donde Engram guarda la memoria para los avisos del CLI. */
+export function uninstallMemoryPath(): string { return memoryHome(); }
 
 const WINDOWS_UNINSTALL_HELPER_SCRIPT = `
 param(
   [string]$TargetDir,
   [string]$ParentDir,
+  [string]$ParkedExe,
   [int]$ProcessId,
   [string]$StagingDir,
   [string]$LogFile
@@ -80,6 +104,9 @@ if ($ProcessId -gt 0) {
 for ($i = 0; $i -lt 40; $i++) {
   Start-Sleep -Milliseconds 250
   try {
+    if ($ParkedExe -and (Test-Path -LiteralPath $ParkedExe)) {
+      Remove-Item -LiteralPath $ParkedExe -Force -ErrorAction Stop
+    }
     if (-not (Test-Path -LiteralPath $TargetDir)) {
       "$(Get-Date -Format o) target dir does not exist; uninstall complete" | Out-File -FilePath $LogFile -Append
       Remove-Item -LiteralPath $StagingDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -157,6 +184,13 @@ function stat(path: string): Stats | null {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
 }
 
+/** Quita solo los ejecutables que una actualización Windows apartó en una operación anterior. */
+function cleanupOldLaunchers(binDirectory: string): void {
+  for (const name of readdirSync(binDirectory, { withFileTypes: true }).filter(entry => entry.isFile() && entry.name.startsWith(".old-")).map(entry => entry.name)) {
+    rmSync(join(binDirectory, name), { force: true });
+  }
+}
+
 /**
  * Confirma que `path` es una carpeta real, no un enlace simbólico y no tiene en su
  * ascendencia ningún enlace simbólico fuera de los alias del sistema que permite
@@ -173,6 +207,17 @@ function safeDirectory(path: string): Stats | null {
   try { assertSafePath(path); }
   catch { throw new MemoryError('UNINSTALL_UNSAFE', 'La carpeta que se eliminaría no es una carpeta segura de Forge614 Engram.'); }
   return entry;
+}
+
+/** Rechaza borrar el nodo desde un proceso cuyo directorio actual depende de esa carpeta. */
+function assertNotRunningFromInstallation(root: string, cwd: string): void {
+  if (!safeDirectory(root)) return;
+  const realRoot = realpathSync.native(root);
+  const realCwd = realpathSync.native(cwd);
+  const child = relative(realRoot, realCwd);
+  if (child === "" || (child !== ".." && !child.startsWith("../") && !child.startsWith("..\\"))) {
+    throw new MemoryError("UNINSTALL_FROM_INSTALLATION", "No se puede desinstalar Forge614 Engram desde una carpeta dentro de su instalación.");
+  }
 }
 
 /** Ejecuta de verdad el binario de Atlas con los argumentos dados, sin heredar entrada ni salida, y espera su código de salida. */
@@ -205,10 +250,15 @@ export async function uninstallEngram(input: UninstallInput, dependencies: Unins
   // Si se dio una carpeta raíz de Forge614 alternativa (pruebas), Engram vive dentro de ella en `engram/`.
   const root = dependencies.forgeHome === undefined ? engramHome() : join(parent, 'engram');
   const binDirectory = dependencies.forgeHome === undefined ? engramBinDirectory() : join(root, 'bin');
+  assertNotRunningFromInstallation(root, dependencies.cwd ?? process.cwd());
+  let memoryPath: string;
+  try { memoryPath = await ensureMemoryBeforeUninstall(parent, root); }
+  catch { throw new MemoryError('MEMORY_PRESERVATION_FAILED', 'No se pudo asegurar una copia completa de la memoria; Engram no se desinstaló.'); }
+  try { cleanupOldLaunchers(binDirectory); } catch { /* El borrado de versiones anteriores no bloquea la conservación de datos. */ }
   const atlas = join(parent, 'atlas');
   const hasAtlas = safeDirectory(atlas) !== null;
   // La frase de confirmación exigida cambia según si también se va a desinstalar Atlas, para que la persona sepa el alcance real.
-  const expected = hasAtlas ? 'REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS' : 'REMOVE FORGE614-ENGRAM';
+  const expected = uninstallConfirmation(parent, input.purgeData === true);
   if (input.confirmation !== expected) throw new MemoryError('UNINSTALL_CONFIRMATION', 'Escribe exactamente: ' + expected);
 
   if (hasAtlas) {
@@ -237,7 +287,7 @@ export async function uninstallEngram(input: UninstallInput, dependencies: Unins
   }
 
   if (!product) {
-    return { removed: false, atlasRemoved: hasAtlas, pathPublications };
+    return { removed: false, atlasRemoved: hasAtlas, memoryKept: true, memoryPath, pathPublications };
   }
 
   const isWindows = platform === 'win32';
@@ -249,8 +299,11 @@ export async function uninstallEngram(input: UninstallInput, dependencies: Unins
     const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const logFile = join(tempBase, `forge614-engram-uninstall-${stamp}.log`);
     const spawnLogPath = join(tempBase, `forge614-engram-uninstall-${stamp}.spawn.log`);
+    const parkedExe = join(tempBase, `.old-forge614-engram-${stamp}${basename(targetExe).endsWith('.exe') ? '.exe' : ''}`);
+    let executableParked = false;
 
     try {
+      if (stat(targetExe)) { renameSync(targetExe, parkedExe); executableParked = true; }
       const helperPath = join(stagingDir, 'helper.ps1');
       const wmiLaunchPath = join(stagingDir, 'wmi-launch.ps1');
 
@@ -263,6 +316,7 @@ export async function uninstallEngram(input: UninstallInput, dependencies: Unins
         '-File', helperPath,
         '-TargetDir', root,
         '-ParentDir', parent,
+        '-ParkedExe', parkedExe,
         '-ProcessId', String(processId),
         '-StagingDir', stagingDir,
         '-LogFile', logFile,
@@ -287,10 +341,21 @@ export async function uninstallEngram(input: UninstallInput, dependencies: Unins
       }
 
       if (!scheduled) {
-        throw new MemoryError('UNINSTALL_SCHEDULE_FAILED', 'No se pudo programar la desinstalación en segundo plano de Forge614 Engram; los datos se conservaron.');
+        rmSync(root, { recursive: true, force: false, maxRetries: 0 });
+        rmSync(stagingDir, { recursive: true, force: true });
+        if (input.purgeData) purgeMemoryDirectory(parent, memoryPath);
+        return {
+          removed: true,
+          atlasRemoved: hasAtlas,
+          memoryKept: !input.purgeData,
+          memoryPath,
+          pathPublications,
+          ...(executableParked ? { remainingExecutablePath: parkedExe } : {}),
+        };
       }
 
-      return { removed: false, atlasRemoved: hasAtlas, pathPublications, pendingRemoval: true };
+      if (input.purgeData) purgeMemoryDirectory(parent, memoryPath);
+      return { removed: false, atlasRemoved: hasAtlas, memoryKept: !input.purgeData, memoryPath, pathPublications, pendingRemoval: true };
     } catch (error) {
       rmSync(stagingDir, { recursive: true, force: true });
       try { rmSync(logFile, { force: true }); } catch {}
@@ -302,5 +367,69 @@ export async function uninstallEngram(input: UninstallInput, dependencies: Unins
 
   // Solo se borra si la carpeta existía (`product` no es null); `force:false` y `maxRetries:0` evitan reintentos silenciosos ante un borrado parcial.
   rmSync(root, { recursive: true, force: false, maxRetries: 0 });
-  return { removed: true, atlasRemoved: hasAtlas, pathPublications };
+  if (input.purgeData) purgeMemoryDirectory(parent, memoryPath);
+  return { removed: true, atlasRemoved: hasAtlas, memoryKept: !input.purgeData, memoryPath, pathPublications };
+}
+
+/** Borra únicamente la carpeta de memoria verificada que queda fuera del directorio del programa. */
+function purgeMemoryDirectory(forgeHome: string, memoryPath: string): void {
+  if (resolve(memoryPath) !== resolve(join(forgeHome, 'memory'))) throw new MemoryError('MEMORY_PURGE_FAILED', 'La ruta de memoria no es segura para borrar.');
+  const directory = safeDirectory(memoryPath);
+  if (directory) rmSync(memoryPath, { recursive: true, force: false, maxRetries: 0 });
+  if (stat(memoryPath)) throw new MemoryError('MEMORY_PURGE_FAILED', 'No se pudo borrar la memoria local de Engram.');
+}
+
+/**
+ * Retira solo las integraciones de memoria que administra Engines y la publicación PATH de Engram.
+ * Se ejecuta antes de que `install.mjs --uninstall` aparte o borre el ejecutable del nodo.
+ * @param dependencies Rutas y sustituciones de proceso descritas en {@link UninstallDependencies}.
+ * @returns El resultado estable que consume el instalador único.
+ * @throws MemoryError con `MEMORY_PRESERVATION_FAILED` o `ENGRAM_INTEGRATION_REMOVE_FAILED` si no se puede completar sin riesgo.
+ */
+export async function uninstallEngramSelf(dependencies: UninstallDependencies): Promise<SelfUninstallResult> {
+  const platform = dependencies.platform ?? process.platform;
+  const home = dependencies.home ?? homedir();
+  const parent = dependencies.forgeHome ?? forge614Home();
+  const root = dependencies.forgeHome === undefined ? engramHome() : join(parent, 'engram');
+  const binDirectory = dependencies.forgeHome === undefined ? engramBinDirectory() : join(root, 'bin');
+  let memoryPath: string;
+  try { memoryPath = await ensureMemoryBeforeUninstall(parent, root); }
+  catch { throw new MemoryError('MEMORY_PRESERVATION_FAILED', 'No se pudo asegurar una copia completa de la memoria; Engram no se desinstaló.'); }
+  try { cleanupOldLaunchers(binDirectory); } catch { /* Se conserva la ejecución del hook aunque no se puedan limpiar restos antiguos. */ }
+
+  const enginesHome = join(parent, 'engines');
+  const engines = join(enginesHome, 'bin', platform === 'win32' ? 'forge614-engines.exe' : 'forge614-engines');
+  if (safeDirectory(enginesHome)) {
+    if (!stat(engines)) throw new MemoryError('ENGRAM_INTEGRATION_REMOVE_FAILED', 'Engines está instalado, pero no se pudo ejecutar para retirar sus integraciones de Engram.');
+    const runner = dependencies.runEnginesSelf ?? defaultEnginesSelfRunner;
+    let exitCode: number;
+    try { exitCode = await runner(engines, []); }
+    catch { throw new MemoryError('ENGRAM_INTEGRATION_REMOVE_FAILED', 'Engines no pudo retirar las integraciones de Engram.'); }
+    if (exitCode !== 0) throw new MemoryError('ENGRAM_INTEGRATION_REMOVE_FAILED', 'Engines no pudo retirar las integraciones de Engram.');
+  }
+
+  try {
+    const removeFn = dependencies.removePathPublication ?? ((candidateHome, candidateBinDirectory) =>
+      removePathPublication({ home: candidateHome, binDirectory: candidateBinDirectory, platform }));
+    await removeFn(home, binDirectory);
+  } catch {
+    throw new MemoryError('PATH_REMOVE_FAILED', 'No se pudo retirar de forma segura la ruta PATH de Engram.');
+  }
+  return { integrationsRemoved: true, memoryKept: true, memoryPath, atlasRemains: safeDirectory(join(parent, 'atlas')) !== null };
+}
+
+/** Planea y aplica en Engines solo la retirada de las integraciones de memoria de Engram. */
+async function defaultEnginesSelfRunner(command: string, args: string[]): Promise<number> {
+  const agents = ['claude-code', 'codex'];
+  for (const agent of agents) {
+    const planned = Bun.spawnSync([command, 'plan', 'memory-remove', '--agent', agent], { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+    if (planned.exitCode !== 0) return planned.exitCode ?? 1;
+    let payload: { plan?: { planId?: string } };
+    try { payload = JSON.parse(planned.stdout.toString()); } catch { return 1; }
+    const planId = payload.plan?.planId;
+    if (!planId) return 1;
+    const applied = Bun.spawnSync([command, 'apply', '--plan-id', planId], { stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' });
+    if (applied.exitCode !== 0) return applied.exitCode ?? 1;
+  }
+  return 0;
 }
