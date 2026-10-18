@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "productVersion": "1.10.0",
   "notionHub": {
     "title": "Forge614 Engram — Memoria Personal Local",
     "url": "https://app.notion.com/p/3dd21943d12981d79156f470e0462780?pvs=204",
@@ -10,64 +11,64 @@
       "localPath": "docs/es/01-instalacion-y-primeros-pasos.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d129813c86b5ffa723fa00a2?pvs=204",
-      "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:c980223f0a0ff0da10bb911c03378a9573e8f42617f232d9265c67c175563482",
+      "reviewedProductVersion": "1.10.0",
+      "contentFingerprint": "sha256:f237a850eb8002d1b78b7e10bb98f8a4e510b91d6884fdc1b739eb1cb57d99ec",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/en/01-installation-and-getting-started.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981b2a2dec3d88a0e7e20?pvs=204",
-      "reviewedProductVersion": "1.5.1",
-      "contentFingerprint": "sha256:fe4f81e5cf8f04a775479628b139af2f06aa82707b3ff36566e0cb37f6acf144",
+      "reviewedProductVersion": "1.10.0",
+      "contentFingerprint": "sha256:c7ca514e87d326fa25e3046ac0ca643f952f359c0ceaba57753676f68caa45e0",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/es/03-referencia-cli.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981ba8803e065eb0938cc?pvs=204",
-      "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:bc503f30ae35c5e91daa531af38c78d0f6c12369196bc4d021e973470e044e4e",
+      "reviewedProductVersion": "1.10.0",
+      "contentFingerprint": "sha256:d5189764c39855a1f14b6013042a5c86f62720f1fa58b5f569b5764543d6c422",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/en/03-cli-reference.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d129817baeb1fd75514e1a21?pvs=204",
-      "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:9dec59bee242bc20a26efc751602b31b7f38f90723df160337450bfa8a1a4234",
+      "reviewedProductVersion": "1.10.0",
+      "contentFingerprint": "sha256:0e2726545ad4f57875dd5d116992d8b85d94f2ba9888cd79a78af48beeed791b",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/es/06-resolucion-de-errores.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981e0ba2ceefd90a55ddf?pvs=204",
-      "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:6e3d7f2c6790f49d14361233c1227d4fb9250e5415273f1dc38162a6e68ada17",
+      "reviewedProductVersion": "1.10.0",
+      "contentFingerprint": "sha256:10b6efbbec4494b68cc9ea49efd9ae691a213c60f47b6cdb66209f5d1616a005",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/en/06-troubleshooting.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d12981609c71c39a1fc6270c?pvs=204",
-      "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:360fd1201f4222bf71be832e31790184687f4e2cd85588f6385c68bf35a9bfe1",
+      "reviewedProductVersion": "1.10.0",
+      "contentFingerprint": "sha256:e647a1e8b6dedbb779f3299c05681e9a423d8419225cf4c0c0875eb0de4eb70a",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/es/07-glosario.md",
       "language": "es",
       "notionUrl": "https://app.notion.com/p/3dd21943d129810783c4d478b59ce4a5?pvs=204",
-      "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:a02d4368b821a760ec0cfd008c24ac484858239c6dac1dd1718bad9de33dd044",
+      "reviewedProductVersion": "1.10.0",
+      "contentFingerprint": "sha256:a6a8e37d46eeacd796ee00ff8f4a70a1c6c6ade4c98f1a4cb6ed8b30b276d3fe",
       "notionSyncPending": true
     },
     {
       "localPath": "docs/en/07-glossary.md",
       "language": "en",
       "notionUrl": "https://app.notion.com/p/3dd21943d129812ba49af4afc78870ec?pvs=204",
-      "reviewedProductVersion": "1.6.0",
-      "contentFingerprint": "sha256:92631ed9cc9c6835f2737f7f5f78800330fe57201d60824a9812b9bd3df5fdae",
+      "reviewedProductVersion": "1.10.0",
+      "contentFingerprint": "sha256:8e9b422f561a27f72715b92286fbecf5de4a405eae5b6d04180b4659f9826f95",
       "notionSyncPending": true
     },
     {

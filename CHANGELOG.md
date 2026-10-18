@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.10.0
+
+Engram keeps memory outside its removable program folder and adopts the shared Forge614 installer.
+
+- **Memory location:** new and migrated SQLite databases, `.env`, and backups live under `FORGE614_HOME/memory/`; uninstallation preserves them by default. `uninstall --purge-data` removes only the local memory after an explicit terminal confirmation.
+- **Migration:** the first 1.10.0 execution checkpoints, copies, verifies, and atomically publishes a 1.9.0 database. If another process still has the old file open, Engram keeps using that location and retries later. `uninstall --self` makes a consistent online copy before the shared installer removes `engram/`.
+- **Installer and release:** adopts Standard 1.2.1 gatekeepers and byte-identical `install.mjs`, publishes five raw binaries with GNU `SHA256SUMS`, and builds/smoke-checks all platform targets in pull request CI.
+- **CLI:** adds `--version --json`, target selection for `update`, `uninstall --purge-data`, and `uninstall --self`. The update result keeps the fields Shell 1.17.0 reads.
+- **Windows:** update parks the active executable and passes `-ExecutionPolicy Bypass`; uninstall schedules deletion through WMI and reports the real path if the parked executable remains.
+
 ## 1.9.0
 
 Forge614 Engram incorpora distribución e instalación verificadas para Windows x64.
