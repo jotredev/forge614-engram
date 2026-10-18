@@ -102,8 +102,8 @@ test("FORGE614_HOME isolates init, save, and startup-context from the process ho
   expect(JSON.parse(context.stdout).shared.recent).toEqual(expect.arrayContaining([
     expect.objectContaining({ topicKey: "user/preference/favorite-color", title: "Favorite color" }),
   ]));
-  expect(existsSync(join(forgeHome, "engram", ".env"))).toBe(true);
-  expect(existsSync(join(forgeHome, "engram", "engram.db"))).toBe(true);
+  expect(existsSync(join(forgeHome, "memory", ".env"))).toBe(true);
+  expect(existsSync(join(forgeHome, "memory", "engram.db"))).toBe(true);
   expect(existsSync(join(userDirectory, ".forge614"))).toBe(false);
 }, 40000);
 
@@ -206,7 +206,7 @@ test("startup-context succeeds against a database file made read-only at the fil
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   expect((await runCli(root, userDirectory, "save", "--scope", "shared", "--title", "Shared", "--content", "Read-only safe", "--type", "fact")).code).toBe(0);
-  const dbPath = join(userDirectory, ".forge614", "engram", "engram.db");
+  const dbPath = join(userDirectory, ".forge614", "memory", "engram.db");
   const originalMode = statSync(dbPath).mode;
   chmodSync(dbPath, 0o400);
   try {
@@ -253,7 +253,7 @@ test("startup-context rejects missing, regular-file, and unreadable paths with s
 test("startup-context creates no files under the workspace root beyond what init already created", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
-  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  const engramDirectory = join(userDirectory, ".forge614", "memory");
   const before = readdirSync(engramDirectory).sort();
   expect((await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json")).code).toBe(0);
   const after = readdirSync(engramDirectory).sort();
@@ -264,7 +264,7 @@ test("startup-context creates no files under the workspace root beyond what init
 test("startup-context opens the base read-only when nothing has to be written, so an existing WAL footprint is left exactly as found", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
-  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  const engramDirectory = join(userDirectory, ".forge614", "memory");
   // Deja archivos WAL reales, como los dejaría un cliente que se cayó sin cerrar la base o uno aún en ejecución (Linux siempre los conserva).
   const holder = Bun.spawn([process.execPath, "-e",
     'const {Database}=require("bun:sqlite");const d=new Database(process.argv[1]);d.query("select count(*) from projects").get();console.log("ready");setInterval(()=>{},1000)',
@@ -287,7 +287,7 @@ test("startup-context opens even when SQLite's WAL side files are missing", asyn
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   const projectId = JSON.parse((await runCli(root, userDirectory, "project-create", "--name", "demo")).stdout).projectId;
   expect((await runCli(root, userDirectory, "save", "--project-id", projectId, "--title", "Nota", "--content", "Contenido", "--type", "fact")).code).toBe(0);
-  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  const engramDirectory = join(userDirectory, ".forge614", "memory");
   const dbPath = join(engramDirectory, "engram.db");
   const header = Buffer.alloc(20);
   const fd = require("node:fs").openSync(dbPath, "r");
@@ -322,7 +322,7 @@ integration("startup-context without the WAL side files still waits for the clou
       } },
     ]);
   } finally { await other.close(); }
-  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  const engramDirectory = join(userDirectory, ".forge614", "memory");
   const dbPath = join(engramDirectory, "engram.db");
   for (const suffix of ["-wal", "-shm"]) { const sidecar = dbPath + suffix; if (existsSync(sidecar)) rmSync(sidecar); }
   const result = await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json");
@@ -335,7 +335,7 @@ integration("startup-context without the WAL side files still waits for the clou
 test("startup-context still fails when the database file is not a real SQLite database", async () => {
   const root = temporary(); const userDirectory = join(root, "user");
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
-  const engramDirectory = join(userDirectory, ".forge614", "engram");
+  const engramDirectory = join(userDirectory, ".forge614", "memory");
   const dbPath = join(engramDirectory, "engram.db");
   for (const suffix of ["-wal", "-shm"]) { const sidecar = dbPath + suffix; if (existsSync(sidecar)) rmSync(sidecar); }
   writeFileSync(dbPath, "no es una base de SQLite real, solo texto de prueba");
@@ -352,9 +352,9 @@ test("startup-context with cloud configured against a mute TCP endpoint still pr
   expect((await runCli(root, userDirectory, "init", "--json")).code).toBe(0);
   const mute = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   try {
-    const dbPath = join(userDirectory, ".forge614", "engram", "engram.db");
+    const dbPath = join(userDirectory, ".forge614", "memory", "engram.db");
     const db = new Database(dbPath); enableCloud(db); db.close();
-    writeFileSync(join(userDirectory, ".forge614", "engram", ".env"),
+    writeFileSync(join(userDirectory, ".forge614", "memory", ".env"),
       `FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1:${mute.port}/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n`,
       { mode: 0o600 });
     const start = Date.now();

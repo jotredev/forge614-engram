@@ -46,7 +46,7 @@ integration("configured CLI stays local offline and sync failure preserves the s
   console.log("[diag] postgres-sync.test.ts: paso 1/8: CREATE DATABASE setup_test completado.");
 
   const testUrl=url.replace("/postgres?","/setup_test?");
-  const user=join(directory,"cli-user");const config=new WorkspaceConfig(join(user,".forge614","engram"));
+  const user=join(directory,"cli-user");const config=new WorkspaceConfig(join(user,".forge614","memory"));
   const answers=["si",testUrl,"si"];const output:string[]=[];
 
   console.log("[diag] postgres-sync.test.ts: paso 2/8: ejecutando primer runSetup...");
@@ -64,7 +64,7 @@ integration("configured CLI stays local offline and sync failure preserves the s
   await syncWorkspace(config,{upgradeFormat:true});
   console.log("[diag] postgres-sync.test.ts: paso 3/8: syncWorkspace primer usuario completado.");
 
-  const other=new WorkspaceConfig(join(directory,"other-user",".forge614","engram"));
+  const other=new WorkspaceConfig(join(directory,"other-user",".forge614","memory"));
   const second=["si",testUrl,"si"];
 
   console.log("[diag] postgres-sync.test.ts: paso 4/8: ejecutando segundo runSetup...");

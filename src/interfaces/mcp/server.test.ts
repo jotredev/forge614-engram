@@ -144,9 +144,9 @@ test("memory_context returns within the startup wait cutoff against a cloud endp
   // Servidor TCP mudo: acepta la conexión (el intento de conectar no falla al instante) pero nunca contesta nada.
   const mute = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
   try {
-    const dbPath = join(userDirectory, ".forge614", "engram", "engram.db");
+    const dbPath = join(userDirectory, ".forge614", "memory", "engram.db");
     const db = new Database(dbPath); enableCloud(db); db.close();
-    const envPath = join(userDirectory, ".forge614", "engram", ".env");
+    const envPath = join(userDirectory, ".forge614", "memory", ".env");
     writeFileSync(envPath,
       `FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1:${mute.port}/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n`,
       { mode: 0o600 });

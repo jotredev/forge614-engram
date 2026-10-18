@@ -61,7 +61,7 @@ afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir,{recursive
 // Con PostgreSQL configurado pero inalcanzable, sync-watch reporta POSTGRES_UNAVAILABLE sin filtrar la credencial, deja seguir guardando en local y sale con 130 al recibir SIGINT.
 test("sync-watch reports offline retry state and exits on SIGINT without blocking local writes",async()=>{
   const dir=workspace();const id=(await create(dir));
-  const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
+  const config=new WorkspaceConfig(join(dir,"user",".forge614","memory"));
   config.configurePostgres("postgresql://u:SECRET@127.0.0.1:1/db?sslmode=disable",config.revision());
   const child=Bun.spawn([process.execPath,cli,"sync-watch","--interval","1"],{
     cwd:dir,env:{...process.env,FORGE614_HOME:join(dir,"user",".forge614")},stdout:"pipe",stderr:"pipe",

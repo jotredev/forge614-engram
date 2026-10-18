@@ -95,7 +95,7 @@ mkdir -p "$trabajo/sin-git"
 # 1. init: crea el espacio dentro del FORGE614_HOME temporal.
 correr init --json
 verificar "init" 0
-[ -f "$FORGE614_HOME/engram/engram.db" ] || fallar "init: la base no quedó en el FORGE614_HOME temporal"
+[ -f "$FORGE614_HOME/memory/engram.db" ] || fallar "init: la base no quedó en el FORGE614_HOME temporal"
 
 # 2. startup-context solo lee: una carpeta sin Git, el HOME y una carpeta Git sin vínculo quedan «unbound» y no crean nada.
 correr startup-context --directory "$trabajo/sin-git" --json

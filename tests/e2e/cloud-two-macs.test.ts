@@ -46,7 +46,7 @@ const directories: string[] = [];
 function createMac() {
   const home = mkdtempSync(join(tmpdir(), "forge614-mac-"));
   directories.push(home);
-  return { home, engramDir: join(home, "engram") };
+  return { home, engramDir: join(home, "memory") };
 }
 
 /**

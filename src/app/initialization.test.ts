@@ -16,7 +16,7 @@ const directories: string[] = [];
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "forge614-initialization-"));
   directories.push(directory);
-  const config = new WorkspaceConfig(join(directory, ".forge614", "engram"));
+  const config = new WorkspaceConfig(join(directory, ".forge614", "memory"));
   return { config, workspace: new MemoryWorkspace(config) };
 }
 

@@ -21,7 +21,7 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "forge614-cloud-background-"));
   previousHome = process.env.FORGE614_HOME;
   process.env.FORGE614_HOME = join(directory, ".forge614");
-  const root = join(directory, ".forge614", "engram");
+  const root = join(directory, ".forge614", "memory");
   mkdirSync(root, { recursive: true, mode: 0o700 });
   writeFileSync(join(root, ".env"),
     'FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n',

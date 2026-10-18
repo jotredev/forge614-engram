@@ -23,7 +23,7 @@ afterEach(() => {
 
 /** Escribe un `.env` de Engram válido con el contenido dado, con los permisos privados que `WorkspaceConfig.read()` exige. */
 function writeEnv(content: string): void {
-  const root = join(directory, ".forge614", "engram");
+  const root = join(directory, ".forge614", "memory");
   mkdirSync(root, { recursive: true, mode: 0o700 });
   writeFileSync(join(root, ".env"), content, { mode: 0o600 });
 }

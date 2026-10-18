@@ -1,5 +1,5 @@
 /**
- * Punto único de construcción de la configuración de nube (D9): lee `~/.forge614/engram/.env` (o el
+ * Punto único de construcción de la configuración de nube (D9): lee `~/.forge614/memory/.env` (o el
  * equivalente configurado por `FORGE614_HOME`) y da la URL de PostgreSQL y el id de instalación ya
  * validados, o `null` si no hay nube configurada todavía. También arma la conexión perezosa por
  * defecto hacia esa URL. La usan `cloud-background.ts` y el CLI (`startup-context` en
