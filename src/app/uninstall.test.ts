@@ -25,6 +25,20 @@ test("wrong confirmation leaves the Engram product directory intact", async () =
   expect(existsSync(join(root,'keep'))).toBe(true);
 }));
 
+test.skipIf(process.platform !== "win32")("uninstall from a different drive is outside the installation", async () => withHome(async home => {
+  const root = join(home, ".forge614", "engram");
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "keep"), "memory");
+  const homeDrive = home.slice(0, 2).toLowerCase();
+  const cwdDrive = process.cwd().slice(0, 2).toLowerCase();
+  if (homeDrive === cwdDrive) return;
+  await expect(uninstallEngram(
+    { confirmation: "yes" },
+    dependencies(home, { cwd: process.cwd() }),
+  )).rejects.toMatchObject({ code: "UNINSTALL_CONFIRMATION" });
+  expect(existsSync(join(root, "keep"))).toBe(true);
+}));
+
 test("refuses to uninstall when the current directory is inside the installed product", async () => withHome(async home => {
   const root = join(home, ".forge614", "engram");
   mkdirSync(join(root, "bin"), { recursive: true });

@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync, type Stats } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { MemoryError } from "../shared/errors";
 import { removePathPublication } from "../infrastructure/filesystem/path-publication";
 import { assertSafePath } from "../infrastructure/filesystem/private-files";
@@ -215,7 +215,7 @@ function assertNotRunningFromInstallation(root: string, cwd: string): void {
   const realRoot = realpathSync.native(root);
   const realCwd = realpathSync.native(cwd);
   const child = relative(realRoot, realCwd);
-  if (child === "" || (child !== ".." && !child.startsWith("../") && !child.startsWith("..\\"))) {
+  if (child === "" || (!isAbsolute(child) && child !== ".." && !child.startsWith("../") && !child.startsWith("..\\"))) {
     throw new MemoryError("UNINSTALL_FROM_INSTALLATION", "No se puede desinstalar Forge614 Engram desde una carpeta dentro de su instalación.");
   }
 }
