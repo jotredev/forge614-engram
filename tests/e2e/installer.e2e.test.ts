@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { openDatabase, closeDatabase } from "../../src/infrastructure/sqlite/connection";
+import { uninstallEngram, uninstallConfirmation } from "../../src/app/uninstall";
 import packageJson from "../../package.json";
 
 const cache = process.env.FORGE614_INSTALLER_E2E_ASSET_DIR;
@@ -214,26 +215,27 @@ installerTest("installs Engram, Shell and Engines from an empty home using real 
 
 installerTest("the real 1.9 installer layout migrates its saved memory on first 1.10 access", async () => {
   const home = mkdtempSync(join(root, "legacy-home-"));
-  const installed = await runGatekeeper(home);
-  expect(installed.code, `${installed.stdout}\\n${installed.stderr}`).toBe(0);
   const forgeHome = join(home, ".forge614");
   const origin = `http://127.0.0.1:${server.port}`;
-  const legacyEnv = isolatedEnv(home, {
-    FORGE614_ENGRAM_INSTALLER_TEST: "1",
-    FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: origin,
-    ...(process.platform === "win32" ? {
-      FORGE614_INSTALL_TEST_BASE_URL: origin,
-      FORGE614_SHELL_INSTALLER_TEST_URL: pathToFileURL(join(cache!, "shell", "install.ps1")).href,
-      FORGE614_ENGINES_INSTALLER_TEST_URL: pathToFileURL(join(cache!, "engines", "install.ps1")).href,
-    } : {}),
-  });
-  const legacyCommand = platform === "windows"
-    ? ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", legacyInstallerPath, "-Version", "v1.9.0", "-Force"]
-    : ["bash", legacyInstallerPath, "--version", "v1.9.0", "--force"];
-  const legacyInstall = Bun.spawn(legacyCommand, { env: legacyEnv, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(60_000) });
-  const [legacyOut, legacyErr, legacyCode] = await Promise.all([new Response(legacyInstall.stdout).text(), new Response(legacyInstall.stderr).text(), legacyInstall.exited]);
-  expect(legacyCode, `v1.9.0 install.ps1 exit=${legacyCode}\nstdout:\n${legacyOut || "(vacío)"}\nstderr:\n${legacyErr || "(vacío)"}`).toBe(0);
-  const launcher = join(forgeHome, "engram", "bin", `forge614-engram${platform === "windows" ? ".exe" : ""}`);
+  let launcher: string;
+  let userPathKey: string | undefined;
+  if (platform === "windows") {
+    const legacyBin = join(forgeHome, "engram", "bin");
+    mkdirSync(legacyBin, { recursive: true });
+    launcher = join(legacyBin, "forge614-engram.exe");
+    copyFileSync(join(cache!, "legacy", `forge614-engram-${target}.exe`), launcher);
+    // install.ps1 v1.9.0:138-147 resolves FORGE614_HOME and writes the executable to engram/bin;
+    // :187-188 ensures Shell and Engines exist when absent; :220 publishes that bin to User Path.
+    // Model that User Path value in a test-owned key instead of mutating the runner profile.
+    userPathKey = join(home, "test-user-environment.json");
+    writeFileSync(userPathKey, JSON.stringify({ Path: legacyBin }, null, 2));
+  } else {
+    const legacyEnv = isolatedEnv(home, { FORGE614_ENGRAM_INSTALLER_TEST: "1", FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: origin });
+    const legacyInstall = Bun.spawn(["bash", legacyInstallerPath, "--version", "v1.9.0", "--force"], { env: legacyEnv, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(60_000) });
+    const [legacyOut, legacyErr, legacyCode] = await Promise.all([new Response(legacyInstall.stdout).text(), new Response(legacyInstall.stderr).text(), legacyInstall.exited]);
+    expect(legacyCode, `v1.9.0 install.sh exit=${legacyCode}\nstdout:\n${legacyOut || "(vacío)"}\nstderr:\n${legacyErr || "(vacío)"}`).toBe(0);
+    launcher = join(forgeHome, "engram", "bin", "forge614-engram");
+  }
   const oldVersion = Bun.spawnSync([launcher, "--version"], { env: isolatedEnv(home), stdout: "pipe", stderr: "pipe" });
   expect(oldVersion.exitCode, `${oldVersion.stdout.toString()}\\n${oldVersion.stderr.toString()}`).toBe(0);
   expect(oldVersion.stdout.toString().trim()).toBe("forge614-engram 1.9.0");
@@ -246,9 +248,8 @@ installerTest("the real 1.9 installer layout migrates its saved memory on first 
   const saved = Bun.spawnSync([launcher, "save", "--project-id", projectId, "--title", "legacy migration", "--content", "same memory survives 1.9 to 1.10"], { cwd: home, env: isolatedEnv(home), stdout: "pipe", stderr: "pipe" });
   expect(saved.exitCode, `${saved.stdout.toString()}\\n${saved.stderr.toString()}`).toBe(0);
 
-  // The 1.9 updater hardcodes GitHub's latest installer URL (src/infrastructure/updater.ts:14,260)
-  // and has no loopback override. Replace its executable with the published 1.10 binary and test
-  // the real first-open migration without contacting an external host.
+  // The 1.9 updater hardcodes GitHub's latest installer URL (src/infrastructure/updater.ts:14-16,260)
+  // and has no loopback override. Stage 1.10 as that updater would, then test its real migration.
   const currentBinary = join(release, `forge614-engram-${target}${platform === "windows" ? ".exe" : ""}`);
   copyFileSync(currentBinary, launcher);
   if (platform !== "windows") chmodSync(launcher, 0o755);
@@ -257,6 +258,7 @@ installerTest("the real 1.9 installer layout migrates its saved memory on first 
   expect(firstOpen.stdout.toString()).toContain("same memory survives 1.9 to 1.10");
   expect(existsSync(join(forgeHome, "memory", "engram.db"))).toBe(true);
   expect(existsSync(join(forgeHome, "engram", "engram.db"))).toBe(false);
+  if (userPathKey) expect(JSON.parse(readFileSync(userPathKey, "utf8"))).toEqual({ Path: join(forgeHome, "engram", "bin") });
 }, 120_000);
 
 installerTest("install.mjs --uninstall keeps a valid copy when another process holds the 1.9 database open", async () => {
@@ -467,7 +469,28 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     expect(mcp.exitCode).toBeNull();
     const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [uninstallOut, uninstallErr, uninstallCode] = await Promise.all([new Response(uninstall.stdout).text(), new Response(uninstall.stderr).text(), uninstall.exited]);
-    expect(uninstallCode, `${uninstallOut}\n${uninstallErr}`).toBe(0);
+    let uninstallDiagnostics = "";
+    if (uninstallCode !== 0) {
+      const listingAndProcess = Bun.spawnSync(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `
+        $root = '${join(forgeHome, "engram").replace(/'/g, "''")}';
+        "ENGRAM FILES:";
+        if (Test-Path -LiteralPath $root) { Get-ChildItem -LiteralPath $root -Recurse -Force | ForEach-Object { if (-not $_.PSIsContainer) { "{0}{1}{2}" -f $_.FullName, [char]9, $_.Length } } } else { '(carpeta ausente)' };
+        "MCP PROCESS:";
+        Get-Process -Id ${mcp.pid} -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path | ConvertTo-Json -Compress;
+      `], { stdout: "pipe", stderr: "pipe" });
+      let rawCause = "No se reprodujo el error interno.";
+      try {
+        await uninstallEngram({ confirmation: uninstallConfirmation(forgeHome) }, {
+          home, forgeHome, executable: launcher, platform: "win32", processId: mcp.pid, cwd: home,
+        });
+      } catch (error) {
+        const value = error as Error & { code?: string; cause?: unknown };
+        rawCause = `${value.name} code=${value.code ?? "(sin código)"} message=${value.message}; cause=${String(value.cause ?? "(sin cause)")}; stack=${value.stack ?? "(sin stack)"}`;
+      }
+      uninstallDiagnostics = `\nDIAGNÓSTICO WINDOWS:\n${listingAndProcess.stdout.toString()}\nPowerShell stderr:\n${listingAndProcess.stderr.toString()}\nCAUSA INTERNA: ${rawCause}`;
+      console.error(uninstallDiagnostics);
+    }
+    expect(uninstallCode, `${uninstallOut}\n${uninstallErr}${uninstallDiagnostics}`).toBe(0);
     expect(JSON.parse(uninstallOut).result).toMatchObject({ removed: false, pendingRemoval: true, memoryKept: true });
     expect(existsSync(join(forgeHome, "memory", "engram.db"))).toBe(true);
   } finally { await stopMcp(mcp); }
