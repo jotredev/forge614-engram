@@ -47,16 +47,6 @@ export interface PathPublicationOptions {
 }
 
 /**
- * Escapa un valor para insertarlo de forma segura en un script de shell POSIX, anteponiendo una barra
- * invertida a cualquier carácter que no sea alfanumérico o uno de los símbolos seguros sin comillas.
- * @param value Texto a escapar (típicamente una ruta de carpeta).
- * @returns El texto con cada carácter especial precedido por `\`.
- */
-function shellQuote(value: string): string {
-  return value.replace(/[^A-Za-z0-9_@%+=:,./-]/g, character => `\\${character}`);
-}
-
-/**
  * Reconstruye el cuerpo exacto que el instalador habría escrito entre las marcas de inicio y fin, para
  * poder compararlo con lo que hay realmente en el archivo antes de quitarlo.
  * @param directory Carpeta de binarios de Engram que el bloque debía anteponer al PATH.
@@ -64,10 +54,10 @@ function shellQuote(value: string): string {
  * @returns El texto esperado del cuerpo del bloque, sin las líneas de marca.
  */
 function expectedUnixBody(directory: string, fish: boolean): string {
-  const quoted = shellQuote(directory);
+  const quoted = directory.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`");
   return fish
     ? `if not contains -- ${quoted} $PATH\n  set -gx PATH ${quoted} $PATH\nend`
-    : `case ":$PATH:" in\n  *:${quoted}:*) ;;\n  *) export PATH=${quoted}:"$PATH" ;;\nesac`;
+    : `export PATH="${quoted}:$PATH"`;
 }
 
 /**

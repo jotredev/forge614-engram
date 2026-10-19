@@ -22,17 +22,17 @@ export interface EngramUpdateResult {
 /**
  * Ejecuta la actualización del binario instalado, comparándolo con `currentVersion`.
  * @param currentVersion Versión que el programa en ejecución cree tener instalada.
- * @param dependencies `quiet` silencia la salida del instalador; `run` sustituye la
+ * @param dependencies `quiet` silencia la salida del instalador, `version` fija el destino y `run` sustituye la
  * llamada real al instalador (usado en las pruebas para no descargar nada de verdad).
  * @returns El resultado de `updateInstalledEngram` (o de `dependencies.run`, si se dio).
  * @throws MemoryError con código `UPDATE_FAILED` si el instalador falla por cualquier motivo.
  */
 export async function updateEngram(
   currentVersion: string,
-  dependencies: { quiet?: boolean; run?: () => Promise<EngramUpdateResult> } = {},
+  dependencies: { quiet?: boolean; version?: string; run?: () => Promise<EngramUpdateResult> } = {},
 ): Promise<EngramUpdateResult> {
   try {
-    return await (dependencies.run ?? (() => updateInstalledEngram(currentVersion, dependencies.quiet ? { quiet: true } : {})))();
+    return await (dependencies.run ?? (() => updateInstalledEngram(currentVersion, { ...(dependencies.quiet ? { quiet: true } : {}), ...(dependencies.version ? { version: dependencies.version } : {}) })))();
   } catch {
     throw new MemoryError("UPDATE_FAILED", "No se pudo actualizar Forge614 Engram.");
   }

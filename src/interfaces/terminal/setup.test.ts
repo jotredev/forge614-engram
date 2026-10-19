@@ -19,7 +19,7 @@ function terminal(input: string) {
     "--preload", rawMode,
     resolve(import.meta.dir, "../../cli.ts"), "init",
   ], { cwd: dir, env: { ...process.env, FORGE614_HOME: join(dir,".forge614") }, stdin: Buffer.from(input), timeout: 5000 });
-  return { result, config: new WorkspaceConfig(join(dir, ".forge614", "engram")) };
+  return { result, config: new WorkspaceConfig(join(dir, ".forge614", "memory")) };
 }
 afterEach(() => { for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 

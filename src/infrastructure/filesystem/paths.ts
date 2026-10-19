@@ -11,6 +11,7 @@
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { MemoryError } from "../../shared/errors";
+import { resolveMemoryDirectory } from "./memory-location";
 
 /**
  * Da la carpeta padre compartida por todos los productos de Forge614 (cada producto debe usar su propia
@@ -42,18 +43,24 @@ export function engramHome(): string { return join(forge614Home(), "engram"); }
  */
 export function engramBinDirectory(): string { return join(engramHome(), "bin"); }
 
+/** Da la carpeta privada que conserva la base, `.env` y los respaldos fuera del directorio desinstalable. */
+export function memoryHome(): string { return resolveMemoryDirectory(forge614Home(), engramHome()); }
+
 /**
- * Nombre de compatibilidad hacia atrás para {@link engramHome}, usado donde el código todavía habla de
+ * Nombre de compatibilidad hacia atrás para {@link memoryHome}, usado donde el código todavía habla de
  * «almacenamiento del usuario» en vez de «carpeta de Engram».
- * @returns El mismo valor que {@link engramHome}.
+ * @returns El mismo valor que {@link memoryHome}.
  */
-export function userStorageDirectory(): string { return engramHome(); }
+export function userStorageDirectory(): string { return memoryHome(); }
 
 /**
  * Da la ruta del archivo de base de datos SQLite que usa Engram quien no configura una base de proyecto.
- * @returns `engram.db` dentro de {@link engramHome}.
+ * @returns `engram.db` dentro de {@link memoryHome}.
  */
-export function defaultDatabasePath(): string { return join(engramHome(), "engram.db"); }
+export function defaultDatabasePath(): string { return join(memoryHome(), "engram.db"); }
+
+/** Da la ruta 1.9.0 que puede contener la memoria pendiente de migración. */
+export function legacyMemoryDatabasePath(): string { return join(engramHome(), "engram.db"); }
 
 /**
  * Da la ruta donde versiones anteriores de Engram guardaban la base de datos directamente en la carpeta

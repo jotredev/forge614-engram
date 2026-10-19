@@ -47,7 +47,7 @@ test("help, version and empty project list create no storage", async () => {
   const help = (await run(dir,"help")).stdout;
   for (const syntax of [
     "sync [--upgrade-format]",
-    "update [--json] Descarga, verifica y activa la última versión estable de Engram; --json devuelve el resultado estructurado.",
+    "update [--version X.Y.Z] [--json]",
     "sessions-enable",
     "reinforcement-enable",
     "intelligence-enable",
@@ -65,8 +65,8 @@ test("help, version and empty project list create no storage", async () => {
   expect(help).toContain("todos deben entender el formato seleccionado; el refuerzo requiere formato 3.");
   expect(help).not.toContain("Centro de control");
   expect(help).not.toContain("Asistentes con vista previa y confirmación");
-  expect(help).toContain("~/.forge614/engram/.env");
-  expect(help).toContain("~/.forge614/engram/engram.db");
+  expect(help).toContain("~/.forge614/memory/.env");
+  expect(help).toContain("~/.forge614/memory/engram.db");
   expect((await run(dir,"--version")).stdout).toMatch(/^forge614-engram \d+\.\d+\.\d+/);
   expect(JSON.parse((await run(dir,"project-list")).stdout)).toEqual([]);
 }, 40000);
@@ -84,3 +84,11 @@ test("main defaults to help and serializes invalid invocations only to stderr", 
   }
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
 }, 40000);
+
+test("--version --json returns the stable machine version envelope", async () => {
+  const dir = workspace();
+  const result = await run(dir, "--version", "--json");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ schemaVersion: 1, name: "forge614-engram", version: expect.stringMatching(/^\d+\.\d+\.\d+$/) });
+  expect(result.stderr).toBe("");
+});

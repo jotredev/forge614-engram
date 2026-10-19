@@ -25,16 +25,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 Remove-Item install.ps1
 ```
 
-En Windows, `-ExecutionPolicy Bypass` solo afecta ese proceso de PowerShell. El instalador valida el ejecutable contra `SHA256SUMS`, instala Shell y Engines si faltan, publica la carpeta de Engram en el PATH de usuario y requiere abrir una terminal nueva antes de usar el comando.
-
-En macOS/Linux los requisitos son Bash, `curl`, una utilidad SHA-256 (`shasum` o `sha256sum`), `tar` y Node.js 22.19 o superior. En Windows son PowerShell 5.1 o posterior, `curl.exe`, `tar.exe` y Node.js 22.19 o superior. Shell necesita Node.js y el instalador instala Shell junto con Engines si aún no los tienes. Si falta un requisito, se detiene antes de cambiar Engram.
+El instalador único necesita Node.js 22.19.0 o posterior en los tres sistemas. Verifica los archivos de la misma release con `SHA256SUMS`, instala Shell y Engines si faltan y publica el lanzador en PATH. En Windows, `-ExecutionPolicy Bypass` solo afecta ese proceso de PowerShell.
 
 Al terminar, abre una terminal nueva y ejecuta el siguiente paso:
 ```bash
 ~/.forge614/shell/bin/forge614-shell init --product engram
 ```
 
-Para verificar: `forge614-engram --version` y `forge614-engram help`.
+Para verificar: `forge614-engram --version`, `forge614-engram --version --json` y `forge614-engram help`.
+
+La base, `.env` y respaldos viven en `FORGE614_HOME/memory/` (por defecto `~/.forge614/memory/`). Al ejecutar Engram 1.10.0 por primera vez, una instalación 1.9.0 mueve allí la memoria de `engram/` automáticamente, después de verificar la copia.
+
+`update [--version X.Y.Z] [--json]` usa el instalador de la release elegida y conserva los datos. `uninstall` conserva `memory/`; `uninstall --purge-data` también borra esa carpeta local tras una confirmación separada. La copia PostgreSQL, si existe, no se borra. Si Atlas está instalado, la confirmación de `uninstall` nombra a Engram y Atlas. `uninstall --self` retira solo las integraciones de Engram que administra Engines, conserva Atlas y se usa desde el instalador al retirar el programa.
 
 ## Comandos principales
 | Comando | Para qué sirve |

@@ -6,7 +6,7 @@ import { MemoryError } from "../../shared/errors";
 
 const MEMORY_OPTIONS = ["project-id", "scope", "group"];
 const OPTIONS: Record<string, readonly string[]> = {
-  init: ["json", "postgres-url", "directory"], update: ["json"], uninstall:["confirm"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "intelligence-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
+  init: ["json", "postgres-url", "directory"], update: ["json", "version"], uninstall:["json","purge-data","self"], sync: ["upgrade-format"], "sync-watch": ["interval","upgrade-format"], "sessions-enable": [], "reinforcement-enable": [], "intelligence-enable": [], "memory-protocol": ["json","protocol-version"], mcp: [],
   "cloud-on": ["postgres-url"], "cloud-off": [], "cloud-status": ["json"],
   "group-create": ["name"], "group-list": [], "group-bind": ["project-id","group"], "group-unbind": ["project-id"], "group-rename": ["group","name"], "group-source-set": ["group","project-id"],
   "memory-demote": ["id","project-id"],
@@ -22,7 +22,7 @@ const OPTIONS: Record<string, readonly string[]> = {
   context:["project-id","scope","group","compact","max-bytes"],
   "startup-context":["directory","json","format"],
 };
-const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format","json"]);
+const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format","json","purge-data","self"]);
 /** Lanza un `MemoryError` de código `INVALID_INPUT` con el mensaje dado; lo usan tanto este archivo como `commands.ts` para cortar en el primer argumento inválido. */
 export function invalid(message: string): never { throw new MemoryError("INVALID_INPUT",message); }
 /** Valida que `value` sea un entero positivo (1 en adelante) hasta `max`; usado por opciones como `--interval` o `--limit`. */
@@ -80,6 +80,8 @@ export function parseArguments(rawArgs:string[]) {
   if (command === "memory-protocol" && !values.has("json")) {
     invalid("memory-protocol requiere --json.");
   }
+  if (command === "update" && values.has("version") && !/^\d+\.\d+\.\d+$/.test(values.get("version")!)) invalid("version debe tener el formato X.Y.Z.");
+  if (command === "uninstall" && values.has("self") && values.has("purge-data")) invalid("uninstall --self no acepta --purge-data.");
   if (command === "memory-protocol" && values.has("protocol-version") && !["1","2","3","4"].includes(values.get("protocol-version")!)) {
     invalid("protocol-version debe ser 1, 2, 3 o 4.");
   }

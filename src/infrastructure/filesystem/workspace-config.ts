@@ -1,5 +1,5 @@
 /**
- * Lee y escribe la configuración global privada de Engram (`~/.forge614/engram/.env` o el equivalente
+ * Lee y escribe la configuración global privada de Engram (`~/.forge614/memory/.env` o el equivalente
  * configurado): decide si el almacenamiento usa solo SQLite o SQLite con réplica hacia PostgreSQL, y
  * guarda la URL de PostgreSQL y el id de instalación cuando aplica. Cada operación comprueba que la
  * carpeta y el archivo sean privados del usuario actual (carpeta `0700`, archivo `0600`) y rechaza sin
@@ -13,8 +13,7 @@ import { createHash } from "node:crypto";
 import { postgresOptions } from "../postgres/replica";
 import { isAbsolute, join, resolve } from "node:path";
 import { MemoryError } from "../../shared/errors";
-import { forge614Home, userStorageDirectory } from "./paths";
-import { EngramProductHome } from "./product-home";
+import { userStorageDirectory } from "./paths";
 
 export type { WorkspaceSettings } from "../../modules/workspace";
 import type { WorkspaceSettings } from "../../modules/workspace";
@@ -78,7 +77,6 @@ export class WorkspaceConfig {
    * configuración antigua por proyecto.
    */
   prepare(): void {
-    if (this.root === userStorageDirectory()) new EngramProductHome(forge614Home(), this.root).migrateLegacyWorkspace();
     this.directory(true, true);
   }
   /**

@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { defaultDatabasePath, engramBinDirectory, engramHome, forge614Home, legacyDatabasePath, userStorageDirectory } from "./paths";
+import { defaultDatabasePath, engramBinDirectory, engramHome, forge614Home, legacyDatabasePath, memoryHome, userStorageDirectory } from "./paths";
 
 function withForge614Home(value: string | undefined, run: () => void): void {
   const previous = process.env.FORGE614_HOME;
@@ -20,9 +20,10 @@ function withForge614Home(value: string | undefined, run: () => void): void {
 test("default paths remain byte-identical without FORGE614_HOME", () => withForge614Home(undefined, () => {
   expect(forge614Home()).toBe(join(homedir(), ".forge614"));
   expect(engramHome()).toBe(join(homedir(), ".forge614", "engram"));
+  expect(memoryHome()).toBe(join(homedir(), ".forge614", "memory"));
   expect(engramBinDirectory()).toBe(join(homedir(), ".forge614", "engram", "bin"));
-  expect(userStorageDirectory()).toBe(join(homedir(), ".forge614", "engram"));
-  expect(defaultDatabasePath()).toBe(join(homedir(), ".forge614", "engram", "engram.db"));
+  expect(userStorageDirectory()).toBe(join(homedir(), ".forge614", "memory"));
+  expect(defaultDatabasePath()).toBe(join(homedir(), ".forge614", "memory", "engram.db"));
   expect(legacyDatabasePath()).toBe(join(homedir(), ".forge614", "engram.db"));
 }));
 
@@ -32,9 +33,10 @@ test("absolute FORGE614_HOME is the single root for every derived Engram path", 
   withForge614Home(root, () => {
     expect(forge614Home()).toBe(root);
     expect(engramHome()).toBe(join(root, "engram"));
+    expect(memoryHome()).toBe(join(root, "memory"));
     expect(engramBinDirectory()).toBe(join(root, "engram", "bin"));
-    expect(userStorageDirectory()).toBe(join(root, "engram"));
-    expect(defaultDatabasePath()).toBe(join(root, "engram", "engram.db"));
+    expect(userStorageDirectory()).toBe(join(root, "memory"));
+    expect(defaultDatabasePath()).toBe(join(root, "memory", "engram.db"));
     expect(legacyDatabasePath()).toBe(join(root, "engram.db"));
   });
 });

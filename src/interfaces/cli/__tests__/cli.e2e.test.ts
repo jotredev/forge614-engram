@@ -35,9 +35,13 @@ async function runWithStdin(cwd: string, stdin: string, ...args: string[]) {
   const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
   return { code, stdout, stderr };
 }
+/** Comprueba un código de proceso y conserva la salida completa como mensaje de fallo. */
+function expectExitCode(result: { code: number; stdout: string; stderr: string }, expected: number): void {
+  expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(expected);
+}
 /** Cuenta las filas de `cloud_outbox` en la base SQLite de una carpeta de espacio de trabajo. */
 function pendingOutboxCount(userDirectory: string): number {
-  const db = new Database(join(userDirectory, ".forge614", "engram", "engram.db"), { readonly: true });
+  const db = new Database(join(userDirectory, ".forge614", "memory", "engram.db"), { readonly: true });
   try { return (db.query("SELECT COUNT(*) AS n FROM cloud_outbox").get() as { n: number }).n; }
   finally { db.close(); }
 }
@@ -210,9 +214,9 @@ test("all projects and working directories share exactly one workspace configura
   expect(JSON.parse((await runAs(b,user,"project-list")).stdout)).toHaveLength(2);
   expect(existsSync(join(a,".forge614"))).toBe(false);
   expect(existsSync(join(b,".forge614"))).toBe(false);
-  expect(readdirSync(join(user,".forge614")).sort()).toEqual(["engram"]);
-  expect(readdirSync(join(user,".forge614","engram")).filter(n=>!n.endsWith("-wal")&&!n.endsWith("-shm")).sort()).toEqual([".env","engram.db"]);
-  expect(readFileSync(join(user,".forge614","engram",".env"),"utf8")).not.toContain(id);
+  expect(readdirSync(join(user,".forge614")).sort()).toEqual(["memory"]);
+  expect(readdirSync(join(user,".forge614","memory")).filter(n=>!n.endsWith("-wal")&&!n.endsWith("-shm")).sort()).toEqual([".env","engram.db"]);
+  expect(readFileSync(join(user,".forge614","memory",".env"),"utf8")).not.toContain(id);
 }, 45_000);
 
 // Un proyecto creado desde el SDK (importando MemoryWorkspace directamente) es visible desde el CLI: comparten la misma base y la misma identidad de proyecto.
@@ -272,7 +276,7 @@ test("explicit reinforcement enrollment is repeatable and exact CLI saves stay o
 
 // La segunda llamada a init --json no cambia ni un byte lógico de la base ni el .env; renombrar un proyecto conserva su UUID y no expone la ruta de la base en project-list.
 test("init is repeatable and rename retains identity without per-project registration", async () => {
-  const dir = workspace(); const id = (await create(dir)); const root = join(dir,"user",".forge614","engram");
+  const dir = workspace(); const id = (await create(dir)); const root = join(dir,"user",".forge614","memory");
   // La primera llamada al comando "init" (a diferencia de project-create) sí actualiza legítimamente
   // el esquema (activa los vínculos de proyecto), así que no es en sí misma un no-op. Solo una
   // *segunda* llamada, con el esquema ya en su versión estable, debe serlo.
@@ -302,7 +306,7 @@ test("missing configuration and configured missing database never cause silent r
   expect(existsSync(join(dir,"user",".forge614"))).toBe(false);
   const id = (await create(dir));
   expect(JSON.parse((await run(dir,"get","--project-id",id,"--id","missing")).stderr).code).toBe("NOT_FOUND");
-  const path = join(dir,"user",".forge614","engram","engram.db"); rmSync(path);
+  const path = join(dir,"user",".forge614","memory","engram.db"); rmSync(path);
   for (const args of [["init","--json"],["project-create","--name","No"],["search","--scope","shared","--query","SQLite"]]) {
     expect((await run(dir,...args)).code).toBe(1); expect(existsSync(path)).toBe(false);
   }
@@ -352,7 +356,7 @@ test("concurrent initializers keep a single config and preserve all projects", a
 test("concurrent init of existing workspace leaves existing memories and configuration intact", async () => {
   const dir = workspace(); const id = (await create(dir));
   expect((await run(dir,"save","--project-id",id,"--title","Keep","--content","SQLite")).code).toBe(0);
-  const path = join(dir,"user",".forge614","engram",".env"); const before = readFileSync(path);
+  const path = join(dir,"user",".forge614","memory",".env"); const before = readFileSync(path);
   const results = await parallel(dir,["init","--json"]);
   assertAllSucceeded(results, "concurrent init");
   expect(readFileSync(path)).toEqual(before);
@@ -415,7 +419,7 @@ test("cloud on requires init first, and an unreachable address leaves nothing be
   expect(JSON.parse(withoutInit.stderr).code).toBe("CONFIG_NOT_FOUND");
   expect(existsSync(join(dir, "user", ".forge614"))).toBe(false);
   expect((await run(dir, "init", "--json")).code).toBe(0);
-  const envPath = join(dir, "user", ".forge614", "engram", ".env");
+  const envPath = join(dir, "user", ".forge614", "memory", ".env");
   const before = readFileSync(envPath);
   const failed = await run(dir, "cloud", "on", "--postgres-url", "postgresql://u:SECRET@127.0.0.1:1/db?sslmode=disable");
   expect(failed.code).toBe(1);
@@ -446,7 +450,7 @@ integration("cloud on generates the installation id once, and cloud off keeps it
   expect(second.installationId).toBe(first.installationId);
   const off = JSON.parse((await run(dir, "cloud", "off")).stdout);
   expect(off).toEqual({ enabled: false });
-  const envPath = join(dir, "user", ".forge614", "engram", ".env");
+  const envPath = join(dir, "user", ".forge614", "memory", ".env");
   expect(readFileSync(envPath, "utf8")).not.toContain("POSTGRES_URL");
   expect(readFileSync(envPath, "utf8")).toContain(first.installationId);
 }, postgresTestTimeoutMs);
@@ -459,7 +463,7 @@ integration("cloud status reports its full shape and survives cloud off; a diffe
   const on = JSON.parse((await run(dir, "cloud", "on", "--postgres-url", urlA)).stdout);
   expect((await run(dir, "save", "--scope", "shared", "--title", "Pending", "--content", "Queued")).code).toBe(0);
   // Se simula que esta base ya bajó cambios de A (lastAppliedId > 0), como pasaría tras un sync real: así el reinicio a 0 con otra base (D14) es una afirmación real, no trivial.
-  const db = new Database(join(dir, "user", ".forge614", "engram", "engram.db"));
+  const db = new Database(join(dir, "user", ".forge614", "memory", "engram.db"));
   try { db.query("UPDATE cloud_state SET last_applied_id=7 WHERE id=1").run(); } finally { db.close(); }
   const withPending = JSON.parse((await run(dir, "cloud", "status", "--json")).stdout);
   expect(withPending).toMatchObject({ enabled: true, installationId: on.installationId, lastAppliedId: 7 });
@@ -473,6 +477,37 @@ integration("cloud status reports its full shape and survives cloud off; a diffe
   expect(afterOtherDb.lastAppliedId).toBe(0);
   expect(afterOtherDb.pending).toBeGreaterThan(0);
 }, postgresTestTimeoutMs);
+
+test("uninstall JSON keeps memory, purge-data rejects noninteractive modes without changing it, and self leaves Atlas installed", async () => {
+  const dir = workspace();
+  expectExitCode(await run(dir, "init", "--json"), 0);
+  const forgeHome = join(dir, "user", ".forge614");
+  const database = join(forgeHome, "memory", "engram.db");
+  const envPath = join(forgeHome, "memory", ".env");
+  const beforeEnv = readFileSync(envPath);
+
+  const normal = await run(dir, "uninstall", "--json");
+  expectExitCode(normal, 0);
+  expect(JSON.parse(normal.stdout)).toEqual({ schemaVersion: 1, result: {
+    removed: false, memoryKept: true, memoryPath: join(forgeHome, "memory"), atlasRemoved: false,
+  } });
+  expect(existsSync(database)).toBe(true);
+
+  for (const args of [["uninstall", "--purge-data"], ["uninstall", "--purge-data", "--json"]]) {
+    const rejected = await run(dir, ...args);
+    expectExitCode(rejected, 2);
+    expect(JSON.parse(rejected.stderr).code).toBe("PURGE_REQUIRES_TTY");
+    expect(readFileSync(envPath)).toEqual(beforeEnv);
+    expect(existsSync(database)).toBe(true);
+  }
+
+  const self = await run(dir, "uninstall", "--self", "--json");
+  expectExitCode(self, 0);
+  expect(JSON.parse(self.stdout)).toMatchObject({ schemaVersion: 1, result: {
+    integrationsRemoved: true, memoryKept: true, memoryPath: join(forgeHome, "memory"), atlasRemains: false,
+  } });
+  expect(existsSync(database)).toBe(true);
+}, 40000);
 
 // sync con nube prendida sube lo pendiente (la cola local queda vacía) con el mecanismo nuevo, no el snapshot de formatos 1-3.
 integration("sync uploads the pending queue through the new cloud mechanism once cloud on has run", async () => {

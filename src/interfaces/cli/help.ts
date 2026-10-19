@@ -7,7 +7,8 @@ init [--json] [--postgres-url <URL>]
                 Inicializa Engram; --json no pregunta. --postgres-url solo se acepta con --json.
                 Con --json también acepta --directory <carpeta>: vincula esa carpeta como proyecto y escribe
                 .forge614/project.json en silencio (identidad portátil; repetirlo no cambia nada).
-update [--json] Descarga, verifica y activa la última versión estable de Engram; --json devuelve el resultado estructurado.
+update [--version X.Y.Z] [--json]
+                Descarga, verifica y activa Engram; --json devuelve el resultado estructurado.
 memory-protocol --json [--protocol-version 1|2|3|4]
                 Publica las reglas versionadas que Engines instala en asistentes compatibles. Defecto 1.
                 La versión 3 anuncia el ámbito ecosystem y exige groupIntent al guardar en él.
@@ -22,7 +23,12 @@ startup-context --directory <carpeta> --json [--format 1|2]
                 que trae su .forge614/project.json y escribe ese archivo a un proyecto vinculado solo por ruta.
                 --format 2 devuelve un solo bloque de texto listo para inyectar (máximo 5000 caracteres):
                 esencial fijado, sesión anterior interrumpida e índice de títulos. Defecto 1.
-uninstall       --confirm <frase exacta>; elimina solo Engram tras confirmación explícita.
+uninstall [--json]
+                Desinstala Engram (y Atlas si depende de él); conserva la memoria en ~/.forge614/memory.
+uninstall --purge-data
+                En una terminal, borra la memoria local y su configuración; la copia en la nube se conserva.
+uninstall --self [--json]
+                Retira solo las integraciones de Engram administradas por Engines antes de borrar el programa.
 cloud on [--postgres-url <URL>]
                 Activa la sincronización con la nube; sin --postgres-url, la pide en la terminal sin mostrarla.
 cloud off       Desactiva la nube; conserva el id de instalación y la cola pendiente para retomarla después.
@@ -38,7 +44,7 @@ reinforcement-enable
                 Habilita explícitamente repeticiones y orden reforzado (esquema 7).
 intelligence-enable
                 Habilita explícitamente la memoria inteligente (esquema 11); respalda la base antes de migrar.
-mcp             Inicia el servidor MCP local por stdio; no migra la base.
+mcp             Inicia el servidor MCP local por stdio y usa la ubicación de memoria vigente.
 project-create  --name <nombre>
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
@@ -83,15 +89,15 @@ context [--project-id <UUID> | --scope shared] [--compact] [--max-bytes <1024..6
 context --scope ecosystem --group <nombre|id> [--compact] [--max-bytes <1024..65536>]
 
 help      Muestra esta ayuda sin crear archivos.
---version Muestra la versión instalada.
+--version [--json] Muestra la versión instalada; --json devuelve su contrato de máquina.
 
-Una configuración: ~/.forge614/engram/.env. Una base SQLite: ~/.forge614/engram/engram.db.
+Una configuración: ~/.forge614/memory/.env. Una base SQLite: ~/.forge614/memory/engram.db.
 FORGE614_HOME absoluta sustituye ~/.forge614 para toda ruta de Engram; vacía o relativa devuelve INVALID_FORGE614_HOME.
 No hay conexiones, carpetas .env ni bases diferentes por proyecto.
 --db, --project y --id-project no se admiten. El identificador se llama projectId.
 project-create inicializa el espacio si aún no existe configuración.
 Para guardar shared sin crear un proyecto, ejecuta init primero.
-init puede mover la ubicación antigua de Engram a ~/.forge614/engram cuando es seguro; nunca reemplaza datos en conflicto.
+La memoria de 1.9.0 se migra automáticamente desde engram/ a memory/ cuando la base no está en uso.
 SQLite y FTS5 siempre son locales. PostgreSQL es una réplica opcional configurada con init.
 sync incluye todos los proyectos, shared e historial. Conflictos no se sobrescriben.
 Antes de sync --upgrade-format (obsoleto, sunset 2027-03-31), actualiza todos los equipos: todos deben entender el formato seleccionado; el refuerzo requiere formato 3.
@@ -104,10 +110,9 @@ Si el proyecto pertenece a un grupo, all incluye su ecosystem y la precedencia e
 El recuerdo compartido se conserva y se puede consultar con --scope shared.
 Actualizar un tema requiere --expected-version. Archivar conserva el historial.
 init sin --json muestra texto y requiere terminal; cancelar devuelve código 130.
-Los comandos de datos devuelven JSON; errores a stderr y código de salida 1, sin conexiones privadas.
+Los comandos de datos devuelven JSON; errores a stderr y código 1, entrada inválida código 2.
 Los comandos group-* y memory-move llevan schemaVersion en su salida y en sus errores ({schemaVersion, code, error}).
 Crear el primer grupo actualiza la base con un respaldo automático previo; Engram 1.5.3 no abre una base ya actualizada.
 MCP expone memory_save a asistentes; el modelo puede omitir guardados. No captura transcripciones.
-uninstall requiere REMOVE FORGE614-ENGRAM; si Atlas existe requiere REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS.
 La vinculación de directorios de proyecto requiere una identidad de proyecto apta para vínculo; startup-context no.
 `;

@@ -2,9 +2,11 @@
 
 ## Installation or update
 
-On macOS/Linux, use a terminal with Bash, `curl`, a SHA-256 utility, `tar`, and Node.js 22.19 or newer. There, `forge614-engram update` uses the official `latest` installer and preserves the previous binary when verification or installation fails. On Windows x64, `update` downloads and verifies only the executable and `SHA256SUMS`; it does not run the installer or check Node.js or `tar`. Retry after restoring connectivity; do not manually replace `engram.db`.
+The single installer requires Node.js 22.19.0 or newer; on Windows, `-ExecutionPolicy Bypass` affects only that PowerShell process. If a download or checksum fails, retry with a stable connection and do not run an unverified file. When `FORGE614_HOME` is set, check that it is an absolute path.
 
-The published installer checks its requirements before downloading anything. If a requirement is missing (first three items) it **installed nothing**. If Shell or Engines fails (last six items) only Engram is guaranteed unchanged (Forge614 Engines or part of Shell may already be installed). In every case you can run the installer again once you fix the cause:
+When updating from 1.9.0, the new gatekeeper migrates memory in one run on macOS/Linux. On Windows, run `forge614-engram update` twice: the first updates the 1.9.0 executable and the second, now on 1.10.0, migrates data. `update --version X.Y.Z` selects a specific release; Shell uses `update --json`.
+
+<!-- Inherited 1.9.0 installer messages are retained for historical release notes only.
 
 - `…which needs Node.js 22.19 or newer. Nothing was installed…` (Node is missing): install Node.js from https://nodejs.org (or `brew install node`) and run the installer again.
 - `…which needs Node.js 22.19 or newer; found <version>…` (Node is too old or unreadable): update Node.js (for example `brew upgrade node`) until `node --version` shows v22.19 or newer, then run the installer again.
@@ -31,13 +33,15 @@ On Windows x64, use the installation command in [01. Installation and Getting St
 
 For automation, use `forge614-engram update --json`. Its success is one compact JSON object on stdout and must not contain progress. On failure it exits with code `1` and writes only `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` to stderr. That deliberately safe message does not reveal installer diagnostics, URLs, credentials, or secrets.
 
+-->
+
 ## Initialization
 
 `init` requires an interactive terminal. Use `init --json` in automation. `--postgres-url` is valid only with `init --json`; connection failures return structured JSON without exposing the URL and without leaving partial configuration.
 
 ## Storage
 
-Do not delete or move `~/.forge614/engram/engram.db` manually. Engram repairs permissions inside its own product directory only. If a configuration exists but its database is missing, it fails safely instead of silently creating a replacement.
+The database, `.env`, and backups live in `~/.forge614/memory/` or `FORGE614_HOME/memory/`. Do not delete or move these files manually. If an Engram 1.9.0 MCP session still has the old database open, 1.10.0 keeps using it and retries migration the next time Engram opens.
 
 ## Search and topics
 
@@ -117,4 +121,6 @@ Engram does not detect or configure AI clients. If an MCP client is unavailable,
 
 ## Uninstall
 
-Use the exact confirmation phrase printed by help. If Atlas exists, Engram requires the combined confirmation and removes only `~/.forge614/engram/` and `~/.forge614/atlas/`. On Windows x64, if `uninstall` runs from `%USERPROFILE%\.forge614\engram\bin\forge614-engram.exe`, it schedules deletion after the process exits; the exact PATH entry is removed first.
+`uninstall` prints its confirmation phrase in a terminal and keeps `memory/`. If Atlas is installed, the phrase names both products and uninstalls both. `--json` or a run without a terminal skips the prompt. `--purge-data` requires an interactive terminal, removes local memory and its configuration, and does not remove the PostgreSQL copy; with `--json` or without a terminal it is rejected without changes. `uninstall --self` removes only Engram integrations managed by Engines and leaves Atlas installed. On Windows, if WMI cannot schedule deletion of the parked executable, Engram finishes uninstalling and reports the path where the file remains.
+
+On Windows, the uninstaller can remove `engram/` while an assistant keeps the MCP open. Locked executables stay in the temporary directory until you close the assistant; with `--json`, check their paths in `remainingExecutablePaths`. Memory remains in `memory/`.

@@ -9,8 +9,10 @@ The commands introduced in 1.6.0 (`group-*` and `memory-move`) and the new error
 ```text
 init [--json] [--postgres-url <URL>] [--directory <path>]
                                         initialize local memory; URL and --directory require --json
-update [--json]                         install latest stable release; --json returns a structured result
-uninstall --confirm <exact phrase>      remove Engram only, or Engram and Atlas
+update [--version X.Y.Z] [--json]       install the selected release; keep the contract Shell reads
+uninstall [--purge-data] [--json]       remove the program; keep memory unless explicitly requested
+uninstall --self [--json]               remove Engram integrations for the installer
+--version [--json]                       print the version; --json returns the stable envelope
 mcp                                     start local stdio MCP server
 sync [--upgrade-format]                 synchronize configured PostgreSQL replica
 sync-watch [--interval <1..3600>]       retry synchronization while the process remains open
@@ -48,7 +50,9 @@ Without options, `update` keeps the terminal experience and shows official-insta
 
 An `update --json` failure writes only `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` to stderr and exits with code `1`. It does not include raw diagnostics, URLs, credentials, or secrets. This interface is available from stable release `v1.4.0`.
 
-On Windows x64, `update` downloads the published executable and its `SHA256SUMS`, verifies the digest, and, when launched from the installed executable, schedules its replacement after the process exits. It does not run `install.ps1`, check Node.js or `tar`, or install Shell or Engines. `update` preserves `.env`, `engram.db`, and memories. `uninstall` removes the PATH publication and, in that same case, schedules safe deletion after exit; it removes `FORGE614_HOME/engram/` (or `~/.forge614/engram/`), including the database and local memories.
+On Windows x64, `update` verifies the selected release installer and parks the active `.exe` before replacing it. On all systems it reads the installed version after the gatekeeper finishes. Shell calls it with `update --json` and reads `updated`, `previousVersion`, `installedVersion`, and optional `pendingVersion`. `--version --json` returns `{"schemaVersion":1,"name":"forge614-engram","version":"1.10.0"}`.
+
+The database and `.env` live in `FORGE614_HOME/memory/` (or `~/.forge614/memory/`). The first 1.10.0 run migrates 1.9.0 data from `engram/` after verifying a copy. `uninstall` keeps `memory/`; `--purge-data` removes it only with interactive confirmation and is rejected with `--json` or without a terminal. `uninstall --self` removes only Engram integrations through Engines `plan memory-remove` and `apply` for Claude Code and Codex; it does not uninstall Atlas.
 
 ## Projects
 

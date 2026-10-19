@@ -2,11 +2,11 @@
 
 ## Sistemas soportados
 
-Los releases oficiales soportan macOS, Linux y Windows x64. Cada instalador descarga el binario correspondiente, lo valida contra `SHA256SUMS` y lo instala en `~/.forge614/engram/bin/` (en Windows, `%USERPROFILE%\.forge614\engram\bin\`). También instala la dependencia obligatoria Forge614 Shell y Forge614 Engines cuando faltan; una Shell o un Engines ya instalados se dejan como están, no se actualizan. Windows arm64 queda pendiente.
+Los releases oficiales soportan macOS, Linux y Windows x64. El instalador único descarga y valida el binario contra `SHA256SUMS`, y lo instala en `~/.forge614/engram/bin/` (en Windows, `%USERPROFILE%\.forge614\engram\bin\`). También instala Forge614 Shell y Forge614 Engines cuando faltan. Windows arm64 queda pendiente.
 
 ## Requisitos
 
-Como se instala Forge614 Shell, el instalador necesita **Node.js 22.19 o más nuevo** y `tar`. En macOS/Linux necesita además Bash, `curl` y una utilidad SHA-256. En Windows necesita PowerShell 5.1 o posterior, `curl.exe` y `tar.exe`. Si falta alguno, **no cambia Engram**: revisa los requisitos antes de instalarlo y te dice cómo cumplirlos. La revisión corre siempre, también si Shell ya estaba instalado.
+El instalador necesita **Node.js 22.19.0 o más nuevo**. Si falta o la versión es anterior, explica cómo instalarlo y termina antes de modificar archivos. El requisito también aplica al actualizar o desinstalar desde el instalador único.
 
 ## Instalar
 
@@ -24,7 +24,7 @@ Remove-Item install.ps1
 
 `-ExecutionPolicy Bypass` solo afecta el proceso que ejecuta el instalador; no cambia la política persistente del equipo. El instalador publica el directorio de Engram en el PATH de usuario. Abre una terminal nueva antes de ejecutar `forge614-engram`.
 
-El instalador trabaja en este orden: revisa los requisitos, baja y verifica el binario de Engram, instala Forge614 Shell (que trae Engines) si aún no está instalado y, si Engines aún falta, Engines, y por último coloca Engram. Si Shell no se puede instalar, Engram no se cambia.
+El instalador verifica los porteros, el instalador y la ficha usando `SHA256SUMS`, instala las dependencias declaradas que falten y coloca Engram. La ficha limita los binarios a macOS arm64/x64, Linux arm64/x64 y Windows x64.
 
 Al terminar te dice el siguiente paso con la ruta absoluta (por defecto es la de abajo; si definiste `FORGE614_HOME`, es la misma ruta dentro de esa carpeta). Abre una terminal nueva y ejecútalo:
 
@@ -36,6 +36,7 @@ Ese comando ya incluye inicializar la memoria de Engram, dentro de sus propias p
 
 ```bash
 forge614-engram --version
+forge614-engram --version --json
 forge614-engram help
 ```
 
@@ -46,13 +47,15 @@ El instalador solo crea o repara los directorios propios de Engram, Shell y Engi
 Engram usa una única base para todos los proyectos:
 
 ```text
-~/.forge614/engram/.env
-~/.forge614/engram/engram.db
+~/.forge614/memory/.env
+~/.forge614/memory/engram.db
 ```
+
+Los respaldos también viven en `memory/`. En la primera ejecución de 1.10.0, Engram busca la base de 1.9.0 en `engram/`, comprueba que ninguna otra aplicación la tenga abierta, vacía el WAL, verifica una copia temporal y la publica en `memory/`. Si la base sigue abierta, la usa desde la ruta anterior y vuelve a intentar el traslado en la próxima ejecución. Si ya hay una base en `memory/`, esa ubicación tiene prioridad.
 
 ## Raíz de almacenamiento alternativa
 
-`FORGE614_HOME` funciona como la dirección de un edificio: todo lo que pertenece a Engram —`.env`, SQLite, binario y archivos auxiliares— queda dentro de esa misma raíz. Si la variable no está definida, la dirección histórica sigue siendo exactamente `~/.forge614`; si está definida, debe ser una ruta absoluta.
+`FORGE614_HOME` contiene el programa en `engram/` y los datos duraderos en `memory/`. Si la variable no está definida, la raíz es `~/.forge614`; si está definida, debe ser una ruta absoluta.
 
 ```bash
 FORGE614_HOME=/ruta/absoluta/forge614 forge614-engram init --json
@@ -141,13 +144,13 @@ Inicia el servidor local por `stdio` con `forge614-engram mcp`. La detección y 
 El modo normal es para una persona en terminal y muestra el progreso del instalador. `--json` es para otra herramienta que necesita entender el resultado sin interpretar texto ni progreso.
 
 ```bash
-forge614-engram update
-forge614-engram update --json
-forge614-engram uninstall --confirm 'REMOVE FORGE614-ENGRAM'
+forge614-engram update [--version X.Y.Z] [--json]
+forge614-engram uninstall [--purge-data] [--json]
+forge614-engram uninstall --self [--json]
 ```
 
-En macOS/Linux, `update` descarga el instalador estable más reciente, lo ejecuta con `--force`, verifica el checksum y reemplaza el ejecutable de Engram, mostrando el progreso habitual. Necesita Node.js 22.19+ y `tar`; si falta alguno no cambia nada y conserva el binario anterior. Instala Forge614 Shell y Engines si faltan. En Windows x64, `update` descarga solo `forge614-engram-windows-x64.exe` y `SHA256SUMS`, verifica la huella y releva el ejecutable; no ejecuta `install.ps1`, no revisa Node.js ni `tar`, y no instala Shell ni Engines. Si se ejecuta desde el ejecutable instalado, programa el relevo después de que el proceso salga; el resultado JSON puede informar una versión pendiente. `update` nunca toca `.env`, `engram.db` ni los recuerdos. Usa la misma raíz efectiva que Engram e instala en `FORGE614_HOME/engram/bin/` cuando la variable está definida; sin ella conserva `~/.forge614/engram/bin/`. `update --json` no muestra ese progreso y, si termina correctamente, escribe únicamente un JSON compacto: `{"updated":true,"previousVersion":"<versión anterior>","installedVersion":"<versión instalada>"}`. Si la versión instalada no cambió, `updated` es `false`.
+`update` usa el portero de la release seleccionada, comprueba su SHA-256 con `SHA256SUMS` y lee la versión real del lanzador después de instalar. En macOS y Linux, actualizar desde 1.9.0 migra la memoria en un solo paso. En Windows, el primer `update` de 1.9.0 reemplaza el ejecutable por el nuevo formato; el segundo `update`, ya en 1.10.0, migra la memoria automáticamente. Shell lo llama con `update --json`; el resultado conserva `updated`, `previousVersion`, `installedVersion` y el campo opcional `pendingVersion`.
 
-Los dos modos de `update` conservan `.env`, `engram.db`, recuerdos y configuración. `uninstall`, en cambio, borra `FORGE614_HOME/engram/` (o `~/.forge614/engram/`), incluidos la base y los recuerdos locales; exige `REMOVE FORGE614-ENGRAM`, o `REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS` cuando Atlas existe. En `--json`, un fallo devuelve solamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` por stderr y código `1`; no expone diagnósticos del instalador, URLs ni secretos. Esta interfaz está disponible desde la release estable `v1.4.0`.
+`uninstall` pide una confirmación en terminal y conserva `memory/`. Si Atlas está instalado, la frase nombra a ambos productos y se desinstalan los dos. `--json` y la ejecución sin terminal no preguntan. `--purge-data` requiere terminal y una frase adicional; borra la memoria local y su `.env`, pero no la copia PostgreSQL. `uninstall --self` retira solo las integraciones de Engram que administra Engines, conserva Atlas y se invoca antes de que el instalador borre `engram/`.
 
-Si existe Atlas, la desinstalación exige `REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS` y elimina solamente esos dos directorios.
+En Windows, el desinstalador aparta los ejecutables en uso a la carpeta temporal para poder borrar `engram/` aunque un asistente mantenga abierto el MCP. Intenta borrar esos ejecutables durante un tiempo limitado; los que sigan bloqueados permanecen en la carpeta temporal hasta que cierres el asistente. Con `--json`, sus rutas aparecen en `remainingExecutablePaths`. La memoria permanece en `memory/`.

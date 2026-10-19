@@ -1,327 +1,127 @@
-/** Comprueba que `updateInstalledEngram` descarga, ejecuta y limpia el instalador correctamente, y que reporta la versión resultante sin cambiar nada si ya coincide. */
+/** Comprueba que update verifica el portero, usa tags resueltos y aparta el ejecutable de Windows. */
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import * as crypto from "node:crypto";
-import { installedEngramCommand, updateInstalledEngram, type SpawnOptions } from "./updater";
+import { dirname, join } from "node:path";
+import { installedEngramCommand, parseChecksumManifest, updateInstalledEngram } from "./updater";
 
-async function withForge614Home(run: (home: string) => Promise<void> | void): Promise<void> {
+const installerBytes = new TextEncoder().encode("verified gatekeeper bytes");
+const installerHash = createHash("sha256").update(installerBytes).digest("hex");
+const sums = `${installerHash}  install.sh\n${installerHash}  install.ps1\n`;
+
+async function withForge614Home(run: (home: string) => Promise<void>): Promise<void> {
   const previous = process.env.FORGE614_HOME;
-  const tempHome = mkdtempSync(join(tmpdir(), "forge614-engram-update-test-"));
-  try {
-    process.env.FORGE614_HOME = tempHome;
-    await run(tempHome);
-  } finally {
-    if (previous === undefined) delete process.env.FORGE614_HOME;
-    else process.env.FORGE614_HOME = previous;
-    rmSync(tempHome, { recursive: true, force: true });
+  const home = mkdtempSync(join(tmpdir(), "forge614-updater-"));
+  process.env.FORGE614_HOME = home;
+  try { await run(home); }
+  finally {
+    if (previous === undefined) delete process.env.FORGE614_HOME; else process.env.FORGE614_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
   }
 }
 
-// El comando instalado debe derivarse de FORGE614_HOME, no de una ruta fija.
-test("updater derives its installed command from FORGE614_HOME", async () => {
-  await withForge614Home(async (home) => {
-    expect(installedEngramCommand("darwin")).toBe(join(home, "engram/bin/forge614-engram"));
-  });
+function dependencies(calls: string[], versionReads: string[] = ["1.9.0", "1.10.0"]) {
+  let read = 0;
+  return {
+    fetchText: async (url: string) => { calls.push(`text ${url}`); return sums; },
+    fetchBuffer: async (url: string) => { calls.push(`bytes ${url}`); return installerBytes; },
+    readInstalledVersion: () => versionReads[Math.min(read++, versionReads.length - 1)]!,
+  };
+}
+
+test("installedEngramCommand preserves the fixed MCP launcher path", async () => withForge614Home(async home => {
+  expect(installedEngramCommand("darwin")).toBe(join(home, "engram", "bin", "forge614-engram"));
+  expect(installedEngramCommand("win32")).toBe(join(home, "engram", "bin", "forge614-engram.exe"));
+}));
+
+test("strict GNU SHA256SUMS rejects malformed, duplicate and whitespace-variant rows", () => {
+  expect(parseChecksumManifest(`${installerHash}  install.sh\n`)).toEqual(new Map([["install.sh", installerHash]]));
+  for (const invalid of [
+    `${installerHash} install.sh\n`, `${installerHash}  install.sh\n\n`,
+    `${installerHash}  install.sh\n${installerHash}  install.sh\n`, `${installerHash.toUpperCase()}  install.sh\n`,
+  ]) expect(() => parseChecksumManifest(invalid)).toThrow();
 });
 
-// Una actualización exitosa debe descargar el instalador estable, ejecutarlo con --force, limpiar el archivo y reportar la nueva versión.
-test("update downloads the stable installer and explicitly replaces only the installed command", async () => {
+test("Unix update verifies the requested release portero and passes its resolved tag, never --latest", async () => withForge614Home(async () => {
   const calls: string[] = [];
-  let cleaned = false;
+  const result = await updateInstalledEngram("1.9.0", {
+    platform: "darwin", version: "1.10.0", ...dependencies(calls),
+    spawn: (command, args, options) => { calls.push(`${command} ${args.join(" ")} ${options?.stdio ?? "quiet"}`); return { status: 0 }; },
+  });
+  expect(calls).toEqual([
+    "text https://github.com/jotredev/forge614-engram/releases/download/v1.10.0/SHA256SUMS",
+    "bytes https://github.com/jotredev/forge614-engram/releases/download/v1.10.0/install.sh",
+    expect.stringMatching(/^bash .*install\.sh --force --version v1\.10\.0 inherit$/),
+  ]);
+  expect(calls.join(" ")).not.toContain("--latest");
+  expect(result).toEqual({ updated: true, previousVersion: "1.9.0", installedVersion: "1.10.0" });
+}));
 
-  const result = await updateInstalledEngram("1.3.0", {
-    platform: "darwin",
-    download: async (url) => {
-      calls.push(`download ${url}`);
-      return { installer: "/tmp/forge614-engram-install.sh", cleanup: () => { cleaned = true; } };
-    },
+test("update resolves the published latest tag before invoking the portero", async () => withForge614Home(async () => {
+  const calls: string[] = [];
+  await updateInstalledEngram("1.9.0", {
+    platform: "linux", latestVersion: async () => "v1.10.0", ...dependencies(calls),
+    spawn: (_command, args) => { calls.push(args.join(" ")); return { status: 0 }; },
+  });
+  expect(calls.at(-1)).toContain("--version v1.10.0");
+  expect(calls.at(-1)).not.toContain("--latest");
+}));
+
+test("checksum mismatch stops before the installer process runs", async () => withForge614Home(async () => {
+  let spawned = false;
+  await expect(updateInstalledEngram("1.9.0", {
+    platform: "darwin", version: "1.10.0",
+    fetchText: async () => `0000000000000000000000000000000000000000000000000000000000000000  install.sh\n`,
+    fetchBuffer: async () => installerBytes,
+    readInstalledVersion: () => "1.9.0",
+    spawn: () => { spawned = true; return { status: 0 }; },
+  })).rejects.toThrow("Downloaded installer checksum mismatch.");
+  expect(spawned).toBe(false);
+}));
+
+test("Windows update bypasses execution policy, parks the active exe and leaves its old file for the next update", async () => withForge614Home(async home => {
+  const active = installedEngramCommand("win32");
+  mkdirSync(dirname(active), { recursive: true });
+  writeFileSync(active, "currently running exe");
+  const bin = dirname(active);
+  writeFileSync(join(bin, ".old-previous"), "remove at update start");
+  const calls: string[] = [];
+  const result = await updateInstalledEngram("1.9.0", {
+    platform: "win32", arch: "x64", version: "1.10.0", ...dependencies(calls),
     spawn: (command, args) => {
       calls.push(`${command} ${args.join(" ")}`);
+      expect(existsSync(active)).toBe(false);
+      expect(readdirSync(bin).some(name => name.startsWith(".old-") && name !== ".old-previous")).toBe(true);
+      expect(existsSync(join(bin, ".old-previous"))).toBe(false);
+      writeFileSync(active, "new exe from installer");
       return { status: 0 };
     },
-    readInstalledVersion: () => "1.4.0",
   });
+  const invocation = calls.find(call => call.startsWith("powershell.exe"))!;
+  expect(invocation).toContain("powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File");
+  expect(invocation).toContain("--force --version v1.10.0");
+  expect(result).toEqual({ updated: true, previousVersion: "1.9.0", installedVersion: "1.10.0" });
+  expect(readdirSync(bin).some(name => name.startsWith(".old-"))).toBe(true);
+}));
 
-  expect(calls).toEqual([
-    "download https://github.com/jotredev/forge614-engram/releases/latest/download/install.sh",
-    "bash /tmp/forge614-engram-install.sh --force",
-  ]);
-  expect(cleaned).toBe(true);
-  expect(result).toEqual({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" });
-});
+test("Windows update restores the parked executable if the portero fails", async () => withForge614Home(async home => {
+  const active = installedEngramCommand("win32");
+  mkdirSync(dirname(active), { recursive: true });
+  writeFileSync(active, "recoverable exe");
+  await expect(updateInstalledEngram("1.9.0", {
+    platform: "win32", arch: "x64", version: "1.10.0", ...dependencies([]),
+    spawn: () => ({ status: 1, stderr: "installer failed" }),
+  })).rejects.toThrow("installer failed");
+  expect(readFileSync(active, "utf8")).toBe("recoverable exe");
+  expect(readdirSync(dirname(active)).some(name => name.startsWith(".old-"))).toBe(false);
+}));
 
-// Si el instalador falla, el comando instalado no debe darse por reemplazado y el archivo descargado debe limpiarse igual.
-test("update preserves the installed command when the verified installer fails", async () => {
-  let cleaned = false;
-
-  await expect(updateInstalledEngram("1.3.0", {
-    platform: "darwin",
-    download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => { cleaned = true; } }),
-    spawn: () => ({ status: 1, stderr: "download failed" }),
-  })).rejects.toThrow("download failed");
-
-  expect(cleaned).toBe(true);
-});
-
-// Si la versión instalada tras ejecutar el instalador coincide con la anterior, debe reportarse como no actualizada.
-test("update reports unchanged when the installed release already matches", async () => {
-  const result = await updateInstalledEngram("1.3.0", {
-    platform: "darwin",
-    download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => {} }),
-    spawn: () => ({ status: 0 }),
-    readInstalledVersion: () => "1.3.0",
-  });
-
-  expect(result).toEqual({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0" });
-});
-
-// Con quiet, la salida del instalador no debe heredarse a la terminal actual.
-test("quiet updates do not inherit installer output", async () => {
-  let spawnOptions: SpawnOptions | undefined;
-
-  await updateInstalledEngram("1.3.0", {
-    platform: "darwin",
-    quiet: true,
-    download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => {} }),
-    spawn: (_command, _args, options) => {
-      spawnOptions = options;
-      return { status: 0 };
-    },
-    readInstalledVersion: () => "1.4.0",
-  });
-
-  expect(spawnOptions).toBeUndefined();
-});
-
-// Sin quiet, la salida del instalador sí debe heredarse a la terminal actual.
-test("interactive updates retain installer output", async () => {
-  let spawnOptions: SpawnOptions | undefined;
-
-  await updateInstalledEngram("1.3.0", {
-    platform: "darwin",
-    download: async () => ({ installer: "/tmp/forge614-engram-install.sh", cleanup: () => {} }),
-    spawn: (_command, _args, options) => {
-      spawnOptions = options;
-      return { status: 0 };
-    },
-    readInstalledVersion: () => "1.4.0",
-  });
-
-  expect(spawnOptions).toEqual({ stdio: "inherit" });
-});
-
-// installedEngramCommand en Windows añade .exe.
-test("installedEngramCommand appends .exe on Windows", async () => {
-  await withForge614Home(async (home) => {
-    expect(installedEngramCommand("win32")).toBe(join(home, "engram/bin/forge614-engram.exe"));
-    expect(installedEngramCommand("darwin")).toBe(join(home, "engram/bin/forge614-engram"));
-  });
-});
-
-const FAKE_WINDOWS_EXE = new Uint8Array([1, 2, 3]);
-const FAKE_HASH = crypto.createHash("sha256").update(FAKE_WINDOWS_EXE).digest("hex");
-const VALID_SHASUMS = `${FAKE_HASH}  forge614-engram-windows-x64.exe\n`;
-
-test("windows update schedules swap and returns pendingVersion", async () => {
-  await withForge614Home(async (home) => {
-    let spawnArgs: string[] = [];
-    let wrapperContent = "";
-    let helperContent = "";
-
-    const result = await updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchBuffer: async (url) => {
-        expect(url).toBe("https://github.com/jotredev/forge614-engram/releases/latest/download/forge614-engram-windows-x64.exe");
-        return FAKE_WINDOWS_EXE;
-      },
-      fetchText: async (url) => {
-        expect(url).toBe("https://github.com/jotredev/forge614-engram/releases/latest/download/SHA256SUMS");
-        return VALID_SHASUMS;
-      },
-      readInstalledVersion: (exe) => (exe ? "1.4.0" : "1.3.0"),
-      spawn: (cmd, args) => {
-        expect(cmd).toBe("pwsh");
-        spawnArgs = args;
-
-        // Lee el script de lanzamiento WMI desde el argumento -File
-        const fileIndex = args.indexOf("-File");
-        if (fileIndex !== -1 && args[fileIndex + 1]) {
-          wrapperContent = readFileSync(args[fileIndex + 1]!, "utf8");
-        }
-
-        // Localiza el script ayudante dentro de -CommandLine
-        const cmdIndex = args.indexOf("-CommandLine");
-        if (cmdIndex !== -1 && args[cmdIndex + 1]) {
-          const commandLine = args[cmdIndex + 1]!;
-          const match = /"-File"\s+"([^"]+)"/.exec(commandLine);
-          if (match && match[1]) {
-            helperContent = readFileSync(match[1], "utf8");
-          }
-        }
-
-        return { status: 0 };
-      },
-    });
-
-    expect(result).toEqual({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0", pendingVersion: "1.4.0" });
-
-    // Argumentos del envoltorio WMI
-    expect(spawnArgs).toContain("-File");
-    expect(spawnArgs).toContain("-CommandLine");
-    expect(spawnArgs).toContain("-SpawnLogPath");
-
-    const spawnLogIndex = spawnArgs.indexOf("-SpawnLogPath");
-    const spawnLogPath = spawnArgs[spawnLogIndex + 1]!;
-    expect(spawnLogPath.startsWith(join(home, "engram", "swap-helper-"))).toBe(true);
-    expect(spawnLogPath.endsWith(".spawn.log")).toBe(true);
-
-    const commandLineIndex = spawnArgs.indexOf("-CommandLine");
-    const helperCommandLine = spawnArgs[commandLineIndex + 1]!;
-
-    // Argumentos del script ayudante en la línea de comandos
-    expect(helperCommandLine).toContain("swap-helper.ps1");
-    expect(helperCommandLine).toContain("forge614-engram-windows-x64.exe");
-    expect(helperCommandLine).toContain('"-ActiveLauncher"');
-    expect(helperCommandLine).toContain(join(home, "engram", "bin", "forge614-engram.exe"));
-    expect(helperCommandLine).toContain('"-LogFile"');
-
-    const logFileMatch = /"-LogFile"\s+"([^"]+)"/.exec(helperCommandLine);
-    expect(logFileMatch).not.toBeNull();
-    const helperLogPath = logFileMatch![1]!;
-    expect(helperLogPath.startsWith(join(home, "engram", "swap-helper-"))).toBe(true);
-    expect(helperLogPath.endsWith(".log")).toBe(true);
-    expect(helperLogPath.endsWith(".spawn.log")).toBe(false);
-
-    // Comprobaciones de contenido y cableado de registro en los scripts PowerShell
-    expect(wrapperContent).toContain("[string]$SpawnLogPath");
-    expect(wrapperContent).toContain("Out-File -FilePath $SpawnLogPath -Append");
-    expect(wrapperContent).toContain("Invoke-CimMethod -ClassName Win32_Process -MethodName Create");
-
-    expect(helperContent).toContain("[string]$LogFile");
-    expect(helperContent).toContain("Out-File -FilePath $LogFile -Append");
-    expect(helperContent).toContain("Copy-Item -Path $NewBinary -Destination $ActiveLauncher -Force");
-    expect(helperContent).toContain("Get-FileHash -Path $NewBinary -Algorithm SHA256");
-    expect(helperContent).toContain("Get-FileHash -Path $ActiveLauncher -Algorithm SHA256");
-    expect(helperContent).toContain("Remove-Item -Path $StagingDir -Recurse -Force");
-
-    // Verifica que el ejecutable temporal contenga los bytes descargados
-    const helperFileMatch = /"-File"\s+"([^"]+)"/.exec(helperCommandLine);
-    expect(helperFileMatch).not.toBeNull();
-    const stagingDir = join(helperFileMatch![1]!, "..");
-    const fakeExePath = join(stagingDir, "forge614-engram-windows-x64.exe");
-    const savedBytes = readFileSync(fakeExePath);
-    expect(new Uint8Array(savedBytes)).toEqual(FAKE_WINDOWS_EXE);
-  });
-});
-
-test("windows update ignores replacement if versions match", async () => {
-  await withForge614Home(async (home) => {
-    const result = await updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchBuffer: async () => FAKE_WINDOWS_EXE,
-      fetchText: async () => VALID_SHASUMS,
-      readInstalledVersion: () => "1.3.0",
-      spawn: () => { throw new Error("Should not spawn"); },
-    });
-
-    expect(result).toEqual({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0" });
-
-    // Comprueba que no dejó directorio de paso tras coincidir la versión
-    const engramDir = join(home, "engram");
-    if (existsSync(engramDir)) {
-      const files = readdirSync(engramDir);
-      expect(files.filter((f) => f.startsWith("update-")).length).toBe(0);
-    }
-  });
-});
-
-test("windows update rejects missing or bad shasum", async () => {
-  await withForge614Home(async () => {
-    // Rechaza huella incorrecta
-    await expect(updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchBuffer: async () => FAKE_WINDOWS_EXE,
-      fetchText: async () => "0000000000000000000000000000000000000000000000000000000000000000  forge614-engram-windows-x64.exe\n",
-    })).rejects.toThrow("Downloaded asset checksum mismatch.");
-
-    // Rechaza ausencia de renglón
-    await expect(updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchText: async () => "nothing here",
-    })).rejects.toThrow("Invalid or ambiguous SHA256SUMS file");
-
-    // Rechaza duplicado idéntico
-    await expect(updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchText: async () => VALID_SHASUMS + VALID_SHASUMS,
-    })).rejects.toThrow("Invalid or ambiguous SHA256SUMS file");
-
-    // Rechaza duplicado con hash mal formado
-    await expect(updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchText: async () => VALID_SHASUMS + "AAAA  forge614-engram-windows-x64.exe\n",
-    })).rejects.toThrow("Invalid or ambiguous SHA256SUMS file");
-
-    // Rechaza manifiesto que solo contiene un asset ajeno
-    await expect(updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchText: async () => `${FAKE_HASH}  other-asset.exe\n`,
-    })).rejects.toThrow("Invalid or ambiguous SHA256SUMS file");
-  });
-});
-
-test("windows update rejects WMI failure", async () => {
-  await withForge614Home(async (home) => {
-    await expect(updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchBuffer: async () => FAKE_WINDOWS_EXE,
-      fetchText: async () => VALID_SHASUMS,
-      readInstalledVersion: (exe) => (exe ? "1.4.0" : "1.3.0"),
-      spawn: () => ({ status: 1 }),
-    })).rejects.toThrow("Could not launch WMI process to finish update.");
-
-    // Comprueba que la carpeta de paso se limpia si el lanzamiento WMI falla
-    const engramDir = join(home, "engram");
-    if (existsSync(engramDir)) {
-      const files = readdirSync(engramDir);
-      expect(files.filter((f) => f.startsWith("update-")).length).toBe(0);
-    }
-  });
-});
-
-test("windows update fails before download if arch is arm64", async () => {
-  await withForge614Home(async () => {
-    let downloaded = false;
-    await expect(updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "arm64",
-      fetchText: async () => { downloaded = true; return VALID_SHASUMS; },
-    })).rejects.toThrow("Forge614 Engram updater only supports x64 on Windows.");
-    expect(downloaded).toBe(false);
-  });
-});
-
-test("windows update accepts valid asset line when another asset contains it as substring", async () => {
-  await withForge614Home(async () => {
-    const manifestWithSubstring = VALID_SHASUMS + `${FAKE_HASH}  forge614-engram-windows-x64.exe.sig\n`;
-    const result = await updateInstalledEngram("1.3.0", {
-      platform: "win32",
-      arch: "x64",
-      fetchBuffer: async () => FAKE_WINDOWS_EXE,
-      fetchText: async () => manifestWithSubstring,
-      readInstalledVersion: (exe) => (exe ? "1.4.0" : "1.3.0"),
-      spawn: () => ({ status: 0 }),
-    });
-    expect(result).toEqual({ updated: false, previousVersion: "1.3.0", installedVersion: "1.3.0", pendingVersion: "1.4.0" });
-  });
-});
+test("Windows update rejects unsupported architectures before release downloads", async () => withForge614Home(async () => {
+  let downloaded = false;
+  await expect(updateInstalledEngram("1.9.0", {
+    platform: "win32", arch: "arm64", version: "1.10.0",
+    fetchText: async () => { downloaded = true; return sums; },
+  })).rejects.toThrow("Forge614 Engram updater only supports x64 on Windows.");
+  expect(downloaded).toBe(false);
+}));

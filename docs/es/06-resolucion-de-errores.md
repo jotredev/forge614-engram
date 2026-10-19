@@ -2,34 +2,9 @@
 
 ## Instalación o actualización
 
-En macOS/Linux usa una terminal con Bash, `curl`, una utilidad SHA-256, `tar` y Node.js 22.19 o más nuevo. Allí `forge614-engram update` usa el instalador oficial `latest` y conserva el binario anterior si falla validación o instalación. En Windows x64, `update` descarga y verifica solo el ejecutable y `SHA256SUMS`; no ejecuta el instalador ni revisa Node.js o `tar`. Reintenta después de recuperar conectividad; no reemplaces `engram.db` manualmente.
+El instalador único requiere Node.js 22.19.0 o posterior; en Windows, `-ExecutionPolicy Bypass` solo afecta ese proceso de PowerShell. Si falla la descarga o la huella, reintenta con conectividad estable y no ejecutes un archivo que no pasó la verificación. Con `FORGE614_HOME` definido, comprueba que sea una ruta absoluta.
 
-El instalador publicado revisa sus requisitos antes de bajar nada. Si falta un requisito (los tres primeros puntos) **no instaló nada**. Si falla Shell o Engines (los seis últimos) solo se garantiza que Engram no cambió (puede que Forge614 Engines o parte de Shell ya estén instalados). En todos los casos puedes volver a correr el instalador cuando resuelvas la causa:
-
-- `…which needs Node.js 22.19 or newer. Nothing was installed…` (Node falta): instala Node.js desde https://nodejs.org (o `brew install node`) y vuelve a correr el instalador.
-- `…which needs Node.js 22.19 or newer; found <versión>…` (Node es viejo o ilegible): actualiza Node.js (por ejemplo `brew upgrade node`) hasta que `node --version` muestre v22.19 o más nuevo, y vuelve a correr el instalador.
-- `…which needs tar…` (falta `tar`): instala `tar` con el gestor de paquetes de tu sistema y vuelve a correr el instalador.
-- `Could not download the Forge614 Shell installer.`: no se pudo bajar el instalador de Forge614 Shell; revisa la conectividad y reintenta. Engram no se cambió.
-- `Forge614 Shell could not be installed; Engram was not changed.`: el instalador de Shell terminó con error (sus mensajes salen justo arriba); corrige lo que indique y vuelve a correr el instalador. Engram no se cambió.
-- `Forge614 Shell installation did not provide its required command.`: el instalador de Shell terminó sin dejar `<FORGE614_HOME>/shell/bin/forge614-shell` (por defecto `~/.forge614/shell/bin/forge614-shell`); reintenta y, si se repite, reporta el problema en el repositorio de Forge614 Shell.
-- `Could not download the Forge614 Engines installer.`: no se pudo bajar el instalador de Forge614 Engines; revisa la conectividad y reintenta. Engram no se cambió.
-- `Forge614 Engines could not be installed; Engram was not changed.`: el instalador de Engines terminó con error (sus mensajes salen justo arriba); corrige lo que indique y vuelve a correr el instalador. Engram no se cambió.
-- `Forge614 Engines installation did not provide its required command.`: el instalador de Engines terminó sin dejar `<FORGE614_HOME>/engines/bin/forge614-engines` (por defecto `~/.forge614/engines/bin/forge614-engines`); reintenta y, si se repite, reporta el problema en el repositorio de Forge614 Engines.
-
-Con `update --json` estos mensajes no se muestran; ejecuta `forge614-engram update` sin `--json` para verlos.
-
-En Windows x64, usa el comando de instalación de [01. Instalación y primeros pasos](01-instalacion-y-primeros-pasos.md). Estos mensajes textuales del instalador indican qué resolver:
-
-- `Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer. Nothing was installed.`: Node.js no está disponible. Instálalo desde https://nodejs.org o ejecuta `winget install OpenJS.NodeJS.LTS` y vuelve a correr el instalador.
-- `Forge614 Engram installs Forge614 Shell, which needs Node.js 22.19 or newer; found <versión>. Nothing was installed.`: la versión de Node.js es vieja o ilegible. Actualízala a 22.19 o posterior y reintenta.
-- `Forge614 Engram installs Forge614 Shell, which needs tar. Nothing was installed.`: instala `tar.exe` y vuelve a ejecutar el instalador.
-- `Release checksum verification failed.`: la huella descargada no coincide. No ejecutes el archivo descargado; reintenta desde el comando oficial cuando la red esté disponible.
-- `The command already exists. Use -Force to replace it explicitly.`: ya existe el ejecutable. Usa `-Force` solo si deseas reemplazar esa instalación.
-- `INVALID_FORGE614_HOME: FORGE614_HOME must be a non-empty absolute path.`: define `FORGE614_HOME` con una ruta absoluta no vacía o quítala antes de instalar.
-- El instalador termina con `Installed:` pero `forge614-engram` no se reconoce: abre una terminal nueva para que lea el PATH de usuario publicado.
-- Si la política de ejecución bloquea el script, ejecuta el comando documentado con `-ExecutionPolicy Bypass`; esa opción afecta solo ese proceso de PowerShell.
-
-Para automatización, usa `forge614-engram update --json`. Su éxito es un único JSON compacto en stdout; no debe contener progreso. Si falla, devuelve código `1` y únicamente `{"code":"UPDATE_FAILED","error":"No se pudo actualizar Forge614 Engram."}` en stderr. Ese mensaje deliberadamente no revela diagnósticos del instalador, URLs, credenciales ni secretos.
+Si actualizas desde 1.9.0, en macOS/Linux el portero nuevo migra la memoria en una ejecución. En Windows, corre `forge614-engram update` dos veces: la primera actualiza el ejecutable de 1.9.0 y la segunda, ya en 1.10.0, migra los datos. `update --version X.Y.Z` selecciona un release específico; Shell usa `update --json`.
 
 ## Inicialización
 
@@ -37,7 +12,7 @@ Para automatización, usa `forge614-engram update --json`. Su éxito es un únic
 
 ## Almacenamiento
 
-No borres ni muevas manualmente `~/.forge614/engram/engram.db`. Engram repara permisos solo dentro de su directorio. Si hay configuración pero falta la base, falla de forma segura en vez de crear un reemplazo silencioso.
+La base, `.env` y respaldos viven en `~/.forge614/memory/` o `FORGE614_HOME/memory/`. No borres ni muevas manualmente esos archivos. Si una sesión de MCP 1.9.0 mantiene abierta la base antigua, 1.10.0 sigue usándola y reintenta la migración al abrir Engram de nuevo.
 
 ## Búsqueda y temas
 
@@ -117,4 +92,6 @@ Engram no detecta ni configura clientes de IA. Si un cliente MCP no está dispon
 
 ## Desinstalación
 
-Usa la frase exacta de confirmación indicada por help. Si existe Atlas, Engram requiere la confirmación combinada y elimina solo `~/.forge614/engram/` y `~/.forge614/atlas/`. En Windows x64, si `uninstall` se ejecuta desde `%USERPROFILE%\.forge614\engram\bin\forge614-engram.exe`, programa el borrado después de que el proceso salga; la entrada exacta de PATH se retira antes.
+`uninstall` muestra la frase de confirmación en terminal y conserva `memory/`. Si Atlas está instalado, la frase nombra ambos productos y desinstala ambos. `--json` o la ausencia de terminal omiten la pregunta. `--purge-data` requiere terminal interactiva, borra la memoria local y su configuración, y no borra la copia PostgreSQL; con `--json` o sin terminal se rechaza sin cambios. `uninstall --self` retira solo las integraciones de Engram administradas por Engines y deja Atlas instalado. En Windows, si no se puede programar por WMI el borrado del ejecutable apartado, Engram termina de desinstalarse e informa la ruta donde quedó ese archivo.
+
+En Windows, el desinstalador puede borrar `engram/` mientras el asistente mantiene abierto el MCP. Los ejecutables bloqueados permanecen en la carpeta temporal hasta que cierres el asistente; con `--json`, revisa sus rutas en `remainingExecutablePaths`. La memoria sigue en `memory/`.

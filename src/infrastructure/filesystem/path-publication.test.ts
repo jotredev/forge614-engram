@@ -9,7 +9,8 @@ const start = "# >>> forge614-engram PATH >>>";
 const end = "# <<< forge614-engram PATH <<<";
 
 function unixBlock(directory: string): string {
-  return `${start}\ncase ":$PATH:" in\n  *:${directory}:*) ;;\n  *) export PATH=${directory}:"$PATH" ;;\nesac\n${end}`;
+  const escaped = directory.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`");
+  return `${start}\nexport PATH="${escaped}:$PATH"\n${end}`;
 }
 
 async function withHome(run: (home: string) => Promise<void>): Promise<void> {
@@ -53,8 +54,8 @@ test("removes the installer PATH block when the product path contains spaces", a
   try {
     const path = join(home, ".zshrc");
     const directory = "/forge614/engram path/bin";
-    const escaped = directory.replace(/ /g, "\\ ");
-    writeFileSync(path, `keep=1\n${start}\ncase ":$PATH:" in\n  *:${escaped}:*) ;;\n  *) export PATH=${escaped}:"$PATH" ;;\nesac\n${end}\n`);
+    const escaped = directory.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("$", "\\$").replaceAll("`", "\\`");
+    writeFileSync(path, `keep=1\n${start}\nexport PATH="${escaped}:$PATH"\n${end}\n`);
     await expect(removePathPublication({ home, binDirectory: directory, platform: "darwin" })).resolves.toEqual([path]);
     expect(readFileSync(path, "utf8")).toBe("keep=1\n");
   } finally { rmSync(home, { recursive: true, force: true }); }

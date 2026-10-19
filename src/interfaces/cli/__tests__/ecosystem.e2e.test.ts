@@ -27,7 +27,7 @@ interface Machine { home: string; run: (...args: string[]) => Promise<Result>; o
 async function machine(initialize = true): Promise<Machine> {
   const base = temporary("engram-eco-e2e-"); const home = join(base, "home");
   const value: Machine = {
-    home, database: join(home, "engram", "engram.db"),
+    home, database: join(home, "memory", "engram.db"),
     run: (...args) => launch(home, base, args),
     ok: async (...args) => { const result = await launch(home, base, args); if (result.code !== 0) throw new Error(`${args.join(" ")} -> ${result.stderr}`); return JSON.parse(result.stdout); },
     fail: async (...args) => { const result = await launch(home, base, args); expect(result.code).toBe(1); expect(result.stdout).toBe(""); return JSON.parse(result.stderr); },
@@ -413,7 +413,7 @@ test("a database created by v1.5.3 opens and reads completely with the new versi
     expect(after.query("PRAGMA user_version").get()).toEqual({ user_version: 10 });
     expect(after.query("SELECT count(*) AS n FROM memories").get()).toEqual({ n: 7 });
   } finally { after.close(); }
-  expect(readdirSync(join(engram.home, "engram")).filter(name => name.includes("pre-ecosystem"))).toHaveLength(1);
+  expect(readdirSync(join(engram.home, "memory")).filter(name => name.includes("pre-ecosystem"))).toHaveLength(1);
   expect((await engram.ok("search", "--project-id", alpha.projectId, "--query", "canción")).map((result: any) => result.memory.id)).toEqual(found.map((result: any) => result.memory.id));
   } finally { holder.close(); }
 }, T);
@@ -431,7 +431,7 @@ test("the command that first upgrades a base with data says so and names the bac
     const first = await engram.ok("startup-context", "--directory", repository, "--json");
     const notice = first.project.notices.find((item: any) => item.code === "DATABASE_MIGRATED");
     expect(notice).toBeDefined();
-    expect(readdirSync(join(engram.home, "engram"))).toContain(basename(notice.backup));
+    expect(readdirSync(join(engram.home, "memory"))).toContain(basename(notice.backup));
     expect(notice.message).toContain(notice.backup);
     expect((await engram.ok("startup-context", "--directory", repository, "--json")).project.notices).toBeUndefined();
     expect((await engram.ok("group-create", "--name", "otro")).notices).toBeUndefined();

@@ -5,7 +5,7 @@
  * necesite saber en qué módulo vive cada operación ni tocar la base de datos directamente.
  */
 import { parallelSessions,previousInterrupted } from "../infrastructure/sqlite/activity";
-import { closeDatabase,defaultDatabasePath,openDatabase } from "../infrastructure/sqlite/connection";
+import { closeDatabase,openDatabase,openDefaultDatabase } from "../infrastructure/sqlite/connection";
 import * as groups from "../infrastructure/sqlite/ecosystem-groups";
 import * as memory from "../infrastructure/sqlite/memory";
 import * as projects from "../infrastructure/sqlite/projects";
@@ -36,8 +36,8 @@ export class MemoryStore {
    * @param path Ruta del archivo de base de datos; por defecto, la ruta estándar de Engram.
    * @param options `create` permite crear el archivo si no existe; `readonly` abre sin permiso de escritura.
    */
-  constructor(path: string = defaultDatabasePath(), options: { create?: boolean; readonly?: boolean } = {}) {
-    this.db = openDatabase(path, options);
+  constructor(path?: string, options: { create?: boolean; readonly?: boolean } = {}) {
+    this.db = path === undefined ? openDefaultDatabase(options) : openDatabase(path, options);
   }
   /** Crea un proyecto nuevo con el nombre dado y devuelve su registro. */
   createProject(name: string): Project { return projects.createProject(this.db, name); }

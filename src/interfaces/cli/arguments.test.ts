@@ -23,10 +23,12 @@ test("parser accepts intelligence enrollment only as an optionless explicit comm
   expect(() => parseArguments(["intelligence-enable", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
-// update acepta --json de forma opcional, y ninguna otra bandera.
-test("parser accepts update with optional JSON output and rejects unknown flags", () => {
+// update acepta versión de destino explícita y JSON opcional, y ninguna otra bandera.
+test("parser accepts a target update version with optional JSON output and rejects unknown flags", () => {
   expect(parseArguments(["update"]).command).toBe("update");
   expect(parseArguments(["update", "--json"]).values.get("json")).toBe("true");
+  expect(parseArguments(["update", "--version", "1.10.0"]).values.get("version")).toBe("1.10.0");
+  expect(() => parseArguments(["update", "--version", "latest"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
   expect(() => parseArguments(["update", "--force"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
@@ -69,11 +71,14 @@ test("parser no longer exposes assistant ownership or a local TUI", () => {
   }
 });
 
-// uninstall no exige --confirm para analizarse (la confirmación la pide commands.ts más adelante), pero si se repite la opción, falla.
-test("parser requires one explicit uninstall confirmation", () => {
-  expect(parseArguments(["uninstall", "--confirm", "REMOVE FORGE614-ENGRAM"]).need("confirm")).toBe("REMOVE FORGE614-ENGRAM");
-  expect(() => parseArguments(["uninstall"])).not.toThrow();
-  expect(() => parseArguments(["uninstall", "--confirm", "x", "--confirm", "x"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
+// uninstall es interactivo por defecto; JSON, purge y el hook --self son banderas sin valor.
+test("parser accepts uninstall JSON, purge-data and self modes", () => {
+  expect(parseArguments(["uninstall"]).command).toBe("uninstall");
+  expect(parseArguments(["uninstall", "--json"]).values.get("json")).toBe("true");
+  expect(parseArguments(["uninstall", "--purge-data"]).values.get("purge-data")).toBe("true");
+  expect(parseArguments(["uninstall", "--self", "--json"]).values.get("self")).toBe("true");
+  expect(() => parseArguments(["uninstall", "--confirm", "x"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
+  expect(() => parseArguments(["uninstall", "--self", "--purge-data"])).toThrow(expect.objectContaining({code:"INVALID_INPUT"}));
 });
 
 // Comando inexistente, opción no permitida para ese comando, opción repetida, valor vacío, valor con byte nulo, un valor booleano con texto en vez de bandera, y un argumento que no empieza con "--": todos son entradas mal formadas.

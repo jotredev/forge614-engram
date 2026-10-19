@@ -46,7 +46,7 @@ El servicio de PostgreSQL en la nube que usa Engram para la sincronización entr
 
 ## Dirección de conexión
 
-La URL completa con la que Engram se conecta a Neon (`postgresql://<usuario>:<contraseña>@<host>/<base>?sslmode=require&channel_binding=require`). Es una llave: nunca se guarda en un recuerdo ni en un archivo del repositorio, solo en `~/.forge614/engram/.env`; `cloud on` la pide en la terminal sin mostrarla.
+La URL completa con la que Engram se conecta a Neon (`postgresql://<usuario>:<contraseña>@<host>/<base>?sslmode=require&channel_binding=require`). Es una llave: nunca se guarda en un recuerdo ni en un archivo del repositorio, solo en `~/.forge614/memory/.env` (o en `FORGE614_HOME/memory/.env`); `cloud on` la pide en la terminal sin mostrarla.
 
 ## Id de instalación
 

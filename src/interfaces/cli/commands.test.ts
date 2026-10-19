@@ -57,15 +57,18 @@ test("update JSON output contains only the structured update result", async () =
   );
 }, 40000);
 
-// runUpdateCommand imprime el resultado estructurado cuando json es verdadero; sin --json imprime notificaciones pendientes si las hay.
-test("update --json prints structured output while plain update remains silent", async () => {
+// runUpdateCommand conserva el JSON para Shell y explica el resultado de forma humana sin --json.
+test("update --json prints its contract and plain update reports the installed version", async () => {
   const output: string[] = [];
   const update = async () => ({ updated: true, previousVersion: "1.3.0", installedVersion: "1.4.0" });
 
   await runUpdateCommand(true, "1.3.0", update, value => output.push(value));
   await runUpdateCommand(false, "1.3.0", update, value => output.push(value));
 
-  expect(output).toEqual(['{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}']);
+  expect(output).toEqual([
+    '{"updated":true,"previousVersion":"1.3.0","installedVersion":"1.4.0"}',
+    "forge614-engram se actualizó de 1.3.0 a 1.4.0.",
+  ]);
 }, 40000);
 // Un recuerdo shared se guarda y se busca sin crear ningún proyecto; archivar o consultar con --project-id en vez de --scope shared falla, porque el scope debe darse explícito.
 test("CLI shared memories work without a project and require explicit scope for mutations", async () => {
@@ -169,7 +172,7 @@ test("init --json rejects an unavailable PostgreSQL URL without exposing it or c
 // Repetir init --json sobre una configuración que ya tiene PostgreSQL no la borra ni la cambia.
 test("repeating init --json preserves an existing PostgreSQL configuration", async () => {
   const dir = workspace();
-  const config = new WorkspaceConfig(join(dir, "user", ".forge614", "engram"));
+  const config = new WorkspaceConfig(join(dir, "user", ".forge614", "memory"));
   new MemoryWorkspace(config).init();
   config.configurePostgres("postgresql://user:password@127.0.0.1:5432/engram?sslmode=disable", config.revision());
 
@@ -182,7 +185,7 @@ test("repeating init --json preserves an existing PostgreSQL configuration", asy
 // reinforcement-enable es explícito y repetible (dos veces seguidas da el mismo resultado); si la base configurada desaparece del disco, no la vuelve a crear (DATABASE_MISSING).
 test("reinforcement enrollment is explicit, repeatable, and never recreates a missing configured database", async () => {
   const dir=workspace();
-  const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
+  const config=new WorkspaceConfig(join(dir,"user",".forge614","memory"));
   // Una base recién creada ya nace con el reforzamiento activo (esquema 11); solo una base de
   // nivel viejo (legacy), ya configurada de antes, permite observarlo apagado antes de habilitarlo.
   legacyConfiguredWorkspace(config);
@@ -216,7 +219,7 @@ test("reinforcement enrollment is explicit, repeatable, and never recreates a mi
 // La primera ejecución de intelligence-enable sobre una base vieja migra de verdad (migrated:true); repetirlo ya no migra nada (migrated:false).
 test("intelligence enrollment is explicit and a second run is a no-op", async () => {
   const dir=workspace();
-  const config=new WorkspaceConfig(join(dir,"user",".forge614","engram"));
+  const config=new WorkspaceConfig(join(dir,"user",".forge614","memory"));
   // Una base recién creada ya está en el esquema 11 (no hay migración que observar); solo una base
   // de nivel viejo (legacy) ejercita aquí una migración real.
   legacyConfiguredWorkspace(config);
@@ -305,18 +308,24 @@ test("runUninstallCommand transmits pendingRemoval without alteration in JSON ou
   const fakeUninstallWithPending = async () => ({
     removed: false,
     atlasRemoved: false,
+    memoryKept: true,
+    memoryPath: "/tmp/forge614/memory",
     pathPublications: ["User Path"],
     pendingRemoval: true,
+    remainingExecutablePath: "C:/Temp/.old-forge614-engram-active.exe",
+    remainingExecutablePaths: ["C:/Temp/.old-forge614-engram-active.exe", "C:/Temp/.old-forge614-engram-previous"],
   });
 
-  await runUninstallCommand("REMOVE FORGE614-ENGRAM", fakeUninstallWithPending, val => outputs.push(val));
+  await runUninstallCommand({ json: true, purgeData: false, self: false }, fakeUninstallWithPending, val => outputs.push(val));
   expect(outputs.length).toBe(1);
   const parsed = JSON.parse(outputs[0]!);
   expect(parsed).toEqual({
-    removed: false,
-    atlasRemoved: false,
-    pathPublications: ["User Path"],
-    pendingRemoval: true,
+    schemaVersion: 1,
+    result: {
+      removed: false, memoryKept: true, memoryPath: "/tmp/forge614/memory", atlasRemoved: false, pendingRemoval: true,
+      remainingExecutablePath: "C:/Temp/.old-forge614-engram-active.exe",
+      remainingExecutablePaths: ["C:/Temp/.old-forge614-engram-active.exe", "C:/Temp/.old-forge614-engram-previous"],
+    },
   });
 
   // Caso sin borrado pendiente conserva el JSON estándar
@@ -324,15 +333,16 @@ test("runUninstallCommand transmits pendingRemoval without alteration in JSON ou
   const fakeNormalUninstall = async () => ({
     removed: true,
     atlasRemoved: false,
+    memoryKept: true,
+    memoryPath: "/tmp/forge614/memory",
     pathPublications: [],
   });
-  await runUninstallCommand("REMOVE FORGE614-ENGRAM", fakeNormalUninstall, val => normalOutputs.push(val));
+  await runUninstallCommand({ json: true, purgeData: false, self: false }, fakeNormalUninstall, val => normalOutputs.push(val));
   expect(normalOutputs.length).toBe(1);
   const normalParsed = JSON.parse(normalOutputs[0]!);
   expect(normalParsed).toEqual({
-    removed: true,
-    atlasRemoved: false,
-    pathPublications: [],
+    schemaVersion: 1,
+    result: { removed: true, memoryKept: true, memoryPath: "/tmp/forge614/memory", atlasRemoved: false },
   });
   expect(normalParsed.pendingRemoval).toBeUndefined();
 });

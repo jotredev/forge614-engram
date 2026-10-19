@@ -3,10 +3,10 @@
  * orden Atlas-antes-que-Engram, no tocar carpetas ajenas y no borrar nada si algún paso falla.
  */
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { uninstallEngram, type UninstallDependencies } from "./uninstall";
+import { uninstallEngram, uninstallEngramSelf, uninstallConfirmation, type UninstallDependencies } from "./uninstall";
 
 async function withHome(run:(home:string)=>Promise<void>) {
   const home=mkdtempSync(join(tmpdir(),"engram-uninstall-"));
@@ -16,6 +16,7 @@ async function withHome(run:(home:string)=>Promise<void>) {
 function dependencies(home: string, extra: Partial<UninstallDependencies> = {}): UninstallDependencies {
   return { home, forgeHome: join(home, ".forge614"), executable: process.execPath, ...extra };
 }
+const confirm = (home: string) => uninstallConfirmation(join(home, ".forge614"));
 
 // Verifica que una frase de confirmación incorrecta rechaza la desinstalación sin borrar nada.
 test("wrong confirmation leaves the Engram product directory intact", async () => withHome(async home => {
@@ -24,12 +25,36 @@ test("wrong confirmation leaves the Engram product directory intact", async () =
   expect(existsSync(join(root,'keep'))).toBe(true);
 }));
 
+test.skipIf(process.platform !== "win32")("uninstall from a different drive is outside the installation", async () => withHome(async home => {
+  const root = join(home, ".forge614", "engram");
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "keep"), "memory");
+  const homeDrive = home.slice(0, 2).toLowerCase();
+  const cwdDrive = process.cwd().slice(0, 2).toLowerCase();
+  if (homeDrive === cwdDrive) return;
+  await expect(uninstallEngram(
+    { confirmation: "yes" },
+    dependencies(home, { cwd: process.cwd() }),
+  )).rejects.toMatchObject({ code: "UNINSTALL_CONFIRMATION" });
+  expect(existsSync(join(root, "keep"))).toBe(true);
+}));
+
+test("refuses to uninstall when the current directory is inside the installed product", async () => withHome(async home => {
+  const root = join(home, ".forge614", "engram");
+  mkdirSync(join(root, "bin"), { recursive: true });
+  await expect(uninstallEngram(
+    { confirmation: confirm(home) },
+    dependencies(home, { cwd: join(root, "bin") }),
+  )).rejects.toMatchObject({ code: "UNINSTALL_FROM_INSTALLATION" });
+  expect(existsSync(root)).toBe(true);
+}));
+
 // Verifica que si el desinstalador de Atlas devuelve un código distinto de 0, la carpeta de Engram no se toca.
 test("Atlas failure leaves Engram intact before local cleanup", async () => withHome(async home => {
   const root=join(home,'.forge614','engram'),atlas=join(home,'.forge614','atlas','bin');mkdirSync(atlas,{recursive:true});mkdirSync(root,{recursive:true});writeFileSync(join(root,'keep'),'memory');
   writeFileSync(join(atlas,'forge614-atlas'),'binary',{mode:0o700});
   await expect(uninstallEngram(
-    {confirmation:'REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS'},
+    {confirmation:confirm(home)},
     dependencies(home,{platform:"darwin",runAtlasUninstall:async()=>1}),
   )).rejects.toMatchObject({code:'ATLAS_UNINSTALL_FAILED'});
   expect(existsSync(join(root,'keep'))).toBe(true);
@@ -39,7 +64,7 @@ test("Atlas failure leaves Engram intact before local cleanup", async () => with
 test("removes only the Engram product directory after exact confirmation", async () => withHome(async home => {
   const root=join(home,'.forge614','engram'),shell=join(home,'.forge614','shell');mkdirSync(root,{recursive:true});mkdirSync(shell,{recursive:true});
   writeFileSync(join(root,'memory'),'memory');writeFileSync(join(shell,'keep'),'shell');
-  const result=await uninstallEngram({confirmation:'REMOVE FORGE614-ENGRAM'},dependencies(home));
+  const result=await uninstallEngram({confirmation:confirm(home)},dependencies(home));
   expect(result.removed).toBe(true);expect(existsSync(root)).toBe(false);expect(existsSync(join(shell,'keep'))).toBe(true);
 }));
 
@@ -47,7 +72,7 @@ test("removes only the Engram product directory after exact confirmation", async
 test("PATH cleanup failure leaves the Engram product directory intact", async () => withHome(async home => {
   const root=join(home,'.forge614','engram');mkdirSync(root,{recursive:true});writeFileSync(join(root,'keep'),'memory');
   await expect(uninstallEngram(
-    {confirmation:'REMOVE FORGE614-ENGRAM'},
+    {confirmation:confirm(home)},
     dependencies(home,{removePathPublication:async()=>{throw new Error('cannot clean PATH');}}),
   )).rejects.toMatchObject({code:'PATH_REMOVE_FAILED'});
   expect(existsSync(join(root,'keep'))).toBe(true);
@@ -58,7 +83,7 @@ test("does not inspect or modify external client configuration during removal", 
   const root=join(home,'.forge614','engram'),other=join(home,'.other-client');mkdirSync(root,{recursive:true});mkdirSync(other,{recursive:true});
   writeFileSync(join(root,'keep'),'memory');
   const configuration=join(other,'mcp.json');writeFileSync(configuration,'{"mcpServers":{"forge614-engram":{"command":"edited","args":["mcp"]}}}\n');
-  await uninstallEngram({confirmation:'REMOVE FORGE614-ENGRAM'},dependencies(home));
+  await uninstallEngram({confirmation:confirm(home)},dependencies(home));
   expect(existsSync(root)).toBe(false);
   expect(existsSync(configuration)).toBe(true);
 }));
@@ -68,7 +93,7 @@ test("removes PATH publication before deleting the Engram product directory", as
   const root=join(home,'.forge614','engram');mkdirSync(root,{recursive:true});writeFileSync(join(root,'memory'),'memory');
   let rootExistedDuringPathRemoval=false;
   await uninstallEngram(
-    {confirmation:'REMOVE FORGE614-ENGRAM'},
+    {confirmation:confirm(home)},
     dependencies(home,{removePathPublication:async()=>{
       rootExistedDuringPathRemoval=existsSync(root);return [];
     }}),
@@ -86,7 +111,7 @@ test("looks for forge614-atlas.exe on Windows and fails if missing", async () =>
   // En Unix se buscaría forge614-atlas, pero en Windows debe exigir forge614-atlas.exe
   writeFileSync(join(atlas, "forge614-atlas"), "unix-binary", { mode: 0o700 });
   await expect(uninstallEngram(
-    { confirmation: "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS" },
+    { confirmation: confirm(home) },
     dependencies(home, { platform: "win32" }),
   )).rejects.toMatchObject({ code: "ATLAS_UNINSTALL_REQUIRED" });
   expect(existsSync(join(root, "keep"))).toBe(true);
@@ -103,7 +128,7 @@ test("looks for forge614-atlas.exe on Windows and executes it", async () => with
   writeFileSync(atlasExe, "win-binary");
   let executedCommand = "";
   const result = await uninstallEngram(
-    { confirmation: "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS" },
+    { confirmation: confirm(home) },
     dependencies(home, {
       platform: "win32",
       runAtlasUninstall: async (cmd) => { executedCommand = cmd; return 0; },
@@ -124,7 +149,7 @@ test("Atlas failure on Windows leaves Engram intact before local cleanup", async
   writeFileSync(join(root, "keep"), "memory");
   writeFileSync(join(atlas, "forge614-atlas.exe"), "win-binary");
   await expect(uninstallEngram(
-    { confirmation: "REMOVE FORGE614-ENGRAM AND FORGE614-ATLAS" },
+    { confirmation: confirm(home) },
     dependencies(home, {
       platform: "win32",
       runAtlasUninstall: async () => 1,
@@ -150,7 +175,7 @@ test("schedules deferred removal via WMI and returns pendingRemoval on Windows w
 
   const activeExe = join(binDir, "forge614-engram.exe");
   const result = await uninstallEngram(
-    { confirmation: "REMOVE FORGE614-ENGRAM" },
+    { confirmation: confirm(home) },
     dependencies(home, {
       platform: "win32",
       executable: activeExe,
@@ -177,12 +202,16 @@ test("schedules deferred removal via WMI and returns pendingRemoval on Windows w
     }),
   );
 
-  expect(result).toEqual({
+  expect(result).toMatchObject({
     removed: false,
     atlasRemoved: false,
+    memoryKept: true,
+    memoryPath: join(home, ".forge614", "memory"),
     pathPublications: ["User Path"],
     pendingRemoval: true,
   });
+  expect(result.remainingExecutablePaths).toHaveLength(1);
+  expect(existsSync(result.remainingExecutablePath!)).toBe(true);
 
   // La carpeta de Engram no debe haberse borrado sincrónicamente
   expect(existsSync(root)).toBe(true);
@@ -200,6 +229,78 @@ test("schedules deferred removal via WMI and returns pendingRemoval on Windows w
   expect(helperContent).toContain("process $ProcessId did not exit within timeout");
 }));
 
+// Uninstall debe apartar el binario activo, el respaldo de actualización y el ejecutable versionado antes de borrar engram/.
+test("parks every Engram executable outside installation for one deferred removal", async () => withHome(async home => {
+  const root = join(home, ".forge614", "engram");
+  const bin = join(root, "bin");
+  const versionBin = join(root, "versions", "1.10.0");
+  const tempRoot = join(home, "temp");
+  mkdirSync(bin, { recursive: true });
+  mkdirSync(versionBin, { recursive: true });
+  mkdirSync(tempRoot, { recursive: true });
+  const activeExe = join(bin, "forge614-engram.exe");
+  const oldExe = join(bin, ".old-update");
+  const versionedExe = join(versionBin, "forge614-engram.exe");
+  writeFileSync(activeExe, "active binary");
+  writeFileSync(oldExe, "binary still used by MCP");
+  writeFileSync(versionedExe, "versioned binary");
+
+  const result = await uninstallEngram(
+    { confirmation: confirm(home) },
+    dependencies(home, {
+      platform: "win32",
+      executable: activeExe,
+      tempRoot,
+      removePathPublication: async () => ["User Path"],
+      spawn: () => ({ status: 0 }),
+    }),
+  );
+  const remainingExecutablePaths = result.remainingExecutablePaths;
+
+  expect(result.pendingRemoval).toBe(true);
+  expect(remainingExecutablePaths).toHaveLength(3);
+  expect(existsSync(root)).toBe(true);
+  for (const executable of remainingExecutablePaths ?? []) {
+    expect(existsSync(executable)).toBe(true);
+    expect(executable.startsWith(root)).toBe(false);
+  }
+  expect(existsSync(activeExe)).toBe(false);
+  expect(existsSync(oldExe)).toBe(false);
+  expect(existsSync(versionedExe)).toBe(false);
+}));
+
+// Si falla apartar un ejecutable, los que ya se movieron vuelven a su ruta y el producto sigue íntegro.
+test("restores already parked executables when a later executable cannot be moved", async () => withHome(async home => {
+  const root = join(home, ".forge614", "engram");
+  const bin = join(root, "bin");
+  const tempRoot = join(home, "temp");
+  mkdirSync(bin, { recursive: true });
+  mkdirSync(tempRoot, { recursive: true });
+  const activeExe = join(bin, "forge614-engram.exe");
+  const oldExe = join(bin, ".old-update");
+  writeFileSync(activeExe, "active binary");
+  writeFileSync(oldExe, "binary still used by MCP");
+
+  const dependenciesWithMove = dependencies(home, {
+    platform: "win32",
+    executable: activeExe,
+    tempRoot,
+    removePathPublication: async () => ["User Path"],
+    spawn: () => ({ status: 0 }),
+    moveExecutable: (source: string, destination: string) => {
+      if (source === oldExe) throw new Error(`locked: ${source}`);
+      renameSync(source, destination);
+    },
+  });
+  await expect(uninstallEngram({ confirmation: confirm(home) }, dependenciesWithMove))
+    .rejects.toMatchObject({ code: "UNINSTALL_EXECUTABLE_PARK_FAILED", message: expect.stringContaining(oldExe) });
+
+  expect(existsSync(root)).toBe(true);
+  expect(readFileSync(activeExe, "utf8")).toBe("active binary");
+  expect(readFileSync(oldExe, "utf8")).toBe("binary still used by MCP");
+  expect(readdirSync(tempRoot).some(name => name.startsWith(".old-forge614-engram-"))).toBe(false);
+}));
+
 // En Windows crea los scripts y logs de paso bajo la raíz temporal inyectada tempRoot.
 test("creates staging files and logs under injected tempRoot", async () => withHome(async home => {
   const root = join(home, ".forge614", "engram");
@@ -213,7 +314,7 @@ test("creates staging files and logs under injected tempRoot", async () => withH
   let logArg = "";
 
   await uninstallEngram(
-    { confirmation: "REMOVE FORGE614-ENGRAM" },
+    { confirmation: confirm(home) },
     dependencies(home, {
       platform: "win32",
       executable: join(binDir, "forge614-engram.exe"),
@@ -237,25 +338,29 @@ test("creates staging files and logs under injected tempRoot", async () => withH
   expect(logArg.startsWith(customTemp)).toBe(true);
 }));
 
-// Si WMI falla al programar el ayudante, lanza UNINSTALL_SCHEDULE_FAILED y preserva Engram.
-test("WMI scheduling failure throws UNINSTALL_SCHEDULE_FAILED and preserves Engram", async () => withHome(async home => {
+// Si WMI falla, Engram queda desinstalado y avisa dónde queda el ejecutable apartado.
+test("WMI scheduling failure removes Engram and reports the parked executable", async () => withHome(async home => {
   const root = join(home, ".forge614", "engram");
   const binDir = join(root, "bin");
   mkdirSync(binDir, { recursive: true });
   writeFileSync(join(binDir, "forge614-engram.exe"), "active-exe");
 
   const activeExe = join(binDir, "forge614-engram.exe");
-  await expect(uninstallEngram(
-    { confirmation: "REMOVE FORGE614-ENGRAM" },
+  const result = await uninstallEngram(
+    { confirmation: confirm(home) },
     dependencies(home, {
       platform: "win32",
       executable: activeExe,
+      tempRoot: home,
       removePathPublication: async () => ["User Path"],
       spawn: () => ({ status: 1 }),
     }),
-  )).rejects.toMatchObject({ code: "UNINSTALL_SCHEDULE_FAILED" });
+  );
 
-  expect(existsSync(root)).toBe(true);
+  expect(result.removed).toBe(true);
+  expect(result.remainingExecutablePath).toContain(join(home, ".old-forge614-engram-"));
+  expect(existsSync(result.remainingExecutablePath!)).toBe(true);
+  expect(existsSync(root)).toBe(false);
 }));
 
 // En Windows, si el proceso corre desde un ejecutable externo, borra sincrónicamente sin pendingRemoval.
@@ -265,7 +370,7 @@ test("performs synchronous removal on Windows when executable is outside engram 
   writeFileSync(join(root, "memory"), "data");
 
   const result = await uninstallEngram(
-    { confirmation: "REMOVE FORGE614-ENGRAM" },
+    { confirmation: confirm(home) },
     dependencies(home, {
       platform: "win32",
       executable: "C:\\bun\\bin\\bun.exe",
@@ -276,6 +381,8 @@ test("performs synchronous removal on Windows when executable is outside engram 
   expect(result).toEqual({
     removed: true,
     atlasRemoved: false,
+    memoryKept: true,
+    memoryPath: join(home, ".forge614", "memory"),
     pathPublications: ["User Path"],
   });
   expect(result.pendingRemoval).toBeUndefined();
@@ -285,7 +392,7 @@ test("performs synchronous removal on Windows when executable is outside engram 
 // Si la carpeta de Engram no existe, devuelve removed: false sin pendingRemoval.
 test("returns removed: false without pendingRemoval when Engram does not exist", async () => withHome(async home => {
   const result = await uninstallEngram(
-    { confirmation: "REMOVE FORGE614-ENGRAM" },
+    { confirmation: confirm(home) },
     dependencies(home, {
       platform: "win32",
       executable: "C:\\bun\\bin\\bun.exe",
@@ -296,7 +403,41 @@ test("returns removed: false without pendingRemoval when Engram does not exist",
   expect(result).toEqual({
     removed: false,
     atlasRemoved: false,
+    memoryKept: true,
+    memoryPath: join(home, ".forge614", "memory"),
     pathPublications: [],
   });
   expect(result.pendingRemoval).toBeUndefined();
+}));
+
+test("self-uninstall retires Engines integrations before PATH and leaves Atlas and the program installed", async () => withHome(async home => {
+  const forgeHome = join(home, ".forge614");
+  const engram = join(forgeHome, "engram");
+  const engines = join(forgeHome, "engines", "bin");
+  const atlas = join(forgeHome, "atlas");
+  mkdirSync(join(engram, "bin"), { recursive: true });
+  mkdirSync(engines, { recursive: true });
+  mkdirSync(atlas, { recursive: true });
+  writeFileSync(join(engines, process.platform === "win32" ? "forge614-engines.exe" : "forge614-engines"), "launcher");
+  const order: string[] = [];
+  const result = await uninstallEngramSelf(dependencies(home, {
+    runEnginesSelf: async (_command, args) => { order.push(args.join(" ")); return 0; },
+    removePathPublication: async () => { order.push("path"); return []; },
+  }));
+  expect(order).toEqual(["", "path"]);
+  expect(result).toMatchObject({ integrationsRemoved: true, memoryKept: true, atlasRemains: true, memoryPath: join(forgeHome, "memory") });
+  expect(existsSync(engram)).toBe(true);
+  expect(existsSync(atlas)).toBe(true);
+}));
+
+test("--purge-data removes only the separate memory folder after confirmed uninstall", async () => withHome(async home => {
+  const forgeHome = join(home, ".forge614");
+  const root = join(forgeHome, "engram");
+  mkdirSync(root, { recursive: true });
+  mkdirSync(join(forgeHome, "memory"), { recursive: true });
+  writeFileSync(join(forgeHome, "memory", ".env"), 'POSTGRES_URL="postgresql://example.invalid/test"\n');
+  const result = await uninstallEngram({ confirmation: uninstallConfirmation(forgeHome, true), purgeData: true }, dependencies(home));
+  expect(result).toMatchObject({ removed: true, memoryKept: false, memoryPath: join(forgeHome, "memory") });
+  expect(existsSync(root)).toBe(false);
+  expect(existsSync(join(forgeHome, "memory"))).toBe(false);
 }));

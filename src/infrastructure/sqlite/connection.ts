@@ -5,9 +5,12 @@
  */
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { required } from "./memory";
 import { initialize } from "./schema";
+import { engramHome, forge614Home } from "../filesystem/paths";
+import { resolveMemoryDirectoryUnlocked } from "../filesystem/memory-location";
+import { withMemoryMigrationLock } from "../filesystem/memory-migration-lock";
 export { defaultDatabasePath } from "../filesystem/paths";
 export type { Database } from "bun:sqlite";
 
@@ -29,6 +32,15 @@ export function openDatabase(path: string, options: {create?: boolean; readonly?
   // Si el esquema no pudo inicializarse, se cierra la conexión para no dejar el archivo abierto sin usarse.
   catch (error) { db.close(); throw error; }
   return db;
+}
+
+/** Resuelve la migración y abre la base por defecto sin soltar el bloqueo entre ambas operaciones. */
+export function openDefaultDatabase(options: {create?: boolean; readonly?: boolean} = {}): Database {
+  const home = forge614Home();
+  return withMemoryMigrationLock(home, () => {
+    const directory = resolveMemoryDirectoryUnlocked(home, engramHome());
+    return openDatabase(join(directory, "engram.db"), options);
+  });
 }
 
 /** Cierra la conexión SQLite. */

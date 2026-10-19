@@ -1,192 +1,49 @@
-name: Release standalone artifacts
-
+# Precondition: a node with `file:../` dependencies to sibling repositories in
+# its package.json cannot use this template. This workflow checks out a
+# single repository, so `bun install --frozen-lockfile` would fail against a
+# path dependency that only exists on the machine that authored it. Replace
+# the dependency with the published version of the sibling node before
+# adopting this template.
+name: release
 on:
-  push:
-    tags:
-      - "v*"
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
+  push: { tags: ["v*"] }
 jobs:
-  verify:
-    name: Release verification
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-      - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Install PostgreSQL binaries for the disposable test fixture
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql
-          echo "FORGE614_TEST_POSTGRES_BIN=$(pg_config --bindir)" >> "$GITHUB_ENV"
-      - run: bun test
-      - run: bun run typecheck
-      - run: git diff --check
-      - run: bun test scripts/__tests__/install.sh.test.ts
-      - run: bash -n scripts/install.sh scripts/install-from-source.sh
-
   build:
-    name: Build ${{ matrix.artifact }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
     strategy:
-      fail-fast: false
       matrix:
         include:
-          - runner: macos-14
-            target: bun-darwin-arm64
-            artifact: forge614-engram-darwin-arm64
-            bun_version: 1.4.2
-          - runner: macos-15-intel
-            target: bun-darwin-x64
-            artifact: forge614-engram-darwin-x64
-            bun_version: 1.4.2
-          - runner: ubuntu-latest
-            target: bun-linux-x64
-            artifact: forge614-engram-linux-x64
-            bun_version: 1.4.2
-          - runner: ubuntu-24.04-arm
-            target: bun-linux-arm64
-            artifact: forge614-engram-linux-arm64
-            bun_version: 1.4.2
-          - runner: windows-latest
-            target: bun-windows-x64
-            artifact: forge614-engram-windows-x64.exe
-            bun_version: 1.4.2
+          - { os: macos-15, target: darwin-arm64 }
+          - { os: macos-15-intel, target: darwin-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+          - { os: ubuntu-24.04, target: linux-x64 }
+          - { os: windows-2025, target: windows-x64 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ matrix.bun_version }}
-      - run: bun install --frozen-lockfile --ignore-scripts
-      - name: Create the disposable build directory
-        run: mkdir dist
-      - name: Compile standalone artifact
-        run: bun build ./src/cli.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.artifact }}
-      - name: Smoke-test the native standalone artifact
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          ./dist/${{ matrix.artifact }} --help
-          bash scripts/release-smoke.sh ./dist/${{ matrix.artifact }}
-      - name: Smoke-test the Windows standalone artifact
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # release-smoke.sh es de bash; Windows usa pruebas nativas de PowerShell.
-          & ".\\dist\\${{ matrix.artifact }}" --help
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $version = & ".\\dist\\${{ matrix.artifact }}" --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($version -notmatch '^forge614-engram ') { throw "Unexpected --version output: $version" }
-      - name: Preserve the artifact mode for collection
-        run: tar -C dist -czf dist/${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}.tar.gz
-          if-no-files-found: error
-
-  assemble:
-    name: Assemble and validate release assets
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: release-*
-          merge-multiple: true
-          path: dist
-      - name: Extract the five standalone artifacts with their original modes
-        shell: bash
-        run: |
-          set -euo pipefail
-          for archive in dist/*.tar.gz; do
-            tar -xzf "$archive" -C dist
-          done
-      - name: Generate SHA256SUMS for the five release artifacts
-        shell: bash
-        run: |
-          cd dist
-          sha256sum \
-            forge614-engram-darwin-arm64 \
-            forge614-engram-darwin-x64 \
-            forge614-engram-linux-x64 \
-            forge614-engram-linux-arm64 \
-            forge614-engram-windows-x64.exe > SHA256SUMS
-      - name: Validate release artifacts and manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          for artifact in forge614-engram-darwin-arm64 forge614-engram-darwin-x64 \
-            forge614-engram-linux-x64 forge614-engram-linux-arm64 forge614-engram-windows-x64.exe; do
-            test -s "dist/$artifact" || { echo "missing or empty artifact: $artifact" >&2; exit 1; }
-          done
-          # El .tar.gz de Windows se hace con tar de Windows y no conserva el bit de ejecución, que en Windows no existe.
-          for artifact in forge614-engram-darwin-arm64 forge614-engram-darwin-x64 \
-            forge614-engram-linux-x64 forge614-engram-linux-arm64; do
-            test -x "dist/$artifact" || { echo "artifact is not executable: $artifact" >&2; exit 1; }
-          done
-          test -s dist/SHA256SUMS || { echo "missing or empty SHA256SUMS" >&2; exit 1; }
-          test "$(wc -l < dist/SHA256SUMS | tr -d ' ')" = 5
-          for artifact in forge614-engram-darwin-arm64 forge614-engram-darwin-x64 \
-            forge614-engram-linux-x64 forge614-engram-linux-arm64 forge614-engram-windows-x64.exe; do
-            grep -Eq "^[0-9a-f]{64}  ${artifact}$" dist/SHA256SUMS || { echo "invalid checksum entry: $artifact" >&2; exit 1; }
-          done
-          (cd dist && sha256sum --check SHA256SUMS)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-assets
-          path: |
-            dist/forge614-engram-darwin-arm64
-            dist/forge614-engram-darwin-x64
-            dist/forge614-engram-linux-x64
-            dist/forge614-engram-linux-arm64
-            dist/forge614-engram-windows-x64.exe
-            dist/SHA256SUMS
-          if-no-files-found: error
-
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with: { bun-version: "1.4.2" }
+      - run: bun install --frozen-lockfile
+      - run: bun run build:target
+        env: { FORGE614_TARGET: "${{ matrix.target }}" }
+      - run: bun run smoke:target
+        env: { FORGE614_TARGET: "${{ matrix.target }}" }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with: { name: "${{ matrix.target }}", path: dist/release/* }
   publish:
-    name: Publish GitHub Release
-    needs: [verify, assemble]
-    if: github.event_name == 'push' && github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: { contents: write }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: release-assets
-          path: dist
-      - name: Create the GitHub Release with the validated files only
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
-        run: |
-          release_flags=()
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
-            release_flags+=(--prerelease)
-          fi
-          gh release create "$GITHUB_REF_NAME" \
-            dist/forge614-engram-darwin-arm64 \
-            dist/forge614-engram-darwin-x64 \
-            dist/forge614-engram-linux-x64 \
-            dist/forge614-engram-linux-arm64 \
-            dist/forge614-engram-windows-x64.exe \
-            dist/SHA256SUMS \
-            scripts/install.sh#install.sh \
-            scripts/install.ps1#install.ps1 \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            "${release_flags[@]}"
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with: { bun-version: "1.4.2" }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "22.19.0" }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with: { path: dist/release, merge-multiple: true }
+      - run: bun install --frozen-lockfile
+      - run: bun run scripts/prepare-release-assets.mjs
+      - run: bun run release:publish
+        env: { GH_TOKEN: "${{ github.token }}" }
