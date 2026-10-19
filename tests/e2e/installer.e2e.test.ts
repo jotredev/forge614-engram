@@ -330,7 +330,7 @@ installerTest("install.mjs --uninstall keeps a valid copy when another process h
     const expectedCode = process.platform === "win32" ? 65 : 0;
     expect(code, `install.ps1 --uninstall exit=${code}\nstdout:\n${stdout || "(vacío)"}\nstderr:\n${stderr || "(vacío)"}`).toBe(expectedCode);
     if (process.platform !== "win32") expect(existsSync(join(forgeHome, "engram"))).toBe(false);
-    expect(existsSync(join(forgeHome, "memory", "engram.db"))).toBe(true);
+    expect(existsSync(join(forgeHome, "memory", "engram.db")), `uninstall result: ${uninstallOut}`).toBe(true);
     expect(readFileSync(join(forgeHome, "memory", ".env"), "utf8")).toBe(oldEnv);
     const copy = openDatabase(join(forgeHome, "memory", "engram.db"), { readonly: true });
     try {
