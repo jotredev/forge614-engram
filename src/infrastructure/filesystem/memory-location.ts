@@ -4,6 +4,7 @@ import { backup, DatabaseSync } from "node:sqlite";
 import { chmodSync, copyFileSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { withMemoryMigrationLock } from "./memory-migration-lock";
 
 function exists(path: string): boolean {
   try { return lstatSync(path).isFile(); }
@@ -64,10 +65,12 @@ function hasOpenLegacyHandle(databasePath: string): boolean {
  * @param engramHome Carpeta del programa, que contiene los datos de 1.9.0.
  * @returns La carpeta elegida para la base, `.env` y respaldos.
  */
-export function resolveMemoryDirectory(forgeHome: string, engramHome: string): string {
+export function resolveMemoryDirectoryUnlocked(forgeHome: string, engramHome: string): string {
   const target = join(forgeHome, "memory");
   const targetDb = join(target, "engram.db");
   const legacyDb = join(engramHome, "engram.db");
+  const probeDb = `${legacyDb}.migration-probe`;
+  if (!pathExists(legacyDb) && pathExists(probeDb)) renameSync(probeDb, legacyDb);
   if (exists(targetDb)) { privateDirectory(target); return target; }
   if (!exists(legacyDb)) return target;
 
@@ -127,6 +130,14 @@ export function resolveMemoryDirectory(forgeHome: string, engramHome: string): s
     rmSync(stage, { recursive: true, force: true });
     throw error;
   }
+}
+
+/** Decide y, si procede, migra la carpeta de memoria bajo el bloqueo compartido. */
+export function resolveMemoryDirectory(forgeHome: string, engramHome: string): string {
+  if (!exists(join(forgeHome, "memory", "engram.db")) && !exists(join(engramHome, "engram.db")) && !pathExists(join(engramHome, "engram.db.migration-probe"))) {
+    return join(forgeHome, "memory");
+  }
+  return withMemoryMigrationLock(forgeHome, () => resolveMemoryDirectoryUnlocked(forgeHome, engramHome));
 }
 
 /**

@@ -1,6 +1,6 @@
 /** Pruebas de la selección y migración segura entre `engram/` y `memory/`. */
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, closeDatabase } from "../sqlite/connection";
@@ -17,6 +17,46 @@ function createLegacyDatabase(path: string, title: string): void {
 
 test("new installations choose memory/", () => withDirectory(root => {
   expect(resolveMemoryDirectory(root, join(root, "engram"))).toBe(join(root, "memory"));
+}));
+
+test("recovers an interrupted Windows migration probe before selecting the legacy path", () => withDirectory(root => {
+  const oldHome = join(root, "engram");
+  mkdirSync(oldHome, { recursive: true });
+  const database = join(oldHome, "engram.db");
+  createLegacyDatabase(database, "probe recovery");
+  renameSync(database, `${database}.migration-probe`);
+
+  expect(resolveMemoryDirectory(root, oldHome)).toBe(join(root, "memory"));
+  expect(existsSync(join(root, "memory", "engram.db"))).toBe(true);
+  expect(existsSync(database)).toBe(false);
+  expect(existsSync(`${database}.migration-probe`)).toBe(false);
+}));
+
+test("version and help commands do not inspect or migrate an open legacy database", () => withDirectory(root => {
+  const oldHome = join(root, "engram");
+  mkdirSync(oldHome, { recursive: true });
+  const database = join(oldHome, "engram.db");
+  createLegacyDatabase(database, "still open");
+  const held = openDatabase(database, {});
+  const shimDirectory = join(root, "bin");
+  mkdirSync(shimDirectory);
+  const lsofCalls = join(root, "lsof-called");
+  const lsofShim = join(shimDirectory, "lsof");
+  writeFileSync(lsofShim, `#!/bin/sh\nprintf called >> ${JSON.stringify(lsofCalls)}\n`, { mode: 0o700 });
+  chmodSync(lsofShim, 0o700);
+  const cli = join(import.meta.dir, "../../cli.ts");
+  try {
+    for (const args of [["--version"], ["--version", "--json"], ["--help"]]) {
+      const result = Bun.spawnSync([process.execPath, cli, ...args], {
+        env: { ...process.env, HOME: root, FORGE614_HOME: root, PATH: shimDirectory },
+        stdout: "pipe", stderr: "pipe",
+      });
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
+    }
+    expect(existsSync(join(root, "memory"))).toBe(false);
+    expect(existsSync(database)).toBe(true);
+    expect(existsSync(lsofCalls)).toBe(false);
+  } finally { closeDatabase(held); }
 }));
 
 test("migrates a closed 1.9.0 database, .env and file permissions atomically", () => withDirectory(root => {
@@ -88,6 +128,36 @@ test("an open transaction held by another process keeps the legacy path until it
     rmSync(root, { recursive: true, force: true });
   }
 }, 40000);
+
+test("concurrent real subprocess saves during the 1.9 migration all land in memory/engram.db", async () => {
+  const root = mkdtempSync(join(tmpdir(), "engram-migration-race-"));
+  try {
+    const oldHome = join(root, "engram");
+    mkdirSync(oldHome, { recursive: true });
+    createLegacyDatabase(join(oldHome, "engram.db"), "seed");
+    const memoryStoreModule = join(import.meta.dir, "../../app/memory-store.ts");
+    const children = Array.from({ length: 8 }, (_, index) => Bun.spawn([process.execPath, "-e", `import { MemoryStore } from ${JSON.stringify(memoryStoreModule)}; const store = new MemoryStore(); store.save({ projectId: null, scope: "shared", title: "race-${index}", content: "content-${index}", type: "fact" }); store.close();`], {
+      cwd: root,
+      env: { ...process.env, HOME: root, FORGE614_HOME: root },
+      stdout: "pipe",
+      stderr: "pipe",
+    }));
+    const results = await Promise.all(children.map(async child => ({
+      code: await child.exited,
+      stdout: await new Response(child.stdout).text(),
+      stderr: await new Response(child.stderr).text(),
+    })));
+    if (results.some(result => result.code !== 0)) throw new Error(JSON.stringify(results));
+    expect(results.map(result => result.stderr)).toEqual(Array(8).fill(""));
+    expect(existsSync(join(root, "memory", "engram.db"))).toBe(true);
+    expect(existsSync(join(oldHome, "engram.db"))).toBe(false);
+    const store = openDatabase(join(root, "memory", "engram.db"), { readonly: true });
+    try {
+      const titles = store.query("SELECT title FROM memories WHERE title LIKE 'race-%' ORDER BY title").all() as { title: string }[];
+      expect(titles.map(item => item.title)).toEqual(["race-0", "race-1", "race-2", "race-3", "race-4", "race-5", "race-6", "race-7"]);
+    } finally { closeDatabase(store); }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}, 60000);
 
 test("a failure after copying leaves the legacy files intact and no partial memory folder", () => withDirectory(root => {
   const oldHome = join(root, "engram");
