@@ -1,8 +1,10 @@
 /**
  * Desinstala Forge614 Engram del disco: pide confirmación textual exacta, desinstala
  * primero Forge614 Atlas si está presente (Engram es su dependencia), retira la entrada
- * de PATH y por último borra la carpeta de instalación. En Windows, si el proceso corre
- * en Windows, aparta los ejecutables instalados y programa su borrado diferido mediante WMI y PowerShell.
+ * de PATH y por último borra la carpeta de instalación. En Windows, aparta los ejecutables
+ * instalados y programa por WMI el borrado de `engram/`; los ejecutables que sigan en uso
+ * quedan en la carpeta temporal hasta que se cierre el asistente y se enumeran en
+ * `remainingExecutablePaths`.
  */
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync, type Stats } from "node:fs";
@@ -81,6 +83,12 @@ export function uninstallConfirmation(forgeHome = forge614Home(), purgeData = fa
 /** Devuelve la ruta privada donde Engram guarda la memoria para los avisos del CLI. */
 export function uninstallMemoryPath(): string { return memoryHome(); }
 
+/**
+ * Ayudante de Windows: espera hasta 30 s a que termine uninstall, intenta borrar `engram/`
+ * durante un máximo de 10 s y después intenta borrar ejecutables aparcados durante otros
+ * 10 s. Los ejecutables todavía bloqueados quedan en la carpeta temporal y sus rutas se
+ * registran; después de terminar la fase de borrado, nunca vuelve a tocar `engram/`.
+ */
 const WINDOWS_UNINSTALL_HELPER_SCRIPT = `
 param(
   [string]$TargetDir,
@@ -105,58 +113,51 @@ if ($ProcessId -gt 0) {
   }
 }
 
-for ($i = 0; ; $i++) {
-  Start-Sleep -Milliseconds 500
+$targetRemoved = $false
+$targetFailure = $null
+for ($attempt = 0; $attempt -lt 40; $attempt++) {
+  if (-not (Test-Path -LiteralPath $TargetDir)) { $targetRemoved = $true; break }
   try {
-    $lockedExecutables = @()
-    foreach ($ParkedExe in $ParkedExes) {
-      if (Test-Path -LiteralPath $ParkedExe) {
-        try { Remove-Item -LiteralPath $ParkedExe -Force -ErrorAction Stop }
-        catch { $lockedExecutables += $ParkedExe }
-      }
-    }
-    if ($lockedExecutables.Count -gt 0) {
-      if ($i -eq 0 -or $i % 60 -eq 0) { "$(Get-Date -Format o) waiting for locked executable(s): $($lockedExecutables -join ', ')" | Out-File -FilePath $LogFile -Append }
-      continue
-    }
-    if (-not (Test-Path -LiteralPath $TargetDir)) {
-      "$(Get-Date -Format o) target dir does not exist; uninstall complete" | Out-File -FilePath $LogFile -Append
-      Remove-Item -LiteralPath $StagingDir -Recurse -Force -ErrorAction SilentlyContinue
-      exit 0
-    }
-    $targetItem = Get-Item -LiteralPath $TargetDir -Force
-    if (-not $targetItem.PSIsContainer) {
-      "$(Get-Date -Format o) target path is not a directory: $TargetDir" | Out-File -FilePath $LogFile -Append
-      exit 1
-    }
-    if (($targetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-      "$(Get-Date -Format o) target path is a reparse point: $TargetDir" | Out-File -FilePath $LogFile -Append
-      exit 1
-    }
-    $parentItem = Get-Item -LiteralPath $ParentDir -Force
-    if (-not $parentItem.PSIsContainer -or ($parentItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-      "$(Get-Date -Format o) parent path is not a safe directory: $ParentDir" | Out-File -FilePath $LogFile -Append
-      exit 1
-    }
-    if ($targetItem.Parent.FullName -ne $parentItem.FullName) {
-      "$(Get-Date -Format o) target parent mismatch: expected $($parentItem.FullName) but got $($targetItem.Parent.FullName)" | Out-File -FilePath $LogFile -Append
-      exit 1
-    }
-    if ($targetItem.Name -ne "engram") {
-      "$(Get-Date -Format o) target folder name is not engram: $($targetItem.Name)" | Out-File -FilePath $LogFile -Append
-      exit 1
-    }
+    $targetItem = Get-Item -LiteralPath $TargetDir -Force -ErrorAction Stop
+    if (-not $targetItem.PSIsContainer) { throw "target path is not a directory: $TargetDir" }
+    if (($targetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "target path is a reparse point: $TargetDir" }
+    $parentItem = Get-Item -LiteralPath $ParentDir -Force -ErrorAction Stop
+    if (-not $parentItem.PSIsContainer -or ($parentItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "parent path is not a safe directory: $ParentDir" }
+    if ($targetItem.Parent.FullName -ne $parentItem.FullName) { throw "target parent mismatch: expected $($parentItem.FullName) but got $($targetItem.Parent.FullName)" }
+    if ($targetItem.Name -ne "engram") { throw "target folder name is not engram: $($targetItem.Name)" }
     Remove-Item -LiteralPath $TargetDir -Recurse -Force -ErrorAction Stop
+    $targetRemoved = $true
+    break
   } catch {
-    "$(Get-Date -Format o) attempt $i removal failed: $_" | Out-File -FilePath $LogFile -Append
-    continue
-  }
-  if (-not (Test-Path -LiteralPath $TargetDir)) {
-    "$(Get-Date -Format o) uninstall succeeded on attempt $i" | Out-File -FilePath $LogFile -Append
-    Remove-Item -LiteralPath $StagingDir -Recurse -Force -ErrorAction SilentlyContinue
-    exit 0
+    $targetFailure = $_.Exception.Message
+    if ($attempt -lt 39) { Start-Sleep -Milliseconds 250 }
   }
 }
+if ($targetRemoved) {
+  "$(Get-Date -Format o) target directory removed or already absent; continuing to parked executables" | Out-File -FilePath $LogFile -Append
+} else {
+  "$(Get-Date -Format o) target directory could not be removed after 40 attempts: $targetFailure" | Out-File -FilePath $LogFile -Append
+}
+
+$remainingExecutables = @()
+for ($attempt = 0; $attempt -lt 20; $attempt++) {
+  $remainingExecutables = @()
+  foreach ($ParkedExe in $ParkedExes) {
+    if (Test-Path -LiteralPath $ParkedExe) {
+      try { Remove-Item -LiteralPath $ParkedExe -Force -ErrorAction Stop }
+      catch { $remainingExecutables += $ParkedExe }
+    }
+  }
+  if ($remainingExecutables.Count -eq 0) { break }
+  if ($attempt -lt 19) { Start-Sleep -Milliseconds 500 }
+}
+if ($remainingExecutables.Count -gt 0) {
+  "$(Get-Date -Format o) parked executable cleanup timed out; files remain in the temporary directory until their processes close: $($remainingExecutables -join ', ')" | Out-File -FilePath $LogFile -Append
+} else {
+  "$(Get-Date -Format o) parked executable cleanup complete" | Out-File -FilePath $LogFile -Append
+}
+Remove-Item -LiteralPath $StagingDir -Recurse -Force -ErrorAction SilentlyContinue
+exit 0
 `;
 
 const WINDOWS_WMI_LAUNCH_SCRIPT = `

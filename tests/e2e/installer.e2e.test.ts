@@ -5,6 +5,9 @@ import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, re
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { openDatabase, closeDatabase } from "../../src/infrastructure/sqlite/connection";
 import packageJson from "../../package.json";
 
@@ -20,7 +23,7 @@ const unixInstallerTest = test.skipIf(!cache || process.platform === "win32");
 const windowsInstallerTest = test.skipIf(!cache || process.platform !== "win32");
 let server: ReturnType<typeof Bun.serve>;
 let legacyInstallerPath: string;
-let activeMcp: ReturnType<typeof Bun.spawn> | undefined;
+let activeMcp: Client | undefined;
 
 /** Retries transient Windows file locks and never hides the assertion that ended a test. */
 async function removeTemporaryTree(path: string): Promise<void> {
@@ -31,10 +34,9 @@ async function removeTemporaryTree(path: string): Promise<void> {
   }
 }
 
-async function stopMcp(child: ReturnType<typeof Bun.spawn>): Promise<void> {
-  try { if (child.exitCode === null) child.kill(); } catch { /* afterAll retries cleanup if needed */ }
-  try { await child.exited; } catch { /* preserve the test's original failure */ }
-  if (activeMcp === child) activeMcp = undefined;
+async function stopMcp(client: Client): Promise<void> {
+  try { await client.close(); } catch { /* afterAll retries cleanup if needed */ }
+  if (activeMcp === client) activeMcp = undefined;
 }
 
 /** Adds a byte-identical asset under its immutable release tag. */
@@ -498,21 +500,38 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
   expect(installed.code, `${installed.stdout}\n${installed.stderr}`).toBe(0);
   const forgeHome = join(home, ".forge614");
   const launcher = join(forgeHome, "engram", "bin", "forge614-engram.exe");
-  const env = isolatedEnv(home, { FORGE614_INSTALL_TEST_BASE_URL: `http://127.0.0.1:${server.port}` });
-  const openMcp = () => Bun.spawn([launcher, "mcp"], { cwd: home, env, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-  const mcp = openMcp();
+  const uninstallTemp = join(home, "uninstall-temp");
+  mkdirSync(uninstallTemp, { recursive: true });
+  const env = isolatedEnv(home, {
+    FORGE614_INSTALL_TEST_BASE_URL: `http://127.0.0.1:${server.port}`,
+    TEMP: uninstallTemp,
+    TMP: uninstallTemp,
+  });
+  const transport = new StdioClientTransport({ command: launcher, args: ["mcp"], cwd: home, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string")), stderr: "pipe" });
+  const mcp = new Client({ name: "windows-uninstall-memory-e2e", version: "1" }, { capabilities: {} });
+  await mcp.connect(transport);
   activeMcp = mcp;
+  const call = async (name: string, args: Record<string, unknown> = {}) => await mcp.callTool({ name, arguments: args }) as CallToolResult;
+  const responseJson = (toolName: string, result: CallToolResult) => {
+    const text = result.content.find(block => block.type === "text");
+    if (!text || text.type !== "text") throw new Error(`MCP ${toolName} did not return a text payload`);
+    return JSON.parse(text.text) as Record<string, unknown>;
+  };
   try {
-    await Bun.sleep(500);
-    expect(mcp.exitCode).toBeNull();
+    const saved = responseJson("memory_save", await call("memory_save", {
+      scope: "shared",
+      globalIntent: "This isolated Windows E2E explicitly saves one memory to verify uninstall preservation.",
+      title: "Windows uninstall probe",
+      content: "G1f memory survives uninstall",
+      type: "fact",
+    }));
+    expect(saved).toMatchObject({ id: expect.any(String), title: "Windows uninstall probe", content: "G1f memory survives uninstall" });
     const update = Bun.spawn([launcher, "update", "--version", "1.10.1", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [updateOut, updateErr, updateCode] = await Promise.all([new Response(update.stdout).text(), new Response(update.stderr).text(), update.exited]);
     expect(updateCode, `${updateOut}\n${updateErr}`).toBe(0);
     const updateJson = JSON.parse(updateOut);
     expect(updateJson, `update stdout:\n${updateOut}\nupdate stderr:\n${updateErr}`).toMatchObject({ updated: true, previousVersion: "1.10.0", installedVersion: "1.10.1" });
-    expect(mcp.exitCode).toBeNull();
     const memoryDbPath = join(forgeHome, "memory", "engram.db");
-    const memoryDbExistedBeforeUninstall = existsSync(memoryDbPath);
     const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env: { ...env, NODE_ENV: "test", FORGE614_TEST_RAW_ERRORS: "1" }, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [uninstallOut, uninstallErr, uninstallCode] = await Promise.all([new Response(uninstall.stdout).text(), new Response(uninstall.stderr).text(), uninstall.exited]);
     let uninstallDiagnostics = "";
@@ -523,7 +542,6 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
         "ENGRAM FILES:";
         if (Test-Path -LiteralPath $root) { Get-ChildItem -LiteralPath $root -Recurse -Force | ForEach-Object { if (-not $_.PSIsContainer) { "{0}{1}{2}" -f $_.FullName, [char]9, $_.Length } } } else { '(carpeta ausente)' };
         "MCP PROCESS:";
-        Get-Process -Id ${mcp.pid} -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path | ConvertTo-Json -Compress;
         "TRY REMOVE OLD EXECUTABLES:";
         Get-ChildItem -LiteralPath $bin -Filter '.old-*' -File -ErrorAction SilentlyContinue | ForEach-Object {
           "Remove-Item: $($_.FullName)";
@@ -536,7 +554,37 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
       console.error(uninstallDiagnostics);
     }
     expect(uninstallCode, `${uninstallOut}\n${uninstallErr}${uninstallDiagnostics}`).toBe(0);
-    expect(JSON.parse(uninstallOut).result).toMatchObject({ removed: false, pendingRemoval: true, memoryKept: true });
-    if (memoryDbExistedBeforeUninstall) expect(existsSync(memoryDbPath)).toBe(true);
+    const result = JSON.parse(uninstallOut).result as { removed: boolean; pendingRemoval: boolean; memoryKept: boolean; remainingExecutablePaths?: string[] };
+    expect(result).toMatchObject({ removed: false, pendingRemoval: true, memoryKept: true });
+    expect(result.remainingExecutablePaths?.length).toBeGreaterThan(0);
+    for (const executable of result.remainingExecutablePaths ?? []) expect(executable.toLowerCase()).not.toContain(`${join(forgeHome, "engram").toLowerCase()}\\`);
+
+    const removalStarted = Date.now();
+    while (existsSync(join(forgeHome, "engram")) && Date.now() - removalStarted < 30_000) await Bun.sleep(250);
+    const removalSeconds = (Date.now() - removalStarted) / 1000;
+    expect(existsSync(join(forgeHome, "engram")), `engram/ remained with the MCP open after ${removalSeconds.toFixed(1)} seconds`).toBe(false);
+    expect(existsSync(memoryDbPath)).toBe(true);
+    const db = openDatabase(memoryDbPath, { readonly: true });
+    try {
+      expect(db.query("SELECT id,title,content FROM memories WHERE id=?").get(String(saved.id))).toEqual({ id: saved.id, title: "Windows uninstall probe", content: "G1f memory survives uninstall" });
+    } finally { closeDatabase(db); }
+
+    const spawnLog = Bun.spawnSync(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `Get-ChildItem -LiteralPath '${uninstallTemp.replace(/'/g, "''")}' -Filter '*.spawn.log' | Sort-Object Name | ForEach-Object { Get-Content -LiteralPath $_.FullName }`], { stdout: "pipe", stderr: "pipe" });
+    const processIds = [...spawnLog.stdout.toString().matchAll(/ProcessId=(\d+)/g)].map(match => Number(match[1]));
+    expect(processIds.length, `WMI spawn log did not contain helper PID: ${spawnLog.stdout.toString()} ${spawnLog.stderr.toString()}`).toBeGreaterThan(0);
+    const helperExitedAt = Date.now();
+    let helperRunning = true;
+    while (helperRunning && Date.now() - helperExitedAt < 35_000) {
+      const query = Bun.spawnSync(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `if (Get-Process -Id ${processIds.at(-1)} -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }`], { stdout: "pipe", stderr: "pipe" });
+      helperRunning = query.exitCode !== 0;
+      if (helperRunning) await Bun.sleep(250);
+    }
+    expect(helperRunning, "deferred-removal helper did not exit within its bounded retry window").toBe(false);
+    const recreatedEngram = join(forgeHome, "engram");
+    mkdirSync(recreatedEngram, { recursive: true });
+    const sentinel = join(recreatedEngram, "reinstall-sentinel.txt");
+    writeFileSync(sentinel, "keep after helper exit");
+    await Bun.sleep(1_000);
+    expect(readFileSync(sentinel, "utf8")).toBe("keep after helper exit");
   } finally { await stopMcp(mcp); }
 }, 120_000);
