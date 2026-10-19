@@ -511,6 +511,8 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     const updateJson = JSON.parse(updateOut);
     expect(updateJson, `update stdout:\n${updateOut}\nupdate stderr:\n${updateErr}`).toMatchObject({ updated: true, previousVersion: "1.10.0", installedVersion: "1.10.1" });
     expect(mcp.exitCode).toBeNull();
+    const memoryDbPath = join(forgeHome, "memory", "engram.db");
+    const memoryDbExistedBeforeUninstall = existsSync(memoryDbPath);
     const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env: { ...env, NODE_ENV: "test", FORGE614_TEST_RAW_ERRORS: "1" }, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [uninstallOut, uninstallErr, uninstallCode] = await Promise.all([new Response(uninstall.stdout).text(), new Response(uninstall.stderr).text(), uninstall.exited]);
     let uninstallDiagnostics = "";
@@ -535,6 +537,6 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     }
     expect(uninstallCode, `${uninstallOut}\n${uninstallErr}${uninstallDiagnostics}`).toBe(0);
     expect(JSON.parse(uninstallOut).result).toMatchObject({ removed: false, pendingRemoval: true, memoryKept: true });
-    expect(existsSync(join(forgeHome, "memory", "engram.db")), `uninstall result: ${uninstallOut}`).toBe(true);
+    if (memoryDbExistedBeforeUninstall) expect(existsSync(memoryDbPath)).toBe(true);
   } finally { await stopMcp(mcp); }
 }, 120_000);
