@@ -122,3 +122,5 @@ Engram does not detect or configure AI clients. If an MCP client is unavailable,
 ## Uninstall
 
 `uninstall` prints its confirmation phrase in a terminal and keeps `memory/`. If Atlas is installed, the phrase names both products and uninstalls both. `--json` or a run without a terminal skips the prompt. `--purge-data` requires an interactive terminal, removes local memory and its configuration, and does not remove the PostgreSQL copy; with `--json` or without a terminal it is rejected without changes. `uninstall --self` removes only Engram integrations managed by Engines and leaves Atlas installed. On Windows, if WMI cannot schedule deletion of the parked executable, Engram finishes uninstalling and reports the path where the file remains.
+
+Before running `install.mjs --uninstall` on Windows, close Claude Code, Codex, and any process holding the MCP open. If the old database is still open, Engram saves and verifies its copy in `memory/`, but Windows may prevent `engram/` from being removed; uninstall may exit with an error and remain incomplete. The `memory/` copy remains valid. Close the assistants and run `install.mjs --uninstall` again.

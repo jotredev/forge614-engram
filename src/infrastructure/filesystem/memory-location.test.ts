@@ -7,6 +7,14 @@ import { openDatabase, closeDatabase } from "../sqlite/connection";
 import { withDirectory } from "../__test-support__/fixtures";
 import { ensureMemoryBeforeUninstall, resolveMemoryDirectory } from "./memory-location";
 
+async function cleanupTemporaryDirectory(path: string): Promise<void> {
+  const attempts = process.platform === "win32" ? 6 : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try { rmSync(path, { recursive: true, force: true }); return; }
+    catch { if (attempt + 1 < attempts) await Bun.sleep(100); }
+  }
+}
+
 function createLegacyDatabase(path: string, title: string): void {
   const db = openDatabase(path, {});
   try {
@@ -118,6 +126,7 @@ test("an open transaction held by another process keeps the legacy path until it
   try {
     const reader = child.stdout.getReader();
     await reader.read();
+    reader.releaseLock();
     expect(resolveMemoryDirectory(root, oldHome)).toBe(oldHome);
     expect(existsSync(join(root, "memory", "engram.db"))).toBe(false);
     child.kill();
@@ -125,7 +134,7 @@ test("an open transaction held by another process keeps the legacy path until it
     expect(resolveMemoryDirectory(root, oldHome)).toBe(join(root, "memory"));
   } finally {
     if (child.exitCode === null) { child.kill(); await child.exited; }
-    rmSync(root, { recursive: true, force: true });
+    await cleanupTemporaryDirectory(root);
   }
 }, 40000);
 
@@ -156,7 +165,7 @@ test("concurrent real subprocess saves during the 1.9 migration all land in memo
       const titles = store.query("SELECT title FROM memories WHERE title LIKE 'race-%' ORDER BY title").all() as { title: string }[];
       expect(titles.map(item => item.title)).toEqual(["race-0", "race-1", "race-2", "race-3", "race-4", "race-5", "race-6", "race-7"]);
     } finally { closeDatabase(store); }
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  } finally { await cleanupTemporaryDirectory(root); }
 }, 60000);
 
 test("a failure after copying leaves the legacy files intact and no partial memory folder", () => withDirectory(root => {

@@ -19,6 +19,22 @@ const unixInstallerTest = test.skipIf(!cache || process.platform === "win32");
 const windowsInstallerTest = test.skipIf(!cache || process.platform !== "win32");
 let server: ReturnType<typeof Bun.serve>;
 let legacyInstallerPath: string;
+let activeMcp: ReturnType<typeof Bun.spawn> | undefined;
+
+/** Retries transient Windows file locks and never hides the assertion that ended a test. */
+async function removeTemporaryTree(path: string): Promise<void> {
+  const attempts = process.platform === "win32" ? 6 : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try { rmSync(path, { recursive: true, force: true }); return; }
+    catch { if (attempt + 1 < attempts) await Bun.sleep(100); }
+  }
+}
+
+async function stopMcp(child: ReturnType<typeof Bun.spawn>): Promise<void> {
+  try { if (child.exitCode === null) child.kill(); } catch { /* afterAll retries cleanup if needed */ }
+  try { await child.exited; } catch { /* preserve the test's original failure */ }
+  if (activeMcp === child) activeMcp = undefined;
+}
 
 /** Adds a byte-identical asset under its immutable release tag. */
 function publish(tag: string, name: string, path: string): void {
@@ -169,9 +185,10 @@ beforeAll(() => {
   });
 }, { timeout: 120_000 });
 
-afterAll(() => {
+afterAll(async () => {
+  if (activeMcp) await stopMcp(activeMcp);
   server?.stop(true);
-  rmSync(root, { recursive: true, force: true });
+  await removeTemporaryTree(root);
 });
 
 installerTest("installs Engram, Shell and Engines from an empty home using real release assets", async () => {
@@ -204,9 +221,9 @@ installerTest("the real 1.9 installer layout migrates its saved memory on first 
   const legacyCommand = platform === "windows"
     ? ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", legacyInstallerPath, "-Version", "v1.9.0", "-Force"]
     : ["bash", legacyInstallerPath, "--version", "v1.9.0", "--force"];
-  const legacyInstall = Bun.spawn(legacyCommand, { env: legacyEnv, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
+  const legacyInstall = Bun.spawn(legacyCommand, { env: legacyEnv, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(60_000) });
   const [legacyOut, legacyErr, legacyCode] = await Promise.all([new Response(legacyInstall.stdout).text(), new Response(legacyInstall.stderr).text(), legacyInstall.exited]);
-  expect(legacyCode, `${legacyOut}\n${legacyErr}`).toBe(0);
+  expect(legacyCode, `v1.9.0 install.ps1 exit=${legacyCode}\nstdout:\n${legacyOut || "(vacío)"}\nstderr:\n${legacyErr || "(vacío)"}`).toBe(0);
   const launcher = join(forgeHome, "engram", "bin", `forge614-engram${platform === "windows" ? ".exe" : ""}`);
   const oldVersion = Bun.spawnSync([launcher, "--version"], { env: isolatedEnv(home), stdout: "pipe", stderr: "pipe" });
   expect(oldVersion.exitCode, `${oldVersion.stdout.toString()}\\n${oldVersion.stderr.toString()}`).toBe(0);
@@ -240,6 +257,8 @@ installerTest("install.mjs --uninstall keeps a valid copy when another process h
   const forgeHome = join(home, ".forge614");
   const oldHome = join(forgeHome, "engram");
   mkdirSync(oldHome, { recursive: true });
+  const oldEnv = 'POSTGRES_URL="postgresql://example.invalid/test"\nINSTALLATION_ID="held-legacy"\n';
+  writeFileSync(join(oldHome, ".env"), oldEnv, { mode: 0o600 });
   const oldDbPath = join(oldHome, "engram.db");
   const oldDb = openDatabase(oldDbPath, {});
   try {
@@ -253,11 +272,16 @@ installerTest("install.mjs --uninstall keeps a valid copy when another process h
       : ["sh", "install.sh", "--uninstall"];
     const child = Bun.spawn(command, { cwd: process.cwd(), env: isolatedEnv(home, { FORGE614_INSTALL_TEST_BASE_URL: `http://127.0.0.1:${server.port}` }), stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    expect(code, `${stdout}\n${stderr}`).toBe(0);
-    expect(existsSync(join(forgeHome, "engram"))).toBe(false);
+    const expectedCode = process.platform === "win32" ? 65 : 0;
+    expect(code, `install.ps1 --uninstall exit=${code}\nstdout:\n${stdout || "(vacío)"}\nstderr:\n${stderr || "(vacío)"}`).toBe(expectedCode);
+    if (process.platform !== "win32") expect(existsSync(join(forgeHome, "engram"))).toBe(false);
     expect(existsSync(join(forgeHome, "memory", "engram.db"))).toBe(true);
+    expect(readFileSync(join(forgeHome, "memory", ".env"), "utf8")).toBe(oldEnv);
     const copy = openDatabase(join(forgeHome, "memory", "engram.db"), { readonly: true });
-    try { expect(copy.query("SELECT content FROM memories WHERE id='m'").get()).toEqual({ content: "must survive" }); }
+    try {
+      expect(copy.query("SELECT content FROM memories WHERE id='m'").get()).toEqual({ content: "must survive" });
+      expect(copy.query("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
+    }
     finally { closeDatabase(copy); }
   } finally { held.kill(); await held.exited; }
 }, 120_000);
@@ -422,18 +446,20 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
   const env = isolatedEnv(home, { FORGE614_INSTALL_TEST_BASE_URL: `http://127.0.0.1:${server.port}` });
   const openMcp = () => Bun.spawn([launcher, "mcp"], { cwd: home, env, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   const mcp = openMcp();
-  await Bun.sleep(500);
-  expect(mcp.exitCode).toBeNull();
-  const update = Bun.spawn([launcher, "update", "--version", "1.10.1", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
-  const [updateOut, updateErr, updateCode] = await Promise.all([new Response(update.stdout).text(), new Response(update.stderr).text(), update.exited]);
-  expect(updateCode, `${updateOut}\n${updateErr}`).toBe(0);
-  expect(JSON.parse(updateOut).result).toMatchObject({ updated: true, installedVersion: "1.10.1" });
-  expect(mcp.exitCode).toBeNull();
-  const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
-  const [uninstallOut, uninstallErr, uninstallCode] = await Promise.all([new Response(uninstall.stdout).text(), new Response(uninstall.stderr).text(), uninstall.exited]);
-  expect(uninstallCode, `${uninstallOut}\n${uninstallErr}`).toBe(0);
-  expect(JSON.parse(uninstallOut).result).toMatchObject({ removed: false, pendingRemoval: true, memoryKept: true });
-  expect(existsSync(join(forgeHome, "memory", "engram.db"))).toBe(true);
-  mcp.kill();
-  await mcp.exited;
+  activeMcp = mcp;
+  try {
+    await Bun.sleep(500);
+    expect(mcp.exitCode).toBeNull();
+    const update = Bun.spawn([launcher, "update", "--version", "1.10.1", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
+    const [updateOut, updateErr, updateCode] = await Promise.all([new Response(update.stdout).text(), new Response(update.stderr).text(), update.exited]);
+    expect(updateCode, `${updateOut}\n${updateErr}`).toBe(0);
+    const updateJson = JSON.parse(updateOut);
+    expect(updateJson.result, `update stdout:\n${updateOut}\nupdate stderr:\n${updateErr}`).toMatchObject({ updated: true, installedVersion: "1.10.1" });
+    expect(mcp.exitCode).toBeNull();
+    const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
+    const [uninstallOut, uninstallErr, uninstallCode] = await Promise.all([new Response(uninstall.stdout).text(), new Response(uninstall.stderr).text(), uninstall.exited]);
+    expect(uninstallCode, `${uninstallOut}\n${uninstallErr}`).toBe(0);
+    expect(JSON.parse(uninstallOut).result).toMatchObject({ removed: false, pendingRemoval: true, memoryKept: true });
+    expect(existsSync(join(forgeHome, "memory", "engram.db"))).toBe(true);
+  } finally { await stopMcp(mcp); }
 }, 120_000);
