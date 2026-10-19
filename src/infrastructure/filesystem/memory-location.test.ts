@@ -202,7 +202,7 @@ test("self-uninstall takes a consistent online copy when the legacy database is 
       try { expect(copy.query("SELECT title FROM memories").get()).toEqual({ title: "committed memory" }); }
       finally { closeDatabase(copy); }
     } finally { held.exec("ROLLBACK"); closeDatabase(held); }
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  } finally { await cleanupTemporaryDirectory(root); }
 });
 
 test("memory/ wins when both databases exist and the old database is untouched", () => withDirectory(root => {

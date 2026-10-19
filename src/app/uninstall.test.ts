@@ -344,7 +344,7 @@ test("self-uninstall retires Engines integrations before PATH and leaves Atlas a
   mkdirSync(join(engram, "bin"), { recursive: true });
   mkdirSync(engines, { recursive: true });
   mkdirSync(atlas, { recursive: true });
-  writeFileSync(join(engines, "forge614-engines"), "launcher");
+  writeFileSync(join(engines, process.platform === "win32" ? "forge614-engines.exe" : "forge614-engines"), "launcher");
   const order: string[] = [];
   const result = await uninstallEngramSelf(dependencies(home, {
     runEnginesSelf: async (_command, args) => { order.push(args.join(" ")); return 0; },

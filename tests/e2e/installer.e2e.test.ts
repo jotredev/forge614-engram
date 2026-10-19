@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { openDatabase, closeDatabase } from "../../src/infrastructure/sqlite/connection";
 import packageJson from "../../package.json";
 
@@ -217,7 +218,15 @@ installerTest("the real 1.9 installer layout migrates its saved memory on first 
   expect(installed.code, `${installed.stdout}\\n${installed.stderr}`).toBe(0);
   const forgeHome = join(home, ".forge614");
   const origin = `http://127.0.0.1:${server.port}`;
-  const legacyEnv = isolatedEnv(home, { FORGE614_ENGRAM_INSTALLER_TEST: "1", FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: origin });
+  const legacyEnv = isolatedEnv(home, {
+    FORGE614_ENGRAM_INSTALLER_TEST: "1",
+    FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: origin,
+    ...(process.platform === "win32" ? {
+      FORGE614_INSTALL_TEST_BASE_URL: origin,
+      FORGE614_SHELL_INSTALLER_TEST_URL: pathToFileURL(join(cache!, "shell", "install.ps1")).href,
+      FORGE614_ENGINES_INSTALLER_TEST_URL: pathToFileURL(join(cache!, "engines", "install.ps1")).href,
+    } : {}),
+  });
   const legacyCommand = platform === "windows"
     ? ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", legacyInstallerPath, "-Version", "v1.9.0", "-Force"]
     : ["bash", legacyInstallerPath, "--version", "v1.9.0", "--force"];
@@ -454,7 +463,7 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     const [updateOut, updateErr, updateCode] = await Promise.all([new Response(update.stdout).text(), new Response(update.stderr).text(), update.exited]);
     expect(updateCode, `${updateOut}\n${updateErr}`).toBe(0);
     const updateJson = JSON.parse(updateOut);
-    expect(updateJson.result, `update stdout:\n${updateOut}\nupdate stderr:\n${updateErr}`).toMatchObject({ updated: true, installedVersion: "1.10.1" });
+    expect(updateJson, `update stdout:\n${updateOut}\nupdate stderr:\n${updateErr}`).toMatchObject({ updated: true, previousVersion: "1.10.0", installedVersion: "1.10.1" });
     expect(mcp.exitCode).toBeNull();
     const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [uninstallOut, uninstallErr, uninstallCode] = await Promise.all([new Response(uninstall.stdout).text(), new Response(uninstall.stderr).text(), uninstall.exited]);
