@@ -507,6 +507,8 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     TEMP: uninstallTemp,
     TMP: uninstallTemp,
   });
+  const initialized = Bun.spawnSync([launcher, "init", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe" });
+  expect(initialized.exitCode, `${initialized.stdout.toString()}\n${initialized.stderr.toString()}`).toBe(0);
   const transport = new StdioClientTransport({ command: launcher, args: ["mcp"], cwd: home, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string")), stderr: "pipe" });
   const mcp = new Client({ name: "windows-uninstall-memory-e2e", version: "1" }, { capabilities: {} });
   await mcp.connect(transport);
