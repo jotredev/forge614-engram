@@ -35,6 +35,29 @@ jobs:
           "HOME=$forgeHome" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "FORGE614_HOME=$forge614Home" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: bun install --frozen-lockfile
+      - name: Cache real installer release assets for local end-to-end tests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then target=windows-x64
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then target=darwin-$(uname -m | sed 's/arm64/arm64/;s/x86_64/x64/')
+          else target=linux-$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/'); fi
+          asset_dir="$RUNNER_TEMP/forge614-installer-assets"
+          mkdir -p "$asset_dir/shell" "$asset_dir/engines" "$asset_dir/legacy" "$asset_dir/workers" "$asset_dir/atlas"
+          gh release download v1.17.0 -R jotredev/forge614-shell -D "$asset_dir/shell" -p forge614-shell-1.17.0.tar.gz -p forge614-shell-1.17.0.tar.gz.sha256 -p install.mjs -p install.sh -p install.ps1 -p forge614.node.json -p SHA256SUMS
+          gh release download v1.18.0 -R jotredev/forge614-engines -D "$asset_dir/engines" -p "forge614-engines-1.18.0-$target.tar.gz" -p "forge614-engines-1.18.0-$target.tar.gz.sha256" -p install.mjs -p install.sh -p install.ps1 -p forge614.node.json -p SHA256SUMS
+          legacy_binary="forge614-engram-$target"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then legacy_binary="$legacy_binary.exe"; fi
+          gh release download v1.9.0 -R jotredev/forge614-engram -D "$asset_dir/legacy" -p "$legacy_binary" -p SHA256SUMS
+          worker_binary="forge614-workers-$target"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then worker_binary="$worker_binary.exe"; fi
+          gh release download v1.1.0 -R jotredev/forge614-workers -D "$asset_dir/workers" -p "$worker_binary" -p install.mjs -p install.sh -p forge614.node.json -p SHA256SUMS
+          if [[ "$RUNNER_OS" != "Windows" ]]; then
+            atlas_binary="forge614-atlas-$target"
+            gh release download v1.1.1 -R jotredev/forge614-atlas -D "$asset_dir/atlas" -p "$atlas_binary" -p install.sh -p SHA256SUMS
+          fi
+          echo "FORGE614_INSTALLER_E2E_ASSET_DIR=$asset_dir" >> "$GITHUB_ENV"
       - run: bun run verify
   build-smoke:
     strategy:
