@@ -24,18 +24,18 @@
     "dependencies": [
       {
         "node": "shell",
-        "minimumVersion": "1.17.0",
+        "minimumVersion": null,
         "requiredCapabilities": [],
-        "compatibility": "version-and-capabilities"
+        "compatibility": "installed"
       },
       {
         "node": "engines",
-        "minimumVersion": "1.18.0",
+        "minimumVersion": null,
         "requiredCapabilities": [],
-        "compatibility": "version-and-capabilities"
+        "compatibility": "installed"
       }
     ],
-    "path": { "modify": true, "retireWhen": null },
+    "path": { "modify": true, "retireWhen": "cuando forge614 init gestione el PATH" },
     "smokeTest": ["--version"]
   }
 }
