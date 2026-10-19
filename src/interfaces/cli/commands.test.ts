@@ -312,6 +312,8 @@ test("runUninstallCommand transmits pendingRemoval without alteration in JSON ou
     memoryPath: "/tmp/forge614/memory",
     pathPublications: ["User Path"],
     pendingRemoval: true,
+    remainingExecutablePath: "C:/Temp/.old-forge614-engram-active.exe",
+    remainingExecutablePaths: ["C:/Temp/.old-forge614-engram-active.exe", "C:/Temp/.old-forge614-engram-previous"],
   });
 
   await runUninstallCommand({ json: true, purgeData: false, self: false }, fakeUninstallWithPending, val => outputs.push(val));
@@ -319,7 +321,11 @@ test("runUninstallCommand transmits pendingRemoval without alteration in JSON ou
   const parsed = JSON.parse(outputs[0]!);
   expect(parsed).toEqual({
     schemaVersion: 1,
-    result: { removed: false, memoryKept: true, memoryPath: "/tmp/forge614/memory", atlasRemoved: false, pendingRemoval: true },
+    result: {
+      removed: false, memoryKept: true, memoryPath: "/tmp/forge614/memory", atlasRemoved: false, pendingRemoval: true,
+      remainingExecutablePath: "C:/Temp/.old-forge614-engram-active.exe",
+      remainingExecutablePaths: ["C:/Temp/.old-forge614-engram-active.exe", "C:/Temp/.old-forge614-engram-previous"],
+    },
   });
 
   // Caso sin borrado pendiente conserva el JSON estándar

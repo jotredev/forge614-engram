@@ -3,7 +3,7 @@
  * orden Atlas-antes-que-Engram, no tocar carpetas ajenas y no borrar nada si algún paso falla.
  */
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { uninstallEngram, uninstallEngramSelf, uninstallConfirmation, type UninstallDependencies } from "./uninstall";
@@ -202,7 +202,7 @@ test("schedules deferred removal via WMI and returns pendingRemoval on Windows w
     }),
   );
 
-  expect(result).toEqual({
+  expect(result).toMatchObject({
     removed: false,
     atlasRemoved: false,
     memoryKept: true,
@@ -210,6 +210,8 @@ test("schedules deferred removal via WMI and returns pendingRemoval on Windows w
     pathPublications: ["User Path"],
     pendingRemoval: true,
   });
+  expect(result.remainingExecutablePaths).toHaveLength(1);
+  expect(existsSync(result.remainingExecutablePath!)).toBe(true);
 
   // La carpeta de Engram no debe haberse borrado sincrónicamente
   expect(existsSync(root)).toBe(true);
@@ -225,6 +227,78 @@ test("schedules deferred removal via WMI and returns pendingRemoval on Windows w
   expect(helperContent).toContain("Remove-Item -LiteralPath $TargetDir -Recurse -Force -ErrorAction Stop");
   expect(helperContent).toContain("Get-Process -Id $ProcessId");
   expect(helperContent).toContain("process $ProcessId did not exit within timeout");
+}));
+
+// Uninstall debe apartar el binario activo, el respaldo de actualización y el ejecutable versionado antes de borrar engram/.
+test("parks every Engram executable outside installation for one deferred removal", async () => withHome(async home => {
+  const root = join(home, ".forge614", "engram");
+  const bin = join(root, "bin");
+  const versionBin = join(root, "versions", "1.10.0");
+  const tempRoot = join(home, "temp");
+  mkdirSync(bin, { recursive: true });
+  mkdirSync(versionBin, { recursive: true });
+  mkdirSync(tempRoot, { recursive: true });
+  const activeExe = join(bin, "forge614-engram.exe");
+  const oldExe = join(bin, ".old-update");
+  const versionedExe = join(versionBin, "forge614-engram.exe");
+  writeFileSync(activeExe, "active binary");
+  writeFileSync(oldExe, "binary still used by MCP");
+  writeFileSync(versionedExe, "versioned binary");
+
+  const result = await uninstallEngram(
+    { confirmation: confirm(home) },
+    dependencies(home, {
+      platform: "win32",
+      executable: activeExe,
+      tempRoot,
+      removePathPublication: async () => ["User Path"],
+      spawn: () => ({ status: 0 }),
+    }),
+  );
+  const remainingExecutablePaths = result.remainingExecutablePaths;
+
+  expect(result.pendingRemoval).toBe(true);
+  expect(remainingExecutablePaths).toHaveLength(3);
+  expect(existsSync(root)).toBe(true);
+  for (const executable of remainingExecutablePaths ?? []) {
+    expect(existsSync(executable)).toBe(true);
+    expect(executable.startsWith(root)).toBe(false);
+  }
+  expect(existsSync(activeExe)).toBe(false);
+  expect(existsSync(oldExe)).toBe(false);
+  expect(existsSync(versionedExe)).toBe(false);
+}));
+
+// Si falla apartar un ejecutable, los que ya se movieron vuelven a su ruta y el producto sigue íntegro.
+test("restores already parked executables when a later executable cannot be moved", async () => withHome(async home => {
+  const root = join(home, ".forge614", "engram");
+  const bin = join(root, "bin");
+  const tempRoot = join(home, "temp");
+  mkdirSync(bin, { recursive: true });
+  mkdirSync(tempRoot, { recursive: true });
+  const activeExe = join(bin, "forge614-engram.exe");
+  const oldExe = join(bin, ".old-update");
+  writeFileSync(activeExe, "active binary");
+  writeFileSync(oldExe, "binary still used by MCP");
+
+  const dependenciesWithMove = dependencies(home, {
+    platform: "win32",
+    executable: activeExe,
+    tempRoot,
+    removePathPublication: async () => ["User Path"],
+    spawn: () => ({ status: 0 }),
+    moveExecutable: (source: string, destination: string) => {
+      if (source === oldExe) throw new Error(`locked: ${source}`);
+      renameSync(source, destination);
+    },
+  });
+  await expect(uninstallEngram({ confirmation: confirm(home) }, dependenciesWithMove))
+    .rejects.toMatchObject({ code: "UNINSTALL_EXECUTABLE_PARK_FAILED", message: expect.stringContaining(oldExe) });
+
+  expect(existsSync(root)).toBe(true);
+  expect(readFileSync(activeExe, "utf8")).toBe("active binary");
+  expect(readFileSync(oldExe, "utf8")).toBe("binary still used by MCP");
+  expect(readdirSync(tempRoot).some(name => name.startsWith(".old-forge614-engram-"))).toBe(false);
 }));
 
 // En Windows crea los scripts y logs de paso bajo la raíz temporal inyectada tempRoot.

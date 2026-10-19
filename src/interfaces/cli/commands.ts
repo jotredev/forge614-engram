@@ -111,13 +111,15 @@ export async function runUninstallCommand(
       removed: result.removed, memoryKept: result.memoryKept, memoryPath: result.memoryPath,
       atlasRemoved: result.atlasRemoved, ...(result.pendingRemoval ? { pendingRemoval: true } : {}),
       ...(result.remainingExecutablePath ? { remainingExecutablePath: result.remainingExecutablePath } : {}),
+      ...(result.remainingExecutablePaths ? { remainingExecutablePaths: result.remainingExecutablePaths } : {}),
     } }));
   } else {
     print(result.pendingRemoval ? "La desinstalación de Engram quedó programada." : "Engram se desinstaló.");
     if (result.atlasRemoved) print("Atlas también se desinstaló.");
     if (result.memoryKept) print(`La memoria se conserva en ${result.memoryPath}.`);
-    if (result.remainingExecutablePath) print(`No se pudo programar el borrado del ejecutable; quedó en ${result.remainingExecutablePath}.`);
-    else print("Se borró la memoria local. La copia en la nube se conserva.");
+    if (result.remainingExecutablePaths?.length) print(`Ejecutables pendientes de borrado en: ${result.remainingExecutablePaths.join(", ")}.`);
+    else if (result.remainingExecutablePath) print(`No se pudo programar el borrado del ejecutable; quedó en ${result.remainingExecutablePath}.`);
+    if (!result.remainingExecutablePaths?.length && !result.remainingExecutablePath) print("Se borró la memoria local. La copia en la nube se conserva.");
   }
 }
 
