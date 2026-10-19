@@ -538,7 +538,7 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
         phase,
         journalMode: db.query("PRAGMA journal_mode").get(),
         memoryCount: db.query("SELECT COUNT(*) AS count FROM memories").get(),
-        memories: db.query("SELECT id,title FROM memories ORDER BY id").all(),
+        memories: db.query("SELECT id,title,content FROM memories ORDER BY id").all(),
       };
     } catch (error) { return { phase, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }; }
     finally { if (db) closeDatabase(db); }
@@ -645,7 +645,39 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     if (!recreatedRootIntact) failures.push("recreated engram/ was removed or changed after helper exit");
     if (JSON.stringify(mcpGet).includes("G1f memory survives uninstall")) diagnostics.push("MCP memory_get contains the saved content");
     else failures.push(`MCP memory_get did not return the saved content: ${JSON.stringify(mcpGet)}`);
-    if (!JSON.stringify(readonlyWhileOpen.memories ?? []).includes(String(savedMemory.id))) diagnostics.push("read-only SQLite did not see the saved ID while MCP was open");
+
+    const lockedParkedExe = (result.remainingExecutablePaths ?? []).find(path => existsSync(path));
+    const historicalSource = Bun.spawnSync(["git", "show", "07c740e:src/app/uninstall.ts"], { cwd: process.cwd(), stdout: "pipe", stderr: "pipe" });
+    const historicalHelper = historicalSource.exitCode === 0
+      ? historicalSource.stdout.toString().match(/const WINDOWS_UNINSTALL_HELPER_SCRIPT = `([\s\S]*?)`;/)?.[1]
+      : undefined;
+    if (!lockedParkedExe || !historicalHelper) {
+      failures.push(`could not prepare historical-helper regression probe: locked executable=${lockedParkedExe ?? "none"}; git show exit=${historicalSource.exitCode}; stderr=${historicalSource.stderr.toString()}`);
+    } else {
+      const historicalHome = join(uninstallTemp, "historical-helper-probe");
+      const historicalParent = join(historicalHome, "parent");
+      const historicalTarget = join(historicalParent, "engram");
+      const historicalStaging = join(historicalHome, "staging");
+      const historicalHelperPath = join(historicalStaging, "helper.ps1");
+      const historicalParkedFile = join(historicalStaging, "parked-executables.json");
+      const historicalLog = join(historicalHome, "helper.log");
+      mkdirSync(historicalTarget, { recursive: true });
+      mkdirSync(historicalStaging, { recursive: true });
+      writeFileSync(historicalHelperPath, historicalHelper);
+      writeFileSync(historicalParkedFile, JSON.stringify([lockedParkedExe]));
+      const historicalProcess = Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", historicalHelperPath,
+        "-TargetDir", historicalTarget, "-ParentDir", historicalParent, "-ParkedExesFile", historicalParkedFile,
+        "-ProcessId", "0", "-StagingDir", historicalStaging, "-LogFile", historicalLog],
+      { cwd: historicalHome, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+      await Bun.sleep(3_000);
+      const historicalTargetStillPresent = existsSync(historicalTarget);
+      const historicalHelperStillRunning = historicalProcess.exitCode === null;
+      diagnostics.push(`07c740e helper probe: locked executable=${lockedParkedExe}; after 3.000s target still present=${historicalTargetStillPresent}; helper still running=${historicalHelperStillRunning}; log=${existsSync(historicalLog) ? readFileSync(historicalLog, "utf8") : "missing"}`);
+      if (!historicalTargetStillPresent || !historicalHelperStillRunning) failures.push("07c740e helper did not reproduce the unbounded wait with a locked parked executable");
+      try { if (historicalProcess.exitCode === null) historicalProcess.kill(); } catch { /* preserve diagnostics and clean up below */ }
+      try { await historicalProcess.exited; } catch { /* preserve diagnostics */ }
+      await removeTemporaryTree(historicalHome);
+    }
   } catch (error) {
     failures.push(`unexpected E2E exception: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`);
   } finally {
@@ -653,10 +685,10 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     recordFiles("after MCP closed");
     const readonlyAfterClose = inspectReadonly("after MCP closed");
     diagnostics.push(`SQLite read-only after MCP closed: ${JSON.stringify(readonlyAfterClose)}`);
-    const afterCloseMemories = readonlyAfterClose.memories as Array<{ id?: string; title?: string }> | undefined;
+    const afterCloseMemories = readonlyAfterClose.memories as Array<{ id?: string; title?: string; content?: string }> | undefined;
     const savedAfterClose = afterCloseMemories?.find(memory => memory.id === savedMemory.id);
     diagnostics.push(`saved memory present after MCP closed: ${JSON.stringify(savedAfterClose ?? null)}`);
-    if (!savedAfterClose) failures.push("SQLite did not find the saved memory after MCP closed");
+    if (!savedAfterClose || savedAfterClose.title !== "Windows uninstall probe" || savedAfterClose.content !== "G1f memory survives uninstall") failures.push("SQLite did not find the complete saved memory after MCP closed");
     console.error(`G1g Windows E2E diagnostics:\n${diagnostics.join("\n")}`);
   }
   expect(failures, `G1g Windows E2E failures:\n${failures.join("\n")}\n${diagnostics.join("\n")}`).toEqual([]);
