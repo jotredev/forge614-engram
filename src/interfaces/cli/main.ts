@@ -21,7 +21,7 @@ function errorEnvelope(command: string, code: string, error: string): Record<str
   return CONTRACT_COMMANDS(command) || CONTRACT_CODES.has(code) ? { schemaVersion: 1, code, error } : { code, error };
 }
 
-/** Ejecuta un comando del CLI de principio a fin: resuelve los tres casos especiales (setup, --version, help), analiza y despacha el resto, y convierte cualquier error en salida JSON por stderr. */
+/** Ejecuta un comando del CLI de principio a fin y convierte errores en JSON sanitizado por stderr. FORGE614_TEST_RAW_ERRORS=1 agrega metadatos del error original solo cuando NODE_ENV=test; no altera la salida normal. */
 export async function main(args:string[]):Promise<void> {
   try {
     const command = args[0] ?? "help";
@@ -46,6 +46,17 @@ export async function main(args:string[]):Promise<void> {
     console.error(JSON.stringify(error instanceof MemoryError
       ? errorEnvelope(command, error.code, error.message)
       : errorEnvelope(command, "STORAGE_ERROR", "No se pudo completar la operación. Comprueba permisos, configuración y disponibilidad de la base. No se creó una base de reemplazo.")));
+    // FORGE614_TEST_RAW_ERRORS solo añade metadatos de diagnóstico si NODE_ENV=test;
+    // las órdenes normales mantienen su única línea sanitizada y no revelan rutas internas.
+    if (!(error instanceof MemoryError) && process.env.NODE_ENV === "test" && process.env.FORGE614_TEST_RAW_ERRORS === "1") {
+      const raw = error as Error & { code?: unknown; syscall?: unknown; path?: unknown };
+      console.error(JSON.stringify({ testDiagnostic: {
+        name: raw.name,
+        code: raw.code ?? null,
+        syscall: raw.syscall ?? null,
+        path: raw.path ?? null,
+      } }));
+    }
     process.exitCode = error instanceof MemoryError && error.code === "PURGE_REQUIRES_TTY" ? 2 : 1;
   }
   finally {

@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { openDatabase, closeDatabase } from "../../src/infrastructure/sqlite/connection";
-import { uninstallEngram, uninstallConfirmation } from "../../src/app/uninstall";
 import packageJson from "../../package.json";
 
 const cache = process.env.FORGE614_INSTALLER_E2E_ASSET_DIR;
@@ -130,14 +129,46 @@ function isolatedEnv(home: string, extra: Record<string, string> = {}): NodeJS.P
   return Object.fromEntries(Object.entries(merged).filter(([key]) => key.toLowerCase() !== "path").concat(pathEntry ? [["Path", pathEntry[1]]] : []));
 }
 
+/** Blocks curl attempts to GitHub and records requests made by an isolated Unix installer test. */
+function denyExternalGitHubWithCurl(home: string, env: NodeJS.ProcessEnv): string {
+  const curlPath = Bun.spawnSync(["sh", "-c", "command -v curl"], { stdout: "pipe", stderr: "pipe" });
+  if (curlPath.exitCode !== 0) throw new Error(`curl is required by the installer tests: ${curlPath.stderr.toString()}`);
+  const realCurl = curlPath.stdout.toString().trim();
+  const networkGuard = join(home, "network-guard");
+  mkdirSync(networkGuard, { recursive: true });
+  const curlLog = join(home, "installer-curl.log");
+  writeFileSync(curlLog, "");
+  const quoteShell = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
+  writeFileSync(join(networkGuard, "curl"), [
+    "#!/bin/sh",
+    "case \"$*\" in *github.com*|*api.github.com*) echo \"blocked external release request: $*\" >&2; exit 97;; esac",
+    `printf '%s\\n' "$*" >> ${quoteShell(curlLog)}`,
+    `exec ${quoteShell(realCurl)} "$@"`,
+    "",
+  ].join("\n"), { mode: 0o700 });
+  const pathKey = Object.keys(env).find(key => key.toLowerCase() === "path") ?? "PATH";
+  env[pathKey] = `${networkGuard}:${env[pathKey] ?? process.env.PATH ?? ""}`;
+  return curlLog;
+}
+
+/** Proves the guarded installer used the loopback publication and never named a public GitHub host. */
+function expectOnlyLoopbackInstallerRequests(curlLog: string, origin: string): void {
+  const calls = readFileSync(curlLog, "utf8");
+  expect(calls).toContain(origin);
+  expect(calls).not.toMatch(/github\.com|api\.github\.com/i);
+}
+
 /** Runs the checked-in platform gatekeeper against the loopback release server. */
 async function runGatekeeper(home: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   const base = `http://127.0.0.1:${server.port}`;
+  const env = isolatedEnv(home, { FORGE614_INSTALL_TEST_BASE_URL: base });
+  const curlLog = process.platform === "win32" ? undefined : denyExternalGitHubWithCurl(home, env);
   const command = process.platform === "win32"
     ? ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "install.ps1", "--version", `v${packageJson.version}`]
     : ["sh", "install.sh", "--version", `v${packageJson.version}`];
-  const child = Bun.spawn(command, { cwd: process.cwd(), env: isolatedEnv(home, { FORGE614_INSTALL_TEST_BASE_URL: base }), stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
+  const child = Bun.spawn(command, { cwd: process.cwd(), env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
   const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  if (curlLog) expectOnlyLoopbackInstallerRequests(curlLog, base);
   return { code, stdout, stderr };
 }
 
@@ -215,6 +246,10 @@ installerTest("installs Engram, Shell and Engines from an empty home using real 
 
 installerTest("the real 1.9 installer layout migrates its saved memory on first 1.10 access", async () => {
   const home = mkdtempSync(join(root, "legacy-home-"));
+  if (platform !== "windows") {
+    const installed = await runGatekeeper(home);
+    expect(installed.code, `${installed.stdout}\n${installed.stderr}`).toBe(0);
+  }
   const forgeHome = join(home, ".forge614");
   const origin = `http://127.0.0.1:${server.port}`;
   let launcher: string;
@@ -230,10 +265,19 @@ installerTest("the real 1.9 installer layout migrates its saved memory on first 
     userPathKey = join(home, "test-user-environment.json");
     writeFileSync(userPathKey, JSON.stringify({ Path: legacyBin }, null, 2));
   } else {
-    const legacyEnv = isolatedEnv(home, { FORGE614_ENGRAM_INSTALLER_TEST: "1", FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: origin });
+    const shellInstaller = pathToFileURL(join(cache!, "shell", "install.sh")).href;
+    const enginesInstaller = pathToFileURL(join(cache!, "engines", "install.sh")).href;
+    const legacyEnv = isolatedEnv(home, {
+      FORGE614_ENGRAM_INSTALLER_TEST: "1",
+      FORGE614_ENGRAM_TEST_RELEASE_BASE_URL: origin,
+      FORGE614_SHELL_INSTALLER_TEST_URL: shellInstaller,
+      FORGE614_ENGINES_INSTALLER_TEST_URL: enginesInstaller,
+    });
+    const curlLog = denyExternalGitHubWithCurl(home, legacyEnv);
     const legacyInstall = Bun.spawn(["bash", legacyInstallerPath, "--version", "v1.9.0", "--force"], { env: legacyEnv, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(60_000) });
     const [legacyOut, legacyErr, legacyCode] = await Promise.all([new Response(legacyInstall.stdout).text(), new Response(legacyInstall.stderr).text(), legacyInstall.exited]);
     expect(legacyCode, `v1.9.0 install.sh exit=${legacyCode}\nstdout:\n${legacyOut || "(vacío)"}\nstderr:\n${legacyErr || "(vacío)"}`).toBe(0);
+    expectOnlyLoopbackInstallerRequests(curlLog, origin);
     launcher = join(forgeHome, "engram", "bin", "forge614-engram");
   }
   const oldVersion = Bun.spawnSync([launcher, "--version"], { env: isolatedEnv(home), stdout: "pipe", stderr: "pipe" });
@@ -467,27 +511,26 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     const updateJson = JSON.parse(updateOut);
     expect(updateJson, `update stdout:\n${updateOut}\nupdate stderr:\n${updateErr}`).toMatchObject({ updated: true, previousVersion: "1.10.0", installedVersion: "1.10.1" });
     expect(mcp.exitCode).toBeNull();
-    const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
+    const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env: { ...env, NODE_ENV: "test", FORGE614_TEST_RAW_ERRORS: "1" }, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [uninstallOut, uninstallErr, uninstallCode] = await Promise.all([new Response(uninstall.stdout).text(), new Response(uninstall.stderr).text(), uninstall.exited]);
     let uninstallDiagnostics = "";
     if (uninstallCode !== 0) {
       const listingAndProcess = Bun.spawnSync(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `
         $root = '${join(forgeHome, "engram").replace(/'/g, "''")}';
+        $bin = Join-Path $root 'bin';
         "ENGRAM FILES:";
         if (Test-Path -LiteralPath $root) { Get-ChildItem -LiteralPath $root -Recurse -Force | ForEach-Object { if (-not $_.PSIsContainer) { "{0}{1}{2}" -f $_.FullName, [char]9, $_.Length } } } else { '(carpeta ausente)' };
         "MCP PROCESS:";
         Get-Process -Id ${mcp.pid} -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path | ConvertTo-Json -Compress;
+        "TRY REMOVE OLD EXECUTABLES:";
+        Get-ChildItem -LiteralPath $bin -Filter '.old-*' -File -ErrorAction SilentlyContinue | ForEach-Object {
+          "Remove-Item: $($_.FullName)";
+          $errorCount = $Error.Count;
+          Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Continue;
+          if ($Error.Count -gt $errorCount) { $Error[0].Exception.ToString(); $Error[0] | Format-List * -Force | Out-String }
+        };
       `], { stdout: "pipe", stderr: "pipe" });
-      let rawCause = "No se reprodujo el error interno.";
-      try {
-        await uninstallEngram({ confirmation: uninstallConfirmation(forgeHome) }, {
-          home, forgeHome, executable: launcher, platform: "win32", processId: mcp.pid, cwd: home,
-        });
-      } catch (error) {
-        const value = error as Error & { code?: string; cause?: unknown };
-        rawCause = `${value.name} code=${value.code ?? "(sin código)"} message=${value.message}; cause=${String(value.cause ?? "(sin cause)")}; stack=${value.stack ?? "(sin stack)"}`;
-      }
-      uninstallDiagnostics = `\nDIAGNÓSTICO WINDOWS:\n${listingAndProcess.stdout.toString()}\nPowerShell stderr:\n${listingAndProcess.stderr.toString()}\nCAUSA INTERNA: ${rawCause}`;
+      uninstallDiagnostics = `\nDIAGNÓSTICO WINDOWS:\n${listingAndProcess.stdout.toString()}\nPowerShell stderr:\n${listingAndProcess.stderr.toString()}\nERROR ORIGINAL DEL CLI:\n${uninstallErr}`;
       console.error(uninstallDiagnostics);
     }
     expect(uninstallCode, `${uninstallOut}\n${uninstallErr}${uninstallDiagnostics}`).toBe(0);
