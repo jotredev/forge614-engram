@@ -390,3 +390,25 @@ test("startup-context --format 2 prints the ready-to-inject block, --format 1 ma
   expect(JSON.parse(unknown.stderr).code).toBe("INVALID_INPUT");
   expect(unknown.stdout).toBe("");
 }, 60000);
+
+test("startup-context recognizes a reclone by confirmed origin before creating a folder binding", async () => {
+  const home = temporary(), first = temporary(), clone = temporary();
+  for (const [directory, origin] of [[first, "https://example.com/Org/Cli.git"], [clone, "git@example.com:Org/Cli.git"]]) {
+    expect((await Bun.spawn(["git", "-C", directory!, "init", "--quiet"], { stdout: "ignore", stderr: "ignore" }).exited)).toBe(0);
+    expect((await Bun.spawn(["git", "-C", directory!, "remote", "add", "origin", origin!], { stdout: "ignore", stderr: "ignore" }).exited)).toBe(0);
+  }
+  const init = await runCli(first, home, "init", "--json", "--directory", first);
+  expect(init.code).toBe(0);
+  const projectId = JSON.parse(init.stdout).project.projectId;
+  const saved = await runCli(first, home, "save", "--project-id", projectId, "--title", "Reclone note", "--content", "Original checkout");
+  expect(saved.code).toBe(0);
+  const firstRead = await runCli(clone, home, "startup-context", "--json", "--directory", clone);
+  expect(firstRead.code).toBe(0);
+  expect(JSON.parse(firstRead.stdout).project).toMatchObject({
+    status: "bound", source: "path", projectId, context: { recent: [{ id: JSON.parse(saved.stdout).id }] },
+  });
+  expect(existsSync(join(clone, ".forge614"))).toBe(false);
+  const db = new Database(join(home, ".forge614", "memory", "engram.db"), { readonly: true });
+  try { expect(db.query("SELECT directory FROM project_bindings ORDER BY directory").all()).toEqual([{ directory: realpathSync(join(first, ".git")) }]); }
+  finally { db.close(); }
+});

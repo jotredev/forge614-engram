@@ -18,6 +18,7 @@ export interface StartupItem { id: string; scope: "project" | "shared" | "ecosys
 export interface StartupPrevious { sessionId: string; interruptedAt: string; summary: { id: string; version: number; content: string } | null }
 /** Candidatos en orden de prioridad; los totales cuentan cada candidato, incluidos los que no llegan en las listas (por ejemplo porque ya se calculó que no caben). */
 export interface StartupBlockInput {
+  projectNotice?: string;
   essentials: StartupItem[]; essentialsTotal: number;
   /** La sesión previa dejada abierta que se ofrece continuar, o `null` si no hay ninguna que mostrar. */
   previous: StartupPrevious | null;
@@ -96,6 +97,8 @@ export function renderStartupBlock(input: StartupBlockInput): StartupBlock {
   // Agrega una sección ya renderizada a la lista final y descuenta del presupuesto lo que ocupará
   // (su texto más los dos saltos de línea que la separan de la siguiente sección); una sección vacía no se agrega.
   const add = (text: string): number => { if (text) { sections.push(text); budget -= 2 + length(text); } return length(text); };
+
+  if (input.projectNotice) add(clip(oneLine(input.projectNotice), 240));
 
   const essentials = list("## Essentials (pinned)", input.essentials.map(item => line(item, item.short ?? item.title)),
     Math.min(STARTUP_ESSENTIALS, budget - 2));

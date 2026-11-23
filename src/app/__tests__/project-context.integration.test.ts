@@ -7,10 +7,11 @@
  */
 import { afterEach, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { MemoryStore } from "../memory-store";
+import { MemoryStore, projectIdentityFor } from "../memory-store";
+import { readStartupContext } from "../startup-context";
 import { bindProjectContext, resolveProjectContext, saveProjectMemory, startProjectSession } from "../project-context";
 
 const directories: string[] = [];
@@ -348,4 +349,131 @@ test("concurrent first resolution creates one project identity and one binding",
   const reopened = store(path);
   expect(reopened.listProjects()).toHaveLength(1);
   expect(resolveProjectContext(reopened,directory,false).projectId).toBe(results[0]!.stdout.trim());
+});
+
+test("a fresh checkout reads the confirmed remote identity without writing before its first save", () => {
+  const path = join(temporary(), "engram.db");
+  const database = store(path);
+  database.enableEcosystem();
+  const original = repository();
+  const second = repository();
+  git(original, "remote", "add", "origin", "https://example.com/Org/Repo.git");
+  git(second, "remote", "add", "origin", "git@example.com:Org/Repo");
+  const earlier = saveProjectMemory(database, original, { title: "Git memory", content: "From the original checkout", type: "fact" });
+  rmSync(join(original, ".forge614"), { recursive: true, force: true });
+  const projectId = earlier.projectId!;
+  const group = database.createGroup("team");
+  database.bindProjectToGroup(projectId, group.id, "command");
+  const key = realpathSync(join(second, ".git"));
+  const before = readFileSync(path);
+  const reader = new MemoryStore(path, { readonly: true }); stores.push(reader);
+  const startup = readStartupContext(reader, second);
+  expect(startup.project).toMatchObject({ status: "bound", source: "path", projectId, context: { recent: [{ id: earlier.id }] } });
+  expect(startup.ecosystem).toMatchObject({ status: "member", group: { id: group.id } });
+  expect(reader.projectForDirectory(key)).toBeNull();
+  expect(readFileSync(path)).toEqual(before);
+  expect(existsSync(join(second, ".forge614"))).toBe(false);
+  reader.close();
+
+  const saved = saveProjectMemory(database, second, { title: "Reclone memory", content: "Same project", type: "fact" });
+  expect(saved.projectId).toBe(projectId);
+  expect(database.projectForDirectory(key)?.projectId).toBe(projectId);
+  expect(database.listProjects()).toHaveLength(1);
+});
+
+test("two confirmed candidates leave the checkout pending without binding either one", () => {
+  const database = store();
+  database.enableProjectBindings();
+  const first = repository(), second = repository(), clone = repository();
+  for (const directory of [first, second, clone]) git(directory, "remote", "add", "origin", "git@example.com:Org/Ambiguous.git");
+  const a = database.createProject("Alpha"), b = database.createProject("Beta");
+  database.bindProjectDirectory(realpathSync(join(first, ".git")), a.projectId);
+  database.bindProjectDirectory(realpathSync(join(second, ".git")), b.projectId);
+  database.resolveProjectDirectory(realpathSync(join(first, ".git")), "Alpha", true, undefined, "git@example.com:Org/Ambiguous.git");
+  expect(readStartupContext(database, clone).project).toMatchObject({
+    status: "unbound", context: null, notices: [{ code: "PROJECT_BINDING_REQUIRED" }],
+  });
+  expect(() => saveProjectMemory(database, clone, { title: "Blocked", content: "Neither project is unique", type: "fact" }))
+    .toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
+  expect(database.projectForDirectory(realpathSync(join(clone, ".git")))).toBeNull();
+  expect(database.listProjects()).toEqual([a, b]);
+});
+
+test("bare Git origin and linked worktrees use the common directory identity", () => {
+  const database = store();
+  database.enableSessions();
+  const original = repository();
+  git(original, "remote", "add", "origin", "https://example.com/Org/Common.git");
+  const first = startProjectSession(database, original, "main-session");
+  const linked = temporary(), bare = temporary();
+  rmSync(linked, { recursive: true });
+  git(original, "worktree", "add", "--quiet", "-b", "identity-linked", linked);
+  git(bare, "init", "--bare", "--quiet");
+  git(bare, "remote", "add", "origin", "ssh://git@example.com:22/Org/Common.git");
+  expect(startProjectSession(database, linked, "linked-session").projectId).toBe(first.projectId);
+  expect(readStartupContext(database, bare).project).toMatchObject({ status: "bound", projectId: first.projectId, source: "path" });
+  expect(saveProjectMemory(database, bare, { title: "Bare memory", content: "Uses the same project", type: "fact" }).projectId).toBe(first.projectId);
+  expect(existsSync(join(bare, ".forge614"))).toBe(false);
+  expect(database.projectDirectories(first.projectId)).toEqual([realpathSync(bare), realpathSync(join(original, ".git"))].sort());
+});
+
+test("an enabled but unready cloud blocks new Git folder identities and keeps existing ones usable", () => {
+  const path = join(temporary(), "engram.db");
+  let configured = false;
+  const database = store(path);
+  projectIdentityFor(database).configureCloud(() => configured);
+  database.enableProjectBindings();
+  const original = repository(), clone = repository();
+  git(original, "remote", "add", "origin", "https://example.com/Org/Cloud.git");
+  git(clone, "remote", "add", "origin", "git@example.com:Org/Cloud.git");
+  const saved = saveProjectMemory(database, original, { title: "Already bound", content: "Kept", type: "fact" });
+  configured = true;
+  expect(readStartupContext(database, clone).project).toMatchObject({
+    status: "unbound", notices: [{ code: "PROJECT_BINDING_REQUIRED", message: expect.stringContaining("sincronizar") }],
+  });
+  expect(() => saveProjectMemory(database, clone, { title: "Blocked", content: "Wait", type: "fact" }))
+    .toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
+  expect(saveProjectMemory(database, original, { title: "Existing", content: "Still usable", type: "fact" }).projectId).toBe(saved.projectId);
+  configured = false;
+  expect(readStartupContext(database, clone).project.projectId).toBe(saved.projectId);
+});
+
+test("concurrent first saves bind one reclone to its already confirmed project", async () => {
+  const path = join(temporary(), "engram.db");
+  const database = store(path);
+  database.enableProjectBindings();
+  const original = repository(), clone = repository();
+  for (const directory of [original, clone]) git(directory, "remote", "add", "origin", "git@example.com:Org/Concurrent.git");
+  const projectId = saveProjectMemory(database, original, { title: "Original memory", content: "Confirmed", type: "fact" }).projectId!;
+  const storeModule = resolve(import.meta.dir, "../memory-store.ts");
+  const contextModule = resolve(import.meta.dir, "../project-context.ts");
+  const children = ["First", "Second"].map(title => Bun.spawn([process.execPath, "-e", `
+    import { MemoryStore } from ${JSON.stringify(storeModule)};
+    import { saveProjectMemory } from ${JSON.stringify(contextModule)};
+    const db = new MemoryStore(${JSON.stringify(path)});
+    try { console.log(saveProjectMemory(db, ${JSON.stringify(clone)}, { type: "fact", title: ${JSON.stringify(title)}, content: "Same UUID" }).projectId); }
+    finally { db.close(); }`], { stdout: "pipe", stderr: "pipe" }));
+  const results = await Promise.all(children.map(async child => ({
+    code: await child.exited, stdout: await new Response(child.stdout).text(), stderr: await new Response(child.stderr).text(),
+  })));
+  expect(results.map(item => [item.code, item.stdout.trim(), item.stderr])).toEqual([[0, projectId, ""], [0, projectId, ""]]);
+  expect(database.projectForDirectory(realpathSync(join(clone, ".git")))?.projectId).toBe(projectId);
+  expect(database.listProjects()).toHaveLength(1);
+});
+
+test("a previously bound checkout keeps its UUID when its origin changes to a free address", () => {
+  const database = store();
+  database.enableProjectBindings();
+  const original = repository(), unrelated = repository();
+  git(original, "remote", "add", "origin", "https://example.com/Org/Old.git");
+  git(unrelated, "remote", "add", "origin", "git@example.com:Org/Independent.git");
+  const before = saveProjectMemory(database, original, { title: "Older memory", content: "Keeps owner", type: "fact" });
+  git(original, "remote", "set-url", "origin", "https://example.com/Org/New.git");
+  expect(readStartupContext(database, original).project).toMatchObject({
+    status: "bound", projectId: before.projectId, notices: [{ code: "PROJECT_ORIGIN_CONFIRMATION_REQUIRED" }],
+  });
+  expect(saveProjectMemory(database, original, { title: "After move", content: "Same project", type: "fact" }).projectId).toBe(before.projectId!);
+  const independent = resolveProjectContext(database, unrelated, true);
+  expect(independent.projectId).not.toBe(before.projectId!);
+  expect(readStartupContext(database, unrelated).project.context?.recent).toEqual([]);
 });

@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FORGE614_GROUP_ID } from "../modules/ecosystem";
 import { MemoryStore } from "./memory-store";
-import { applyIdentityFile, groupOf, publishIdentity } from "./project-identity";
+import { groupOf, publishIdentity } from "./project-identity";
+import { resolveProjectContext } from "./project-context";
 
 const roots: string[] = [];
 const stores: MemoryStore[] = [];
@@ -23,11 +24,10 @@ afterEach(() => {
 const identity = (folder: string, content: unknown) => { mkdirSync(join(folder, ".forge614"), { recursive: true }); writeFileSync(join(folder, ".forge614", "project.json"), JSON.stringify(content)); };
 const file = (folder: string) => JSON.parse(readFileSync(join(folder, ".forge614", "project.json"), "utf8"));
 
-// Verifica que sin carpeta raíz o sin archivo de identidad no se resuelve ningún proyecto ni se escribe nada en disco.
-test("without a root or a file nothing is resolved and nothing is written", () => {
+// Verifica que sin archivo de identidad no se resuelve ningún proyecto ni se escribe nada en disco.
+test("without a file nothing is resolved and nothing is written", () => {
   const db = store(), folder = root();
-  expect(applyIdentityFile(db, "/key", null)).toEqual({ projectId: null, notices: [] });
-  expect(applyIdentityFile(db, "/key", folder)).toEqual({ projectId: null, notices: [] });
+  expect(resolveProjectContext(db, folder, false).projectId).toBeNull();
   expect(db.listProjects()).toEqual([]);
   expect(existsSync(join(folder, ".forge614"))).toBe(false);
 });
@@ -36,7 +36,7 @@ test("without a root or a file nothing is resolved and nothing is written", () =
 test("a file without an ecosystem section is completed with null and keeps its identity", () => {
   const db = store(), folder = root(), id = crypto.randomUUID();
   identity(folder, { schemaVersion: 1, project: { id, name: "viejo" } });
-  expect(applyIdentityFile(db, "/key", folder).projectId).toBe(id);
+  expect(resolveProjectContext(db, folder, false).projectId).toBe(id);
   expect(file(folder)).toEqual({ schemaVersion: 1, project: { id, name: "viejo" }, ecosystem: null });
 });
 
@@ -45,26 +45,26 @@ test("the node file's group wins over a different group in the identity file", (
   const db = store(), folder = root(), id = crypto.randomUUID(), other = crypto.randomUUID();
   writeFileSync(join(folder, "forge614.node.json"), JSON.stringify({ ecosystem: "forge614" }));
   identity(folder, { schemaVersion: 1, project: { id, name: "engram" }, ecosystem: { id: other, name: "otro" } });
-  applyIdentityFile(db, "/key", folder);
+  resolveProjectContext(db, folder, false);
   expect(groupOf(db, id)).toEqual({ id: FORGE614_GROUP_ID, name: "forge614" });
   expect(db.groupOfProject(id)?.source).toBe("node-file");
   expect(file(folder).ecosystem).toEqual({ id: other, name: "otro" });
-  expect(db.identityEvents(id).map(event => event.action)).toEqual(["GROUP_BOUND"]);
+  expect(db.identityEvents(id).map(event => event.action)).toEqual(["PROJECT_REGISTERED_FROM_FILE", "GROUP_BOUND"]);
 });
 
 // Verifica que quitar el grupo de un archivo que había establecido la membresía la quita también en la base, pero una membresía hecha por comando explícito sobrevive a un archivo que aún no se puso al día.
 test("removing the group from a file that established the membership removes the membership, a command's membership survives", () => {
   const db = store(), folder = root(), id = crypto.randomUUID(), group = { id: crypto.randomUUID(), name: "tienda" };
   identity(folder, { schemaVersion: 1, project: { id, name: "front" }, ecosystem: group });
-  applyIdentityFile(db, "/key", folder);
+  resolveProjectContext(db, folder, false);
   expect(groupOf(db, id)).toEqual(group);
   identity(folder, { schemaVersion: 1, project: { id, name: "front" }, ecosystem: null });
-  applyIdentityFile(db, "/key", folder);
+  resolveProjectContext(db, folder, false);
   expect(groupOf(db, id)).toBeUndefined();
-  expect(db.identityEvents(id).map(event => event.action)).toEqual(["GROUP_BOUND", "GROUP_UNBOUND"]);
+  expect(db.identityEvents(id).map(event => event.action)).toEqual(["PROJECT_REGISTERED_FROM_FILE", "GROUP_BOUND", "GROUP_UNBOUND"]);
   // Una membresía hecha por comando no la deshace un archivo que todavía no se ha puesto al día.
   db.bindProjectToGroup(id, db.ensureGroup(group.id, group.name).group.id, "command");
-  applyIdentityFile(db, "/key", folder);
+  resolveProjectContext(db, folder, false);
   expect(groupOf(db, id)).toEqual(group);
 });
 

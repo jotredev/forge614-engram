@@ -215,8 +215,8 @@ test("init and project-bind are idempotent: a repeated run leaves the identity f
   expect((await engram.ok("project-list"))).toHaveLength(1);
 }, T);
 
-// Si el vínculo local (project-bind) y el archivo de identidad no coinciden, gana el archivo: se reasigna al id declarado, se registra el evento y el archivo nunca se toca.
-test("when the local binding and the file disagree the file wins, the event is recorded and the file is never touched", async () => {
+// Si el vínculo local y el archivo de identidad discrepan, el arranque comparte solo contexto general.
+test("a conflicting identity file leaves the local binding and the working tree untouched", async () => {
   const engram = await machine(); const repository = folder();
   const local = await engram.ok("project-create", "--name", "local");
   await engram.ok("project-bind", "--directory", repository, "--project-id", local.projectId);
@@ -225,14 +225,16 @@ test("when the local binding and the file disagree the file wins, the event is r
   writeIdentity(repository, { schemaVersion: 1, project: { id: declared, name: "del-archivo" }, ecosystem: null });
   const digest = sha(identityPath(repository));
   const context = await engram.ok("startup-context", "--directory", repository, "--json");
-  expect(context.project).toMatchObject({ projectId: declared, source: "file" });
-  // Una base recién creada ya está en el nivel de ecosistema e inteligencia: reasignar desde el
-  // archivo es el único aviso, sin ninguna migración por delante.
-  expect(context.project.notices.map((item: any) => item.code)).toEqual(["PROJECT_REBOUND_FROM_FILE"]);
+  expect(context.project).toMatchObject({
+    status: "unbound", projectId: null, source: "unbound",
+    notices: [expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" })],
+  });
   expect(sha(identityPath(repository))).toBe(digest);
   const db = new Database(engram.database, { readonly: true });
-  try { expect(db.query("SELECT previousProjectId FROM identity_events WHERE action='PROJECT_REBOUND_FROM_FILE'").all()).toEqual([{ previousProjectId: local.projectId }]); }
-  finally { db.close(); }
+  try {
+    expect(db.query("SELECT projectId FROM project_bindings").all()).toEqual([{ projectId: local.projectId }]);
+    expect(db.query("SELECT projectId FROM projects ORDER BY projectId").all()).toEqual([{ projectId: local.projectId }]);
+  } finally { db.close(); }
 }, T);
 
 // JSON corrupto, una versión de esquema desconocida, o un campo extra en project.json: los tres casos fallan igual con PROJECT_FILE_INVALID y el archivo nunca se sobrescribe.

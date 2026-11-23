@@ -6,6 +6,13 @@ import { schemaFeatures } from "./schema";
 type OriginCandidate = { project: Project; verified: boolean };
 type OriginRow = Project & { verified: 0 | 1 };
 
+export function confirmedProjectOrigin(db: Database, projectId: string): string | null {
+  if (!schemaFeatures(db)?.projectIdentity) return null;
+  const row = db.query("SELECT value FROM project_identity_settings WHERE project_id=? AND setting='origin'")
+    .get(projectId) as { value: string } | null;
+  return row?.value ?? null;
+}
+
 /** Busca una clave normalizada y conserva la distinción entre identidad confirmada y pista histórica. */
 export function findProjectsByOrigin(db: Database, origin: string): OriginCandidate[] {
   const schema = schemaFeatures(db);

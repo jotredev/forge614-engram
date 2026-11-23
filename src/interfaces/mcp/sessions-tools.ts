@@ -8,7 +8,7 @@ import { MemoryError } from "../../shared/errors";
 import { sessionNotice } from "../../modules/sessions";
 import { toolSchemas } from "./schemas";
 import type { ToolContext } from "./context";
-import { ecosystemTarget, noGroupNote, unboundProjectNote } from "./memory-tools";
+import { ecosystemTarget, noGroupNote, projectNotBound, unboundProjectNote } from "./memory-tools";
 import type { ContextResult } from "../../modules/search";
 
 /**
@@ -36,7 +36,7 @@ export function registerSessionTools(tools:ToolContext):void {
     inputSchema:toolSchemas.memory_session_end,
   }, safely(async ({directory,sessionId}) => {
     const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
-    if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
+    if(!context.projectId) throw projectNotBound(context);
     return memoryStore().endSession(context.projectId,sessionId);
   }));
 
@@ -52,7 +52,7 @@ export function registerSessionTools(tools:ToolContext):void {
     }
     if(groupIntent!==undefined) throw new MemoryError("INVALID_INPUT","groupIntent solo se acepta con scope ecosystem.");
     const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
-    if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
+    if(!context.projectId) throw projectNotBound(context);
     return memoryStore().saveSessionSummary(context.projectId,sessionId,summary,{requestKey,...(expectedVersion?{expectedVersion}:{})});
   }));
 
@@ -61,7 +61,7 @@ export function registerSessionTools(tools:ToolContext):void {
     inputSchema:toolSchemas.memory_timeline,
   }, safely(async ({directory,sessionId,id:memoryId,version,before,after}) => {
     const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
-    if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
+    if(!context.projectId) throw projectNotBound(context);
     return memoryStore().timeline(context.projectId,{sessionId,memoryId,version,...(before===undefined?{}:{before}),...(after===undefined?{}:{after})});
   }));
 
@@ -75,18 +75,13 @@ export function registerSessionTools(tools:ToolContext):void {
     const options={...(compact===undefined?{}:{compact}),...(maxBytes===undefined?{}:{maxBytes})};
     // shared no depende de resolver el proyecto de la carpeta; sin scope explícito, cae al contexto del proyecto (con su bloque de ecosistema si pertenece a un grupo).
     if(scope==="shared") return store.context(null,options);
-    // Con scope ecosystem, una carpeta sin proyecto o un proyecto sin grupo no son errores: devuelven el contexto vacío de grupo (EMPTY_GROUP_CONTEXT) más la nota que corresponde (`project` o `ecosystem`).
-    if(scope==="ecosystem") {
-      try {return store.contextForGroup((await ecosystemTarget(tools,directory)).group.id,options);}
-      catch(error) {
-        if(error instanceof MemoryError&&error.code==="PROJECT_NOT_BOUND") return {...EMPTY_GROUP_CONTEXT,project:unboundProjectNote()};
-        if(error instanceof MemoryError&&error.code==="GROUP_REQUIRED") return {...EMPTY_GROUP_CONTEXT,ecosystem:noGroupNote()};
-        throw error;
-      }
-    }
     const context=resolveProjectContext(store,await projectDirectory(directory),false);
-    // Sin proyecto, el contexto es el de shared más la nota (lo mismo que scope shared, sin registrar la carpeta).
-    if(!context.projectId) return {...store.context(null,options),project:unboundProjectNote()};
+    if(scope==="ecosystem") {
+      if(!context.projectId) return {...EMPTY_GROUP_CONTEXT,project:unboundProjectNote(context)};
+      if(!context.group) return {...EMPTY_GROUP_CONTEXT,ecosystem:noGroupNote()};
+      return store.contextForGroup(context.group.id,options);
+    }
+    if(!context.projectId) return {...store.context(null,options),project:unboundProjectNote(context)};
     const result=readProjectContext(store,context.projectId,options);
     return context.notices ? {...result,notices:context.notices} : result;
   }));

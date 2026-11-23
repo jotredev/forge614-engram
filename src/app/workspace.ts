@@ -10,7 +10,7 @@ import type { Memory } from "../modules/memory";
 import type { Project } from "../modules/projects";
 import { projectIdentity } from "../modules/projects";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
-import { MemoryStore } from "./memory-store";
+import { MemoryStore, projectIdentityFor } from "./memory-store";
 import { missingWalSidecar, openWorkspaceDatabase } from "../infrastructure/sqlite/workspace-database";
 import { enrollEcosystem, updateIdentityFiles, type IdentityNotice } from "./project-identity";
 
@@ -61,7 +61,12 @@ export class MemoryWorkspace {
    */
   open(readonly = false): MemoryStore {
     this.config.read();
-    return openWorkspaceDatabase(this.config.databasePath, false, readonly, (path, options) => new MemoryStore(path, options));
+    const store = openWorkspaceDatabase(this.config.databasePath, false, readonly, (path, options) => new MemoryStore(path, options));
+    projectIdentityFor(store).configureCloud(() => {
+      const settings = this.config.read();
+      return Boolean(settings.postgresUrl && settings.installationId);
+    });
+    return store;
   }
 
   /** T6b: si a la base configurada le falta `-shm` junto a un encabezado ya en modo WAL, ver `missingWalSidecar`. */

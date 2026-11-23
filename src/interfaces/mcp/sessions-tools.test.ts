@@ -1,5 +1,7 @@
 /** Comprueba las herramientas MCP de `sessions-tools.ts`: sesión, resumen, línea de tiempo y contexto en cada alcance. */
 import { expect, setSystemTime, test } from "bun:test";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { registerMemoryTools } from "./memory-tools";
 import { registerSessionTools } from "./sessions-tools";
 import { sdkHarness } from "./__tests__/sdk-harness";
@@ -167,5 +169,52 @@ test("a session summary can be written to the ecosystem scope, with a groupInten
     expect((await h.call("memory_session_summary", { sessionId: "chat", summary, requestKey: "s1", scope: "ecosystem", groupIntent: "For the whole group" })).data).toEqual(saved);
     expect(h.store.getByTopicInGroup(group.id, "session/chat/summary")?.id).toBe(saved.memory.id);
     expect(h.store.getSession(projectId, "chat")).not.toBeNull();
+  } finally { await h.close(); }
+});
+
+test("memory orientation exposes shared memories when the bound directory has a conflicting project file", async () => {
+  const h = await sdkHarness(tools => { registerMemoryTools(tools); registerSessionTools(tools); });
+  try {
+    const started = (await h.call("memory_session_start", { sessionId: "original" })).data;
+    const privateMemory = h.store.save({ projectId: started.projectId, title: "Orientation", content: "Project orientation", type: "fact", pinned: true });
+    const shared = h.store.save({ projectId: null, scope: "shared", title: "Orientation", content: "Shared orientation", type: "fact", pinned: true });
+    const foreign = crypto.randomUUID();
+    writeFileSync(join(h.directory, ".forge614", "project.json"), JSON.stringify({ schemaVersion: 1, project: { id: foreign, name: "Copied" }, ecosystem: null }));
+    const output = (await h.call("memory_search", { query: "orientation" })).data;
+    expect(output.results).toEqual([expect.objectContaining({ memory: expect.objectContaining({ id: shared.id }) })]);
+    expect(output.project).toMatchObject({ status: "unbound", code: "PROJECT_BINDING_REQUIRED" });
+    const context = (await h.call("memory_context")).data;
+    expect(context.pinned).toEqual([expect.objectContaining({ id: shared.id })]);
+    expect(context.project.code).toBe("PROJECT_BINDING_REQUIRED");
+    expect(JSON.stringify(context)).not.toContain(privateMemory.id);
+    const blocked = (await h.call("memory_session_start", { sessionId: "blocked" })).data;
+    expect(blocked.code).toBe("PROJECT_BINDING_REQUIRED");
+    expect((await h.call("memory_save", { type: "fact", title: "Blocked", content: "Must not save" })).data.code).toBe("PROJECT_BINDING_REQUIRED");
+    expect(h.store.getProject(foreign)).toBeNull();
+  } finally { await h.close(); }
+});
+
+test("MCP reads the project and its group from a confirmed origin on another checkout", async () => {
+  const h = await sdkHarness(tools => { registerMemoryTools(tools); registerSessionTools(tools); });
+  try {
+    const first = join(h.directory, "first"), clone = join(h.directory, "recloned");
+    for (const [directory, origin] of [[first, "https://example.com/Org/Mcp.git"], [clone, "git@example.com:Org/Mcp.git"]] as const) {
+      mkdirSync(directory);
+      expect(Bun.spawnSync(["git", "-C", directory, "init", "--quiet"], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
+      expect(Bun.spawnSync(["git", "-C", directory, "remote", "add", "origin", origin], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
+    }
+    const saved = (await h.call("memory_save", { directory: first, type: "fact", title: "Portable memory", content: "Found in the clone", pinned: true })).data;
+    h.store.enableEcosystem();
+    const group = h.store.createGroup("team");
+    h.store.bindProjectToGroup(saved.projectId, group.id, "command");
+    expect((await h.call("memory_current_project", { directory: clone })).data).toMatchObject({
+      projectId: saved.projectId, group: { id: group.id, name: group.name },
+    });
+    const found = (await h.call("memory_search", { directory: clone, scope: "project", query: "Portable" })).data;
+    expect(found.results.map((row: { memory: { id: string } }) => row.memory.id)).toEqual([saved.id]);
+    const context = (await h.call("memory_context", { directory: clone })).data;
+    expect(context).toMatchObject({ pinned: [{ id: saved.id }], ecosystem: { status: "member", group: { id: group.id } } });
+    expect(h.store.projectDirectories(saved.projectId)).toHaveLength(1);
+    expect(existsSync(join(clone, ".forge614"))).toBe(false);
   } finally { await h.close(); }
 });
