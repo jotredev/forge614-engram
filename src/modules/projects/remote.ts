@@ -61,6 +61,13 @@ export function legacyOriginKey(origin: string): string {
   return origin.slice(0, slash).replace(/:\d+$/u, "") + origin.slice(slash);
 }
 
+/** Verifica una clave recibida por réplica sin perder un puerto explícito. */
+export function isIdentityOriginKey(value: string): boolean {
+  const host = value.slice(0, value.indexOf("/"));
+  const protocol = host.endsWith(":443") ? "ssh" : "https";
+  return normalizeIdentityOrigin(`${protocol}://${value}`) === value;
+}
+
 /**
  * Normaliza la URL de un remoto de Git a la forma `host/ruta`, para que dos formas distintas del
  * mismo remoto (con o sin `.git`, `https://` o `ssh://`/scp, con o sin credenciales embebidas, con o

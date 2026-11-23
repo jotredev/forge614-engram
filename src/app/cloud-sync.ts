@@ -6,6 +6,8 @@
  */
 import type { Database } from "../infrastructure/sqlite/connection";
 import type { ChangeRow } from "../infrastructure/postgres/replica";
+import { cloudDownloadProgress, sameCloudReplica, type CloudDownloadProgress } from "../infrastructure/sqlite/schema";
+import { MemoryError } from "../shared/errors";
 import { applyCloudChanges } from "./cloud-apply";
 
 /**
@@ -17,6 +19,7 @@ export interface CloudReplica {
   pushChanges(installationId: string, rows: { changeId: string; kind: string; op: "insert" | "update" | "delete"; payload: unknown }[]): Promise<{ ids: number[] }>;
   /** Baja cambios posteriores a `since`; ver `PostgresReplica.pullChanges`. */
   pullChanges(since: number, limit?: number, signal?: AbortSignal): Promise<ChangeRow[]>;
+  pullProjectIdentitySettings?(since: number, through: number, limit?: number, signal?: AbortSignal): Promise<ChangeRow[]>;
   /** Cierra la conexión; ver `PostgresReplica.close`. */
   close(): Promise<void>;
 }
@@ -43,22 +46,28 @@ interface OutboxRow { readonly id: number; readonly change_id: string; readonly 
  * @param onProgress Opcional: se llama después de confirmar cada lote con lo subido acumulado y el total pendiente al empezar (si la cola crece a mitad, el total pasa a ser lo subido).
  * @returns Cuántas filas se subieron en total (la suma de todos los lotes).
  */
-export async function uploadOutbox(db: Database, replica: CloudReplica, installationId: string, onProgress?: (progress: CloudProgress) => void): Promise<number> {
+export async function uploadOutbox(db: Database, replica: CloudReplica, installationId: string, onProgress?: (progress: CloudProgress) => void,
+    expected?: CloudDownloadProgress): Promise<number> {
+  const initial = expected ?? cloudDownloadProgress(db);
   let uploaded = 0;
   // Total pendiente al empezar (el mismo dato de `cloudQueueStatus().pending`); solo se consulta si alguien escucha el avance.
   let total = onProgress ? (db.query("SELECT COUNT(*) AS n FROM cloud_outbox").get() as { n: number }).n : 0;
   for (;;) {
     // Se relee la cola en cada vuelta: un guardado nuevo durante la subida entra en el siguiente lote, no en este.
-    const rows = db.query("SELECT id, change_id, kind, op, payload FROM cloud_outbox ORDER BY id LIMIT ?").all(UPLOAD_BATCH_SIZE) as OutboxRow[];
-    if (rows.length === 0) return uploaded;
+    const rows = db.transaction(() => {
+      if (!sameCloudReplica(initial, cloudDownloadProgress(db))) return null;
+      return db.query("SELECT id, change_id, kind, op, payload FROM cloud_outbox ORDER BY id LIMIT ?").all(UPLOAD_BATCH_SIZE) as OutboxRow[];
+    }).deferred();
+    if (!rows?.length) return uploaded;
     await replica.pushChanges(installationId, rows.map(row => ({
       changeId: row.change_id, kind: row.kind, op: row.op, payload: JSON.parse(row.payload),
     })));
     // Solo se borran los ids que de verdad se subieron: una fila encolada después de leer `rows` no está en esta lista.
     const ids = rows.map(row => row.id);
     db.transaction(() => {
+      if (!sameCloudReplica(initial, cloudDownloadProgress(db))) return;
       db.query(`DELETE FROM cloud_outbox WHERE id IN (${ids.map(() => "?").join(",")})`).run(...ids);
-    })();
+    }).immediate();
     uploaded += rows.length;
     if (uploaded > total) total = uploaded; // La cola creció a mitad de la subida: nunca "2 500 de 2 426".
     onProgress?.({ phase: "upload", done: uploaded, total });
@@ -79,20 +88,39 @@ export async function uploadOutbox(db: Database, replica: CloudReplica, installa
  * @returns Cuántas filas se aplicaron de verdad (sin contar las propias, las saltadas ni las de conflicto
  * que ya se cuentan como aplicadas en `applyCloudChanges`; ver esa función para el detalle).
  */
-export async function downloadChanges(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal, onProgress?: (progress: CloudProgress) => void): Promise<number> {
+export async function downloadChanges(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal, onProgress?: (progress: CloudProgress) => void,
+    expected?: CloudDownloadProgress): Promise<number> {
+  if (signal?.aborted) return 0;
+  const initial = expected ?? cloudDownloadProgress(db);
   let applied = 0;
   let read = 0;
   for (;;) {
     if (signal?.aborted) return applied;
-    const since = (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
-    const rows = await replica.pullChanges(since, DOWNLOAD_BATCH_SIZE, signal);
+    const progress = cloudDownloadProgress(db);
+    if (!sameCloudReplica(initial, progress)) return applied;
+    const { general, identity } = progress;
+    if (identity !== null && identity < general && replica.pullProjectIdentitySettings) {
+      const settings = await replica.pullProjectIdentitySettings(identity, general, DOWNLOAD_BATCH_SIZE, signal);
+      if (signal?.aborted) return applied;
+      if (settings.some(row => row.kind !== "project_identity_settings" || row.id <= identity || row.id > general)) {
+        throw new MemoryError("SYNC_INVALID", "La réplica devolvió una página de identidad fuera del intervalo solicitado.");
+      }
+      const through = settings.length === DOWNLOAD_BATCH_SIZE ? settings.at(-1)!.id : general;
+      applied += applyCloudChanges(db, settings, installationId, { expected: progress, identityThrough: through }).applied;
+      read += settings.length;
+      if (settings.length) onProgress?.({ phase: "download", done: read });
+      continue;
+    }
+    const rows = await replica.pullChanges(general, DOWNLOAD_BATCH_SIZE, signal);
     // El tope pudo vencer mientras `pullChanges` seguía en el aire: no se aplica nada bajado tarde.
     if (signal?.aborted) return applied;
-    if (rows.length === 0) return applied;
-    applied += applyCloudChanges(db, rows, installationId).applied;
+    const complete = rows.length < DOWNLOAD_BATCH_SIZE;
+    if (rows.length || (identity !== null && !progress.complete && identity === general)) {
+      applied += applyCloudChanges(db, rows, installationId, { expected: progress, complete }).applied;
+    }
     read += rows.length;
-    onProgress?.({ phase: "download", done: read });
-    if (rows.length < DOWNLOAD_BATCH_SIZE) return applied;
+    if (rows.length) onProgress?.({ phase: "download", done: read });
+    if (complete) return applied;
   }
 }
 
@@ -107,8 +135,12 @@ export async function downloadChanges(db: Database, replica: CloudReplica, insta
  * @param onProgress Opcional: avisos de avance de la subida y de la bajada; solo lo pasa `sync` en una terminal.
  * @returns Cuántas filas se subieron y cuántas se bajaron y aplicaron de verdad.
  */
-export async function runCloudCycle(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal, onProgress?: (progress: CloudProgress) => void): Promise<{ uploaded: number; downloaded: number }> {
-  const uploaded = await uploadOutbox(db, replica, installationId, onProgress);
-  const downloaded = await downloadChanges(db, replica, installationId, signal, onProgress);
+export async function runCloudCycle(db: Database, replica: CloudReplica, installationId: string, signal?: AbortSignal,
+    onProgress?: (progress: CloudProgress) => void, fingerprint?: string): Promise<{ uploaded: number; downloaded: number }> {
+  const initial = cloudDownloadProgress(db);
+  if (fingerprint !== undefined && initial.fingerprint !== fingerprint) return { uploaded: 0, downloaded: 0 };
+  const uploaded = await uploadOutbox(db, replica, installationId, onProgress, initial);
+  if (signal?.aborted || !sameCloudReplica(initial, cloudDownloadProgress(db))) return { uploaded, downloaded: 0 };
+  const downloaded = await downloadChanges(db, replica, installationId, signal, onProgress, initial);
   return { uploaded, downloaded };
 }

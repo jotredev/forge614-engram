@@ -6,6 +6,8 @@ import { schemaFeatures } from "./schema";
 type OriginCandidate = { project: Project; verified: boolean };
 type OriginRow = Project & { verified: 0 | 1 };
 type Setting = "origin" | "group_policy";
+// La evidencia inferida al actualizar 1.10.0 nunca gana contra una confirmación registrada.
+const BACKFILLED_ORIGIN_TIME = "1970-01-01T00:00:00.000Z";
 
 export function confirmedProjectOrigin(db: Database, projectId: string): string | null {
   return getSetting(db, projectId, "origin");
@@ -44,7 +46,9 @@ export function findProjectsByOrigin(db: Database, origin: string): OriginCandid
 function putSetting(db: Database, projectId: string, setting: Setting, value: string, updatedAt: string): void {
   db.query(`INSERT INTO project_identity_settings(project_id,setting,value,updated_at) VALUES(?,?,?,?)
     ON CONFLICT(project_id,setting) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
-    WHERE project_identity_settings.value<>excluded.value`).run(projectId, setting, value, updatedAt);
+    WHERE project_identity_settings.value<>excluded.value OR
+      (project_identity_settings.updated_at=? AND excluded.updated_at<>?)`).run(projectId, setting, value, updatedAt,
+        BACKFILLED_ORIGIN_TIME, BACKFILLED_ORIGIN_TIME);
 }
 
 export function requireExplicitProjectGroup(db: Database, projectId: string): void {
@@ -55,6 +59,10 @@ export function requireExplicitProjectGroup(db: Database, projectId: string): vo
 export function setConfirmedProjectOrigin(db: Database, projectId: string, origin: string): void {
   const updatedAt = new Date().toISOString();
   putSetting(db, projectId, "origin", origin, updatedAt);
+  mirrorOrigin(db, projectId, origin, updatedAt);
+}
+
+function mirrorOrigin(db: Database, projectId: string, origin: string, updatedAt: string): void {
   db.query(`INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)
     ON CONFLICT(project_id) DO UPDATE SET origin=excluded.origin,updated_at=excluded.updated_at
     WHERE project_remotes.origin<>excluded.origin`).run(projectId, legacyOriginKey(origin), updatedAt);
@@ -62,25 +70,25 @@ export function setConfirmedProjectOrigin(db: Database, projectId: string, origi
 
 /** Recupera una clave única aportada por los vínculos Git y exige concordancia si hay una pista histórica. */
 export function backfillProjectOrigins(db: Database): void {
-  const bindings = db.query(`SELECT b.projectId AS project_id, r.origin, b.directory FROM project_bindings b
+  const bindings = db.query(`SELECT b.projectId AS project_id, r.origin, b.directory, COALESCE(r.updated_at, b.createdAt) AS updated_at FROM project_bindings b
     LEFT JOIN project_remotes r ON r.project_id=b.projectId ORDER BY b.projectId, b.directory`).all() as
-    { project_id: string; origin: string | null; directory: string }[];
-  const evidence = new Map<string, { legacy: string | null; origins: Set<string> }>();
-  for (const { project_id, origin, directory } of bindings) {
+    { project_id: string; origin: string | null; directory: string; updated_at: string }[];
+  const evidence = new Map<string, { legacy: string | null; origins: Set<string>; updatedAt: string }>();
+  for (const { project_id, origin, directory, updated_at } of bindings) {
     const raw = readBoundOrigin(directory);
     const key = raw === null ? null : normalizeIdentityOrigin(raw);
     if (key === null) continue;
-    const entry = evidence.get(project_id) ?? { legacy: origin, origins: new Set<string>() };
+    const entry = evidence.get(project_id) ?? { legacy: origin, origins: new Set<string>(), updatedAt: updated_at };
     entry.origins.add(key);
+    if (updated_at > entry.updatedAt) entry.updatedAt = updated_at;
     evidence.set(project_id, entry);
   }
-  const now = new Date().toISOString();
-  // La copia histórica y su cola de réplica se conservan tal como estaban.
-  for (const [projectId, { legacy, origins }] of evidence) {
+  for (const [projectId, { legacy, origins, updatedAt }] of evidence) {
     if (origins.size !== 1) continue;
     const [key] = origins;
-    if (legacy === null) setConfirmedProjectOrigin(db, projectId, key!);
-    else if (legacyOriginKey(key!) === legacy) putSetting(db, projectId, "origin", key!, now);
+    if (legacy !== null && legacyOriginKey(key!) !== legacy) continue;
+    putSetting(db, projectId, "origin", key!, BACKFILLED_ORIGIN_TIME);
+    if (legacy === null) mirrorOrigin(db, projectId, key!, updatedAt);
   }
 }
 

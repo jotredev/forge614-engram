@@ -10,7 +10,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { SQL } from "bun";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -220,6 +220,9 @@ integration("a historic cloud remote alone requires an explicit binding", async 
   const saved = JSON.parse((await run(macA, repoA, "save", "--project-id", bound.project.projectId, "--title", "From A's repo", "--content", "Bound by Git remote")).stdout);
   const url = await freshDatabase("t6_scenario5");
   expect((await runIn(macA, "cloud", "on", "--postgres-url", url)).code).toBe(0);
+  // Version 1.10 only publishes the three-field compatibility row and the known record types.
+  const legacy = new Database(join(macA.engramDir, "engram.db"));
+  try { legacy.query("DELETE FROM cloud_outbox WHERE kind='project_identity_settings'").run(); } finally { legacy.close(); }
   expect((await runIn(macA, "sync")).code).toBe(0);
   expect((await runIn(macB, "init", "--json")).code).toBe(0);
   expect((await runIn(macB, "cloud", "on", "--postgres-url", url)).code).toBe(0);
@@ -282,4 +285,65 @@ integration("a secret arriving from the cloud is rejected without stopping the r
   expect(projects.map(p => p.name)).toContain("From the cloud batch");
   const notice = JSON.parse((await runIn(macB, "session-start", "--directory", macB.home, "--session-id", "watch-secret")).stdout);
   expect(notice.sessionNotice).toContain("Cloud sync: 1 change from the cloud was skipped");
+}, postgresTestTimeoutMs);
+
+integration("a replica recovers confirmed origins, memories and explicit group policy before resolving new checkouts", async () => {
+  const a = createMac(), b = createMac();
+  const repository = async (origin: string) => {
+    const folder = mkdtempSync(join(tmpdir(), "forge614-confirmed-origin-"));
+    directories.push(folder);
+    expect(await Bun.spawn(["git", "-C", folder, "init", "--quiet"], { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
+    expect(await Bun.spawn(["git", "-C", folder, "remote", "add", "origin", origin], { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
+    return folder;
+  };
+  const first = await repository("https://example.com/Org/Original.git");
+  const own = await repository("ssh://git@example.com:2222/Org/Independent.git");
+  const clone = await repository("git@example.com:Org/Original.git");
+  const cloneOwn = await repository("ssh://git@EXAMPLE.com:2222/Org/Independent");
+  const runOk = async (mac: typeof a, folder: string, ...args: string[]) => {
+    const result = await run(mac, folder, ...args);
+    expect(result.code, args.join(" ")).toBe(0);
+    return JSON.parse(result.stdout);
+  };
+  const original = (await runOk(a, first, "init", "--directory", first, "--json")).project.projectId;
+  const independent = (await runOk(a, own, "project-create", "--name", "Independent", "--directory", own)).projectId;
+  const { group: inherited } = await runOk(a, first, "group-create", "--name", "original-team");
+  const { group: explicit } = await runOk(a, own, "group-create", "--name", "independent-team");
+  await runOk(a, first, "group-bind", "--project-id", original, "--group", inherited.id);
+  await runOk(a, own, "group-bind", "--project-id", independent, "--group", explicit.id);
+  const memory = await runOk(a, first, "save", "--project-id", original, "--title", "Portable fact", "--content", "Original checkout");
+  const target = await freshDatabase("identity_catalog_two_macs");
+  await runOk(a, first, "cloud", "on", "--postgres-url", target);
+  await runOk(a, first, "sync");
+  await runOk(b, clone, "init", "--json");
+  await runOk(b, clone, "cloud", "on", "--postgres-url", target);
+
+  const pending = await run(b, clone, "session-start", "--directory", clone, "--session-id", "early");
+  expect(pending.code).toBe(1);
+  expect(JSON.parse(pending.stderr).code).toBe("PROJECT_BINDING_REQUIRED");
+  await runOk(b, clone, "sync");
+  const arrived = await runOk(b, clone, "startup-context", "--json", "--directory", clone);
+  expect(arrived.project).toMatchObject({ source: "path", projectId: original, context: { recent: [{ id: memory.id }] } });
+  expect(arrived.ecosystem).toMatchObject({ status: "member", group: { id: inherited.id } });
+  expect(existsSync(join(clone, ".forge614"))).toBe(false);
+
+  const metadata = join(cloneOwn, ".forge614");
+  mkdirSync(metadata);
+  const copiedFile = JSON.stringify({ schemaVersion: 1, project: { id: independent, name: "Independent" },
+    ecosystem: { id: inherited.id, name: inherited.name } });
+  writeFileSync(join(metadata, "project.json"), copiedFile);
+  writeFileSync(join(cloneOwn, "forge614.node.json"), JSON.stringify({ ecosystem: inherited.name }));
+  expect((await runOk(b, cloneOwn, "session-start", "--directory", cloneOwn, "--session-id", "independent-session")).projectId).toBe(independent);
+  const current = await runOk(b, cloneOwn, "startup-context", "--json", "--directory", cloneOwn);
+  expect(current.ecosystem).toMatchObject({ status: "member", group: { id: explicit.id } });
+  expect(readFileSync(join(metadata, "project.json"), "utf8")).toBe(copiedFile);
+
+  await runOk(b, clone, "cloud", "off");
+  expect((await runOk(b, clone, "startup-context", "--json", "--directory", clone)).project.projectId).toBe(original);
+  const db = new Database(join(b.engramDir, "engram.db"), { readonly: true });
+  try {
+    expect(db.query("SELECT initial_download_complete FROM cloud_identity_state").get()).toEqual({ initial_download_complete: 1 });
+    expect(db.query("SELECT last_applied_id FROM cloud_identity_state").get()).toEqual(db.query("SELECT last_applied_id FROM cloud_state").get());
+    expect(db.query("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 2 });
+  } finally { db.close(); }
 }, postgresTestTimeoutMs);

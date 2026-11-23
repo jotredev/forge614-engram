@@ -8,9 +8,11 @@
  */
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { enableCloud, initialize } from "../infrastructure/sqlite/schema";
+import { join } from "node:path";
+import { withDirectory } from "../infrastructure/__test-support__/fixtures";
+import { enableCloud, ensureProjectIdentitySchema, initialize } from "../infrastructure/sqlite/schema";
 import { createProject } from "../infrastructure/sqlite/projects";
-import { save, saveSessionSummary, saveWithSession, startSession } from "../infrastructure/sqlite/writes";
+import { bindProjectDirectory, save, saveSessionSummary, saveWithSession, startSession } from "../infrastructure/sqlite/writes";
 import type { ChangeRow } from "../infrastructure/postgres/replica";
 import { applyCloudChanges } from "./cloud-apply";
 
@@ -353,3 +355,53 @@ test("punta a punta: A guarda 2 recuerdos con sesión y resumen, B los recibe id
   expect((b.query("SELECT count(*) AS n FROM session_summaries WHERE sessionId='s1'").get() as { n: number }).n).toBe(1);
   expect((b.query("SELECT count(*) AS n FROM cloud_outbox").get() as { n: number }).n).toBe(0);
 });
+
+test("confirmed origins and group policy sync independently and reject invalid or sensitive keys", () => {
+  const db = freshCloudDb();
+  const project = createProject(db, "Catalog");
+  ensureProjectIdentitySchema(db);
+  db.exec("DELETE FROM cloud_outbox");
+  const now = "2026-01-01T00:00:00.000Z";
+  const remote = "example.com:443/Org/Repo";
+  const sensitive = "AKIAABCDEFGHIJKLMNOP";
+  const setting = (id: number, key: string, value: string): ChangeRow => ({
+    id, changeId: `identity-${id}`, installationId: "remote", kind: "project_identity_settings", op: "insert",
+    payload: { project_id: project.projectId, setting: key, value, updated_at: now }, createdAt: now,
+  });
+  const applied = applyCloudChanges(db, [
+    setting(1, "origin", remote),
+    setting(2, "group_policy", "explicit"),
+    setting(3, "group_policy", "implicit"),
+    setting(4, "origin", `example.com/Org/${sensitive}`),
+    setting(5, "origin", "https://example.com/Org/Repo"),
+    setting(6, "origin", "/local/path"),
+  ], "local");
+  expect(applied).toMatchObject({ applied: 2, skipped: 4, lastAppliedId: 6 });
+  expect(db.query("SELECT setting,value FROM project_identity_settings ORDER BY setting").all()).toEqual([
+    { setting: "group_policy", value: "explicit" }, { setting: "origin", value: remote },
+  ]);
+  expect(db.query("SELECT * FROM cloud_outbox").all()).toEqual([]);
+  expect(JSON.stringify(notices(db))).not.toContain(sensitive);
+  db.close();
+});
+
+test("an older checkout's backfilled port cannot replace a confirmed move with an earlier clock", () => withDirectory(root => {
+  const db = freshCloudDb();
+  const project = createProject(db, "Port transition");
+  expect(Bun.spawnSync(["git", "-C", root, "init", "--quiet"], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
+  expect(Bun.spawnSync(["git", "-C", root, "remote", "add", "origin", "ssh://git@example.com:2222/Org/Repo.git"],
+    { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
+  bindProjectDirectory(db, join(root, ".git"), project.projectId);
+  db.query("INSERT INTO project_remotes VALUES(?,?,?)").run(project.projectId, "example.com/Org/Repo", "2099-01-01T00:00:00.000Z");
+  ensureProjectIdentitySchema(db);
+  const current = () => db.query("SELECT value FROM project_identity_settings WHERE setting='origin'").get();
+  expect(current()).toEqual({ value: "example.com:2222/Org/Repo" });
+  const now = "2026-01-01T00:00:00.000Z";
+  applyCloudChanges(db, [{
+    id: 1, changeId: "move", installationId: "other installation", kind: "project_identity_settings", op: "update",
+    payload: { project_id: project.projectId, setting: "origin", value: "example.com:2022/Org/Repo", updated_at: now }, createdAt: now,
+  }], "local");
+  expect(current()).toEqual({ value: "example.com:2022/Org/Repo" });
+  expect(db.query("SELECT origin FROM project_remotes").get()).toEqual({ origin: "example.com/Org/Repo" });
+  db.close();
+}));

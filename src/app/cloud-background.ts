@@ -8,8 +8,8 @@
  * de fondo) y `memory_context`/`startup-context` (la espera de arranque), ambas a través de
  * `src/app/index.ts`.
  */
-import type { MemoryStore } from "./memory-store";
-import { cloudSettings, connectCloudReplica } from "./cloud-settings";
+import { projectIdentityFor, type MemoryStore } from "./memory-store";
+import { cloudSettings, connectCloudReplica, remoteFingerprint } from "./cloud-settings";
 import type { CloudReplica } from "./cloud-sync";
 export type { CloudReplica } from "./cloud-sync";
 
@@ -44,6 +44,7 @@ const DEFAULT_WAIT_TIMEOUT_MS = 1_000;
 interface SharedCloudState {
   /** La conexión ya en marcha (o resuelta) a la réplica, o `null` si todavía no se pidió ninguna. */
   connection: Promise<CloudReplica> | null;
+  connectionUrl: string | null;
   /** El ciclo (subida+bajada, o solo bajada) que está en vuelo ahora mismo, o `null` si ninguno lo está. */
   cycle: Promise<void> | null;
   /** El controlador de cancelación del ciclo en vuelo (el mismo `cycle`), o `null` junto con él. */
@@ -55,7 +56,7 @@ const sharedStates = new WeakMap<MemoryStore, SharedCloudState>();
 /** Da el estado compartido de `store`, creándolo la primera vez que se pide. */
 function stateOf(store: MemoryStore): SharedCloudState {
   let state = sharedStates.get(store);
-  if (!state) { state = { connection: null, cycle: null, cycleAbort: null, hasBackground: false }; sharedStates.set(store, state); }
+  if (!state) { state = { connection: null, connectionUrl: null, cycle: null, cycleAbort: null, hasBackground: false }; sharedStates.set(store, state); }
   return state;
 }
 
@@ -67,10 +68,19 @@ function stateOf(store: MemoryStore): SharedCloudState {
  * @param connect Fábrica de la conexión a usar si todavía no hay ninguna en marcha.
  * @returns La conexión en marcha (nueva o ya existente).
  */
-function lazyConnection(state: SharedCloudState, connect: () => Promise<CloudReplica>): Promise<CloudReplica> {
+function releaseConnection(state: SharedCloudState): void {
+  const pending = state.connection;
+  state.connection = null;
+  state.connectionUrl = null;
+  void pending?.then(replica => replica.close()).catch(() => {});
+}
+
+function lazyConnection(state: SharedCloudState, url: string, connect: () => Promise<CloudReplica>): Promise<CloudReplica> {
+  if (state.connectionUrl !== url) releaseConnection(state);
   if (!state.connection) {
     const attempt = connect();
     state.connection = attempt;
+    state.connectionUrl = url;
     attempt.catch(() => { if (state.connection === attempt) state.connection = null; });
   }
   return state.connection;
@@ -109,11 +119,9 @@ function startTrackedCycle(state: SharedCloudState, body: (signal: AbortSignal) 
 export function startCloudBackground(store: MemoryStore, options: CloudBackgroundOptions = {}): CloudBackgroundTask | null {
   // Guardia de nube: sin nivel 12 o sin configuración completa, no se conecta nada.
   if (!store.cloudEnabled()) return null;
-  const settings = cloudSettings();
-  if (!settings) return null;
+  if (!cloudSettings()) return null;
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
   const saveDelayMs = options.saveDelayMs ?? DEFAULT_SAVE_DELAY_MS;
-  const connect = options.connect ?? (() => connectCloudReplica(settings.postgresUrl));
   const state = stateOf(store);
   state.hasBackground = true;
 
@@ -121,18 +129,21 @@ export function startCloudBackground(store: MemoryStore, options: CloudBackgroun
   let intervalHandle: ReturnType<typeof setInterval> | null = null;
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Conexión perezosa compartida: se crea una sola vez por instalación, incluso si varios ciclos la piden a la vez.
-  const connection = (): Promise<CloudReplica> => lazyConnection(state, connect);
-
   // Corre un ciclo nuevo, o se une al que ya esté en vuelo: nunca se llama `applyCloudChanges` dos veces a la vez.
   const runCycle = (): Promise<void> => {
     if (state.cycle) return state.cycle;
     return startTrackedCycle(state, async signal => {
       if (stopped) return;
+      const settings = cloudSettings();
+      if (!settings || !projectIdentityFor(store).cloudMatches(remoteFingerprint(settings.postgresUrl))) {
+        releaseConnection(state);
+        return;
+      }
       let replica: CloudReplica;
-      try { replica = await connection(); }
+      try { replica = await lazyConnection(state, settings.postgresUrl, options.connect ?? (() => connectCloudReplica(settings.postgresUrl))); }
       catch { return; } // D7: un error de conexión se traga en silencio; el siguiente ciclo reintenta.
-      if (stopped) return; // Se detuvo mientras conectaba: no se toca un store que puede estar cerrado.
+      if (stopped || signal.aborted || cloudSettings()?.postgresUrl !== settings.postgresUrl
+          || !projectIdentityFor(store).cloudMatches(remoteFingerprint(settings.postgresUrl))) return;
       try { await store.syncCloudCycle(replica, settings.installationId, signal); }
       catch { /* D7: cualquier error de red del ciclo se traga en silencio; se reintenta en el siguiente tick. */ }
     });
@@ -159,9 +170,7 @@ export function startCloudBackground(store: MemoryStore, options: CloudBackgroun
       if (saveTimeout) clearTimeout(saveTimeout);
       intervalHandle = null; saveTimeout = null;
       state.hasBackground = false;
-      const pending = state.connection; state.connection = null;
-      // Se cierra sin esperar: la tarea de fondo ya no necesita la conexión, y el cierre del servidor no debe demorarse por ella.
-      void pending?.then(replica => replica.close()).catch(() => {});
+      releaseConnection(state);
     },
   };
 }
@@ -179,16 +188,18 @@ export function startCloudBackground(store: MemoryStore, options: CloudBackgroun
 export async function waitForCloud(store: MemoryStore, timeoutMs = DEFAULT_WAIT_TIMEOUT_MS): Promise<void> {
   if (!store.cloudEnabled()) return;
   const settings = cloudSettings();
-  if (!settings) return;
+  if (!settings || !projectIdentityFor(store).cloudMatches(remoteFingerprint(settings.postgresUrl))) return;
   const state = stateOf(store);
   // Sin una tarea de fondo dueña de la conexión, esta llamada es la única que la va a usar: le toca cerrarla al terminar.
   const ownsConnection = !state.hasBackground;
-  const connection = (): Promise<CloudReplica> => lazyConnection(state, () => connectCloudReplica(settings.postgresUrl));
+  const connection = (): Promise<CloudReplica> => lazyConnection(state, settings.postgresUrl, () => connectCloudReplica(settings.postgresUrl));
 
   const run = async (): Promise<void> => {
     if (state.cycle) { await state.cycle; return; } // Se une al ciclo (propio o de la tarea de fondo) ya en vuelo.
     await startTrackedCycle(state, async signal => {
       const replica = await connection();
+      if (signal.aborted || cloudSettings()?.postgresUrl !== settings.postgresUrl
+          || !projectIdentityFor(store).cloudMatches(remoteFingerprint(settings.postgresUrl))) return;
       await store.downloadCloudChanges(replica, settings.installationId, signal);
     });
   };
@@ -202,9 +213,7 @@ export async function waitForCloud(store: MemoryStore, timeoutMs = DEFAULT_WAIT_
   } finally {
     clearTimeout(timer);
     if (ownsConnection) {
-      const pending = state.connection; state.connection = null;
-      // Se cierra sin esperar: el proceso (por ejemplo, la CLI) no debe demorarse por esta conexión.
-      void pending?.then(replica => replica.close()).catch(() => {});
+      releaseConnection(state);
     }
   }
 }

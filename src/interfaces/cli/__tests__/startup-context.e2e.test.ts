@@ -357,11 +357,22 @@ test("startup-context with cloud configured against a mute TCP endpoint still pr
     writeFileSync(join(userDirectory, ".forge614", "memory", ".env"),
       `FORMAT_VERSION="3"\nSTORAGE="sqlite"\nPOSTGRES_URL="postgresql://u@127.0.0.1:${mute.port}/db?sslmode=disable"\nFORGE614_ENGRAM_INSTALLATION_ID="3f6a9e2c-1b3d-4a5e-9c7f-0a1b2c3d4e5f"\n`,
       { mode: 0o600 });
+    const checkout = temporary();
+    expect(await Bun.spawn(["git", "-C", checkout, "init", "--quiet"], { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
+    expect(await Bun.spawn(["git", "-C", checkout, "remote", "add", "origin", "https://example.com/Org/Reclone.git"],
+      { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
     const start = Date.now();
-    const result = await runCli(root, userDirectory, "startup-context", "--directory", temporary(), "--json");
+    const result = await runCli(root, userDirectory, "startup-context", "--directory", checkout, "--json");
     expect(Date.now() - start).toBeLessThanOrEqual(1500);
     expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ format: 1, project: { status: "unbound" } });
+    expect(JSON.parse(result.stdout)).toMatchObject({ format: 1, project: {
+      status: "unbound", notices: [{ code: "PROJECT_BINDING_REQUIRED" }],
+    } });
+    const readonly = new Database(dbPath, { readonly: true });
+    try {
+      expect(readonly.query("PRAGMA user_version").get()).toEqual({ user_version: 12 });
+      expect(readonly.query("SELECT * FROM project_bindings").all()).toEqual([]);
+    } finally { readonly.close(); }
   } finally { mute.stop(true); }
 }, 40000);
 

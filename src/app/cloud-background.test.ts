@@ -9,11 +9,12 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { MemoryStore } from "./memory-store";
+import { MemoryStore } from "./memory-store";
 import { startCloudBackground, waitForCloud, type CloudReplica } from "./cloud-background";
 
 let directory = "";
 let previousHome: string | undefined;
+const stores: MemoryStore[] = [];
 // Cada prueba usa su propio $FORGE614_HOME temporal (mismo patrón que cloud-settings.test.ts), con una
 // configuración de nube completa ya escrita, para que `cloudSettings()` (que estas funciones llaman de
 // verdad) encuentre postgresUrl e installationId sin depender de qué prueba corrió antes.
@@ -28,6 +29,7 @@ beforeEach(() => {
     { mode: 0o600 });
 });
 afterEach(() => {
+  for (const store of stores.splice(0)) store.close();
   if (previousHome === undefined) delete process.env.FORGE614_HOME; else process.env.FORGE614_HOME = previousHome;
   rmSync(directory, { recursive: true, force: true });
 });
@@ -43,11 +45,14 @@ function fakeStore(overrides: {
   syncCloudCycle?: MemoryStore["syncCloudCycle"];
   downloadCloudChanges?: MemoryStore["downloadCloudChanges"];
 } = {}): MemoryStore {
-  return {
+  const store = new MemoryStore(":memory:");
+  store.enableCloud();
+  stores.push(store);
+  return Object.assign(store, {
     cloudEnabled: overrides.cloudEnabled ?? (() => true),
     syncCloudCycle: overrides.syncCloudCycle ?? (async () => ({ uploaded: 0, downloaded: 0 })),
     downloadCloudChanges: overrides.downloadCloudChanges ?? (async () => {}),
-  } as unknown as MemoryStore;
+  });
 }
 /** Un `AbortSignal` es "abortado antes de tiempo" si ya lo está cuando la prueba lo revisa; ayuda a leer las aserciones. */
 const aborted = (signal?: AbortSignal) => signal?.aborted === true;

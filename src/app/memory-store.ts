@@ -14,7 +14,7 @@ import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
 import { intelligenceEnabled } from "../infrastructure/sqlite/intelligence";
 import * as board from "../infrastructure/sqlite/board";
-import { cloudEnabled,type CloudEnrolment,enableCloud,enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization,ensureProjectIdentitySchema,lastAppliedId,schemaFeatures } from "../infrastructure/sqlite/schema";
+import { claimCloudReplica,cloudDownloadProgress,cloudEnabled,cloudIdentityCatalogReady,type CloudEnrolment,enableCloud,enableEcosystem,type EcosystemEnrolment,enableIntelligence,type IntelligenceEnrolment,enableProjectBindings,enableSearchReinforcement,enableSessionLifecycle,enableSynchronization,ensureProjectIdentitySchema,lastAppliedId,schemaFeatures } from "../infrastructure/sqlite/schema";
 import { cloudQueueStatus,takeCloudNotices } from "../infrastructure/sqlite/cloud-notices";
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
@@ -22,7 +22,7 @@ import { startupBlock } from "../infrastructure/sqlite/startup";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
 import * as writes from "../infrastructure/sqlite/writes";
 import { downloadChanges,runCloudCycle,type CloudProgress,type CloudReplica } from "./cloud-sync";
-import { cloudSettings } from "./cloud-settings";
+import { cloudSettings,remoteFingerprint } from "./cloud-settings";
 import type { Group,GroupSource,GroupSummary,IdentityEvent,MembershipSource,ProjectGroup } from "../modules/ecosystem";
 import { type Memory,type MemoryVersion,type SaveInput,type SearchResult,type SearchScope } from "../modules/memory";
 import { type Project } from "../modules/projects";
@@ -30,7 +30,7 @@ import { type ContextInput,type ContextResult,type PreviewResult,type StartupBlo
 import { type CloudNotice,type ParallelSession,type PreviousSession,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../modules/sessions";
 import type { SyncSnapshot } from "../modules/synchronization";
 
-function projectIdentityOperations(db: ReturnType<typeof openDatabase>, cloudConfigured: () => boolean) {
+function projectIdentityOperations(db: ReturnType<typeof openDatabase>, configuredReplica: () => string | null) {
   return {
     write: <T>(operation: () => T): T => db.transaction(operation).immediate(),
     candidates: (origin: string) => findProjectsByOrigin(db, origin),
@@ -44,8 +44,18 @@ function projectIdentityOperations(db: ReturnType<typeof openDatabase>, cloudCon
     ensureSchema: () => !schemaFeatures(db)?.projectIdentity && ensureProjectIdentitySchema(db).migrated,
     resolveUnbound: (directory: string, name: string, available: (directory: string) => boolean, origin: string | null) =>
       projects.resolveProjectDirectory(db, directory, name, true, available, origin),
-    catalogReady: () => !cloudConfigured(),
-    configureCloud: (configured: () => boolean) => { cloudConfigured = configured; },
+    catalogReady: () => {
+      const fingerprint = configuredReplica();
+      return fingerprint === null || cloudIdentityCatalogReady(db, fingerprint);
+    },
+    configureCloud: (configured: () => string | null) => { configuredReplica = configured; },
+    cloudMatches: (fingerprint: string) => {
+      const stored = cloudDownloadProgress(db).fingerprint;
+      return stored === null || stored === fingerprint;
+    },
+    claimCloud: (fingerprint: string) => claimCloudReplica(db, fingerprint),
+    syncConfiguredCloud: (replica: CloudReplica, installationId: string, fingerprint: string, onProgress?: (progress: CloudProgress) => void) =>
+      runCloudCycle(db, replica, installationId, undefined, onProgress, fingerprint),
     startupBlock: (projectId: string | null, notice: string) => startupBlock(db, projectId, undefined, notice),
   };
 }
@@ -68,7 +78,10 @@ export class MemoryStore {
    */
   constructor(path?: string, options: { create?: boolean; readonly?: boolean } = {}) {
     this.db = path === undefined ? openDefaultDatabase(options) : openDatabase(path, options);
-    projectIdentityStores.set(this, projectIdentityOperations(this.db, () => path === undefined && cloudSettings() !== null));
+    projectIdentityStores.set(this, projectIdentityOperations(this.db, () => {
+      const settings = path === undefined ? cloudSettings() : null;
+      return settings ? remoteFingerprint(settings.postgresUrl) : null;
+    }));
   }
   /** Crea un proyecto nuevo con el nombre dado y devuelve su registro. */
   createProject(name: string): Project { return projects.createProject(this.db, name); }

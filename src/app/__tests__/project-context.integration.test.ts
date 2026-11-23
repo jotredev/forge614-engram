@@ -421,7 +421,7 @@ test("an enabled but unready cloud blocks new Git folder identities and keeps ex
   const path = join(temporary(), "engram.db");
   let configured = false;
   const database = store(path);
-  projectIdentityFor(database).configureCloud(() => configured);
+  projectIdentityFor(database).configureCloud(() => configured ? "replica" : null);
   database.enableProjectBindings();
   const original = repository(), clone = repository();
   git(original, "remote", "add", "origin", "https://example.com/Org/Cloud.git");

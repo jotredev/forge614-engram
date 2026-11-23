@@ -11,6 +11,7 @@ import type { Project } from "../modules/projects";
 import { projectIdentity } from "../modules/projects";
 import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 import { MemoryStore, projectIdentityFor } from "./memory-store";
+import { remoteFingerprint } from "./cloud-settings";
 import { missingWalSidecar, openWorkspaceDatabase } from "../infrastructure/sqlite/workspace-database";
 import { enrollEcosystem, updateIdentityFiles, type IdentityNotice } from "./project-identity";
 
@@ -64,7 +65,7 @@ export class MemoryWorkspace {
     const store = openWorkspaceDatabase(this.config.databasePath, false, readonly, (path, options) => new MemoryStore(path, options));
     projectIdentityFor(store).configureCloud(() => {
       const settings = this.config.read();
-      return Boolean(settings.postgresUrl && settings.installationId);
+      return settings.postgresUrl && settings.installationId ? remoteFingerprint(settings.postgresUrl) : null;
     });
     return store;
   }

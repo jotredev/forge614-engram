@@ -124,19 +124,21 @@ test("failed identity DDL rolls back and permits reopening and retrying", () => 
   } finally { db.close(); }
 }));
 
-test("enabling cloud over a local catalog preserves confirmed origin and enqueues the compatibility row once", () => withDatabase(db => {
+test("enabling cloud over a local catalog enqueues each confirmed and compatibility row once", () => withDatabase(db => {
   enableProjectBindings(db);
   const project = resolveProjectDirectory(db, "/repo/.git", "Repo", true, undefined, origin).project!;
   expect(version(db)).toEqual({ user_version: 13 });
   expect(enableCloud(db, "replica").migrated).toBe(true);
   expect(version(db)).toEqual({ user_version: 20 });
   expect(originSettings(db)).toEqual([{ project_id: project.projectId, value: key }]);
-  expect(db.query("SELECT kind, payload FROM cloud_outbox WHERE kind <> 'projects'").all()).toEqual([{
-    kind: "project_remotes",
-    payload: JSON.stringify({ project_id: project.projectId, origin: key, updated_at: (db.query("SELECT updated_at FROM project_remotes").get() as { updated_at: string }).updated_at }),
-  }]);
+  const traveling = db.query("SELECT kind, payload FROM cloud_outbox WHERE kind <> 'projects' ORDER BY id").all() as
+    { kind: string; payload: string }[];
+  expect(traveling.map(row => ({ kind: row.kind, value: JSON.parse(row.payload) }))).toEqual([
+    { kind: "project_remotes", value: { project_id: project.projectId, origin: key, updated_at: expect.any(String) } },
+    { kind: "project_identity_settings", value: { project_id: project.projectId, setting: "origin", value: key, updated_at: expect.any(String) } },
+  ]);
   expect(enableCloud(db, "replica").migrated).toBe(false);
-  expect(rows(db, "cloud_outbox")).toHaveLength(2);
+  expect(rows(db, "cloud_outbox")).toHaveLength(3);
 }));
 
 function historicalRemote(db: Database, projectId: string, remote = key): void {
@@ -166,7 +168,7 @@ test("only a single concordant Git origin can confirm a historical project remot
   bindProjectDirectory(db, root, nonGit.projectId);
   writeFileSync(join(root, "config"), `[remote "origin"]\n  url = ${origin}\n`);
   for (const project of [custom, absent, ambiguous, nonGit]) historicalRemote(db, project.projectId);
-  const previous = rows(db, "cloud_outbox");
+  const previous = rows(db, "cloud_outbox") as { kind: string; payload: string }[];
   const candidates = [custom, absent, ambiguous, nonGit].sort((a, b) => a.projectId.localeCompare(b.projectId));
   expect(findProjectsByOrigin(db, key)).toEqual(candidates.map(project => ({ project, verified: false })));
 
@@ -174,7 +176,12 @@ test("only a single concordant Git origin can confirm a historical project remot
   expect(originSettings(db)).toEqual([{ project_id: custom.projectId, value: "example.com:2222/Org/Repo" }]);
   expect(findProjectsByOrigin(db, "example.com:2222/Org/Repo")).toEqual(candidates.map(project => ({ project, verified: project === custom })));
   expect(findProjectsByOrigin(db, key)).toEqual(candidates.filter(project => project !== custom).map(project => ({ project, verified: false })));
-  expect(rows(db, "cloud_outbox")).toEqual(previous);
+  const outbox = rows(db, "cloud_outbox") as { kind: string; payload: string }[];
+  expect(outbox.slice(0, previous.length)).toEqual(previous);
+  expect(outbox.slice(previous.length).map(row => ({ kind: row.kind, data: JSON.parse(row.payload) }))).toEqual([{
+    kind: "project_identity_settings",
+    data: { project_id: custom.projectId, setting: "origin", value: "example.com:2222/Org/Repo", updated_at: "1970-01-01T00:00:00.000Z" },
+  }]);
   expect(db.query("SELECT count(*) AS n FROM project_remotes").get()).toEqual({ n: 4 });
   expect(() => resolveProjectDirectory(db, join(root, "unbound"), "Unbound", true, undefined, origin))
     .toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
