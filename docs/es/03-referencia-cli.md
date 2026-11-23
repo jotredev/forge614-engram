@@ -27,7 +27,7 @@ startup-context --directory <ruta> --json [--format 1|2]
 
 `setup` está retirado y devuelve `COMMAND_RETIRED`. No existen los comandos `tui`, `assistant-list`, `integration-enable` ni `memory-hook`.
 
-`init --json --directory <ruta>` es la vinculación explícita y no interactiva de una carpeta: registra el proyecto (por el `id` de su `.forge614/project.json` si el repositorio ya lo trae), escribe ese archivo en silencio y añade `project` al resultado (`{ "projectId", "directory", "source" }`, más `group` si pertenece a un grupo). Repetirlo no cambia nada: el archivo queda con los mismos bytes. `--directory` no se combina con `--postgres-url`.
+`init --json --directory <ruta>` resuelve y vincula una carpeta sin preguntas. Devuelve `project` con `projectId`, `directory` y `source`, y con `group` si corresponde. Si hace falta decidir la identidad, devuelve `PROJECT_BINDING_REQUIRED`. `--directory` no se combina con `--postgres-url`.
 
 ## Contrato de protocolo de memoria
 
@@ -57,15 +57,44 @@ La base y `.env` viven en `FORGE614_HOME/memory/` (o `~/.forge614/memory/`). La 
 ## Proyectos
 
 ```text
-project-create --name <nombre>
+project-create --name <nombre> [--directory <ruta> [--replace-from <UUID>]]
 project-list
 project-rename --project-id <UUID> --name <nombre>
-project-bind --directory <ruta> --project-id <UUID>
+project-bind --directory <ruta> --project-id <UUID> [--replace-from <UUID>] [--accept-origin]
 ```
 
-`project-rename` también actualiza el nombre en el `.forge614/project.json` de cada carpeta vinculada a ese proyecto en esta máquina; el `id` nunca cambia. `project-bind` escribe el archivo si no existe y devuelve `PROJECT_FILE_CONFLICT` si la carpeta ya declara otra identidad de proyecto.
+### Reclonar o trasladar el mismo proyecto
 
-Una carpeta nueva se registra sola en su primer `session-start`, guardado o `init --json --directory` (las lecturas, como `startup-context`, no la registran, salvo que la carpeta ya traiga un `.forge614/project.json`: ese archivo la registra y la vincula a su proyecto sin preguntar). Engram pide `project-bind` solo cuando esa carpeta podría ser un proyecto que ya existe: tiene el nombre de un proyecto existente o el de la carpeta registrada de un proyecto cuyas carpetas ya no existen (o, con la nube activada, el mismo remoto de Git que ese proyecto cuando otro proyecto comparte ese remoto: si solo uno lo tiene, la carpeta se liga sola a él). Consulta [06. Resolución de Problemas](06-resolucion-de-errores.md) para los mensajes.
+Abre el checkout con `startup-context --directory <ruta> --json` para comprobar el UUID. Una coincidencia única por remoto confirmado muestra los recuerdos y el ecosistema disponibles en SQLite. El primer guardado o inicio de sesión registra la carpeta. HTTPS y SSH con sus puertos habituales y la forma SCP comparten clave cuando el host y la ruta coinciden. Se conserva el caso de la ruta y cada puerto personalizado.
+
+Si la carpeta ya vinculada cambia a un remoto libre, conserva su UUID. Confirma la dirección desde esa carpeta para que los clones futuros puedan encontrarla.
+
+```bash
+forge614-engram project-bind --directory /ruta/al/proyecto --project-id <UUID> --accept-origin
+```
+
+La confirmación requiere una dirección utilizable que ningún otro proyecto tenga asociada y, con nube configurada, un catálogo al día. Si tienes dudas sobre el UUID, consulta `project-list`.
+
+### Crear un proyecto independiente
+
+Ejecuta el siguiente comando antes de abrir la primera sesión en una copia que aún conserva el remoto o un archivo legado de otro proyecto.
+
+```bash
+forge614-engram project-create --name "Proyecto nuevo" --directory /ruta/a/la/copia
+```
+
+Si la carpeta ya está vinculada, añade `--replace-from <UUID-anterior>`. El nuevo UUID empieza con sus propios recuerdos y sesiones vacíos. Elige su grupo con `group-bind`; los archivos copiados se conservan. Una carpeta nueva con remoto libre puede confirmar esa dirección al crearse. La variante que solo recibe `--name` crea un proyecto sin carpeta.
+
+### Corregir el vínculo de una carpeta
+
+```bash
+forge614-engram project-bind --directory /ruta/a/la/carpeta --project-id <UUID-elegido> --replace-from <UUID-anterior>
+forge614-engram session-start --directory /ruta/a/la/carpeta --session-id <id-nuevo>
+```
+
+Usa el UUID del vínculo actual en `--replace-from`. En una carpeta sin vínculo que trae un archivo incompatible, usa el UUID declarado en ese archivo. Los recuerdos y las sesiones anteriores conservan su proyecto original. Para revisar esos recuerdos, usa `search --project-id <UUID-anterior>` y abre cada candidato con `get`.
+
+`project-rename` conserva el UUID y actualiza los archivos legados que puede publicar con seguridad. Si Git rastrea un archivo, Engram conserva sus bytes y avisa. Consulta [06. Resolución de errores](06-resolucion-de-errores.md) para recuperar una instalación o quitar un archivo del índice con la copia local intacta.
 
 ## Grupos y ecosistema
 
@@ -174,6 +203,6 @@ forge614-engram startup-context --directory /ruta/absoluta/al-repositorio --json
 
 Es la única interfaz pública para que Forge614 Engines o Shell lean memoria antes de iniciar un agente; nunca deben leer SQLite directamente. Es una consulta no interactiva e idempotente. Devuelve un único JSON con `format: 1`, contexto `shared` normal, `ecosystem` (`{ "status": "member", "group", "context" }` si el proyecto pertenece a un grupo o `{ "status": "none" }`) y `project` (con `source`: `file`, `path` o `unbound`): un proyecto válido y vinculado conserva el comportamiento previo con `status: "bound"`, `projectId` y contexto de proyecto; cuando no se puede resolver o vincular como proyecto, no falla y devuelve `project: { "status": "unbound" }` con los demás valores nulos según el esquema (`projectId: null, context: null`). Cualquier directorio existente y legible es válido: `$HOME`, `/`, una carpeta sin Git, un repositorio Git sin vínculo y una carpeta vinculada; los casos sin vínculo devuelven `unbound`.
 
-Cada sección usa el límite propio de `context()` (16 384 bytes por defecto) e incluye previews acotados. No crea recuerdos, sesiones ni bases de datos, ni un proyecto para una carpeta sin vínculo; solo actualiza la base (con respaldo previo) la primera vez que un repositorio declara un grupo, y lo avisa con `DATABASE_MIGRATED` en `project.notices`. Sí mantiene la identidad del repositorio: registra por `id` un clon que trae su `.forge614/project.json` y escribe ese archivo a un proyecto vinculado solo por ruta (el resultado lo indica en `project.notices`). Por eso abre la base en solo lectura y la reabre para escritura solo cuando debe registrar algo (consulta [10. Contexto de Inicio para Hosts](10-contexto-de-inicio.md)). Solo fallan una ruta inexistente, que no sea directorio o que sea ilegible; el fallo deja stdout vacío, escribe JSON `{code,error}` en stderr y sale con código 1, sin secretos ni rutas crudas. Un espacio sin `init` previo u otro error real conserva ese mismo manejo de error. Disponible desde la versión 1.5.0.
+Cada sección usa el límite de `context()` (16 384 bytes por defecto). Un remoto confirmado se puede resolver en solo lectura. Un archivo legado compatible todavía puede registrar su identidad. Si hay conflicto o falta sincronizar el catálogo, se entrega solo contexto compartido y un aviso en `project.notices`. Un fallo real deja stdout vacío y devuelve JSON por stderr con código de salida 1. Consulta [10. Contexto de inicio](10-contexto-de-inicio.md).
 
 Con `--format 2` el comando devuelve, en vez de ese JSON, un único bloque de texto listo para inyectar en el arranque de un agente, de hasta 5 000 caracteres. Sin `--format` sigue el formato 1, cuya salida no cambia; cualquier otro valor responde `INVALID_INPUT` antes de abrir la base. El detalle está en el capítulo [10. Contexto de Inicio para Hosts](10-contexto-de-inicio.md). Disponible desde la versión 1.7.0.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Project identity.** A confirmed Git origin restores the project's UUID, memories, and group in a new checkout. A conflict keeps shared context available and requires an explicit choice before a project write.
+- **CLI.** `project-create --directory` starts an independent project. `project-bind --replace-from` corrects a folder binding, and `--accept-origin` confirms a moved remote. Earlier memories and sessions keep their original owners.
+- **Legacy files.** Git projects with a usable origin use the local catalog. Publishing a legacy identity requires an effective root `.gitignore` rule for `/.forge614/`. Tracked files keep their contents and index entries.
+- **Migration and replication.** Identity schemas 13–20 preserve the features of schemas 5–12 and take a SQLite backup before changing an existing file. Cloud sync recovers confirmed origins and explicit group policy with a dedicated cursor, and continues to accept the historical remote payload.
+
 ## 1.10.0
 
 Engram keeps memory outside its removable program folder and adopts the shared Forge614 installer.

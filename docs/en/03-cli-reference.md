@@ -27,7 +27,7 @@ startup-context --directory <path> --json [--format 1|2]
 
 `setup` is retired and returns `COMMAND_RETIRED`. There is no `tui`, `assistant-list`, `integration-enable`, or `memory-hook` command.
 
-`init --json --directory <path>` is the explicit, non-interactive binding of a folder: it registers the project (by the `id` in its `.forge614/project.json` when the repository already carries one), writes that file silently, and adds `project` to the result (`{ "projectId", "directory", "source" }`, plus `group` when it belongs to a group). Repeating it changes nothing: the file keeps the same bytes. `--directory` cannot be combined with `--postgres-url`.
+`init --json --directory <path>` resolves and binds a folder non-interactively. The result includes `project` with `projectId`, `directory`, and `source`, plus `group` where applicable. It returns `PROJECT_BINDING_REQUIRED` when the identity needs an explicit choice. `--directory` cannot be combined with `--postgres-url`.
 
 ## Memory protocol contract
 
@@ -57,15 +57,44 @@ The database and `.env` live in `FORGE614_HOME/memory/` (or `~/.forge614/memory/
 ## Projects
 
 ```text
-project-create --name <name>
+project-create --name <name> [--directory <path> [--replace-from <UUID>]]
 project-list
 project-rename --project-id <UUID> --name <name>
-project-bind --directory <path> --project-id <UUID>
+project-bind --directory <path> --project-id <UUID> [--replace-from <UUID>] [--accept-origin]
 ```
 
-`project-rename` also updates the name inside the `.forge614/project.json` of every folder bound to that project on this machine; the `id` never changes. `project-bind` writes the file when it does not exist and returns `PROJECT_FILE_CONFLICT` if the folder already declares another project identity.
+### Recloning or moving the same project
 
-A new folder registers itself on its first `session-start`, save or `init --json --directory` (reads, such as `startup-context`, do not register it, unless the folder already carries a `.forge614/project.json`: that file registers it and binds it to its project without asking). Engram asks for `project-bind` only when that folder might be a project that already exists: it has the name of an existing project or the name of the registered folder of a project whose folders no longer exist (or, with the cloud on, the same Git remote as that project while another project shares that remote: if only one has it, the folder binds to it on its own). See [06. Troubleshooting](06-troubleshooting.md) for the messages.
+Run `startup-context --directory <path> --json` in the checkout to check its UUID. A unique confirmed origin match shows the memories and ecosystem available in SQLite. The first save or session start binds the folder. HTTPS, SSH on their usual ports, and SCP syntax share a key when the host and path match. The path keeps its case and custom ports remain distinct.
+
+An existing bound folder keeps its UUID when its origin changes to an unclaimed address. Confirm that address from the bound folder so future clones can find it.
+
+```bash
+forge614-engram project-bind --directory /path/to/project --project-id <UUID> --accept-origin
+```
+
+Confirmation requires a usable origin with no candidate belonging to another project and, when cloud sync is configured, a current catalog. Use `project-list` to look up the UUID.
+
+### Starting an independent project
+
+Run this before opening the first session in a copy that still carries another project's origin or legacy file.
+
+```bash
+forge614-engram project-create --name "New project" --directory /path/to/copy
+```
+
+If the folder has a binding, add `--replace-from <previous-UUID>`. The new UUID starts with empty project memories and sessions. Use `group-bind` to choose its group. Engram keeps the copied files intact. A new folder with an unclaimed origin can confirm that address at creation. Passing only `--name` creates a project without a folder.
+
+### Correcting a folder binding
+
+```bash
+forge614-engram project-bind --directory /path/to/folder --project-id <selected-UUID> --replace-from <previous-UUID>
+forge614-engram session-start --directory /path/to/folder --session-id <new-id>
+```
+
+Use the current binding's UUID in `--replace-from`. For an unbound folder with an incompatible file, use the UUID declared in that file. Earlier memories and sessions keep their original project. Review those memories with `search --project-id <previous-UUID>` and open each candidate with `get`.
+
+`project-rename` keeps the UUID and updates legacy files it can publish safely. When Git tracks a file, Engram keeps its bytes intact and reports it. See [06. Troubleshooting](06-troubleshooting.md) for recovery and for removing a tracked file from the index while keeping the local copy.
 
 ## Groups and ecosystem
 
@@ -174,6 +203,6 @@ forge614-engram startup-context --directory /absolute/path/to/repository --json
 
 This is the only public interface through which Forge614 Engines or Shell may read memory before starting an agent; they must never read SQLite directly. It is a non-interactive, idempotent query. It returns one JSON object with `format: 1`, normal `shared` context, `ecosystem` (`{ "status": "member", "group", "context" }` when the project belongs to a group, or `{ "status": "none" }`), and `project` (with `source`: `file`, `path`, or `unbound`): a valid, bound project preserves its previous behavior with `status: "bound"`, `projectId`, and project context; when it cannot be resolved or linked as a project, it does not fail and returns `project: { "status": "unbound" }` with the remaining project values set to null per schema (`projectId: null, context: null`). Any existing readable directory is valid: `$HOME`, `/`, an unversioned folder without Git, an unlinked Git repository, and a linked folder; unbound cases return `unbound`.
 
-Each section uses `context()`'s own ceiling (16,384 bytes by default) and includes bounded previews. It creates no memories, sessions, or databases, and no project for an unlinked folder; it only upgrades the database (with a backup first) the first time a repository declares a group, and reports it as `DATABASE_MIGRATED` in `project.notices`. It does keep the repository identity in step: it registers by `id` a clone that carries its `.forge614/project.json`, and writes that file for a project bound only by path (the result says so in `project.notices`). For that reason it opens the database read-only and reopens it for writing only when it has to register something (see [10. Startup Context for Hosts](10-startup-context.md)). Only a nonexistent path, non-directory path, or unreadable path fails; failures leave stdout empty, emit `{code,error}` JSON on stderr, and exit with code 1, without secrets or raw paths. A workspace without prior `init` or any other real error retains the same error handling. Available since version 1.5.0.
+Each section uses `context()`'s ceiling (16,384 bytes by default). A confirmed origin can resolve the project on a read-only connection. A compatible legacy file can still register its identity. If there is a conflict or the catalog is still syncing, the command returns shared context and a notice in `project.notices`. A real failure leaves stdout empty, writes JSON to stderr, and exits with status 1. See [10. Startup context](10-startup-context.md).
 
 With `--format 2` the command returns, instead of that JSON, a single ready-to-inject text block for the start of an agent session, of up to 5,000 characters. Without `--format` it keeps format 1, whose output does not change; any other value answers `INVALID_INPUT` before the database is opened. The detail is in chapter [10. Startup Context for Hosts](10-startup-context.md). Available since version 1.7.0.

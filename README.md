@@ -3,7 +3,7 @@
 > Analogía en una frase: Como una bitácora que nunca se pierde: guarda lo que importa de cada proyecto y lo encuentra cuando hace falta.
 
 ## Qué es
-La memoria persistente local de Forge614: una sola base SQLite con búsqueda de texto (FTS5) que guarda recuerdos por proyecto, de grupo y compartidos, con identidad portátil del proyecto (`.forge614/project.json`), sesiones, un servidor MCP de 10 herramientas `memory_*`, un SDK público de TypeScript y réplica opcional en PostgreSQL.
+La memoria persistente local de Forge614: una sola base SQLite con búsqueda de texto (FTS5) que guarda recuerdos por proyecto, de grupo y compartidos, con identidad de proyecto por vínculo local y remoto Git confirmado, sesiones, un servidor MCP de 10 herramientas `memory_*`, un SDK público de TypeScript y réplica opcional en PostgreSQL.
 
 ## Qué no es
 - No tiene TUI ni centro de control de terminal.
@@ -43,7 +43,7 @@ La base, `.env` y respaldos viven en `FORGE614_HOME/memory/` (por defecto `~/.fo
 | --- | --- |
 | `init`, `update`, `uninstall` | Inicializar, actualizar y desinstalar Engram |
 | `save`, `get`, `search`, `context` | Guardar, leer, buscar y resumir recuerdos |
-| `project-create`, `project-list`, `project-bind` | Crear, listar y vincular proyectos |
+| `project-create`, `project-list`, `project-bind` | Crear, listar, vincular y corregir identidades de proyecto |
 | `group-create`, `group-list`, `group-bind` | Crear, listar y unir proyectos a grupos |
 | `cloud on\|off\|status`, `sync` | Réplica opcional en PostgreSQL |
 | `memory-protocol --json` | Publicar las reglas de memoria para los asistentes |

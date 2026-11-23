@@ -35,19 +35,36 @@ Desde 1.6.0. Los comandos `group-*`, `memory-move` y los códigos de esta secci�
 - `GROUP_REQUIRED`: el ámbito `ecosystem` necesita un grupo: indica `--group` o usa un proyecto que pertenezca a uno (`group-bind`). `memory_search` y `memory_context` con scope `ecosystem` ya no la dan (desde 1.8.6): un proyecto ligado sin grupo no tiene recuerdos de grupo, así que `memory_search` responde `results: []` y `memory_context` el contexto vacío de grupo, los dos con un campo `ecosystem: { status: "none", message }` y la nota «Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind.». Sí la siguen dando, en un proyecto ligado sin grupo (y, en `memory_save` y `memory_session_summary`, una vez dado el `groupIntent`), `memory_save`, `memory_get`, `memory_history` y `memory_session_summary` con scope `ecosystem`, y la CLI `search --scope ecosystem`.
 - `GROUP_INTENT_REQUIRED`: guardar en `ecosystem` con MCP exige un `groupIntent` verdadero.
 - `TOPIC_CONFLICT`: `memory-move` no sobrescribe; el grupo ya tiene un recuerdo con ese tema. Archívalo o cambia el tema.
-- `PROJECT_FILE_INVALID`: el `.forge614/project.json` no es válido (JSON corrupto, esquema o campos desconocidos, enlace simbólico, demasiado grande). Engram no lo modifica: corrígelo o bórralo para que se regenere.
-- `PROJECT_FILE_CONFLICT`: `project-bind` intentó vincular una carpeta cuyo archivo declara otro proyecto; usa esa identidad o borra el archivo.
+- `PROJECT_FILE_INVALID` indica JSON corrupto, un formato desconocido o un archivo legado inseguro. Engram conserva sus bytes. Corrige el archivo o retíralo si ya no aporta una identidad que quieras conservar.
+- `PROJECT_FILE_CONFLICT` aparece cuando el archivo declara otro proyecto. Verifica el UUID y usa `project-bind --replace-from` para corregir el vínculo sin editar el archivo.
 - `MIGRATION_VERIFY_FAILED`: la verificación de la migración falló y se revirtió todo. La base no cambió y el respaldo `.bak` junto a `engram.db` se conserva; no lo borres y reporta el caso.
-- `SYNC_ECOSYSTEM_UNSUPPORTED`: `sync` se detiene mientras existan recuerdos de grupo: las memorias `ecosystem` no se replican todavía (llegará en 1.8.0, «formato 4»). Los datos locales y remotos no se tocan.
+- `SYNC_ECOSYSTEM_UNSUPPORTED` indica que la sincronización de snapshots 1–3 encontró recuerdos de grupo. La sincronización incremental de `cloud on` sí los replica.
 - `DATABASE_VERSION` ("Base incompatible: no se puede abrir con esta versión") al abrir con Engram 1.5.x una base actualizada por 1.6.0: actualiza Engram. La base no se modifica; el respaldo previo `.bak` sigue siendo legible por 1.5.x. Un proceso 1.5.x ya iniciado (por ejemplo un servidor MCP) debe reiniciarse tras actualizar.
 
-## Carpetas sin vincular (desde 1.8.4)
+## Carpetas sin vincular y recuperación
 
-- `PROJECT_BINDING_REQUIRED`: Engram no registra sola una carpeta nueva que podría ser un proyecto que ya existe, para no partir su memoria en dos. Tiene dos mensajes, y los dos traen el nombre y el `id` del proyecto, la carpeta de trabajo (nunca la ruta interna `…/.git`) y el comando exacto:
-  - «Ya existe un proyecto llamado «{nombre}» ({id}). Si esta carpeta es ese proyecto, vincúlala con: forge614-engram project-bind --directory {esta carpeta} --project-id {id}. Si es otro, créalo con forge614-engram project-create --name <otro nombre> y vincúlalo con project-bind.» Sale cuando el nombre de la carpeta (en un repositorio Git, el de la carpeta que contiene `.git`) es el de un proyecto existente y ni un `.forge614/project.json` ni, con la nube activada, un remoto de Git que tenga anotado exactamente un proyecto la reconocen.
-  - «Esta carpeta podría ser el proyecto «{nombre}» ({id}), cuya carpeta registrada ({carpeta perdida}) ya no existe. Si es el mismo proyecto, vincúlala con: forge614-engram project-bind --directory {esta carpeta} --project-id {id}. Si es otro proyecto, créalo con forge614-engram project-create --name <nombre> y vincúlalo con project-bind.» Sale cuando todas las carpetas registradas de un proyecto ya no existen (o no se pueden leer) y la carpeta nueva tiene el mismo nombre que una de ellas o, con la nube activada, el mismo remoto de Git que ese proyecto mientras otro proyecto comparte ese remoto (si solo uno lo tiene, la carpeta se liga sola a él). La carpeta perdida de un proyecto sin relación con la carpeta nueva ya no bloquea.
-  - Qué hacer: si es el mismo proyecto, ejecuta el comando `project-bind` del mensaje; si es otro, créalo con `project-create` y vincúlalo con `project-bind`. `project-list` muestra los proyectos y sus `id`. Si varios proyectos perdidos coinciden, el mensaje nombra el primero por nombre y luego por `id`.
-- `PROJECT_NOT_BOUND`: la carpeta todavía no está vinculada a ningún proyecto y el comando no crea proyectos y necesita uno real: lee un recuerdo concreto (`memory_get`, `memory_history`; con scope `shared` no hace falta proyecto) o continúa una sesión o un grupo ya existentes (`memory_session_end`, `memory_session_summary`, `memory_timeline` o `memory_save` con scope `ecosystem`). `memory_search` y `memory_context` ya no la dan (desde 1.8.5): en una carpeta sin proyecto no hay recuerdos de proyecto ni de grupo, así que responden sin error y con un campo `project` con `status: "unbound"` y la nota «Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.»: `memory_search` con scope `project` o `ecosystem` da `results: []`, y con scope `all` o sin scope da lo de `shared`; `memory_context` sin scope da el contexto de `shared` y con scope `ecosystem` un contexto vacío de grupo; con scope `shared` nada cambia (sin nota). Esas lecturas no registran la carpeta. Una carpeta con `.forge614/project.json` se registra sola incluso con una lectura. No es otra falla: se arregla con el primer `memory_session_start` o guardado de proyecto en esa carpeta, que la registra, o con `project-bind`. Si ese primer inicio o guardado respondió `PROJECT_BINDING_REQUIRED`, resuélvelo primero como se explica arriba.
+- `PROJECT_BINDING_REQUIRED` señala evidencias incompatibles, varios candidatos, un remoto histórico sin confirmar o un catálogo de nube pendiente. También puede aparecer si el nombre coincide con un proyecto existente o con su carpeta perdida. El arranque y las consultas de orientación conservan el contexto compartido. Los guardados de proyecto y los inicios de sesión quedan pendientes de resolución.
+- Si falta sincronizar, ejecuta `forge614-engram sync` y vuelve a abrir el contexto. Si conoces el proyecto correcto, consulta `project-list` y vincula la carpeta con `project-bind --directory <ruta> --project-id <UUID>`. Añade `--replace-from <UUID-anterior>` al corregir un vínculo o un archivo incompatible. Si la carpeta debe empezar de cero, usa `project-create --name <nombre> --directory <ruta>`.
+- `PROJECT_ORIGIN_CONFIRMATION_REQUIRED` indica que una carpeta vinculada conserva su UUID después de cambiar a un remoto libre. Confirma la dirección para futuros clones con `project-bind --accept-origin`.
+- `PROJECT_BINDING_CONFLICT` indica que la carpeta ya está vinculada o que `--replace-from` no coincide con el UUID esperado. Revisa la identidad local y repite la corrección con el valor correcto.
+- `PROJECT_NOT_BOUND` indica una carpeta sin proyecto identificado. `memory_search` y `memory_context` devuelven la nota `unbound` sin error; con alcance de proyecto o grupo la búsqueda queda vacía. Usar alcance compartido no requiere vincular la carpeta.
+- `SESSION_CONFLICT` puede aparecer si intentas abrir una sesión antigua desde una carpeta corregida. Inicia una sesión con un identificador nuevo. Los recuerdos escritos antes de la corrección se revisan por separado en el UUID anterior.
+- `PROJECT_FILE_TRACKED` indica que Git rastrea el archivo legado. Engram lo puede leer y conserva sus bytes. Para quitarlo del índice conservando la copia local, añade `/.forge614/` al `.gitignore` raíz y ejecuta estos comandos desde la raíz del checkout.
+
+```bash
+git rm --cached -- .forge614/project.json
+git status --short
+```
+
+- `PROJECT_FILE_NOT_WRITTEN` indica que se omitió la publicación legada. El cambio de SQLite sigue disponible. Revisa si el `.gitignore` raíz es un archivo normal y si la exclusión se aplica al directorio completo.
+
+### Recuperar en otra máquina o actualizar desde 1.10.0
+
+Con la nube activa, configura la misma réplica en la otra instalación y ejecuta `sync`. Espera a que la primera descarga termine y vuelve a leer el contexto. Sin nube, abre una copia consistente del respaldo SQLite en `FORGE614_HOME/memory/engram.db` de la otra instalación y comprueba el UUID antes de guardar. Una base vacía no recupera recuerdos leyendo Git.
+
+Antes de habilitar el catálogo, guarda una copia SQLite consistente, cierra los procesos que abren la base y actualiza sus lectores, incluido cualquier binario de Atlas que incorpore Engram 1.10.0. El primer `sync` tras actualizar puede preparar el catálogo y dejar un respaldo `.bak`. Engram 1.10.0 responde `DATABASE_VERSION` al abrir la base migrada. Si necesitas volver a esa versión, cierra los procesos recientes y restaura una copia del respaldo previo. Conserva tanto la base migrada como el respaldo original.
+
+Consulta [03. Referencia CLI](03-referencia-cli.md) para los comandos completos.
 
 ## Memoria inteligente
 
@@ -83,7 +100,7 @@ Consulta [01. Instalación y Primeros Pasos](01-instalacion-y-primeros-pasos.md)
 - `POSTGRES_SCHEMA`: el esquema `forge614_sync` de Neon no tiene exactamente la forma esperada (alguien lo modificó por fuera, o quedó a medias). PostgreSQL 16 a 18 son compatibles; en 18, las restricciones `NOT NULL` catalogadas no cuentan como una diferencia.
 - `POSTGRES_UNAVAILABLE`: PostgreSQL no está disponible o no tiene permisos; los datos locales se conservan tal cual. Comprueba la conexión y el TLS sin compartir credenciales.
 - `SYNC_DISABLED`: pediste `sync`/`sync-watch` con el mecanismo nuevo sin haber corrido `cloud on` antes (o el `.env` tiene la dirección pero la base local nunca llegó al nivel de esquema de la nube). Corre `cloud on`.
-- `DATABASE_VERSION` ("Base incompatible: no se puede abrir con esta versión"): una versión de Engram anterior a 1.8.0 intentó abrir una base ya preparada para la nube. Actualiza esa Mac a 1.8.0 y cierra primero cualquier sesión anterior que siga abierta.
+- `DATABASE_VERSION` indica que el binario no admite este esquema. Cierra los lectores y usa una versión compatible. Conserva el respaldo `.bak` que corresponda al esquema anterior.
 - `SYNC_WATCH_DEPRECATED` y `SYNC_UPGRADE_FORMAT_DEPRECATED`: avisos en stderr, no errores que detengan nada; `sync-watch` y `sync --upgrade-format` (formatos 1–3) siguen funcionando igual, mientras se retiran el 2027-03-31.
 
 ## Integraciones de IA

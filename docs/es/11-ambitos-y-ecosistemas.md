@@ -27,7 +27,7 @@ Un **grupo** es un conjunto con nombre de proyectos relacionados. Sus reglas:
 
 ## Identidad portátil del proyecto
 
-Hasta 1.5.x un proyecto se vinculaba a la **ruta** de su carpeta: mover o renombrar la carpeta, o clonar el repositorio en otra máquina, rompía el vínculo y la memoria parecía desaparecer. Desde 1.6.0 el repositorio lleva su identidad en `.forge614/project.json`, en la raíz del checkout, versionado en Git:
+Engram conserva el UUID de un proyecto en SQLite. Un vínculo identifica su carpeta local, y un remoto Git confirmado permite reconocer reclones. Los worktrees de un repositorio comparten el directorio común de Git. Los repositorios antiguos también pueden traer un archivo legado `.forge614/project.json` en la raíz, con esta forma.
 
 ```json
 {
@@ -37,22 +37,20 @@ Hasta 1.5.x un proyecto se vinculaba a la **ruta** de su carpeta: mover o renomb
 }
 ```
 
-`ecosystem` es `null` para un proyecto suelto. Los `id` son la verdad; los `name` son para personas.
+`ecosystem` es `null` para un proyecto sin grupo. Los UUID identifican el proyecto y el grupo. Los nombres se usan para mostrarlos.
 
-- **Se resuelve por `id`, no por ruta.** Toda operación con `--directory` lee primero ese archivo; la ruta queda como pista. Si el `id` no existe en la base local (un clon en otra máquina), Engram registra el proyecto —y su grupo— con ese `id`, sin preguntar.
-- **Mover, renombrar la carpeta o clonar no requiere ninguna acción.** `project-rename` y `group-rename` actualizan el `name` en el archivo; los `id` nunca cambian.
-- **Engram es el único dueño del archivo y lo escribe en silencio.** Nunca pide permiso ni avisa por escribirlo: es configuración del producto. La escritura es idempotente: si el archivo ya existe, lo lee, **nunca lo reemplaza ni cambia sus `id`** y, como máximo, completa un campo que falte; repetir `init --directory` o `project-bind` no cambia ni un byte. Dentro de `.forge614/` Engram escribe solo `project.json` y nunca toca otros archivos (cada nodo de Forge614 es dueño del suyo).
-- **Si la base y el archivo discrepan, gana el archivo.** Si la base tenía esa carpeta vinculada a otro proyecto, Engram la re-vincula al del archivo, registra el evento `PROJECT_REBOUND_FROM_FILE` y no modifica el archivo. Los proyectos que ya estaban vinculados solo por ruta reciben su `project.json` en el siguiente `startup-context` o `session-start` en esa carpeta, con un aviso `PROJECT_FILE_CREATED` en el resultado de `startup-context` (dentro de `project.notices`) y de `session-start` (clave `notices`).
-- **Un archivo inválido nunca se sobrescribe.** JSON corrupto, `schemaVersion` desconocido, campos desconocidos, un `id` que no es UUID, un enlace simbólico, un directorio o un archivo mayor de 64 KiB producen `PROJECT_FILE_INVALID` por stderr y no se cambia nada. La validación es estricta (un esquema Zod `.strict()`) y se carga solo cuando el repositorio trae ese archivo: un inicio de sesión en una carpeta sin `project.json` no la paga. Para los hosts es un **error visible**, no un contexto vacío: `startup-context` no devuelve ningún bloque (ni siquiera `shared`); se repara corrigiendo el archivo o borrándolo.
+- **El archivo legado aporta evidencia.** Una declaración compatible puede recuperar el UUID. Si contradice el vínculo local o el remoto confirmado, Engram conserva el archivo y pide resolver la carpeta. Consulta [03. Referencia CLI](03-referencia-cli.md).
+- **La publicación de un archivo legado requiere una exclusión efectiva.** Una carpeta Git con remoto utilizable usa SQLite. Al publicar un archivo legado, Engram verifica la regla `/.forge614/` del `.gitignore` raíz de ese worktree. Si el archivo ya está rastreado, Engram lo lee, avisa y conserva tanto el archivo como su entrada en el índice.
+- **Un archivo inválido produce `PROJECT_FILE_INVALID`.** JSON corrupto, campos o versiones desconocidos, enlaces simbólicos o archivos mayores de 64 KiB no se sobrescriben. Corrige el archivo antes de volver a leer esa carpeta.
 
 ## Cómo se vincula un proyecto a un grupo
 
 Sin preguntar, en este orden de prioridad:
 
 1. **`forge614.node.json`** con el campo `ecosystem` (el nombre del grupo). Los nodos de Forge614 lo traen de fábrica con `"ecosystem": "forge614"`. Engram solo **lee** ese archivo (es de otro componente) e ignora cualquier valor inutilizable. Como el archivo solo trae el nombre, el `id` del grupo se deriva de él, de modo que cualquier máquina reconoce el mismo grupo sin coordinarse; el grupo `forge614` tiene el `id` fijo `e0b3e1c9-ffbb-4b6b-8a55-79fbf3e8f0b4`.
-2. **La sección `ecosystem` de `.forge614/project.json`** (que Engram escribe al vincular y que viaja por Git).
+2. **La sección `ecosystem` de un archivo legado compatible.**
 
-Si no hay ninguno, los comandos no interactivos (`init --json --directory`, `project-bind`, `startup-context`) dejan el proyecto **sin grupo** y escriben `ecosystem: null` (el resultado no incluye `group`); no preguntan. La única pregunta ("¿a qué grupo pertenece?") pertenece al flujo visual de Shell, no a Engram. **Nada se infiere**: ni por nombres de carpeta, ni por cercanía en disco, ni por remotos de Git, ni por parecido entre nombres. Si ambas fuentes declaran un grupo distinto, gana `forge614.node.json`. Quitar la sección `ecosystem` de un archivo que estableció la pertenencia la quita también de la base; una pertenencia hecha con `group-bind` no se deshace porque un archivo aún no se haya actualizado.
+En el flujo ordinario, `forge614.node.json` tiene precedencia sobre la declaración compatible del archivo legado. Sin una declaración ni una pertenencia previa, el proyecto queda sin grupo. Los proyectos creados con `project-create --directory` requieren una pertenencia explícita mediante `group-bind`; `group-unbind` la quita, aunque la carpeta conserve declaraciones copiadas.
 
 ## Mover un recuerdo entre ámbitos
 
@@ -63,7 +61,7 @@ Ningún recuerdo cambia de ámbito automáticamente. Para llevar uno existente a
 Los ámbitos nuevos necesitan una ampliación del esquema de la base. Es **aditiva**: solo se agregan tablas y una columna nula, y se recrean `memories` y `requests` conservando nombre, columnas, tipos y todas sus filas para ampliar la restricción del ámbito a tres valores.
 
 - **Niveles.** Los niveles de esquema 8, 9 y 10 son los niveles 5, 6 y 7 (vínculos, sesiones, refuerzo) más el ecosistema. Habilitar grupos nunca activa sesiones ni refuerzo por su cuenta.
-- **Cuándo.** Una apertura normal nunca migra. La base se actualiza la primera vez que un comando necesita grupos (`group-create`, leer un `project.json` o `forge614.node.json` que declara un grupo, o re-vincular una carpeta porque gana el archivo); los comandos que solo consultan o mueven algo a un grupo que no existe responden `GROUP_NOT_FOUND` sin migrar. Quien no usa grupos conserva su base tal cual.
+- **Cuándo.** Una apertura normal nunca migra. La base se actualiza la primera vez que un comando necesita grupos (`group-create`, leer un `project.json` o `forge614.node.json` que declara un grupo compatible); los comandos que solo consultan o mueven algo a un grupo que no existe responden `GROUP_NOT_FOUND` sin migrar. Quien no usa grupos conserva su base tal cual.
 - **Respaldo automático.** Antes de migrar, Engram copia la base a `engram.db.v<versión>-pre-ecosystem-<fecha UTC>-<id>.bak` junto a ella (permisos `0600`, copia consistente con `VACUUM INTO`). Se omite si la base aún no tiene proyectos ni recuerdos. Engram no borra esos respaldos.
 - **Aviso.** El resultado del comando que dispara la actualización (`startup-context`, `group-create`, `session-start`, `init --directory`, `project-bind` o una llamada MCP) incluye un aviso `DATABASE_MIGRATED` con la ruta del respaldo en `backup`. Las llamadas siguientes no vuelven a avisar. Si esa llamada devuelve una lista (por ejemplo `memory_history`), el aviso llega en el primer resultado que puede llevarlo.
 - **Verificación.** La migración ocurre en una sola transacción y compara, antes y después, el recuento de filas y una suma SHA-256 del contenido de `memories` y `requests`, además de las claves foráneas y el índice de texto. Si algo difiere, revierte todo y responde `MIGRATION_VERIFY_FAILED`; el respaldo se conserva. Aplicarla dos veces no cambia nada. En la prueba con 50 000 recuerdos tardó unos 0,65 s, incluidos respaldo y verificación (medido en macOS).
@@ -87,11 +85,11 @@ Los resúmenes de sesión de grupo (`memory_session_summary` con `scope: "ecosys
 
 ## La misma memoria en otra Mac, con nube (desde 1.8.0)
 
-Con `forge614-engram cloud on` (capítulo [01](01-instalacion-y-primeros-pasos.md)), grupos, pertenencias, fuente de grupo y recuerdos `ecosystem` con su historial viajan igual que los de proyecto y `shared` entre dos Mac. En la otra Mac, un proyecto sin `.forge614/project.json` se reconoce por el remoto de Git (`origin`) normalizado (con o sin `.git`, `git@`/`ssh://` frente a `https://`, host en minúsculas): si coincide con exactamente un proyecto local ya conocido se liga a él; si dos proyectos comparten el mismo remoto no se liga ninguno, nunca se adivina, y se crea un proyecto nuevo como hoy. Con la nube prendida, un segundo clon del mismo repositorio en la misma Mac se liga al mismo proyecto, igual que ya pasa con los worktrees.
+Con `cloud on`, la réplica incremental transporta recuerdos, grupos, pertenencias, orígenes confirmados y políticas de grupo. En la otra instalación, ejecuta `sync` y deja que termine la primera descarga antes de usar una carpeta nueva. En una misma máquina, SQLite puede reconocer los reclones con la nube apagada.
 
 ## Límites actuales
 
 - **Réplica PostgreSQL de los formatos 1–3.** **Las memorias de ámbito `ecosystem` no se replican por esta ruta.** Sin la nube activada, `sync` (con o sin `--upgrade-format`) se detiene con `SYNC_ECOSYSTEM_UNSUPPORTED` si existen recuerdos `ecosystem`, sin tocar datos locales ni remotos; sin recuerdos de grupo funciona igual que antes. `sync --upgrade-format` usa siempre esta ruta, aun con la nube activada. Esta ruta queda obsoleta desde 1.8.0 (sunset 2027-03-31): la nube de `cloud on` sí replica el ámbito `ecosystem` (arriba).
 - **`forge614.node.json` es de solo lectura** para Engram y solo se usa su campo `ecosystem`.
-- **Un grupo es local a la base** de esta máquina más los archivos `.forge614/project.json` de cada repositorio; no hay un servicio central de grupos.
+- **Cada base guarda sus grupos.** Las instalaciones que usan la misma réplica incremental sincronizan sus grupos y pertenencias.
 - La pregunta de a qué grupo pertenece un proyecto sin declaración no la hace Engram (la hace Shell en su flujo visual).
