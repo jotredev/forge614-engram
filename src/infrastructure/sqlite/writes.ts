@@ -184,6 +184,13 @@ export function bindProjectDirectory(db: Database, directory: string, projectId:
     }).immediate();
   }
 
+/** Sustituye un vínculo después de comprobar el proyecto anterior dentro de la transacción. */
+export function setProjectDirectoryBinding(db: Database, directory: string, projectId: string): void {
+  db.query(`INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)
+    ON CONFLICT(directory) DO UPDATE SET projectId=excluded.projectId,createdAt=excluded.createdAt
+    WHERE project_bindings.projectId<>excluded.projectId`).run(directory, projectId, new Date().toISOString());
+}
+
 /**
  * El archivo de identidad (identity file, el archivo que declara a qué proyecto pertenece una
  * carpeta) manda sobre un vínculo por ruta: mueve la carpeta al proyecto que declara el archivo
@@ -207,10 +214,7 @@ export function rebindProjectDirectory(db: Database, directory: string, projectI
       if (bound?.projectId === identity) return { previousProjectId: null };
       // Mover un vínculo existente es un evento de identidad, así que requiere el alcance ecosystem.
       if (bound) requireEcosystem(db);
-      const now = new Date().toISOString();
-      // Conserva la clave de carpeta a la que apunta el historial de correcciones.
-      if (bound) db.query("UPDATE project_bindings SET projectId=?,createdAt=? WHERE directory=?").run(identity,now,path);
-      else db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)").run(path,identity,now);
+      setProjectDirectoryBinding(db, path, identity);
       // El evento solo se registra cuando de verdad se movió algo, no en la primera vinculación.
       if (bound) recordIdentityEvent(db, { action: "PROJECT_REBOUND_FROM_FILE", projectId: identity, previousProjectId: bound.projectId, directory: path });
       return { previousProjectId: bound?.projectId ?? null };

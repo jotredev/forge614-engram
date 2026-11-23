@@ -8,7 +8,8 @@ import { parallelSessions,previousInterrupted } from "../infrastructure/sqlite/a
 import { closeDatabase,openDatabase,openDefaultDatabase } from "../infrastructure/sqlite/connection";
 import * as groups from "../infrastructure/sqlite/ecosystem-groups";
 import * as memory from "../infrastructure/sqlite/memory";
-import { confirmedProjectOrigin,findProjectsByOrigin } from "../infrastructure/sqlite/project-catalog";
+import { confirmedProjectOrigin,findProjectsByOrigin,projectBindingCorrection,recordProjectBindingCorrection,
+  requireExplicitProjectGroup,requiresExplicitProjectGroup,setConfirmedProjectOrigin,type ProjectBindingCorrection } from "../infrastructure/sqlite/project-catalog";
 import * as projects from "../infrastructure/sqlite/projects";
 import * as confirmations from "../infrastructure/sqlite/confirmations";
 import { intelligenceEnabled } from "../infrastructure/sqlite/intelligence";
@@ -34,6 +35,12 @@ function projectIdentityOperations(db: ReturnType<typeof openDatabase>, cloudCon
     write: <T>(operation: () => T): T => db.transaction(operation).immediate(),
     candidates: (origin: string) => findProjectsByOrigin(db, origin),
     confirmedOrigin: (projectId: string) => confirmedProjectOrigin(db, projectId),
+    confirmOrigin: (projectId: string, origin: string) => setConfirmedProjectOrigin(db, projectId, origin),
+    correction: (directory: string) => projectBindingCorrection(db, directory),
+    recordCorrection: (directory: string, correction: ProjectBindingCorrection) => recordProjectBindingCorrection(db, directory, correction),
+    useExplicitGroupPolicy: (projectId: string) => requireExplicitProjectGroup(db, projectId),
+    hasExplicitGroupPolicy: (projectId: string) => requiresExplicitProjectGroup(db, projectId),
+    replaceBinding: (directory: string, projectId: string) => writes.setProjectDirectoryBinding(db, directory, projectId),
     ensureSchema: () => !schemaFeatures(db)?.projectIdentity && ensureProjectIdentitySchema(db).migrated,
     resolveUnbound: (directory: string, name: string, available: (directory: string) => boolean, origin: string | null) =>
       projects.resolveProjectDirectory(db, directory, name, true, available, origin),

@@ -5,12 +5,21 @@ import { schemaFeatures } from "./schema";
 
 type OriginCandidate = { project: Project; verified: boolean };
 type OriginRow = Project & { verified: 0 | 1 };
+type Setting = "origin" | "group_policy";
 
 export function confirmedProjectOrigin(db: Database, projectId: string): string | null {
+  return getSetting(db, projectId, "origin");
+}
+
+function getSetting(db: Database, projectId: string, setting: Setting): string | null {
   if (!schemaFeatures(db)?.projectIdentity) return null;
-  const row = db.query("SELECT value FROM project_identity_settings WHERE project_id=? AND setting='origin'")
-    .get(projectId) as { value: string } | null;
+  const row = db.query("SELECT value FROM project_identity_settings WHERE project_id=? AND setting=?")
+    .get(projectId, setting) as { value: string } | null;
   return row?.value ?? null;
+}
+
+export function requiresExplicitProjectGroup(db: Database, projectId: string): boolean {
+  return getSetting(db, projectId, "group_policy") === "explicit";
 }
 
 /** Busca una clave normalizada y conserva la distinción entre identidad confirmada y pista histórica. */
@@ -32,16 +41,20 @@ export function findProjectsByOrigin(db: Database, origin: string): OriginCandid
   return (records as OriginRow[]).map(({ verified, ...project }) => ({ project, verified: verified === 1 }));
 }
 
-function putOrigin(db: Database, projectId: string, origin: string, updatedAt: string): void {
-  db.query(`INSERT INTO project_identity_settings(project_id,setting,value,updated_at) VALUES(?,'origin',?,?)
+function putSetting(db: Database, projectId: string, setting: Setting, value: string, updatedAt: string): void {
+  db.query(`INSERT INTO project_identity_settings(project_id,setting,value,updated_at) VALUES(?,?,?,?)
     ON CONFLICT(project_id,setting) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
-    WHERE project_identity_settings.value<>excluded.value`).run(projectId, origin, updatedAt);
+    WHERE project_identity_settings.value<>excluded.value`).run(projectId, setting, value, updatedAt);
+}
+
+export function requireExplicitProjectGroup(db: Database, projectId: string): void {
+  putSetting(db, projectId, "group_policy", "explicit", new Date().toISOString());
 }
 
 /** Guarda una adjudicación ya validada y mantiene la copia que entienden los clientes anteriores. */
 export function setConfirmedProjectOrigin(db: Database, projectId: string, origin: string): void {
   const updatedAt = new Date().toISOString();
-  putOrigin(db, projectId, origin, updatedAt);
+  putSetting(db, projectId, "origin", origin, updatedAt);
   db.query(`INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)
     ON CONFLICT(project_id) DO UPDATE SET origin=excluded.origin,updated_at=excluded.updated_at
     WHERE project_remotes.origin<>excluded.origin`).run(projectId, legacyOriginKey(origin), updatedAt);
@@ -67,6 +80,35 @@ export function backfillProjectOrigins(db: Database): void {
     if (origins.size !== 1) continue;
     const [key] = origins;
     if (legacy === null) setConfirmedProjectOrigin(db, projectId, key!);
-    else if (legacyOriginKey(key!) === legacy) putOrigin(db, projectId, key!, now);
+    else if (legacyOriginKey(key!) === legacy) putSetting(db, projectId, "origin", key!, now);
   }
+}
+
+export interface ProjectBindingCorrection {
+  projectId: string;
+  previousProjectId: string | null;
+  legacyProjectId: string | null;
+  origin: string | null;
+  candidates: string[];
+  cause: "create" | "bind" | "bind-origin";
+}
+
+/** La corrección más reciente de una clave local establece qué evidencias fueron desplazadas. */
+export function projectBindingCorrection(db: Database, directory: string): ProjectBindingCorrection | null {
+  if (!schemaFeatures(db)?.projectIdentity) return null;
+  const row = db.query(`SELECT project_id AS projectId, previous_project_id AS previousProjectId,
+      legacy_project_id AS legacyProjectId, origin, accepted_project_ids AS accepted, cause
+    FROM project_binding_corrections WHERE directory=? ORDER BY id DESC LIMIT 1`).get(directory) as
+    (Omit<ProjectBindingCorrection, "candidates"> & { accepted: string }) | null;
+  if (!row) return null;
+  const { accepted, ...data } = row;
+  const candidates: unknown = JSON.parse(accepted);
+  return { ...data, candidates: Array.isArray(candidates) ? candidates : [] };
+}
+
+export function recordProjectBindingCorrection(db: Database, directory: string, correction: ProjectBindingCorrection): void {
+  db.query(`INSERT INTO project_binding_corrections(directory,project_id,previous_project_id,legacy_project_id,
+      origin,accepted_project_ids,cause,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run(directory, correction.projectId, correction.previousProjectId, correction.legacyProjectId, correction.origin,
+      JSON.stringify(correction.candidates), correction.cause, new Date().toISOString());
 }

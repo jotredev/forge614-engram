@@ -45,10 +45,10 @@ reinforcement-enable
 intelligence-enable
                 Habilita explícitamente la memoria inteligente (esquema 11); respalda la base antes de migrar.
 mcp             Inicia el servidor MCP local por stdio y usa la ubicación de memoria vigente.
-project-create  --name <nombre>
+project-create  --name <nombre> [--directory <carpeta> [--replace-from <UUID>]]
 project-list    Lista todos los proyectos de la base.
 project-rename  --project-id <UUID> --name <nombre>
-project-bind    --directory <carpeta> --project-id <UUID>
+project-bind    --directory <carpeta> --project-id <UUID> [--replace-from <UUID>] [--accept-origin]
 group-create    --name <nombre>   (minúsculas, dígitos y guiones: mi-tienda)
 group-list      Lista los grupos y los proyectos de cada uno.
 group-bind      --project-id <UUID> --group <nombre|id>   (un proyecto pertenece como máximo a un grupo)
