@@ -216,8 +216,8 @@ test("initialization validates every ecosystem level exactly and rejects future 
     enableSearchReinforcement(db); initialize(db);
     db.exec("DROP INDEX memories_ecosystem_topic");
     expect(() => initialize(db)).toThrow(expect.objectContaining({ code: "DATABASE_SCHEMA" }));
-    // El 12 ahora es el nivel de la nube (T1); el 13 es la siguiente versión futura desconocida.
-    db.exec("PRAGMA user_version=13");
+    // El catálogo cubre hasta el nivel 20.
+    db.exec("PRAGMA user_version=21");
     expect(() => initialize(db)).toThrow(expect.objectContaining({ code: "DATABASE_VERSION" }));
   } finally { db.close(); }
   expect(existsSync(file)).toBe(true);

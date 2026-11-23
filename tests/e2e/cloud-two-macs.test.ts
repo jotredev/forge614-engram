@@ -207,21 +207,19 @@ integration("offline: the queue waits intact and uploads once the address is res
   expect(found).toHaveLength(1);
 }, postgresTestTimeoutMs);
 
-// Escenario 5 (D6, T3b): una carpeta sin archivo de identidad se reconoce por su remoto de Git equivalente.
-integration("a project without .forge614/project.json is recognized by its Git remote", async () => {
+// Una instalación anterior solo aporta la fila de compatibilidad. Sin confirmación ni
+// directorio Git local para verificarla, esa evidencia obliga a decidir antes de vincular.
+integration("a historic cloud remote alone requires an explicit binding", async () => {
   const macA = createMac(), macB = createMac();
   expect((await runIn(macA, "init", "--json")).code).toBe(0);
-  const url = await freshDatabase("t6_scenario5");
-  expect((await runIn(macA, "cloud", "on", "--postgres-url", url)).code).toBe(0);
   const repoA = mkdtempSync(join(tmpdir(), "forge614-repo-a-"));
   directories.push(repoA);
   await Bun.spawn(["git", "init"], { cwd: repoA, stdout: "ignore", stderr: "ignore" }).exited;
   await Bun.spawn(["git", "remote", "add", "origin", "https://github.com/example/repo.git"], { cwd: repoA, stdout: "ignore", stderr: "ignore" }).exited;
-  // Ligar la carpeta con `init --json --directory` (D6): con la nube activa y un remoto usable, crea el
-  // proyecto y anota su remoto normalizado, sin escribir `.forge614/project.json` con un vínculo distinto.
   const bound = JSON.parse((await run(macA, repoA, "init", "--json", "--directory", repoA)).stdout);
-  expect(bound.project.projectId).toBeTruthy();
-  expect((await run(macA, repoA, "save", "--project-id", bound.project.projectId, "--title", "From A's repo", "--content", "Bound by Git remote")).code).toBe(0);
+  const saved = JSON.parse((await run(macA, repoA, "save", "--project-id", bound.project.projectId, "--title", "From A's repo", "--content", "Bound by Git remote")).stdout);
+  const url = await freshDatabase("t6_scenario5");
+  expect((await runIn(macA, "cloud", "on", "--postgres-url", url)).code).toBe(0);
   expect((await runIn(macA, "sync")).code).toBe(0);
   expect((await runIn(macB, "init", "--json")).code).toBe(0);
   expect((await runIn(macB, "cloud", "on", "--postgres-url", url)).code).toBe(0);
@@ -229,10 +227,13 @@ integration("a project without .forge614/project.json is recognized by its Git r
   const repoB = mkdtempSync(join(tmpdir(), "forge614-repo-b-"));
   directories.push(repoB);
   await Bun.spawn(["git", "init"], { cwd: repoB, stdout: "ignore", stderr: "ignore" }).exited;
-  // Remoto equivalente al de A (ssh en vez de https, sin ".git" final ya presente igual): D6 lo reconoce como el mismo proyecto.
   await Bun.spawn(["git", "remote", "add", "origin", "git@github.com:example/repo.git"], { cwd: repoB, stdout: "ignore", stderr: "ignore" }).exited;
-  const boundB = JSON.parse((await run(macB, repoB, "init", "--json", "--directory", repoB)).stdout);
-  expect(boundB.project.projectId).toBe(bound.project.projectId);
+
+  const attempt = await run(macB, repoB, "init", "--json", "--directory", repoB);
+  expect(attempt.code).toBe(1);
+  expect(JSON.parse(attempt.stderr).code).toBe("PROJECT_BINDING_REQUIRED");
+  const got = JSON.parse((await runIn(macB, "get", "--project-id", bound.project.projectId, "--id", saved.id)).stdout);
+  expect(got.content).toBe("Bound by Git remote");
 }, postgresTestTimeoutMs);
 
 // Escenario 6 (M5): sin `cloud on`, ni el `.env` ni el nivel de esquema cambian con el uso normal de la CLI.

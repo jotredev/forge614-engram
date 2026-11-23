@@ -22,7 +22,7 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { boardTypeAllowed,ECOSYSTEM_AFFECTS_MIN,ECOSYSTEM_BOARD_LIMIT,ECOSYSTEM_STATUS_MAX,ECOSYSTEM_STATUS_TOPIC,groupIdentity } from "../../modules/ecosystem";
 import { findSecret,memoryTypes,normalizeAffects,normalizeShort,reviewAfterFor,sameConfirmationPayload,type Memory,type MemoryMeta,type MemoryOwner,type MemoryVersion,type SaveInput } from "../../modules/memory";
-import { projectIdentity,type Project } from "../../modules/projects";
+import { normalizeIdentityOrigin,projectIdentity,type Project } from "../../modules/projects";
 import { sessionIdentity,summaryContent,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../../modules/sessions";
 import { MemoryError } from "../../shared/errors";
 import { touchSession } from "./activity";
@@ -34,10 +34,18 @@ import { getGroup,recordIdentityEvent,requireEcosystem } from "./ecosystem-group
 import { groupSource } from "./board";
 import { get,required,type Row } from "./memory";
 import { getProject,projectForDirectory,requireProjectBindings,resolveProjectDirectory as resolveProjectDirectoryInTransaction } from "./projects";
+import { ensureProjectIdentitySchema,schemaFeatures } from "./schema";
 import { endRuntimeSession,inferredSessions,manualSession,requireSessions,sessionsEnabled,startRuntimeSession,validateSelectedSession } from "./sessions";
 
 // Las escrituras compuestas (varios pasos combinados) son dueñas aquí de su transacción externa;
 // las funciones internas (helpers) de hoja reutilizan esa misma conexión.
+
+function prepareProjectOrigin(db: Database, origin: string | null | undefined): string | null {
+  const key = origin ? normalizeIdentityOrigin(origin) : null;
+  if (key !== null && !schemaFeatures(db)?.projectIdentity) ensureProjectIdentitySchema(db);
+  return key;
+}
+
 /**
  * Encuentra o crea el proyecto vinculado a una carpeta (directory) local. Si ya existe un vínculo
  * para esa carpeta lo devuelve tal cual; si no existe y `create` es verdadero, crea el proyecto y
@@ -59,7 +67,8 @@ export function resolveProjectDirectory(db: Database, directory: string, name: s
     bindingAvailable?: (directory:string)=>boolean, origin?: string | null): { project: Project | null; created: boolean } {
   requireProjectBindings(db);
   const path = required(directory,"directory"), displayName = required(name,"name");
-  const operation = () => resolveProjectDirectoryInTransaction(db,path,displayName,create,bindingAvailable,origin);
+  const key = create ? prepareProjectOrigin(db, origin) : null;
+  const operation = () => resolveProjectDirectoryInTransaction(db,path,displayName,create,bindingAvailable,key);
   // Solo cuando puede crear hace falta transacción: crear el proyecto y su vínculo son dos
   // escrituras que deben quedar juntas; una simple búsqueda no escribe nada y no la necesita.
   return create ? db.transaction(operation).immediate() : operation();
@@ -137,9 +146,11 @@ export function endSession(db: Database, projectId: string, sessionId: string): 
 export function startSessionForProjectDirectory(db: Database, directory: string, name: string, runtimeDirectory: string, sessionId: string,
     bindingAvailable?: (directory:string)=>boolean, origin?: string | null): Session {
     requireSessions(db);
+    requireProjectBindings(db);
     const id = sessionIdentity(sessionId); const runtime = required(runtimeDirectory,"runtimeDirectory");
+    const key = prepareProjectOrigin(db, origin);
     return db.transaction(() => {
-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,key);
       return startRuntimeSession(db,context.project!.projectId,id,runtime);
     }).immediate();
   }
@@ -196,9 +207,10 @@ export function rebindProjectDirectory(db: Database, directory: string, projectI
       if (bound?.projectId === identity) return { previousProjectId: null };
       // Mover un vínculo existente es un evento de identidad, así que requiere el alcance ecosystem.
       if (bound) requireEcosystem(db);
-      // Se borra el vínculo viejo antes de insertar el nuevo (la carpeta es única en la tabla).
-      if (bound) db.query("DELETE FROM project_bindings WHERE directory=?").run(path);
-      db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)").run(path,identity,new Date().toISOString());
+      const now = new Date().toISOString();
+      // Conserva la clave de carpeta a la que apunta el historial de correcciones.
+      if (bound) db.query("UPDATE project_bindings SET projectId=?,createdAt=? WHERE directory=?").run(identity,now,path);
+      else db.query("INSERT INTO project_bindings(directory,projectId,createdAt) VALUES(?,?,?)").run(path,identity,now);
       // El evento solo se registra cuando de verdad se movió algo, no en la primera vinculación.
       if (bound) recordIdentityEvent(db, { action: "PROJECT_REBOUND_FROM_FILE", projectId: identity, previousProjectId: bound.projectId, directory: path });
       return { previousProjectId: bound?.projectId ?? null };
@@ -220,8 +232,9 @@ export function rebindProjectDirectory(db: Database, directory: string, projectI
 export function saveForProjectDirectory(db: Database, directory: string, name: string, input: Omit<SaveInput,"projectId"|"scope">,
     bindingAvailable?: (directory:string)=>boolean, origin?: string | null): MemoryVersion {
     requireProjectBindings(db);
+    const key = prepareProjectOrigin(db, origin);
     return db.transaction(() => {
-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,key);
       return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },{},new Date().toISOString()).memory;
     }).immediate();
   }
@@ -244,8 +257,9 @@ export function saveWithSessionForProjectDirectory(db: Database, directory: stri
     options: SessionSaveOptions = {}, bindingAvailable?: (directory:string)=>boolean, origin?: string | null): SessionSaveResult {
     requireProjectBindings(db);
     const runtime = required(runtimeDirectory,"runtimeDirectory");
+    const key = prepareProjectOrigin(db, origin);
     return db.transaction(() => {
-      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,origin);
+      const context = resolveProjectDirectoryInTransaction(db, directory,name,true,bindingAvailable,key);
       return saveCore(db, { ...input, scope:"project", projectId:context.project!.projectId },
         { ...options, runtimeDirectory:runtime },new Date().toISOString());
     }).immediate();

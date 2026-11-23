@@ -1,9 +1,4 @@
-/**
- * Detecta si un texto contiene un secreto (contraseña, token, llave privada, etc.) antes de guardarlo
- * como recuerdo, para poder rechazar el guardado en vez de almacenar el secreto. Lo usa
- * `src/infrastructure/sqlite/writes.ts` al validar el contenido de un `memory_save`.
- */
-// Credenciales que nunca deben guardarse en la memoria. El id nombra el tipo de secreto para que quien
+// Credenciales que nunca deben guardarse en recuerdos o claves de identidad. El id nombra el tipo de secreto para que quien
 // llama pueda decir qué quitar; el valor que hizo coincidir el patrón nunca se devuelve ni se repite.
 const SECRET_PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ["private-key", /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/u],

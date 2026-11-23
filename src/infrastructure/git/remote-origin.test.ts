@@ -39,3 +39,8 @@ test("does not resolve include: only reads what is directly in this file", () =>
   writeConfig(dir, '[include]\n\tpath = ../other.gitconfig\n[remote "origin"]\n\turl = https://github.com/org/repo.git\n');
   expect(readOriginRemote(dir)).toBe("https://github.com/org/repo.git");
 }));
+
+test("rejects multiple origin URLs even across sections", () => withDirectory(dir => {
+  writeConfig(dir, '[remote "origin"]\n\turl = https://example.com/Org/First\n[remote "upstream"]\n\turl = https://example.com/Org/Other\n[REMOTE "origin"]\n\tURL = ssh://git@example.com/Org/Second\n');
+  expect(readOriginRemote(dir)).toBeNull();
+}));

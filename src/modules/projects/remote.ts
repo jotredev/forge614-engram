@@ -1,17 +1,65 @@
 /**
- * Identidad de proyecto por remoto de Git (D6): normaliza la URL de un remoto `origin` a una forma
- * comparable entre protocolos (https, ssh, forma scp) y hosts distintos en mayúsculas o minúsculas,
- * y decide a qué proyecto ya conocido corresponde un remoto entrante, sin adivinar cuando hay
- * ambigüedad. La usa `src/infrastructure/sqlite/projects.ts` al resolver, con escritura, la carpeta
- * de un proyecto que todavía no tiene archivo de identidad (`.forge614/project.json`): así una
- * carpeta clonada en otra Mac se liga al proyecto que ya llegó de la nube en vez de crear uno nuevo.
+ * Las claves de identidad de Git conservan los puertos personalizados. La normalización histórica
+ * de D6 ignoraba puertos y credenciales, por lo que solo sirve para compatibilidad.
  */
+
+import { findSecret } from "../../shared/secrets";
 
 // Reconoce si el texto trae esquema (protocolo, la parte antes de "://"): https://, http://, ssh://,
 // git:// o git+ssh://. Sin esquema y con ":" antes de la primera "/", es la forma scp de Git
 // (usuario@host:ruta), que se reescribe a host/ruta antes de seguir.
 const SCHEME = /^[a-z][a-z0-9+.-]*:\/\//iu;
 const SCP_FORM = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/u;
+
+const IDENTITY_URL = /^(https?|ssh|git|git\+ssh):\/\/([^/]+)(\/.*)$/iu;
+const IDENTITY_SCP = /^(?:([\w.-]+)@)?(\[[\da-f:.]+\]|[\w.-]+):(.+)$/iu;
+const DEFAULT_PORTS: Record<string, number> = { http: 80, https: 443, ssh: 22, git: 9418, "git+ssh": 22 };
+const AMBIGUOUS_URL_CHARS = /[\s\\?#\u0000-\u001f\u007f]/u;
+
+/** Clave de catálogo derivada de un origin Git de red, sin usuario ni credenciales. */
+export function normalizeIdentityOrigin(raw: string): string | null {
+  const value = raw.trim();
+  if (AMBIGUOUS_URL_CHARS.test(value) || /^[a-z]:/iu.test(value) || findSecret(value)) return null;
+  try {
+    const decoded = decodeURIComponent(value);
+    if (AMBIGUOUS_URL_CHARS.test(decoded) || findSecret(decoded)) return null;
+  } catch { return null; }
+
+  const url = IDENTITY_URL.exec(value);
+  if (url) {
+    const [, scheme, authority, path] = url;
+    return identityKey(scheme!.toLowerCase(), authority!, path!);
+  }
+  const scp = IDENTITY_SCP.exec(value);
+  if (!scp || SCHEME.test(value)) return null;
+  const [, user, host, path] = scp;
+  // Una ruta relativa para otra cuenta SSH depende de su directorio personal.
+  if (user && user !== "git" && !path!.startsWith("/")) return null;
+  return identityKey("ssh", user ? `${user}@${host}` : host!, path!);
+}
+
+function identityKey(scheme: string, authority: string, path: string): string | null {
+  const parts = /^(?:([\w.-]+)@)?(\[[\da-f:.]+\]|[a-z\d](?:[a-z\d.-]*[a-z\d])?)(?::(\d+))?$/iu.exec(authority);
+  if (!parts) return null;
+  const [, user, host, port] = parts;
+  if (user && scheme !== "ssh" && scheme !== "git+ssh") return null;
+  const number = port === undefined ? null : Number(port);
+  if (number !== null && (number < 1 || number > 65535)) return null;
+  // URL comprueba la sintaxis de IPv6 entre corchetes sin reinterpretar la ruta.
+  if (host!.startsWith("[")) {
+    try { new URL(`http://${host}`); } catch { return null; }
+  }
+  const repository = path.replace(/^\//u, "").replace(/\/+$/u, "").replace(/\.git$/iu, "");
+  if (!repository || repository.split("/").some(part => !part || /^(?:\.|%2e){1,2}$/iu.test(part))) return null;
+  const endpoint = number === null || number === DEFAULT_PORTS[scheme] ? host : `${host}:${number}`;
+  return `${endpoint!.toLowerCase()}/${repository}`;
+}
+
+/** La copia de compatibilidad histórica ignora el puerto. Recibe una clave de catálogo. */
+export function legacyOriginKey(origin: string): string {
+  const slash = origin.indexOf("/");
+  return origin.slice(0, slash).replace(/:\d+$/u, "") + origin.slice(slash);
+}
 
 /**
  * Normaliza la URL de un remoto de Git a la forma `host/ruta`, para que dos formas distintas del

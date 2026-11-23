@@ -4,8 +4,9 @@
  * corte de nivel de esquema para los vínculos de proyecto.
  */
 import { expect, test } from "bun:test";
-import { createProject, getProject, listProjects, projectForDirectory, resolveProjectDirectory } from "./projects";
-import { enableCloud, enableProjectBindings } from "./schema";
+import { createProject, getProject, listProjects, projectForDirectory } from "./projects";
+import { resolveProjectDirectory } from "./writes";
+import { enableCloud, enableProjectBindings, enableSearchReinforcement } from "./schema";
 import { withDatabase } from "../__test-support__/fixtures";
 import type { MemoryError } from "../../shared/errors";
 
@@ -33,26 +34,20 @@ test("directory resolution reuses its binding and refuses same-name ambiguity", 
 }));
 
 // Comprueba que el nivel de esquema 7 siga admitiendo vínculos de proyecto, pero que un nivel futuro
-// desconocido (13) los rechace en vez de tratarlos como compatibles.
+// desconocido (21) los rechace en vez de tratarlos como compatibles.
 test("schema 7 retains project bindings without admitting future versions", () => withDatabase(db => {
-  enableProjectBindings(db); db.exec("PRAGMA user_version=7");
+  enableSearchReinforcement(db);
   expect(resolveProjectDirectory(db,"/seven","Seven",true).project?.name).toBe("Seven");
-  // El nivel 12 ya es el de la nube (T1); el 13 es la próxima versión todavía desconocida.
-  db.exec("PRAGMA user_version=13");
+  db.exec("PRAGMA user_version=21");
   expect(()=>projectForDirectory(db,"/seven")).toThrow(expect.objectContaining({code:"MIGRATION_REQUIRED"}));
 }));
 
-// D6 (T3b): con la nube activa, una carpeta sin ligar cuyo remoto coincide con el de un proyecto ya
-// conocido se liga a ese proyecto en vez de crear uno nuevo, sin que el nombre repetido lo impida
-// (justo el caso de una carpeta que llegó de otra Mac con el mismo nombre de proyecto).
-test("D6: con nube, remoto coincidente liga a un proyecto existente con el mismo nombre en vez de rechazarlo", () => withDatabase(db => {
+test("un remoto confirmado liga a un proyecto existente aunque el nombre ya esté ocupado", () => withDatabase(db => {
   enableCloud(db);
-  const existing = createProject(db, "Shared");
-  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)")
-    .run(existing.projectId, "github.com/org/repo", "2020-01-01T00:00:00.000Z");
+  const first = resolveProjectDirectory(db, "/mac-1/shared", "Shared", true, undefined, "git@github.com:org/repo.git");
   const result = resolveProjectDirectory(db, "/mac-2/shared", "Shared", true, undefined, "https://github.com/org/repo.git");
-  expect(result).toEqual({ project: existing, created: false });
-  expect(projectForDirectory(db, "/mac-2/shared")?.projectId).toBe(existing.projectId);
+  expect(result).toEqual({ project: first.project, created: false });
+  expect(projectForDirectory(db, "/mac-2/shared")?.projectId).toBe(first.project?.projectId);
 }));
 
 // D6 (T3b): sin ninguna coincidencia por remoto, el flujo sigue siendo el de siempre: se crea un
@@ -64,28 +59,16 @@ test("D6: con nube, sin coincidencia de remoto crea un proyecto nuevo como siemp
   expect(db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(result.project!.projectId)).toEqual({ origin: "github.com/org/fresh" });
 }));
 
-// D6 (T3b): dos proyectos que comparten el mismo remoto son una ambigüedad que nunca se resuelve
-// adivinando; la carpeta nueva sigue el flujo de hoy (aquí, con un nombre sin choque, crea un proyecto).
-test("D6: dos proyectos con el mismo remoto no ligan a ninguno; sigue el flujo de hoy", () => withDatabase(db => {
+test("dos proyectos con el mismo remoto histórico requieren un vínculo explícito", () => withDatabase(db => {
   enableCloud(db);
   const p1 = createProject(db, "One"); const p2 = createProject(db, "Two");
   const now = "2020-01-01T00:00:00.000Z";
   db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(p1.projectId, "github.com/org/dup", now);
   db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(p2.projectId, "github.com/org/dup", now);
-  const result = resolveProjectDirectory(db, "/mac-3/dup", "Three", true, undefined, "https://github.com/org/dup.git");
-  expect(result.created).toBe(true);
-  expect(result.project!.projectId).not.toBe(p1.projectId);
-  expect(result.project!.projectId).not.toBe(p2.projectId);
-}));
-
-// D6 (T3b): el remoto anotado nunca conserva las credenciales embebidas que traía la entrada.
-test("D6: el remoto guardado nunca conserva credenciales", () => withDatabase(db => {
-  enableCloud(db);
-  const result = resolveProjectDirectory(db, "/mac-1/creds", "Creds", true, undefined, "https://user:token@github.com/org/creds.git");
-  const stored = db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(result.project!.projectId) as { origin: string };
-  expect(stored.origin).toBe("github.com/org/creds");
-  expect(stored.origin).not.toContain("@");
-  expect(stored.origin).not.toContain("token");
+  expect(() => resolveProjectDirectory(db, "/mac-3/dup", "Three", true, undefined, "https://github.com/org/dup.git"))
+    .toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
+  expect(projectForDirectory(db, "/mac-3/dup")).toBeNull();
+  expect(listProjects(db)).toEqual([p1, p2]);
 }));
 
 // D6 (T3b): resolver dos veces la misma carpeta con el mismo remoto no debe reescribir updated_at ni
@@ -101,24 +84,22 @@ test("D6: resolver dos veces con el mismo remoto no cambia updated_at ni vuelve 
   expect(db.query("SELECT count(*) AS n FROM cloud_outbox WHERE kind='project_remotes'").get()).toEqual({ n: 0 });
 }));
 
-// D6 (T3b): un remoto distinto para una carpeta ya ligada sí actualiza origin y updated_at, y encola el cambio.
-test("D6: un remoto nuevo actualiza origin y updated_at, y encola el cambio", () => withDatabase(db => {
+test("un guardado ordinario conserva el remoto confirmado al cambiar el remoto de la carpeta", () => withDatabase(db => {
   enableCloud(db);
   const first = resolveProjectDirectory(db, "/mac-1/moved", "Moved", true, undefined, "https://github.com/org/old.git");
   db.exec("DELETE FROM cloud_outbox");
   resolveProjectDirectory(db, "/mac-1/moved", "Moved", true, undefined, "https://github.com/org/new.git");
   const stored = db.query("SELECT origin FROM project_remotes WHERE project_id=?").get(first.project!.projectId) as { origin: string };
-  expect(stored.origin).toBe("github.com/org/new");
-  expect(db.query("SELECT count(*) AS n FROM cloud_outbox WHERE kind='project_remotes'").get()).toEqual({ n: 1 });
+  expect(stored.origin).toBe("github.com/org/old");
+  expect(db.query("SELECT count(*) AS n FROM cloud_outbox WHERE kind='project_remotes'").get()).toEqual({ n: 0 });
 }));
 
-// D6 (T3b): sin nube activa, la tabla project_remotes ni siquiera existe; resolver con un remoto
-// no debe fallar ni intentar consultarla.
-test("D6: sin nube, resolver con un remoto no toca project_remotes ni falla", () => withDatabase(db => {
+test("sin nube, un proyecto nuevo guarda su remoto confirmado en el catálogo local", () => withDatabase(db => {
   enableProjectBindings(db);
   const result = resolveProjectDirectory(db, "/mac-1/no-cloud", "NoCloud", true, undefined, "https://github.com/org/no-cloud.git");
   expect(result.created).toBe(true);
-  expect(db.query("SELECT name FROM sqlite_master WHERE name='project_remotes'").all()).toEqual([]);
+  expect(db.query("SELECT value FROM project_identity_settings WHERE project_id=? AND setting='origin'").get(result.project!.projectId))
+    .toEqual({ value: "github.com/org/no-cloud" });
 }));
 
 // D6 (T3b): un remoto cuyo contenido, tras normalizarse, todavía parece un secreto (aquí, en la ruta)
@@ -204,24 +185,14 @@ test("el error de nombre repetido dice qué proyecto es y cómo resolverlo, sin 
   expect(failure(() => resolveProjectDirectory(db, "/repo/.git", "New", true))).toEqual(expected("/repo"));
 }));
 
-// Fija, con nube y un remoto igual al de un proyecto perdido, que la carpeta nueva NUNCA crea un proyecto
-// aparte. Con un único proyecto con ese remoto, la regla de 177-183 (D6) la liga a él antes de llegar a
-// la comprobación de carpetas perdidas, aunque el nombre sea distinto; con dos proyectos que lo comparten,
-// esa regla no adivina y es la decisión 1b la que bloquea, nombrando al primero en orden estable.
-test("con nube y el remoto de un proyecto perdido, la carpeta nueva se liga a él o se bloquea, nunca crea otro", () => withDatabase(db => {
+test("un remoto histórico de una carpeta perdida requiere confirmación antes de crear otro proyecto", () => withDatabase(db => {
   enableCloud(db);
   const when = "2020-01-01T00:00:00.000Z";
   const lost = resolveProjectDirectory(db, "/gone/lost-name", "Lost", true).project!;
   db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(lost.projectId, "github.com/org/lost", when);
-  const linked = resolveProjectDirectory(db, "/work/other-name", "other-name", true, nothingExists, "https://github.com/org/lost.git");
-  expect(linked).toEqual({ project: lost, created: false });
-  expect(listProjects(db)).toHaveLength(1);
-
-  // Segundo proyecto con el mismo remoto y con carpeta existente: ya no hay coincidencia única.
-  const alive = resolveProjectDirectory(db, "/exists/alive", "Alive", true).project!;
-  db.query("INSERT INTO project_remotes(project_id,origin,updated_at) VALUES(?,?,?)").run(alive.projectId, "github.com/org/lost", when);
-  const blocked = failure(() => resolveProjectDirectory(db, "/work/third", "third", true, directory => directory.startsWith("/exists"), "git@github.com:org/lost.git"));
+  const blocked = failure(() => resolveProjectDirectory(db, "/work/other-name", "other-name", true, nothingExists, "https://github.com/org/lost.git"));
   expect(blocked.code).toBe("PROJECT_BINDING_REQUIRED");
-  expect(blocked.message).toStartWith(`Esta carpeta podría ser el proyecto «Lost» (${lost.projectId}), cuya carpeta registrada (/gone/lost-name) ya no existe.`);
-  expect(listProjects(db)).toHaveLength(2);
+  expect(blocked.message).toContain(lost.projectId);
+  expect(projectForDirectory(db, "/work/other-name")).toBeNull();
+  expect(listProjects(db)).toEqual([lost]);
 }));
