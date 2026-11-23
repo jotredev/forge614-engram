@@ -263,3 +263,40 @@ test("a newly discovered remote candidate makes a previous correction pending ag
   await m.error("PROJECT_BINDING_REQUIRED", "session-start", "--directory", copy, "--session-id", "cannot-start");
   expect(a).not.toBe(chosen);
 }, 40_000);
+
+test("group bind and project rename report tracked identities and keep the index and file intact", async () => {
+  const m = await machine(), folder = repository(originalURL);
+  const project = (await m.ok("init", "--json", "--directory", folder)).project.projectId;
+  expect(existsSync(join(folder, ".forge614"))).toBe(false);
+  const { group } = await m.ok("group-create", "--name", "team");
+  const clean = await m.ok("group-bind", "--project-id", project, "--group", group.id);
+  expect(clean.identityFilesUpdated).toBe(0);
+  expect(existsSync(join(folder, ".forge614"))).toBe(false);
+  const file = seedLegacyFile(folder, project);
+  git(folder, "add", "-f", ".forge614/project.json");
+  const bytes = readFileSync(file);
+  const index = readFileSync(join(folder, ".git", "index"));
+  const notice = { code: "PROJECT_FILE_TRACKED" };
+  expect((await m.ok("startup-context", "--json", "--directory", folder)).project).toMatchObject({
+    projectId: project, notices: [notice],
+  });
+  expect(await m.ok("group-bind", "--project-id", project, "--group", group.id)).toMatchObject({
+    identityFilesUpdated: 0, notices: [notice],
+  });
+  expect(await m.ok("project-rename", "--project-id", project, "--name", "New name")).toMatchObject({
+    projectId: project, name: "New name", notices: [notice],
+  });
+  expect(readFileSync(file)).toEqual(bytes);
+  expect(readFileSync(join(folder, ".git", "index"))).toEqual(index);
+  expect(existsSync(join(folder, ".gitignore"))).toBe(false);
+}, 40_000);
+
+test("a long name stays valid in SQLite when legacy publication cannot represent it", async () => {
+  const m = await machine(), folder = temporary();
+  git(folder, "init", "--quiet");
+  const chosen = await m.ok("project-create", "--name", "x".repeat(301), "--directory", folder);
+  expect(chosen.notices).toEqual([expect.objectContaining({ code: "PROJECT_FILE_NOT_WRITTEN" })]);
+  expect(existsSync(join(folder, ".gitignore"))).toBe(false);
+  expect(existsSync(join(folder, ".forge614", "project.json"))).toBe(false);
+  expect((await m.ok("startup-context", "--json", "--directory", folder)).project.projectId).toBe(chosen.projectId);
+}, 40_000);

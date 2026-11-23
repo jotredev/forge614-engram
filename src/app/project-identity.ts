@@ -4,11 +4,13 @@
  * proyecto y el grupo (ecosistema) que declara pertenecer.
  */
 import { declaredGroupId } from "../modules/ecosystem";
-import type { Project } from "../modules/projects";
+import { normalizeIdentityOrigin, type Project } from "../modules/projects";
 import { MemoryError } from "../shared/errors";
 import { readNodeEcosystem } from "../infrastructure/filesystem/node-file";
 import { ensureProjectFile,readProjectFile,updateProjectFile,type ProjectFile,type ProjectFileGroup } from "../infrastructure/filesystem/project-identity-file";
-import { rootOfBinding } from "../infrastructure/git/project-directory";
+import { identityRootsOfBinding } from "../infrastructure/git/project-directory";
+import { ensureProjectIgnored, isTrackedProjectFile } from "../infrastructure/git/project-ignore";
+import { readOriginRemote } from "../infrastructure/git/remote-origin";
 import type { MemoryStore } from "./memory-store";
 
 /** Aviso generado al registrar, ligar o publicar una identidad de proyecto, para que quien llama informe qué pasó. */
@@ -49,6 +51,25 @@ export function applyDeclaredGroup(store: MemoryStore, projectId: string, group:
   store.bindProjectToGroup(projectId, group.id, group.source);
 }
 
+export const TRACKED_PROJECT_FILE: IdentityNotice = {
+  code: "PROJECT_FILE_TRACKED",
+  message: "Git rastrea .forge614/project.json. Engram conservó el archivo y el índice.",
+};
+
+function checkProjectFileWrite(root: string, git: boolean): void {
+  if (!git) return;
+  const status = ensureProjectIgnored(root);
+  if (status === "tracked") throw new MemoryError(TRACKED_PROJECT_FILE.code, TRACKED_PROJECT_FILE.message);
+  if (status === "unavailable") {
+    throw new MemoryError("PROJECT_FILE_NOT_WRITTEN", "No se pudo confirmar la exclusión de /.forge614/ en el .gitignore raíz. La identidad de SQLite sigue disponible.");
+  }
+}
+
+function protectionNotice(error: unknown): IdentityNotice | null {
+  return error instanceof MemoryError && (error.code === "PROJECT_FILE_TRACKED" || error.code === "PROJECT_FILE_NOT_WRITTEN")
+    ? notice(error.code, error.message) : null;
+}
+
 /**
  * Escribe (o completa) `.forge614/project.json` en `root` con el proyecto y grupo dados.
  * @param project Identidad a escribir.
@@ -57,24 +78,22 @@ export function applyDeclaredGroup(store: MemoryStore, projectId: string, group:
  * @param notices Lista a la que se añade un aviso si el archivo se creó por primera vez para
  * un proyecto que antes solo estaba ligado por ruta (`legacy`), o si no se pudo escribir.
  * @param legacy Si el proyecto ya existía por vínculo de ruta antes de tener este archivo.
- * @throws MemoryError con código `PROJECT_FILE_INVALID` si el archivo existente no es válido
- * (se relanza tal cual; cualquier otro error se convierte en un aviso `PROJECT_FILE_NOT_WRITTEN`).
+ * Las operaciones ya confirmadas conservan su resultado aunque falle la publicación posterior.
  */
-function writeIdentity(project: { projectId: string; name: string }, root: string, group: ProjectFileGroup | null, notices: IdentityNotice[], legacy: boolean): void {
+function writeIdentity(project: { projectId: string; name: string }, root: string, group: ProjectFileGroup | null, notices: IdentityNotice[], legacy: boolean, git: boolean): void {
   try {
-    const result = ensureProjectFile(root, { projectId: project.projectId, name: project.name, ecosystem: group }, { fillGroup: group !== null });
+    const result = ensureProjectFile(root, { projectId: project.projectId, name: project.name, ecosystem: group }, { fillGroup: group !== null, beforeWrite: () => checkProjectFileWrite(root, git) });
     if (result.status === "created" && legacy) notices.push(notice("PROJECT_FILE_CREATED", "Este proyecto ya estaba vinculado por ruta; se escribió su .forge614/project.json (identidad portátil)."));
   } catch (error) {
-    if (error instanceof MemoryError && error.code === "PROJECT_FILE_INVALID") throw error;
-    notices.push(notice("PROJECT_FILE_NOT_WRITTEN", "No se pudo escribir .forge614/project.json en esta carpeta."));
+    notices.push(protectionNotice(error) ?? notice("PROJECT_FILE_NOT_WRITTEN", "No se pudo escribir .forge614/project.json en esta carpeta."));
   }
 }
 
 /** Publica en el árbol la identidad que ya se confirmó en SQLite. */
-export function publishIdentity(store: MemoryStore, project: Project, root: string | null, legacy: boolean): IdentityNotice[] {
+export function publishIdentity(store: MemoryStore, project: Project, root: string | null, legacy: boolean, git = false): IdentityNotice[] {
   if (root === null) return [];
   const notices: IdentityNotice[] = [];
-  writeIdentity(project, root, groupOf(store, project.projectId) ?? null, notices, legacy);
+  writeIdentity(project, root, groupOf(store, project.projectId) ?? null, notices, legacy, git);
   return notices;
 }
 
@@ -100,26 +119,42 @@ export function groupOf(store: MemoryStore, projectId: string | null): { id: str
  * @param patch Campos a cambiar: `name` el nombre nuevo, `group` el grupo nuevo (`null` para quitarlo).
  * @returns Cuántos archivos se actualizaron y cuántos se saltaron por estar dañados.
  */
-export function updateIdentityFiles(store: MemoryStore, projectId: string, patch: { name?: string; group?: ProjectFileGroup | null }): { updated: number; skipped: number } {
+export function updateIdentityFiles(store: MemoryStore, projectId: string, patch: { name?: string; group?: ProjectFileGroup | null }):
+    { updated: number; skipped: number; notices?: IdentityNotice[] } {
   const project = store.getProject(projectId);
+  const notices: IdentityNotice[] = [];
   let updated = 0, skipped = 0;
   for (const key of store.projectDirectories(projectId)) {
-    const root = rootOfBinding(key);
-    if (root === null) continue;
-    try {
-      const before = readProjectFile(root);
-      if (before === null) {
-        if (patch.group === undefined || project === null) continue;
-        ensureProjectFile(root, { projectId, name: patch.name ?? project.name, ecosystem: patch.group });
-        updated++; continue;
+    const roots = identityRootsOfBinding(key);
+    const raw = roots.some(item => item.git) ? readOriginRemote(key) : null;
+    const hasUsableRemote = raw !== null && normalizeIdentityOrigin(raw) !== null;
+    for (const { root, git } of roots) {
+      try {
+        const before = readProjectFile(root);
+        const beforeWrite = () => checkProjectFileWrite(root, git);
+        if (before === null) {
+          if (patch.group === undefined || project === null || hasUsableRemote) continue;
+          ensureProjectFile(root, { projectId, name: patch.name ?? project.name, ecosystem: patch.group }, { beforeWrite });
+          updated++;
+          continue;
+        }
+        if (git && isTrackedProjectFile(root)) {
+          notices.push(TRACKED_PROJECT_FILE);
+          skipped++;
+          continue;
+        }
+        if (before.project.id !== projectId) continue;
+        const after = updateProjectFile(root, {
+          ...(patch.name === undefined ? {} : { name: patch.name }),
+          ...(patch.group === undefined ? {} : { ecosystem: patch.group }),
+        }, beforeWrite, projectId);
+        if (after !== null && JSON.stringify(after) !== JSON.stringify(before)) updated++;
+      } catch (error) {
+        skipped++;
+        const warning = protectionNotice(error);
+        if (warning) notices.push(warning);
       }
-      if (before.project.id !== projectId) continue;
-      const after = updateProjectFile(root, {
-        ...(patch.name === undefined ? {} : { name: patch.name }),
-        ...(patch.group === undefined ? {} : { ecosystem: patch.group }),
-      });
-      if (JSON.stringify(after) !== JSON.stringify(before)) updated++;
-    } catch { skipped++; }
+    }
   }
-  return { updated, skipped };
+  return { updated, skipped, ...(notices.length ? { notices } : {}) };
 }

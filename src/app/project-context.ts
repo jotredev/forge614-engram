@@ -4,10 +4,12 @@ import type { MemoryVersion, SaveInput } from "../modules/memory";
 import { normalizeIdentityOrigin, projectIdentity, type Project } from "../modules/projects";
 import type { ParallelSession, PreviousSession, Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";
 import { MemoryStore, projectIdentityFor } from "./memory-store";
-import { applyDeclaredGroup, declaredGroupChanges, enrollEcosystem, groupOf, publishIdentity, readDeclaredGroup, type IdentityNotice } from "./project-identity";
+import { applyDeclaredGroup, declaredGroupChanges, enrollEcosystem, groupOf, publishIdentity, readDeclaredGroup,
+  TRACKED_PROJECT_FILE, type IdentityNotice } from "./project-identity";
 import { readProjectFile, type ProjectFile } from "../infrastructure/filesystem/project-identity-file";
 import { canonicalProject, canonicalProjectForRead, identityRoot, runtimeProjectDirectory, bindingAvailable } from "../infrastructure/git/project-directory";
 import { readOriginRemote } from "../infrastructure/git/remote-origin";
+import { isTrackedProjectFile } from "../infrastructure/git/project-ignore";
 import type { ProjectBindingCorrection } from "../infrastructure/sqlite/project-catalog";
 export { assertGitProjectDirectory } from "../infrastructure/git/project-directory";
 
@@ -21,7 +23,7 @@ export interface ProjectContext {
 
 type ProjectMemoryInput = Omit<SaveInput, "projectId" | "scope">;
 type Canonical = ReturnType<typeof canonicalProject>;
-type FolderEvidence = { directory: string; name: string; root: string | null; origin: string | null; file: ProjectFile | null };
+type FolderEvidence = { directory: string; name: string; root: string | null; origin: string | null; file: ProjectFile | null; git: boolean; tracked: boolean };
 type PendingReason = "ambiguous" | "conflict" | "unverified-origin" | "cloud-pending";
 type ProjectDecision =
   | { status: "known"; projectId: string; source: "binding" | "file" | "remote" }
@@ -37,12 +39,15 @@ function allowsEvidence(correction: ProjectBindingCorrection, evidence: FolderEv
 
 function folderEvidence(directory: string, canonical: Canonical, root = identityRoot(directory, canonical)): FolderEvidence {
   const raw = canonical.git ? readOriginRemote(canonical.directory) : null;
+  const file = root === null ? null : readProjectFile(root);
   return {
     directory: canonical.directory,
     name: canonical.name,
     root,
     origin: raw === null ? null : normalizeIdentityOrigin(raw),
-    file: root === null ? null : readProjectFile(root),
+    file,
+    git: canonical.git,
+    tracked: canonical.git && root !== null && file !== null && isTrackedProjectFile(root),
   };
 }
 
@@ -108,12 +113,15 @@ function acceptsGroupDeclaration(store: MemoryStore, directory: string, projectI
 }
 
 function publishResolved(store: MemoryStore, evidence: FolderEvidence, project: Project, legacy: boolean): IdentityNotice[] {
+  if (evidence.tracked) return [TRACKED_PROJECT_FILE];
   if (evidence.file && evidence.file.project.id !== project.projectId) return [];
-  return publishIdentity(store, project, evidence.root, legacy);
+  if (evidence.origin !== null && evidence.file === null) return [];
+  return publishIdentity(store, project, evidence.root, legacy, evidence.git);
 }
 
 function context(store: MemoryStore, evidence: FolderEvidence, projectId: string | null, source: string, notices: IdentityNotice[] = []): ProjectContext {
   const group = groupOf(store, projectId);
+  if (evidence.tracked && !notices.some(notice => notice.code === TRACKED_PROJECT_FILE.code)) notices = [...notices, TRACKED_PROJECT_FILE];
   return { projectId, directory: evidence.directory, source, ...(group ? { group } : {}), ...(notices.length ? { notices } : {}) };
 }
 

@@ -15,7 +15,7 @@ import { missingWalSidecar, openWorkspaceDatabase } from "../infrastructure/sqli
 import { enrollEcosystem, updateIdentityFiles, type IdentityNotice } from "./project-identity";
 
 /** Cuántos archivos de identidad se actualizaron y cuántos se saltaron por estar dañados, tras una operación que pudo tocar varios. */
-export interface IdentityFilesResult { updated: number; skipped: number }
+export interface IdentityFilesResult { updated: number; skipped: number; notices?: IdentityNotice[] }
 /** Resultado de ligar un proyecto a un grupo: el grupo, si el vínculo cambió de verdad, y qué pasó con sus archivos de identidad. */
 export interface GroupBinding { group: Group; changed: boolean; identityFiles: IdentityFilesResult }
 /** Resultado de quitar a un proyecto de su grupo: si estaba ligado de verdad, y qué pasó con sus archivos de identidad. */
@@ -100,7 +100,7 @@ export class MemoryWorkspace {
    * @throws MemoryError con código `INVALID_INPUT` si `projectId` no es un UUID válido de
    * proyecto, o si el nombre nuevo está vacío, no es texto o contiene un carácter nulo.
    */
-  renameProject(projectId: string, name: string): Project {
+  renameProject(projectId: string, name: string): Project & { notices?: IdentityNotice[] } {
     projectIdentity(projectId);
     if (typeof name !== "string" || !name.trim() || name.includes("\0")) {
       throw new MemoryError("INVALID_INPUT", "El nombre del proyecto no puede estar vacío.");
@@ -108,8 +108,8 @@ export class MemoryWorkspace {
     const store = this.open();
     try {
       const renamed = store.renameProject(projectId, name);
-      updateIdentityFiles(store, renamed.projectId, { name: renamed.name });
-      return renamed;
+      const { notices } = updateIdentityFiles(store, renamed.projectId, { name: renamed.name });
+      return notices ? { ...renamed, notices } : renamed;
     } finally { store.close(); }
   }
 
@@ -174,12 +174,13 @@ export class MemoryWorkspace {
     try {
       if (!store.ecosystemEnabled()) throw new MemoryError("GROUP_NOT_FOUND", "Grupo no encontrado en esta base.");
       const renamed = store.renameGroup(store.resolveGroup(group).id, label);
-      const identityFiles = { updated: 0, skipped: 0 };
+      const identityFiles: IdentityFilesResult = { updated: 0, skipped: 0 };
       // Se recorren todos los proyectos que hoy son miembros del grupo renombrado, sumando cuántos archivos se actualizaron o se saltaron en cada uno.
       for (const summary of store.listGroups().filter(item => item.id === renamed.id)) {
         for (const member of summary.projects) {
           const result = updateIdentityFiles(store, member.projectId, { group: { id: renamed.id, name: renamed.name } });
           identityFiles.updated += result.updated; identityFiles.skipped += result.skipped;
+          if (result.notices) (identityFiles.notices ??= []).push(...result.notices);
         }
       }
       return { group: renamed, identityFiles };

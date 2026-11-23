@@ -7,12 +7,13 @@
  */
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FORGE614_GROUP_ID } from "../../modules/ecosystem";
 import { MemoryStore } from "../memory-store";
 import { readStartupBlock, readStartupContext } from "../startup-context";
+import { updateIdentityFiles } from "../project-identity";
 import { bindProjectContext, resolveProjectContext, resolveStartupProjectContext, saveProjectMemory, startProjectSession } from "../project-context";
 
 const directories: string[] = [];
@@ -252,4 +253,81 @@ test("a free remote conflicts with a copied file for a project whose confirmed r
   expect(() => saveProjectMemory(database, copied, { title: "Blocked", content: "Must not save", type: "fact" }))
     .toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
   expect(database.getSession(privateMemory.projectId!, "disagreement")).toBeNull();
+});
+
+test("remote-backed Git writes and later group updates keep identity only in SQLite", () => {
+  const db = store(), folder = repository();
+  git(folder, "remote", "add", "origin", "https://example.com/Org/Stored.git");
+  const saved = saveProjectMemory(db, folder, { title: "Registered", content: "SQLite identity", type: "fact" });
+  expect(existsSync(join(folder, ".forge614"))).toBe(false);
+  expect(existsSync(join(folder, ".gitignore"))).toBe(false);
+  db.enableEcosystem();
+  const group = db.createGroup("team");
+  db.bindProjectToGroup(saved.projectId!, group.id, "command");
+  expect(updateIdentityFiles(db, saved.projectId!, { group: { id: group.id, name: group.name } })).toEqual({ updated: 0, skipped: 0 });
+  expect(existsSync(join(folder, ".forge614"))).toBe(false);
+});
+
+test("legacy identity creation establishes exclusions per worktree", () => {
+  const db = store(), folder = repository(), sibling = temporary("engram-linked-");
+  rmSync(sibling, { recursive: true });
+  git(folder, "worktree", "add", "--quiet", "-b", "linked", sibling);
+  const project = resolveProjectContext(db, folder, true);
+  expect(readFileSync(join(folder, ".gitignore"), "utf8")).toBe("/.forge614/\n");
+  expect(existsSync(filePath(sibling))).toBe(false);
+  db.enableEcosystem();
+  const group = db.createGroup("team");
+  db.bindProjectToGroup(project.projectId!, group.id, "command");
+  expect(updateIdentityFiles(db, project.projectId!, { group: { id: group.id, name: group.name } })).toMatchObject({ updated: 2, skipped: 0 });
+  expect(readFileSync(join(sibling, ".gitignore"), "utf8")).toBe("/.forge614/\n");
+  expect(read(sibling).project.id).toBe(project.projectId!);
+});
+
+test("tracked legacy identity is read and reported while group and project changes preserve every byte", () => {
+  const db = store(), folder = repository(), id = crypto.randomUUID();
+  writeIdentity(folder, { schemaVersion: 1, project: { id, name: "Tracked legacy" } });
+  git(folder, "add", "-f", ".forge614/project.json");
+  const before = readFileSync(filePath(folder));
+  const startup = readStartupContext(db, folder);
+  expect(startup.project).toMatchObject({ projectId: id, source: "file", notices: [{ code: "PROJECT_FILE_TRACKED" }] });
+  expect(existsSync(join(folder, ".gitignore"))).toBe(false);
+  db.enableEcosystem();
+  const group = db.createGroup("team");
+  db.bindProjectToGroup(id, group.id, "command");
+  db.renameProject(id, "After update");
+  expect(updateIdentityFiles(db, id, { group: { id: group.id, name: group.name } }))
+    .toMatchObject({ updated: 0, skipped: 1, notices: [{ code: "PROJECT_FILE_TRACKED" }] });
+  expect(updateIdentityFiles(db, id, { name: "After update" }))
+    .toMatchObject({ updated: 0, skipped: 1, notices: [{ code: "PROJECT_FILE_TRACKED" }] });
+  expect(readFileSync(filePath(folder))).toEqual(before);
+  expect(db.getProject(id)?.name).toBe("After update");
+  expect(db.groupOfProject(id)?.group.id).toBe(group.id);
+});
+
+test.skipIf(process.platform === "win32")("an unavailable Git exclusion reports a notice and leaves SQLite usable", () => {
+  const db = store(), folder = repository(), guard = join(folder, ".gitignore");
+  writeFileSync(guard, "# protected\n", { mode: 0o444 });
+  try {
+    const resolved = resolveProjectContext(db, folder, true);
+    expect(resolved.notices).toEqual([{ code: "PROJECT_FILE_NOT_WRITTEN", message: expect.stringContaining(".gitignore") }]);
+    expect(existsSync(filePath(folder))).toBe(false);
+    expect(readFileSync(guard, "utf8")).toBe("# protected\n");
+    expect(db.projectForDirectory(resolved.directory)?.projectId).toBe(resolved.projectId!);
+  } finally { chmodSync(guard, 0o644); }
+});
+
+test("a worktree path reused by a different repository never receives another project's identity", () => {
+  const db = store(), primary = repository(), reused = temporary("engram-reused-");
+  rmSync(reused, { recursive: true });
+  git(primary, "worktree", "add", "--quiet", "-b", "old-worktree", reused);
+  const project = resolveProjectContext(db, primary, true);
+  rmSync(reused, { recursive: true });
+  mkdirSync(reused);
+  git(reused, "init", "--quiet");
+  db.enableEcosystem();
+  const group = db.createGroup("team");
+  expect(updateIdentityFiles(db, project.projectId!, { group: { id: group.id, name: group.name } }))
+    .toMatchObject({ updated: 1, skipped: 0 });
+  expect(existsSync(join(reused, ".gitignore"))).toBe(false);
+  expect(existsSync(filePath(reused))).toBe(false);
 });

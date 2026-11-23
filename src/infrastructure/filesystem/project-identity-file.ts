@@ -107,6 +107,12 @@ function serialize(file: ProjectFile): string {
   return `${JSON.stringify({ schemaVersion: 1, project: file.project, ecosystem: file.ecosystem === undefined ? null : file.ecosystem }, null, 2)}\n`;
 }
 
+function validateForWrite(file: ProjectFile): void {
+  if (!projectFileSchema().safeParse(file).success) {
+    throw new MemoryError("PROJECT_FILE_NOT_WRITTEN", "Esta identidad no cabe en el formato de .forge614/project.json. Sigue disponible en SQLite.");
+  }
+}
+
 /**
  * Lee el archivo de identidad de la raíz de un repositorio.
  * @param root Carpeta raíz del repositorio.
@@ -117,6 +123,10 @@ function serialize(file: ProjectFile): string {
  * contenido no es JSON válido, o no cumple el esquema esperado.
  */
 export function readProjectFile(root: string): ProjectFile | null {
+  return projectFileSnapshot(root)?.file ?? null;
+}
+
+function projectFileSnapshot(root: string): { file: ProjectFile; bytes: Buffer } | null {
   const folder = entry(join(root, ".forge614"));
   if (folder === null) return null;
   if (folder.isSymbolicLink() || !folder.isDirectory()) invalid();
@@ -124,11 +134,11 @@ export function readProjectFile(root: string): ProjectFile | null {
   const file = entry(path);
   if (file === null) return null;
   if (file.isSymbolicLink() || !file.isFile() || file.size > MAX_BYTES) invalid();
-  let value: unknown;
-  try { value = JSON.parse(readFileSync(path, "utf8")); } catch { return invalid(); }
+  let bytes: Buffer, value: unknown;
+  try { bytes = readFileSync(path); value = JSON.parse(bytes.toString("utf8")); } catch { return invalid(); }
   const parsed = projectFileSchema().safeParse(value);
   if (!parsed.success) invalid();
-  return parsed.data as ProjectFile;
+  return { file: parsed.data as ProjectFile, bytes };
 }
 
 /**
@@ -151,9 +161,14 @@ function temporary(root: string, content: string): string {
  * @param content Contenido nuevo a publicar.
  * @throws El error original de `renameSync` si el renombrado falla.
  */
-function replace(root: string, content: string): void {
+function replace(root: string, content: string, expected: Buffer): void {
   const source = temporary(root, content);
-  try { renameSync(source, projectFilePath(root)); }
+  try {
+    if (!projectFileSnapshot(root)?.bytes.equals(expected)) {
+      throw new MemoryError("PROJECT_FILE_NOT_WRITTEN", "El archivo .forge614/project.json cambió durante la actualización. Se conservaron sus bytes.");
+    }
+    renameSync(source, projectFilePath(root));
+  }
   catch (error) { try { unlinkSync(source); } catch { /* Conserva el material recuperable si la limpieza falla. */ } throw error; }
 }
 /**
@@ -192,19 +207,24 @@ function create(root: string, content: string): boolean {
  * @throws MemoryError con código `PROJECT_FILE_INVALID` si el archivo existente o el creado por otro
  * escritor concurrente no se puede leer.
  */
-export function ensureProjectFile(root: string, wanted: WantedProjectFile, options: { fillGroup?: boolean } = {}): { status: EnsureStatus; file: ProjectFile } {
-  const existing = readProjectFile(root);
-  if (existing === null) {
+export function ensureProjectFile(root: string, wanted: WantedProjectFile, options: { fillGroup?: boolean; beforeWrite?: () => void } = {}): { status: EnsureStatus; file: ProjectFile } {
+  const prior = projectFileSnapshot(root);
+  if (prior === null) {
     const file: ProjectFile = { schemaVersion: 1, project: { id: wanted.projectId, name: wanted.name }, ecosystem: wanted.ecosystem };
+    validateForWrite(file);
+    options.beforeWrite?.();
     if (create(root, serialize(file))) return { status: "created", file };
     const winner = readProjectFile(root);
     if (winner === null) return invalid();
     return { status: "unchanged", file: winner };
   }
+  const existing = prior.file;
   const fill = existing.ecosystem === undefined || (existing.ecosystem === null && options.fillGroup === true && wanted.ecosystem !== null);
-  if (!fill) return { status: "unchanged", file: existing };
+  if (!fill || existing.project.id !== wanted.projectId) return { status: "unchanged", file: existing };
   const file: ProjectFile = { ...existing, ecosystem: wanted.ecosystem };
-  replace(root, serialize(file));
+  validateForWrite(file);
+  options.beforeWrite?.();
+  replace(root, serialize(file), prior.bytes);
   return { status: "completed", file };
 }
 
@@ -218,14 +238,21 @@ export function ensureProjectFile(root: string, wanted: WantedProjectFile, optio
  * identidad.
  * @throws MemoryError con código `PROJECT_FILE_INVALID` si el archivo existente no se puede leer.
  */
-export function updateProjectFile(root: string, patch: { name?: string; ecosystem?: ProjectFileGroup | null }): ProjectFile | null {
-  const existing = readProjectFile(root);
-  if (existing === null) return null;
+export function updateProjectFile(root: string, patch: { name?: string; ecosystem?: ProjectFileGroup | null },
+    beforeWrite?: () => void, expectedProjectId?: string): ProjectFile | null {
+  const prior = projectFileSnapshot(root);
+  if (prior === null || (expectedProjectId !== undefined && prior.file.project.id !== expectedProjectId)) return null;
+  const existing = prior.file;
   const next: ProjectFile = {
     schemaVersion: 1,
     project: { id: existing.project.id, name: patch.name ?? existing.project.name },
     ecosystem: patch.ecosystem === undefined ? existing.ecosystem : patch.ecosystem,
   };
-  if (serialize(next) !== serialize(existing)) replace(root, serialize(next));
+  const content = serialize(next);
+  if (content !== serialize(existing)) {
+    validateForWrite(next);
+    beforeWrite?.();
+    replace(root, content, prior.bytes);
+  }
   return next;
 }

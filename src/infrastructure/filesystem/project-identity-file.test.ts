@@ -116,3 +116,21 @@ test("nothing else inside .forge614 is ever touched", () => {
   expect(readFileSync(join(root, ".forge614", "lock.json"), "utf8")).toBe("{\"hub\":true}");
   expect(readdirSync(join(root, ".forge614")).sort()).toEqual(["lock.json", "project.json"]);
 });
+
+test("a legacy update preserves file bytes changed after reading its original identity", () => {
+  const root = repository(), input = wanted();
+  ensureProjectFile(root, input);
+  const changed = JSON.stringify({ schemaVersion: 1, project: { id: input.projectId, name: "Changed elsewhere" }, ecosystem: null });
+  expect(() => updateProjectFile(root, { name: "Old observation" }, () => write(root, changed)))
+    .toThrow(expect.objectContaining({ code: "PROJECT_FILE_NOT_WRITTEN" }));
+  expect(readFileSync(projectFilePath(root), "utf8")).toBe(changed);
+});
+
+test("an identity that the legacy reader cannot represent is rejected before any publication", () => {
+  const root = repository();
+  let attempted = false;
+  expect(() => ensureProjectFile(root, { ...wanted(), name: "x".repeat(301) }, { beforeWrite: () => { attempted = true; } }))
+    .toThrow(expect.objectContaining({ code: "PROJECT_FILE_NOT_WRITTEN" }));
+  expect(attempted).toBe(false);
+  expect(readProjectFile(root)).toBeNull();
+});

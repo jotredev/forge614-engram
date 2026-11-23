@@ -128,10 +128,9 @@ test("a broken file is skipped and reported, and a missing file is created only 
 // Verifica que un vínculo hecho sobre la carpeta .git de un checkout resuelve la raíz de identidad en el checkout, mientras que un repositorio bare (sin árbol de trabajo) no tiene ninguna carpeta de identidad que actualizar.
 test("a Git binding key resolves to its checkout, a bare repository to none", () => {
   const db = store(), checkout = root(), bare = root(), project = db.createProject("Git");
-  mkdirSync(join(checkout, ".git"));
+  expect(Bun.spawnSync(["git", "-C", checkout, "init", "--quiet"], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
   db.bindProjectDirectory(join(checkout, ".git"), project.projectId);
-  for (const entry of ["objects", "refs"]) mkdirSync(join(bare, entry));
-  writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
+  expect(Bun.spawnSync(["git", "-C", bare, "init", "--bare", "--quiet"], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
   db.bindProjectDirectory(bare, project.projectId);
   expect(updateIdentityFiles(db, project.projectId, { group: null })).toEqual({ updated: 1, skipped: 0 });
   expect(file(checkout).project.id).toBe(project.projectId);
