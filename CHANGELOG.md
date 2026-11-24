@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.12.0
 
 - **Session startup.** Project pins appear first and have reserved space in `Essentials`. The startup block reports omitted pins, and `memory_context` can list them by scope. Saves warn when a pin exceeds its scope's reservation. Session summaries keep references to the active pins of their owner.
+- **Pinned short versions.** New short versions for pinned memories can contain up to 120 Unicode characters. Startup clips older short versions to fit while preserving their stored text.
+- **Memory protocol.** The v4 manual calls for looking up applicable rules before commits, pushes, issues, branches, and releases.
 
 ## 1.11.0
 
