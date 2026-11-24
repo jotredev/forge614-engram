@@ -274,7 +274,8 @@ export function rootOfBinding(key: string): string | null {
 /** Devuelve las raíces de identidad alcanzables desde una clave de vínculo local. */
 export function identityRootsOfBinding(key: string): { root: string; git: boolean }[] {
   let common: string;
-  try { common = realpathSync(key); } catch { return []; }
+  // Git puede devolver el nombre largo de NTFS aunque el vínculo se guardara con un alias 8.3.
+  try { common = realpathSync.native(key); } catch { return []; }
   const ordinary = rootOfBinding(key);
   if (ordinary === key) {
     try {
@@ -286,7 +287,7 @@ export function identityRootsOfBinding(key: string): { root: string; git: boolea
     try {
       const root = bindableProjectDirectory(path);
       const canonical = canonicalProjectForRead(root);
-      if (canonical.git && canonical.directory === common) roots.add(root);
+      if (canonical.git && realpathSync.native(canonical.directory) === common) roots.add(root);
     } catch { /* La raíz ya no está disponible. */ }
   };
   const listing = runProjectGit(key, ["--git-dir", key, "worktree", "list", "--porcelain", "-z"]);

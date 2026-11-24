@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
-import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withDatabase, withDirectory } from "../__test-support__/fixtures";
+import { expectPosixMode } from "../__test-support__/permissions";
 import { openDatabase } from "./connection";
 import { findProjectsByOrigin } from "./project-catalog";
 import { createProject, projectForDirectory } from "./projects";
@@ -76,7 +77,7 @@ for (const legacy of [5, 8, 11, 12]) {
       expect(schemaState(db)).toEqual({ base: legacy < 11 ? 5 : 7, ecosystem: legacy >= 8, intelligence: legacy >= 11, cloud: legacy === 12, projectIdentity: true });
       const backups = readdirSync(root).filter(file => file.endsWith(".bak"));
       expect(backups).toHaveLength(1);
-      expect(statSync(join(root, backups[0]!)).mode & 0o777).toBe(0o600);
+      expectPosixMode(join(root, backups[0]!), 0o600);
       const backup = openDatabase(join(root, backups[0]!), { readonly: true });
       try {
         expect(version(backup)).toEqual({ user_version: legacy });

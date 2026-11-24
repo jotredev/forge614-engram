@@ -420,6 +420,9 @@ test("startup-context recognizes a reclone by confirmed origin before creating a
   });
   expect(existsSync(join(clone, ".forge614"))).toBe(false);
   const db = new Database(join(home, ".forge614", "memory", "engram.db"), { readonly: true });
-  try { expect(db.query("SELECT directory FROM project_bindings ORDER BY directory").all()).toEqual([{ directory: realpathSync(join(first, ".git")) }]); }
+  try {
+    const bindings = db.query("SELECT directory FROM project_bindings ORDER BY directory").all() as { directory: string }[];
+    expect(bindings.map(({ directory }) => realpathSync.native(directory))).toEqual([realpathSync.native(join(first, ".git"))]);
+  }
   finally { db.close(); }
 });

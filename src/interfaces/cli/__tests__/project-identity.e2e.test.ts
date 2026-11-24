@@ -197,14 +197,14 @@ test("replaying a corrected binding cannot reverse a later origin confirmation o
 
 test("a failure during correction rolls back the new project, its settings and the binding", async () => {
   const m = await machine(), folder = repository(originalURL);
-  const original = (await m.ok("init", "--json", "--directory", folder)).project.projectId;
+  const { projectId: original, directory } = (await m.ok("init", "--json", "--directory", folder)).project;
   const store = new MemoryStore(m.database);
   const db = new Database(m.database);
   try {
     db.exec(`CREATE TRIGGER interrupt_correction BEFORE INSERT ON project_binding_corrections
       BEGIN SELECT RAISE(ABORT,'interrupted correction'); END`);
     expect(() => createProjectContext(store, folder, { name: "Must roll back", replaceFrom: original })).toThrow("interrupted correction");
-    expect(store.projectForDirectory(realpathSync(join(folder, ".git")))?.projectId).toBe(original);
+    expect(store.projectForDirectory(directory)?.projectId).toBe(original);
     expect(store.listProjects().map(project => project.projectId)).toEqual([original]);
     expect(db.query("SELECT setting,value FROM project_identity_settings").all()).toEqual([
       { setting: "origin", value: "example.com/Owner/Original" },
