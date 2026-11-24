@@ -23,12 +23,14 @@ import { createHash } from "node:crypto";
 import { boardTypeAllowed,ECOSYSTEM_AFFECTS_MIN,ECOSYSTEM_BOARD_LIMIT,ECOSYSTEM_STATUS_MAX,ECOSYSTEM_STATUS_TOPIC,groupIdentity } from "../../modules/ecosystem";
 import { findSecret,memoryTypes,normalizeAffects,normalizeShort,reviewAfterFor,sameConfirmationPayload,type Memory,type MemoryMeta,type MemoryOwner,type MemoryVersion,type SaveInput } from "../../modules/memory";
 import { normalizeIdentityOrigin,projectIdentity,type Project } from "../../modules/projects";
-import { sessionIdentity,summaryContent,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../../modules/sessions";
+import { PINNED_TEXT_MAX } from "../../modules/search";
+import { PINNED_SUMMARY_HEADING,PINNED_SUMMARY_LIMIT,matchesSummaryWithSavedPins,sessionIdentity,summaryContent,type Session,type SessionSaveOptions,type SessionSaveResult,type SummaryFields } from "../../modules/sessions";
 import { MemoryError } from "../../shared/errors";
 import { touchSession } from "./activity";
 import { confirmationCandidate,confirmationRequest,reinforcementEnabled } from "./confirmations";
 import { intelligenceEnabled } from "./intelligence";
 import { readMeta,upsertMeta } from "./meta";
+import { countPinsOutsideReservation,readPinned } from "./pinned";
 import { similarTo } from "./similar";
 import { getGroup,recordIdentityEvent,requireEcosystem } from "./ecosystem-groups";
 import { groupSource } from "./board";
@@ -349,8 +351,8 @@ export function saveSessionSummary(db: Database, projectId: string, sessionId: s
       // la comprobación normal de "tema reservado para un resumen de sesión", porque este guardado
       // es precisamente ese resumen.
       const result = group === null
-        ? saveCore(db, {projectId:project,...summaryInput},{sessionId:id},new Date().toISOString(),true)
-        : saveCore(db, {scope:"ecosystem",projectId:null,groupId:group,...summaryInput},{sessionId:id,projectId:project},new Date().toISOString(),true);
+        ? saveCore(db, {projectId:project,...summaryInput},{sessionId:id},new Date().toISOString(),fields)
+        : saveCore(db, {scope:"ecosystem",projectId:null,groupId:group,...summaryInput},{sessionId:id,projectId:project},new Date().toISOString(),fields);
       // Si la petición ya se había servido, saveCore devolvió la respuesta anterior sin tocar nada
       // más: el puntero no necesita actualizarse de nuevo.
       if (replay) return result;
@@ -386,6 +388,7 @@ export function saveSessionSummary(db: Database, projectId: string, sessionId: s
  */
 function requestReplay(db: Database, input: {
   scope:Memory["scope"];projectId:string|null;groupId:string|null;request:string;hash:string;explicit:string|null;optionProject:string|null;
+  hashWithSavedPins?: (content: string) => string | null;
 }): SessionSaveResult|null {
   const column=input.scope==="ecosystem" ? "groupId" : "projectId";
   const ownerId=input.scope==="ecosystem" ? input.groupId : input.projectId;
@@ -398,11 +401,12 @@ function requestReplay(db: Database, input: {
   // Los dos caminos son mutuamente excluyentes por diseño; que ambos existan es un estado imposible.
   if(previous && confirmed) throw new MemoryError("REQUEST_CONFLICT","La clave de petición tiene registros incompatibles.");
   if(previous) {
-    // Misma clave de petición pero contenido distinto: no se puede reproducir con seguridad.
-    if(previous.payload_hash!==input.hash) throw new MemoryError("REQUEST_CONFLICT","La clave de petición ya corresponde a otro contenido.");
     // Reconstruye el recuerdo tal como quedó guardado entonces, a partir de su foto (snapshot) versionada.
     const row=db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(previous.memory_id,previous.version) as {snapshot:string};
     const memory=JSON.parse(row.snapshot) as MemoryVersion;
+    if (previous.payload_hash !== input.hash && previous.payload_hash !== input.hashWithSavedPins?.(memory.content)) {
+      throw new MemoryError("REQUEST_CONFLICT","La clave de petición ya corresponde a otro contenido.");
+    }
     // Busca con qué sesión quedó asociado ese guardado original (si las sesiones estaban habilitadas entonces).
     const origin=sessionsEnabled(db) ? db.query(`SELECT e.sessionId,s.kind,s.projectId FROM session_entries e
       JOIN sessions s ON s.sessionId=e.sessionId WHERE e.memoryId=? AND e.version=?`).get(previous.memory_id,previous.version) as
@@ -420,8 +424,10 @@ function requestReplay(db: Database, input: {
   }
   // Ninguno de los dos caminos tiene registro: la petición es nueva y debe guardarse de verdad.
   if(!confirmed) return null;
-  if(confirmed.payloadHash!==input.hash) throw new MemoryError("REQUEST_CONFLICT","La clave de petición ya corresponde a otro contenido.");
   const stored=confirmed.response;
+  if (confirmed.payloadHash !== input.hash && confirmed.payloadHash !== input.hashWithSavedPins?.(stored.memory.content)) {
+    throw new MemoryError("REQUEST_CONFLICT","La clave de petición ya corresponde a otro contenido.");
+  }
   if(input.explicit!==null && stored.sessionId!==input.explicit) throw new MemoryError("REQUEST_CONFLICT","La petición ya tiene otra asociación de sesión.");
   if(input.explicit!==null) validateSelectedSession(db,input.explicit,input.scope,input.projectId,input.optionProject,false);
   // Aquí el origen se reconstruye desde la sesión guardada en la propia respuesta de la confirmación.
@@ -496,7 +502,7 @@ function applySaveMeta(db: Database, input: { id: string; type: SaveInput["type"
  *   REQUEST_CONFLICT (vía requestReplay), SESSION_NOT_FOUND/SESSION_KIND/SESSION_CLOSED (vía
  *   validateSelectedSession) y SUPERSEDES_NOT_FOUND (vía applySaveMeta).
  */
-function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, requestNow: string, summary = false): SessionSaveResult {
+function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, requestNow: string, summary?: SummaryFields): SessionSaveResult {
     // El alcance por defecto es project; solo project, shared y ecosystem son válidos.
     const scope = input.scope === undefined ? "project" : input.scope;
     if (scope !== "project" && scope !== "shared" && scope !== "ecosystem") throw new MemoryError("INVALID_INPUT", "scope debe ser project o shared.");
@@ -511,7 +517,7 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
     const ownerColumn = scope === "ecosystem" ? "groupId" : "projectId";
     const ownerId = scope === "ecosystem" ? groupId : projectId;
     const title = required(input.title, "title");
-    const content = required(input.content, "content");
+    let content = required(input.content, "content");
     if (!memoryTypes.includes(input.type)) throw new MemoryError("INVALID_INPUT", "Tipo de recuerdo no válido.");
     if (input.pinned !== undefined && typeof input.pinned !== "boolean") throw new MemoryError("INVALID_INPUT", "pinned debe ser booleano.");
     const topic = input.topicKey === undefined ? null : required(input.topicKey, "topicKey");
@@ -531,7 +537,6 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
     // ese nivel habilitado se rechaza en vez de ignorarse en silencio.
     const wantsMeta = input.short !== undefined || input.supersedes !== undefined || input.affects !== undefined;
     if (wantsMeta && !intelligenceEnabled(db)) throw new MemoryError("INTELLIGENCE_REQUIRED", "short, supersedes y affects requieren la memoria inteligente (forge614-engram intelligence-enable).");
-    const short = input.short === undefined ? undefined : normalizeShort(input.short);
     const affects = input.affects === undefined ? undefined : normalizeAffects(input.affects);
     const supersedes = input.supersedes === undefined ? null : required(input.supersedes, "supersedes");
     let pinned = input.pinned ?? false;
@@ -541,11 +546,24 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
     // Hash (huella corta y determinista) del contenido relevante del guardado; sirve para detectar
     // si una petición repetida (mismo requestKey) trae el mismo contenido o uno distinto. Se
     // recalcula más abajo, una vez que `pinned` puede haber cambiado por las reglas del ecosistema.
-    let hash = createHash("sha256").update(JSON.stringify([scope,ownerId,title,content,input.type,topic,pinned,expected])).digest("hex");
+    const hashContent = (value: string): string => createHash("sha256")
+      .update(JSON.stringify([scope,ownerId,title,value,input.type,topic,pinned,expected])).digest("hex");
+    let hash = hashContent(content);
     if (options.mode !== undefined && options.mode !== "independent" && options.mode !== "assistant") throw new MemoryError("INVALID_INPUT","mode no válido.");
     const explicit = options.sessionId === undefined ? null : sessionIdentity(options.sessionId);
     const optionProject = options.projectId === undefined ? null : projectIdentity(options.projectId);
     const runtimeDirectory = options.runtimeDirectory === undefined ? null : required(options.runtimeDirectory,"runtimeDirectory");
+    const replayRequest = request === null ? () => null : () => requestReplay(db, {
+      scope, projectId, groupId, request, hash, explicit, optionProject,
+      ...(summary && scope !== "shared" ? { hashWithSavedPins: (saved: string) =>
+        matchesSummaryWithSavedPins(summary, saved, scope) ? hashContent(saved) : null } : {}),
+    });
+    const withPinNotice = (result: SessionSaveResult): SessionSaveResult => {
+      if (input.pinned !== true || !result.memory.pinned) return result;
+      const omitted = countPinsOutsideReservation(db, { scope, projectId, groupId });
+      return omitted === 0 ? result : { ...result, pinNotice: { code: "PINNED_SCOPE_OVERFLOW", scope, omitted,
+        message: `${omitted} fijadas exceden la reserva de este ámbito. Revisa o junta las reglas redundantes.` } };
+    };
       // El proyecto (o el grupo) dueño del recuerdo debe existir de antemano; nada se crea aquí.
       if (projectId !== null && !getProject(db, projectId)) throw new MemoryError("PROJECT_NOT_FOUND", "Crea el proyecto antes de guardar.");
       if (groupId !== null) {
@@ -555,9 +573,10 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
       // Primer punto de salida por petición repetida: si requestKey ya se sirvió, se devuelve esa
       // respuesta sin evaluar nada más (ni siquiera la sesión).
       if (request !== null) {
-        const replay=requestReplay(db,{scope,projectId,groupId,request,hash,explicit,optionProject});
-        if(replay) return replay;
+        const replay = replayRequest();
+        if(replay) return withPinNotice(replay);
       }
+      const short = input.short === undefined ? undefined : normalizeShort(input.short, pinned ? PINNED_TEXT_MAX : undefined);
       let selected: string|null = null;
       let source: SessionSaveResult["sessionSource"] = null;
       if (explicit !== null) {
@@ -634,8 +653,18 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
           }
         }
       }
-      // Se recalcula el hash porque `pinned` pudo cambiar más arriba (nota de estado forzada a pinned).
-      hash = createHash("sha256").update(JSON.stringify([scope,ownerId,title,content,input.type,topic,pinned,expected])).digest("hex");
+      if (summary) {
+        const { items, total } = readPinned(db, { scope, projectId, groupId }, PINNED_SUMMARY_LIMIT, 0, requestNow);
+        if (items.length) {
+          const label = scope === "ecosystem" ? "board" : "project";
+          const references = [PINNED_SUMMARY_HEADING, ...items.map(({ id }) => `${label} · ${id}`)];
+          const omitted = total - items.length;
+          if (omitted > 0) references.push(`${omitted} more · use memory_context with pinnedOnly: true and scope ${scope}`);
+          content = summaryContent(summary, references.join("\n")).trimEnd();
+        }
+      }
+      // Los snapshots históricos validan el hash del contenido realmente guardado.
+      hash = hashContent(content);
       const now = requestNow;
       if (reinforcementEnabled(db) && existing) {
         const versionRow=db.query("SELECT snapshot FROM memory_versions WHERE memory_id=? AND version=?").get(existing.id,existing.version) as {snapshot:string};
@@ -651,8 +680,8 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
           // Segundo punto de salida por petición repetida, ya sabiendo que este guardado sería una
           // confirmación: si la petición ya se sirvió como confirmación, se repite esa respuesta.
           if(request!==null) {
-            const replay=requestReplay(db,{scope,projectId,groupId,request,hash,explicit,optionProject});
-            if(replay) return replay;
+            const replay = replayRequest();
+            if(replay) return withPinNotice(replay);
           }
           const confirmationId=crypto.randomUUID();
           const response:SessionSaveResult={memory:confirmed,sessionId:selected,sessionSource:source};
@@ -665,7 +694,7 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
             VALUES(?,?,?,?,?,?)`).run(confirmed.id,request,hash,expected,confirmationId,JSON.stringify(response));
           if (intelligenceEnabled(db) && wantsMeta) applySaveMeta(db, { id: confirmed.id, type: input.type, now, newVersion: false, contentChanged: false,
             short, affects, supersedes, scope, ownerColumn, ownerId });
-          return response;
+          return withPinNotice(response);
         }
       }
       // A partir de aquí el contenido sí cambia (o el recuerdo es nuevo): toca crear una versión nueva de verdad.
@@ -676,8 +705,8 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
       // Tercer punto de salida por petición repetida: se repite justo antes de escribir, por si el
       // contenido cambió respecto al hash original pero la petición ya se había servido con este.
       if(request!==null) {
-        const replay=requestReplay(db,{scope,projectId,groupId,request,hash,explicit,optionProject});
-        if(replay) return replay;
+        const replay = replayRequest();
+        if(replay) return withPinNotice(replay);
       }
       if (existing) {
         // Actualiza la fila existente en el sitio: mismo id, nueva versión y nuevos datos.
@@ -710,7 +739,7 @@ function saveCore(db: Database, input: SaveInput, options: SessionSaveOptions, r
       // quien llama decida fusionarlo con uno de ellos o reemplazarlo (supersede) en vez de duplicar.
       const similar = intelligenceEnabled(db) && !existing && topic === null
         ? similarTo(db, { scope, ownerColumn, ownerId, title, content, excludeId: id }) : [];
-      return {memory:snapshot,sessionId:selected,sessionSource:source,...(similar.length > 0 ? { similar } : {})};
+      return withPinNotice({memory:snapshot,sessionId:selected,sessionSource:source,...(similar.length > 0 ? { similar } : {})});
   }
 
 /**

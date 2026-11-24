@@ -69,4 +69,40 @@ export function sessionNotice(previous?:PreviousSession|null,parallel?:ParallelS
  * @returns El texto del resumen, con los seis bloques separados por una línea en blanco.
  * @throws MemoryError con código "INVALID_INPUT" si `fields` no es un objeto, algún campo de texto es inválido, o `files` no es un arreglo de cadenas.
  */
-export function summaryContent(fields:SummaryFields):string{if(!fields||typeof fields!=="object")throw new MemoryError("INVALID_INPUT","El resumen debe ser estructurado.");const goal=textField(fields.goal,"goal",true),instructions=textField(fields.instructions,"instructions"),discoveries=textField(fields.discoveries,"discoveries"),accomplishments=textField(fields.accomplishments,"accomplishments"),nextSteps=textField(fields.nextSteps,"nextSteps");if(!Array.isArray(fields.files)||fields.files.some(file=>typeof file!=="string"))throw new MemoryError("INVALID_INPUT","files debe ser un arreglo de textos.");return [`Goal:\n${goal}`,`Instructions:\n${instructions}`,`Discoveries:\n${discoveries}`,`Accomplishments:\n${accomplishments}`,`Next steps:\n${nextSteps}`,`Files:\n${fields.files.join("\n")}`].join("\n\n");}
+export function summaryContent(fields: SummaryFields, pinnedRules?: string): string {
+  const { introduction, ending, separator } = summaryParts(fields);
+  return `${introduction}${pinnedRules ? separator + pinnedRules : ""}${ending}`;
+}
+
+function summaryParts(fields: SummaryFields): { introduction: string; ending: string; separator: string } {
+  if (!fields || typeof fields !== "object") throw new MemoryError("INVALID_INPUT", "El resumen debe ser estructurado.");
+  const goal = textField(fields.goal, "goal", true);
+  const instructions = textField(fields.instructions, "instructions");
+  const discoveries = textField(fields.discoveries, "discoveries");
+  const accomplishments = textField(fields.accomplishments, "accomplishments");
+  const nextSteps = textField(fields.nextSteps, "nextSteps");
+  if (!Array.isArray(fields.files) || fields.files.some(file => typeof file !== "string")) {
+    throw new MemoryError("INVALID_INPUT", "files debe ser un arreglo de textos.");
+  }
+  const introduction = `Goal:\n${goal}\n\nInstructions:\n${instructions}`;
+  const ending = ["", `Discoveries:\n${discoveries}`, `Accomplishments:\n${accomplishments}`,
+    `Next steps:\n${nextSteps}`, `Files:\n${fields.files.join("\n")}`].join("\n\n");
+  return { introduction, ending, separator: instructions.length ? "\n" : "" };
+}
+
+export const PINNED_SUMMARY_HEADING = "Pinned rules at save:";
+export const PINNED_SUMMARY_LIMIT = 8;
+
+/** Comprueba que la versión guardada difiere del texto del autor solo por las referencias generadas. */
+export function matchesSummaryWithSavedPins(fields: SummaryFields, content: string, scope: "project" | "ecosystem"): boolean {
+  const { introduction, ending, separator } = summaryParts(fields);
+  const prefix = introduction + separator + PINNED_SUMMARY_HEADING + "\n";
+  const suffix = ending.trimEnd();
+  if (!content.startsWith(prefix) || !content.endsWith(suffix)) return false;
+  const references = content.slice(prefix.length, -suffix.length).split("\n");
+  const label = scope === "project" ? "project" : "board";
+  const more = new RegExp(`^[1-9]\\d* more · use memory_context with pinnedOnly: true and scope ${scope}$`);
+  if (more.test(references.at(-1)!)) references.pop();
+  const reference = new RegExp(`^${label} · [a-f0-9-]{36}$`);
+  return references.length > 0 && references.length <= PINNED_SUMMARY_LIMIT && references.every(line => reference.test(line));
+}

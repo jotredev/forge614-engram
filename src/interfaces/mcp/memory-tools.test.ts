@@ -12,6 +12,33 @@ const UNBOUND_MESSAGE="Esta carpeta todavía no tiene proyecto en Engram, así q
 /** Texto exacto de la nota que acompaña a memory_search con scope ecosystem en un proyecto ligado sin grupo (fijado a propósito, sin importarlo del código). */
 const NO_GROUP_MESSAGE="Este proyecto no pertenece a ningún grupo, así que no hay recuerdos de grupo. Se vincula a uno con forge614-engram group-bind.";
 
+test("saving a pinned memory warns when its scope fills and limits new short text by Unicode characters", async () => {
+  const h = await sdkHarness(registerMemoryTools);
+  try {
+    h.store.enableIntelligence();
+    const short = "🛠".repeat(120);
+    const fields = { scope: "shared", globalIntent: "Applies everywhere", content: "Routine reminder", type: "fact", pinned: true };
+    const invalid = await h.call("memory_save", { ...fields, title: "Too long", short: short + "x" });
+    expect(invalid.data.code).toBe("INVALID_INPUT");
+    for (const invalidShort of ["a".repeat(301), "🛠".repeat(151)]) {
+      const rejected = await h.client.callTool({ name: "memory_save", arguments: { ...fields, title: "Too long", short: invalidShort } });
+      expect(rejected.isError).toBe(true);
+      expect(JSON.stringify(rejected.content)).toContain("120 caracteres");
+    }
+    expect((await h.call("memory_save", { ...fields, title: "Unpinned", pinned: false, short: "a".repeat(300) })).result.isError).not.toBe(true);
+    expect((await h.call("memory_save", { ...fields, title: "Unpinned Unicode", pinned: false, short: "🛠".repeat(300) })).result.isError).not.toBe(true);
+    for (const n of [1, 2]) {
+      const saved = await h.call("memory_save", { ...fields, title: `Rule ${n}`, topicKey: `pin/${n}`, short });
+      expect(saved.result.isError).not.toBe(true);
+      expect(saved.data).not.toHaveProperty("notices");
+    }
+    const input = { ...fields, title: "Third rule", topicKey: "pin/3", requestKey: "pin-3", short };
+    const stored = (await h.call("memory_save", input)).data;
+    expect(stored).toMatchObject({ pinned: true, notices: [{ code: "PINNED_SCOPE_OVERFLOW", scope: "shared", omitted: 1 }] });
+    expect((await h.call("memory_save", input)).data).toEqual(stored);
+  } finally { await h.close(); }
+});
+
 /**
  * En una carpeta sin proyecto, memory_search con scope project o ecosystem devuelve results [] más la nota; con scope all (o sin scope) devuelve los mismos
  * resultados que scope shared más la nota; scope shared no cambia. Existe porque el manual de memoria manda buscar antes de iniciar sesión y eso no debe

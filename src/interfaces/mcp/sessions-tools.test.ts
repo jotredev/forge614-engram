@@ -121,6 +121,70 @@ async function member(h: Awaited<ReturnType<typeof sdkHarness>>) {
   return { projectId: seed.projectId as string, group };
 }
 
+test("session summaries retain the author's instructions and owner-scoped pin references across replay", async () => {
+  const h = await sdkHarness(both);
+  try {
+    h.store.enableIntelligence();
+    const { projectId, group } = await member(h);
+    h.store.setGroupSource(group.id, projectId);
+    const shared = h.store.save({ scope: "shared", projectId: null, title: "Personal pin", content: "Personal", type: "fact", pinned: true });
+    const pin = h.store.save({ projectId, title: "Local pin", content: "Project", type: "fact", pinned: true });
+    const board = h.store.save({ scope: "ecosystem", projectId: null, groupId: group.id, fromProjectId: projectId,
+      topicKey: "ecosystem/estado-actual", title: "Group pin", content: "Group", type: "fact" });
+    expect((await h.call("memory_session_start", { sessionId: "project-chat" })).result.isError).not.toBe(true);
+    const summary = { goal: "Write design", instructions: "Use the author's words.\n\nDiscoveries:\nKeep this text.", discoveries: "Project finding",
+      accomplishments: "", nextSteps: "", files: [] };
+    const input = { sessionId: "project-chat", summary, requestKey: "project-summary" };
+    const saved = (await h.call("memory_session_summary", input)).data;
+    expect(saved.memory.content).toContain(`Instructions:\n${summary.instructions}\nPinned rules at save:\nproject · ${pin.id}`);
+    expect(saved.memory.content).not.toContain(shared.id);
+    expect(saved.memory.content).not.toContain(board.id);
+    const later = h.store.save({ projectId, title: "Another local pin", content: "Added later", type: "fact", pinned: true });
+    expect((await h.call("memory_session_summary", input)).data).toEqual(saved);
+    expect((await h.call("memory_session_summary", { ...input, requestKey: "revise", expectedVersion: 1 })).data.memory.content).toContain(later.id);
+    await h.call("memory_session_start", { sessionId: "board-chat" });
+    const inGroup = (await h.call("memory_session_summary", { ...input, sessionId: "board-chat", requestKey: "board-summary",
+      scope: "ecosystem", groupIntent: "Applies to group members" })).data;
+    expect(inGroup.memory.content).toContain(`board · ${board.id}`);
+    expect(inGroup.memory.content).not.toContain(pin.id);
+    expect(inGroup.memory.content).not.toContain(shared.id);
+  } finally { await h.close(); }
+});
+
+test("pinnedOnly pages through visible project, board and personal pins within maxBytes", async () => {
+  const h = await sdkHarness(both);
+  try {
+    h.store.enableIntelligence();
+    const { projectId, group } = await member(h);
+    const project = h.store.save({ projectId, topicKey: "rules/local", title: "Project rules", content: "Local", type: "fact", pinned: true });
+    h.store.setGroupSource(group.id, projectId);
+    const board = h.store.save({ scope: "ecosystem", projectId: null, groupId: group.id, fromProjectId: projectId,
+      topicKey: "ecosystem/estado-actual", title: "Board status", content: "Group status", type: "fact" });
+    const personal = Array.from({ length: 26 }, (_, n) => h.store.save({ scope: "shared", projectId: null,
+      topicKey: n === 0 ? "rules/local" : `rules/${n}`, title: `Rule ${n}`, content: `Personal ${n}`, type: "fact", pinned: true, short: "🛠".repeat(120) }));
+    const other = h.store.createProject("Other");
+    h.store.save({ projectId: other.projectId, title: "Other", content: "Outside the view", type: "fact", pinned: true });
+    const result: string[] = [];
+    let cursor: number | undefined;
+    for (let page = 0; page < 30; page++) {
+      const { data } = await h.call("memory_context", { pinnedOnly: true, maxBytes: 1024, ...(cursor === undefined ? {} : { cursor }) });
+      expect(data).toMatchObject({ format: 1, total: 27 });
+      expect(Buffer.byteLength(JSON.stringify(data))).toBeLessThanOrEqual(1024);
+      result.push(...data.pinned.map((row: { id: string }) => row.id));
+      if (data.nextCursor === null) break;
+      cursor = data.nextCursor;
+    }
+    expect(result.slice(0, 2)).toEqual([project.id, board.id]);
+    expect(result).toHaveLength(27);
+    expect(new Set(result)).toEqual(new Set([project.id, board.id, ...personal.slice(1).map(row => row.id)]));
+    expect((await h.call("memory_context", { pinnedOnly: true, scope: "project" })).data.pinned).toEqual([
+      { id: project.id, scope: "project", short: "Project rules", marks: [] },
+    ]);
+    expect((await h.call("memory_context", { pinnedOnly: true, scope: "shared" })).data.total).toBe(26);
+    expect((await h.call("memory_context", { pinnedOnly: true, scope: "ecosystem" })).data.total).toBe(1);
+  } finally { await h.close(); }
+});
+
 // memory_context con scope ecosystem en un proyecto sin grupo ya no da error: devuelve el contexto vacío de grupo con la nota ecosystem (cambiada a propósito en 1.8.6); una vez en un grupo, devuelve solo el bloque de ecosistema, sin la forma del contexto de proyecto.
 test("memory_context on the ecosystem scope returns an empty context with a note without a group and only its block with one", async () => {
   const h = await sdkHarness(both);

@@ -19,6 +19,7 @@ import { cloudQueueStatus,takeCloudNotices } from "../infrastructure/sqlite/clou
 import * as search from "../infrastructure/sqlite/search";
 import * as sessions from "../infrastructure/sqlite/sessions";
 import { startupBlock } from "../infrastructure/sqlite/startup";
+import { readPinnedPage,type PinnedPageOptions,type PinnedView } from "../infrastructure/sqlite/pinned";
 import { applySnapshot,checkpoint,exportSnapshot } from "../infrastructure/sqlite/snapshots";
 import * as writes from "../infrastructure/sqlite/writes";
 import { downloadChanges,runCloudCycle,type CloudProgress,type CloudReplica } from "./cloud-sync";
@@ -60,11 +61,19 @@ function projectIdentityOperations(db: ReturnType<typeof openDatabase>, configur
   };
 }
 
-const projectIdentityStores = new WeakMap<MemoryStore, ReturnType<typeof projectIdentityOperations>>();
+const storeInternals = new WeakMap<MemoryStore, {
+  identity: ReturnType<typeof projectIdentityOperations>;
+  pinnedPage: (view: PinnedView, options: PinnedPageOptions, notes: object) => ReturnType<typeof readPinnedPage>;
+}>();
 
 /** Permite que el resolutor componga escrituras de identidad sin ampliar la API del SDK. */
 export function projectIdentityFor(store: MemoryStore): ReturnType<typeof projectIdentityOperations> {
-  return projectIdentityStores.get(store)!;
+  return storeInternals.get(store)!.identity;
+}
+
+/** Consulta paginada interna que usa el manejo MCP de pinnedOnly. */
+export function pinnedPageFor(store: MemoryStore, view: PinnedView, options: PinnedPageOptions, notes: object = {}) {
+  return storeInternals.get(store)!.pinnedPage(view, options, notes);
 }
 
 /** Fachada de acceso a una base SQLite de Engram: proyectos, memorias, sesiones, sincronización, ecosistema (grupos) e inteligencia. */
@@ -78,10 +87,13 @@ export class MemoryStore {
    */
   constructor(path?: string, options: { create?: boolean; readonly?: boolean } = {}) {
     this.db = path === undefined ? openDefaultDatabase(options) : openDatabase(path, options);
-    projectIdentityStores.set(this, projectIdentityOperations(this.db, () => {
-      const settings = path === undefined ? cloudSettings() : null;
-      return settings ? remoteFingerprint(settings.postgresUrl) : null;
-    }));
+    storeInternals.set(this, {
+      identity: projectIdentityOperations(this.db, () => {
+        const settings = path === undefined ? cloudSettings() : null;
+        return settings ? remoteFingerprint(settings.postgresUrl) : null;
+      }),
+      pinnedPage: (view, options, notes) => readPinnedPage(this.db, view, options, notes),
+    });
   }
   /** Crea un proyecto nuevo con el nombre dado y devuelve su registro. */
   createProject(name: string): Project { return projects.createProject(this.db, name); }

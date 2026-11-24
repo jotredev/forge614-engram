@@ -110,6 +110,13 @@ test("version 4 is one master manual: the MCP output keeps whole rules of the co
   expect(memoryProtocol().version).toBe(1);
 });
 
+test("version 4 searches for rules before changing branches, issues, commits and releases", () => {
+  const v4 = memoryProtocol(4);
+  const rule = "Before a commit, push, issue, branch or release, search for the applicable rules with memory_search.";
+  expect(v4.instructions.split("\n\n")).toContain(rule);
+  expect(v4.mcpInstructions.split("\n\n")).toContain(rule);
+});
+
 // 1.7.1: la regla de sesión ahora distingue una sesión en paralelo de una dejada abierta, y la regla de
 // escritura pide el motivo al mantener un guardado aparte de uno similar.
 // 1.7.2: la regla de sesión nombra primero la sesión previa, y para la paralela solo dice que está abierta ahora.
@@ -120,10 +127,6 @@ test("version 4 tells previous and parallel apart, asks for a reason when keepin
   expect(v4.mcpInstructions).toContain("If it returns previous, say it was left open and when, and offer to continue from its summary, without inventing what it did; if parallel, only say another session is open now.");
   expect(v4.instructions).toContain("keep yours apart telling the person why,");
   expect(v4.mcpInstructions).toContain("keep yours apart telling the person why,");
-  // 1.8.1: el manual completo pasó de 2386 a 2485 caracteres por la regla de los avisos de la nube (97 más
-  // el separador); las instrucciones MCP siguen en 1997.
-  expect(count(v4.instructions)).toBe(2485);
-  expect(count(v4.mcpInstructions)).toBe(1997);
   expect(count(v4.instructions)).toBeLessThanOrEqual(MANUAL_MAX);
   expect(count(v4.mcpInstructions)).toBeLessThan(MCP_INSTRUCTIONS_MAX);
 });
@@ -141,7 +144,7 @@ test("version 4 asks to relay a Cloud sync notice right after the session rule, 
   expect(full[sessionRule + 1]).toBe(notice);
   expect(v4.mcpInstructions).not.toContain(notice);
   expect(v4.mcpInstructions).not.toContain("sessionNotice");
-  expect(count(v4.mcpInstructions)).toBe(1997);
+  expect(count(v4.mcpInstructions)).toBeLessThan(MCP_INSTRUCTIONS_MAX);
 });
 
 // Cada descripción de campo debe ser corta (cabe en la ficha de una herramienta MCP), estar congelada
