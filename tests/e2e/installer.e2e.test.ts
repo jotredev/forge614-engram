@@ -18,6 +18,7 @@ const published = new Map<string, Uint8Array>();
 const platform = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "windows" : "linux";
 const arch = process.arch === "arm64" ? "arm64" : "x64";
 const target = `${platform}-${arch}`;
+const nextEngramVersion = packageJson.version.replace(/\d+$/, patch => String(Number(patch) + 1));
 const installerTest = test.skipIf(!cache);
 const unixInstallerTest = test.skipIf(!cache || process.platform === "win32");
 const windowsInstallerTest = test.skipIf(!cache || process.platform !== "win32");
@@ -78,7 +79,7 @@ function stageEngramRelease(): void {
 
 /** Builds a second real Engram binary so the Windows open-MCP test exercises an actual update. */
 function stageNextEngramVersion(): void {
-  const version = "1.10.1";
+  const version = nextEngramVersion;
   const sourceRoot = join(root, `source-${version}`);
   mkdirSync(sourceRoot, { recursive: true });
   cpSync(join(process.cwd(), "src"), join(sourceRoot, "src"), { recursive: true });
@@ -264,7 +265,7 @@ installerTest("installs Engram, Shell and Engines from an empty home using real 
   }
 }, 120_000);
 
-installerTest("the real 1.9 installer layout migrates its saved memory on first 1.10 access", async () => {
+installerTest(`the real 1.9 installer layout migrates its saved memory on first ${packageJson.version} access`, async () => {
   const home = mkdtempSync(join(root, "legacy-home-"));
   if (platform !== "windows") {
     const installed = await runGatekeeper(home);
@@ -569,13 +570,13 @@ windowsInstallerTest("an open MCP does not block a real update or uninstall on W
     diagnostics.push(`memory_save response: ${JSON.stringify(saved)}`);
     recordFiles("after memory_save");
     if (typeof saved.id !== "string" || saved.title !== "Windows uninstall probe" || saved.content !== "G1f memory survives uninstall") failures.push(`unexpected memory_save response: ${JSON.stringify(saved)}`);
-    const update = Bun.spawn([launcher, "update", "--version", "1.10.1", "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
+    const update = Bun.spawn([launcher, "update", "--version", nextEngramVersion, "--json"], { cwd: home, env, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [updateOut, updateErr, updateCode] = await Promise.all([new Response(update.stdout).text(), new Response(update.stderr).text(), update.exited]);
     let updateJson: Record<string, unknown> = {};
     try { updateJson = JSON.parse(updateOut) as Record<string, unknown>; } catch { failures.push(`update returned invalid JSON: ${updateOut}`); }
     diagnostics.push(`update: exit=${updateCode}; stdout=${updateOut}; stderr=${updateErr}`);
     recordFiles("after update");
-    if (updateCode !== 0 || updateJson.updated !== true || updateJson.previousVersion !== "1.10.0" || updateJson.installedVersion !== "1.10.1") failures.push(`update did not complete as expected: ${JSON.stringify(updateJson)}`);
+    if (updateCode !== 0 || updateJson.updated !== true || updateJson.previousVersion !== packageJson.version || updateJson.installedVersion !== nextEngramVersion) failures.push(`update did not complete as expected: ${JSON.stringify(updateJson)}`);
     const uninstall = Bun.spawn([launcher, "uninstall", "--json"], { cwd: home, env: { ...env, NODE_ENV: "test", FORGE614_TEST_RAW_ERRORS: "1" }, stdout: "pipe", stderr: "pipe", signal: AbortSignal.timeout(120_000) });
     const [uninstallOut, uninstallErr, uninstallCode] = await Promise.all([new Response(uninstall.stdout).text(), new Response(uninstall.stderr).text(), uninstall.exited]);
     diagnostics.push(`uninstall: exit=${uninstallCode}; stdout=${uninstallOut}; stderr=${uninstallErr}`);

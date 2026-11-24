@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.11.0
 
 - **Project identity.** A confirmed Git origin restores the project's UUID, memories, and group in a new checkout. A conflict keeps shared context available and requires an explicit choice before a project write.
 - **CLI.** `project-create --directory` starts an independent project. `project-bind --replace-from` corrects a folder binding, and `--accept-origin` confirms a moved remote. Earlier memories and sessions keep their original owners.
