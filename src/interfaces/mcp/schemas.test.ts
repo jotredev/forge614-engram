@@ -2,12 +2,12 @@
 import { expect, test } from "bun:test";
 import { toolSchemas } from "./schemas";
 
-// short acepta hasta 300 caracteres, supersedes hereda el límite de 128 caracteres de `id`, y affects acepta entre 1 y 20 elementos.
+// El límite de short depende de pinned y se valida al guardar. Aquí se valida la forma de los metadatos.
 test("memory_save accepts bounded metadata fields", () => {
   const save = { title: "T", content: "c", type: "decision" as const };
   expect(toolSchemas.memory_save.parse({ ...save, short: "  corta  ", supersedes: "id-1", affects: ["engram", "shell"] }))
     .toMatchObject({ short: "corta", supersedes: "id-1", affects: ["engram", "shell"] });
-  expect(toolSchemas.memory_save.safeParse({ ...save, short: "x".repeat(301) }).success).toBe(false);
+  expect(toolSchemas.memory_save.safeParse({ ...save, short: "   " }).success).toBe(false);
   expect(toolSchemas.memory_save.safeParse({ ...save, affects: [] }).success).toBe(false);
   expect(toolSchemas.memory_save.safeParse({ ...save, affects: Array.from({ length: 21 }, (_, i) => `p${i}`) }).success).toBe(false);
 });

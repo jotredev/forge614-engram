@@ -7,7 +7,13 @@ import { resolveProjectContext, saveProjectMemoryWithSessionAndNotices } from ".
 import type { ToolContext } from "./context";
 import { MemoryError } from "../../shared/errors";
 import type { MemoryType, SearchScope } from "../../modules/memory";
+import type { SessionSaveResult } from "../../modules/sessions";
 import { toolSchemas } from "./schemas";
+
+function savedMemoryResponse(saved: SessionSaveResult, notices: readonly object[] = []) {
+  const warnings = saved.pinNotice ? [...notices, saved.pinNotice] : notices;
+  return { ...saved.memory, ...(saved.similar ? { similar: saved.similar } : {}), ...(warnings.length ? { notices: warnings } : {}) };
+}
 
 /** Resuelve el proyecto vinculado a un directorio y el grupo de ecosistema al que pertenece; ambos son obligatorios para el alcance (scope) ecosystem. */
 export async function ecosystemTarget({memoryStore,projectDirectory}:ToolContext, directory:string|undefined):Promise<{projectId:string;group:{id:string;name:string}}> {
@@ -116,7 +122,7 @@ export function registerMemoryTools(tools:ToolContext):void {
       const target = await ecosystemTarget(tools,directory);
       const saved = memoryStore().saveWithSession({ ...saveInput,scope:"ecosystem",projectId:null,groupId:target.group.id,fromProjectId:target.projectId },
         {mode:"assistant",...(sessionId?{sessionId,projectId:target.projectId}:{})});
-      return saved.similar ? {...saved.memory,similar:saved.similar} : saved.memory;
+      return savedMemoryResponse(saved);
     }
     if (groupIntent !== undefined) throw new MemoryError("INVALID_INPUT","groupIntent solo se acepta con scope ecosystem.");
     // Alcance shared: exige globalIntent y, si se da sessionId o sessionProjectId, exige los dos juntos; guarda con projectId nulo.
@@ -125,14 +131,14 @@ export function registerMemoryTools(tools:ToolContext):void {
       if ((sessionId === undefined) !== (sessionProjectId === undefined)) throw new MemoryError("INVALID_INPUT","sessionId y sessionProjectId son obligatorios juntos para shared.");
       const saved = memoryStore().saveWithSession({ ...saveInput,scope:"shared",projectId:null },
         {mode:"assistant",...(sessionId?{sessionId}:{}),...(sessionProjectId?{projectId:sessionProjectId}:{})});
-      return saved.similar ? {...saved.memory,similar:saved.similar} : saved.memory;
+      return savedMemoryResponse(saved);
     }
     // Sin scope explícito (project, el caso por defecto): globalIntent y sessionProjectId no aplican; se resuelve o crea el proyecto de la carpeta.
     if (globalIntent !== undefined) throw new MemoryError("INVALID_INPUT","globalIntent solo se acepta con scope shared explícito.");
     if (sessionProjectId !== undefined) throw new MemoryError("INVALID_INPUT","sessionProjectId solo se acepta con scope shared.");
     const directoryPath = await projectDirectory(directory);
     const {saved,notices}=saveProjectMemoryWithSessionAndNotices(memoryStore(),directoryPath,saveInput,{mode:"assistant",...(sessionId?{sessionId}:{})});
-    return {...saved.memory,sessionId:saved.sessionId,sessionSource:saved.sessionSource,...(saved.similar?{similar:saved.similar}:{}),...(notices.length?{notices}:{})};
+    return {...savedMemoryResponse(saved,notices),sessionId:saved.sessionId,sessionSource:saved.sessionSource};
   }));
 
   register("memory_history", {

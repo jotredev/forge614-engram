@@ -3,7 +3,7 @@
  * `memory_session_end`, `memory_session_summary`, `memory_timeline` y `memory_context`. `tools.ts` llama a
  * `registerSessionTools` junto a `registerMemoryTools` al construir el servidor.
  */
-import { readProjectContext, resolveProjectContext, startProjectSessionWithNotices, waitForCloud } from "../../app";
+import { pinnedPageFor, readProjectContext, resolveProjectContext, startProjectSessionWithNotices, waitForCloud } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { sessionNotice } from "../../modules/sessions";
 import { toolSchemas } from "./schemas";
@@ -66,12 +66,24 @@ export function registerSessionTools(tools:ToolContext):void {
   }));
 
   register("memory_context", {
-    description:"Return bounded project, ecosystem or shared orientation without a query. A project in a group also gets its ecosystem block.",
+    description:"Return bounded orientation without a query. Set pinnedOnly to list active pins by scope and pass nextCursor as cursor to continue.",
     inputSchema:toolSchemas.memory_context,
-  }, safely(async ({directory,scope,compact,maxBytes}) => {
+  }, safely(async ({directory,scope,compact,maxBytes,pinnedOnly,cursor}) => {
+    if (!pinnedOnly && (scope === "project" || cursor !== undefined)) {
+      throw new MemoryError("INVALID_INPUT", "scope project y cursor requieren pinnedOnly: true.");
+    }
     const store=memoryStore();
     // Espera de arranque (D8): con nube prendida, baja y aplica lo nuevo con un tope de 1000 ms antes de leer; sin nube, vuelve enseguida sin conectar.
     await waitForCloud(store);
+    if (pinnedOnly) {
+      const options = { ...(cursor === undefined ? {} : { cursor }), ...(maxBytes === undefined ? {} : { maxBytes }) };
+      if (scope === "shared") return pinnedPageFor(store, { projectId: null, groupId: null, scope }, options);
+      const context = resolveProjectContext(store, await projectDirectory(directory), false);
+      const notes = !context.projectId ? { project: unboundProjectNote(context) }
+        : scope === "ecosystem" && !context.group ? { ecosystem: noGroupNote() }
+        : context.notices ? { notices: context.notices } : {};
+      return pinnedPageFor(store, { projectId: context.projectId, groupId: context.group?.id ?? null, ...(scope ? { scope } : {}) }, options, notes);
+    }
     const options={...(compact===undefined?{}:{compact}),...(maxBytes===undefined?{}:{maxBytes})};
     // shared no depende de resolver el proyecto de la carpeta; sin scope explícito, cae al contexto del proyecto (con su bloque de ecosistema si pertenece a un grupo).
     if(scope==="shared") return store.context(null,options);

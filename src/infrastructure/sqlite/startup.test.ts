@@ -15,7 +15,7 @@ const section = (text: string, heading: string) => text.split("\n\n").find(part 
 const lines = (text: string, heading: string) => section(text, heading).split("\n").slice(1);
 const fields = { goal: "Build T6", instructions: "", discoveries: "", accomplishments: "", nextSteps: "", files: [] };
 
-// Comprueba, en nivel 11, el orden de esenciales (compartida, ecosistema, proyecto), el uso de `short`
+// Comprueba, en nivel 11, el orden de esenciales (proyecto, ecosistema, compartida), el uso de `short`
 // cuando existe, el aviso de sesión previa dejada abierta, y que el índice solo liste memorias vivas.
 test("at level 11 the block orders essentials, uses short versions, reports the previous session left open and indexes only live titles", () => withDatabase(db => { try {
   enableIntelligence(db);
@@ -48,10 +48,10 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
   const block = startupBlock(db, ai);
 
   expect(lines(block.text, "## Essentials")).toEqual([
-    `- Prefix every command with rtk. · personal · ${critical.id}`,
+    `- Project pinned · project · ${pinned.id}`,
     `- Current status · board · ${status.id}`,
     `- Board rule · board · ${rule.id}`,
-    `- Project pinned · project · ${pinned.id}`,
+    `- Prefix every command with rtk. · personal · ${critical.id}`,
   ]);
   expect(section(block.text, "## Previous session")).toStartWith(
     `## Previous session (interrupted)\nSession first was left open; its last activity was at `);
@@ -66,6 +66,29 @@ test("at level 11 the block orders essentials, uses short versions, reports the 
   expect(block).toMatchObject({ format: 2, omitted: 0 });
   expect(block.chars).toBe(Array.from(block.text).length);
 } finally { setSystemTime(); } }));
+
+test("hundreds of personal pins leave room for the project and its board", () => withDatabase(db => {
+  enableIntelligence(db);
+  const project = createProject(db, "Project").projectId;
+  const group = createGroup(db, "group").id;
+  bindProjectToGroup(db, project, group, "command");
+  setGroupSource(db, group, project);
+  const board = save(db, { scope: "ecosystem", projectId: null, groupId: group, fromProjectId: project,
+    topicKey: "ecosystem/estado-actual", title: "Board pin", content: "Board context", type: "fact" });
+  for (let n = 0; n < 220; n++) {
+    save(db, { scope: "shared", projectId: null, topicKey: `personal/${n}`, title: `Personal ${n} ${"x".repeat(125)}`,
+      content: `Personal rule ${n}`, type: "fact", pinned: true });
+  }
+  const pin = save(db, { projectId: project, title: `Project ${"🛠".repeat(150)}`, content: "Project context", type: "fact", pinned: true });
+  const block = startupBlock(db, project);
+  const essentials = lines(block.text, "## Essentials");
+  expect(essentials[0]).toContain(`… · project · ${pin.id}`);
+  expect(essentials[1]).toContain(`· board · ${board.id}`);
+  expect(essentials[2]).toContain("· personal ·");
+  expect(block.text).toContain("pinned memories omitted");
+  expect(block.omitted).toBe(222 - essentials.length);
+  expect(block.chars).toBeLessThanOrEqual(5000);
+}));
 
 // Comprueba que una sesión dejada abierta por menos de PARALLEL_MINUTES no cuenta como "previa interrumpida".
 test("a session left open less than PARALLEL_MINUTES does not produce a Previous section", () => withDatabase(db => { setSystemTime(new Date("2026-01-01T00:00:00.000Z")); try {
@@ -111,5 +134,5 @@ test("an unbound directory gets the shared essentials only, and the header count
   expect(section(block.text, "## Index")).toBe("");
   expect(block.sections.essentials).toBeLessThanOrEqual(1500);
   expect(block.omitted).toBe(60 - lines(block.text, "## Essentials").length);
-  expect(block.text.split("\n")[1]).toBe(`${block.chars}/5000 chars · ${block.omitted} titles did not fit: find them with memory_search.`);
+  expect(block.text.split("\n")[1]).toBe(`${block.chars}/5000 chars · ${block.omitted} pinned memories omitted.`);
 }));

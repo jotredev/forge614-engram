@@ -13,8 +13,10 @@ export interface SessionEntry {sessionId:string;memoryId:string;version:number;r
 export interface SessionSummary {sessionId:string;memoryId:string;version:number}
 /** Opciones de un guardado asociado a una sesión: la sesión y proyecto involucrados, si el modo es independiente o de asistente, y el directorio de ejecución para inferir la sesión cuando no se da una explícita. */
 export interface SessionSaveOptions {sessionId?:string;projectId?:string;mode?:"independent"|"assistant";runtimeDirectory?:string}
+/** Fijadas que exceden la reserva del ámbito cuando se guarda o se repite una fijación. */
+export interface PinOverflowNotice {code:"PINNED_SCOPE_OVERFLOW";scope:MemoryVersion["scope"];omitted:number;message:string}
 /** El resultado de un guardado asociado a sesión: el recuerdo guardado, la sesión usada (o `null`), cómo se determinó esa sesión, y candidatos similares si los hubo. */
-export interface SessionSaveResult {memory:MemoryVersion;sessionId:string|null;sessionSource:"explicit"|"inferred"|"manual"|null;similar?:SimilarCandidate[]}
+export interface SessionSaveResult {memory:MemoryVersion;sessionId:string|null;sessionSource:"explicit"|"inferred"|"manual"|null;similar?:SimilarCandidate[];pinNotice?:PinOverflowNotice}
 /** Los campos estructurados de un resumen de sesión: objetivo, instrucciones, hallazgos, logros, próximos pasos y archivos tocados. */
 export interface SummaryFields {goal:string;instructions:string;discoveries:string;accomplishments:string;nextSteps:string;files:string[]}
 /** La sesión previa dejada abierta: su id, cuándo fue su última actividad, y su resumen (o `null` si no guardó ninguno). */

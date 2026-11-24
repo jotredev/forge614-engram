@@ -34,7 +34,7 @@ export const toolSchemas = {
       title:text(300).describe(describe.title),content:text(20_000).describe(describe.content),
       type:z.enum(memoryTypes).describe(describe.type),topicKey:text(300).describe(describe.topicKey).optional(),pinned:z.boolean().describe(describe.pinned).optional(),
       expectedVersion:z.number().int().min(1).describe(describe.expectedVersion).optional(),requestKey:text(300).describe(describe.requestKey).optional(),
-      short:text(300).describe(describe.short).optional(),supersedes:id.describe(describe.supersedes).optional(),
+      short:z.string().trim().min(1).refine(value => !value.includes("\0")).describe(describe.short).optional(),supersedes:id.describe(describe.supersedes).optional(),
       affects:z.array(text(64)).min(1).max(20).describe(describe.affects).optional(),
       sessionId:sessionId.optional(),sessionProjectId:text(128).describe(describe.sessionProjectId).optional(),
     }).strict(),
@@ -43,5 +43,8 @@ export const toolSchemas = {
   memory_session_end: z.object({directory,sessionId}).strict(),
   memory_session_summary: z.object({directory,sessionId,summary:summaryFields,requestKey:text(300).describe(describe.requestKey),expectedVersion:z.number().int().min(1).describe(describe.expectedVersion).optional(),scope:z.literal("ecosystem").optional(),groupIntent:groupIntent.optional()}).strict(),
   memory_timeline: z.object({directory,sessionId,id,version:z.number().int().min(1),before:z.number().int().min(0).max(20).optional(),after:z.number().int().min(0).max(20).optional()}).strict(),
-  memory_context: z.object({directory,scope:z.enum(["shared","ecosystem"]).optional(),compact:z.boolean().optional(),maxBytes:z.number().int().min(1024).max(65536).optional()}).strict(),
+  memory_context: z.object({directory,scope:z.enum(["project","shared","ecosystem"]).describe("Read only this scope. Without scope, read the scopes visible from the current folder.").optional(),compact:z.boolean().optional(),maxBytes:z.number().int().min(1024).max(65536).optional(),
+    pinnedOnly:z.boolean().optional(),cursor:z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional()}).strict()
+    .refine(input => input.pinnedOnly === true || (input.scope !== "project" && input.cursor === undefined),
+      "scope project y cursor requieren pinnedOnly: true."),
 };

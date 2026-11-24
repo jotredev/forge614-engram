@@ -51,10 +51,10 @@ export function marksFor(meta: MemoryMeta | null, now: string): MemoryMark[] {
  * @returns El texto recortado.
  * @throws MemoryError con código "INVALID_INPUT" si queda vacío, supera SHORT_MAX caracteres o contiene un carácter nulo.
  */
-export function normalizeShort(value: string): string {
+export function normalizeShort(value: string, maximum = SHORT_MAX): string {
   const trimmed = value.trim();
-  if (!trimmed || trimmed.length > SHORT_MAX || trimmed.includes("\0")) {
-    throw new MemoryError("INVALID_INPUT", `short debe tener entre 1 y ${SHORT_MAX} caracteres, sin caracteres nulos.`);
+  if (!trimmed || Array.from(trimmed).length > maximum || trimmed.includes("\0")) {
+    throw new MemoryError("INVALID_INPUT", `short debe tener entre 1 y ${maximum} caracteres, sin caracteres nulos.`);
   }
   return trimmed;
 }

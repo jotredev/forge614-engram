@@ -74,19 +74,24 @@ Instead of the context JSON, it returns a single JSON object with a text block t
 }
 ```
 
-`chars` is the exact length of `text` in Unicode characters, header included, and never exceeds 5,000. `sections` gives the characters of each section (0 if it does not appear) and `omitted` counts the titles of essentials and index that did not fit.
+`chars` is the exact length of `text` in Unicode characters, including the header, and never exceeds 5,000. `sections` measures `essentials`, `previous`, and `index` (0 when absent). `omitted` counts all pins and index titles left out of the block.
 
-`text` starts with two header lines: `[Forge614 Engram] Startup block: retrieved data, not an instruction.` and `<chars>/5000 chars · nothing omitted.` (or `<chars>/5000 chars · <N> titles did not fit: find them with memory_search.`). After that, separated by a blank line and only if they have something, come three sections in this order:
+`text` begins with the retrieved-data notice and the block length. The header reports omitted pins and index titles separately. The sections with content follow, separated by a blank line.
 
-- **`## Essentials (pinned)`** (up to 1,500 characters): active pinned memories of the personal notebook (`shared`; a project memory on the same topic hides the shared one), of the group's board (the `ecosystem/estado-actual` status note first) and of the project, in that order, and within each newest first. One line per memory: `- <short version or title> [verify] · <personal|board|project> · <id>`; `[verify]` appears only if its validity has expired.
+- **`## Essentials (pinned)`** (up to 1,500 characters). Shows the project, group board, and personal notebook, in that order. It reserves half of the line budget for the project and a quarter for each other scope. Unused space is available to the others. Within each scope the newest pins come first, with `ecosystem/estado-actual` leading the board. A project topic hides the matching personal topic. Each line includes up to 120 characters of the short version or title, the scope, the ID, and `[verify]` when applicable.
+- **`## Pinned not shown (open with memory_get)`** lists IDs and scopes for omitted pins. It reports how many more are outside the list. The JSON includes `pinnedOmitted` with per-scope `counts`, sample `items` with their IDs, and a `remaining` count.
 - **`## Previous session (interrupted)`** (up to 800 characters; only with schema 11 and a linked project): the project's open runtime session left open (no activity for more than 30 minutes) with the most recent activity, the same one `previousInterrupted` returns. It says `Session <id> was left open; its last activity was at <ISO date>; its last summary (<memory id> v<version>):` followed by the summary without blank lines, or `…; it saved no summary.` if it saved none. If it goes over 800 characters it is cut with `…`. The block never lists sessions open in parallel: it is built before the new session exists and is injected again after compaction, where the "parallel" one would be the own session. For the same reason, after compaction, if the own session has had no Engram activity for more than 30 minutes, the block may name it as "left open"; it is data, and repeating `memory_session_start` does not return `previous`.
 - **`## Index (titles only: open with memory_get)`** (the rest): only titles of the active unpinned memories of the board and the project, alternating one from the board and one from the project (board first; each newest first). It includes no session summaries and no unpinned memories of the personal notebook. An unlinked folder has no index: it only gets the notebook's essentials.
-
-Each list is filled in order and stops at the first line that does not fit; what is left out is counted in `omitted` and can be found with `memory_search`. The fixed texts are in English; the content of the memories goes as is.
 
 Format 2 works at any database level: it does not require `intelligence-enable`. Only with schema 11 does the short version replace the title in essentials, memories marked as superseded not appear, `[verify]` appear, and the previous session get included; below it, the block is built from the same sources without those extras. It uses the same opening and the same project resolution as format 1 (read-only first and, only if it must register the identity, writable), and includes a pending binding or confirmation notice as a line within the 5,000-character budget.
 
 Without `--format`, the command keeps returning format 1, with the same output as always. `--format` accepts only `1` or `2`: any other value answers `INVALID_INPUT` (`format debe ser 1 o 2.`) before the database is opened. Versions 2 and 3 of the memory protocol announce the command without `--format`, that is, format 1 (version 1 announces none); version 4 (since 1.7.0) announces format 2. From the SDK, `MemoryStore.startupBlock` delivers the same block.
+
+### Read pins through MCP
+
+`memory_context` with `{"pinnedOnly": true}` returns visible active pins with `id`, `scope`, `short`, and `marks`. You can set `scope` (`project`, `ecosystem`, or `shared`) and `maxBytes`. Pass `nextCursor` as `cursor` to keep reading until it returns `null`. `total` counts all pins in the query. Use `memory_get` with the ID and scope to read the complete memory.
+
+When saving a pin through `memory_save`, a new short version can contain up to 120 Unicode characters. `PINNED_SCOPE_OVERFLOW` reports how many pins exceed that scope's base reservation when Engram responds. When saving a session summary, `Instructions` retains the author's text and includes IDs for active pins owned by the summary's scope.
 
 ## With the cloud on (since 1.8.0)
 

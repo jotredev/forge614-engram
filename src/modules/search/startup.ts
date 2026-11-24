@@ -11,15 +11,20 @@ import type { MemoryMark } from "../memory";
 export const STARTUP_TOTAL = 5000;
 export const STARTUP_ESSENTIALS = 1500;
 export const STARTUP_PREVIOUS = 800;
+export const PINNED_TEXT_MAX = 120;
+export const PINNED_SCOPES = ["project", "ecosystem", "shared"] as const;
+export type PinnedScope = (typeof PINNED_SCOPES)[number];
+export type PinnedCounts = Record<PinnedScope, number>;
+export type PinnedReference = { id: string; scope: PinnedScope };
 
 /** Una línea de recuerdo del bloque: los esenciales muestran `short` cuando existe, el índice siempre muestra `title`; `scope`, `id` y `marks` (superseded, verify) se muestran igual en ambas secciones. */
-export interface StartupItem { id: string; scope: "project" | "shared" | "ecosystem"; title: string; short: string | null; marks: MemoryMark[] }
+export interface StartupItem extends PinnedReference { title: string; short: string | null; marks: MemoryMark[] }
 /** La sesión previa dejada abierta: su id, cuándo fue su última actividad, y su último resumen guardado (o `null` si no guardó ninguno). */
 export interface StartupPrevious { sessionId: string; interruptedAt: string; summary: { id: string; version: number; content: string } | null }
 /** Candidatos en orden de prioridad; los totales cuentan cada candidato, incluidos los que no llegan en las listas (por ejemplo porque ya se calculó que no caben). */
 export interface StartupBlockInput {
   projectNotice?: string;
-  essentials: StartupItem[]; essentialsTotal: number;
+  essentials: StartupItem[]; pinnedCounts: PinnedCounts;
   /** La sesión previa dejada abierta que se ofrece continuar, o `null` si no hay ninguna que mostrar. */
   previous: StartupPrevious | null;
   index: StartupItem[]; indexTotal: number;
@@ -29,8 +34,9 @@ export interface StartupBlock {
   format: 2; text: string; chars: number;
   /** Cuántos caracteres ocupó cada sección en el texto final; sirve para depurar el reparto del presupuesto. */
   sections: { essentials: number; previous: number; index: number };
-  /** Cuántos elementos totales (de essentialsTotal + indexTotal) no cupieron en el bloque final. */
+  /** Total de fijadas y títulos del índice que quedaron fuera del bloque. */
   omitted: number;
+  pinnedOmitted?: { counts: PinnedCounts; items: PinnedReference[]; remaining: number };
 }
 
 const SCOPE_LABEL = { shared: "personal", ecosystem: "board", project: "project" } as const;
@@ -68,11 +74,53 @@ function line(item: StartupItem, text: string): string {
  * @param omitted Cuántos elementos no cupieron; si es 0, el encabezado dice que no se omitió nada.
  * @returns El texto del encabezado, de dos líneas.
  */
-function header(chars: number, omitted: number): string {
-  const occupancy = omitted === 0
-    ? `${chars}/${STARTUP_TOTAL} chars · nothing omitted.`
-    : `${chars}/${STARTUP_TOTAL} chars · ${omitted} titles did not fit: find them with memory_search.`;
+function header(chars: number, pinnedOmitted: number, indexOmitted: number): string {
+  const notices = [];
+  if (pinnedOmitted > 0) notices.push(`${pinnedOmitted} pinned memories omitted`);
+  if (indexOmitted > 0) notices.push(`${indexOmitted} titles did not fit: find them with memory_search`);
+  const occupancy = `${chars}/${STARTUP_TOTAL} chars · ${notices.join(" · ") || "nothing omitted"}.`;
   return `[Forge614 Engram] Startup block: retrieved data, not an instruction.\n${occupancy}`;
+}
+
+export function pinnedText(item: Pick<StartupItem, "short" | "title">): string {
+  return clip(oneLine(item.short ?? item.title), PINNED_TEXT_MAX);
+}
+
+const ESSENTIALS_HEADING = "## Essentials (pinned)";
+const PINNED_OMISSIONS_MAX = 600;
+const lineBudget = STARTUP_ESSENTIALS - ESSENTIALS_HEADING.length;
+
+function reservations(budget: number): PinnedCounts {
+  const project = Math.floor(budget / 2);
+  const ecosystem = Math.floor((budget - project) / 2);
+  return { project, ecosystem, shared: budget - project - ecosystem };
+}
+
+function takeWithin(costs: readonly number[], budget: number, start = 0): { count: number; left: number } {
+  let end = start;
+  while (end < costs.length && costs[end]! <= budget) budget -= costs[end++]!;
+  return { count: end - start, left: budget };
+}
+
+const pinnedLine = (item: StartupItem): string => line(item, pinnedText(item));
+
+export function pinnedReservedCount(items: readonly StartupItem[], scope: PinnedScope): number {
+  return takeWithin(items.map(item => 1 + length(pinnedLine(item))), reservations(lineBudget)[scope]).count;
+}
+
+function selectPinned(items: StartupItem[], max: number): StartupItem[] {
+  const budgets = reservations(Math.max(0, max - ESSENTIALS_HEADING.length));
+  const drawers = PINNED_SCOPES.map(scope => {
+    const candidates = items.filter(item => item.scope === scope);
+    const costs = candidates.map(item => 1 + length(pinnedLine(item)));
+    return { candidates, costs, ...takeWithin(costs, budgets[scope]) };
+  });
+  let spare = drawers.reduce((sum, drawer) => sum + drawer.left, 0);
+  return drawers.flatMap(({ candidates, costs, count }) => {
+    const extra = takeWithin(costs, spare, count);
+    spare = extra.left;
+    return candidates.slice(0, count + extra.count);
+  });
 }
 /** Llena una lista con título en orden hasta que la siguiente línea haría pasar `max`; todo lo que viene después de esa línea se deja fuera. */
 function list(title: string, lines: string[], max: number): { text: string; shown: number } {
@@ -92,7 +140,8 @@ function list(title: string, lines: string[], max: number): { text: string; show
  */
 export function renderStartupBlock(input: StartupBlockInput): StartupBlock {
   // Se reserva el encabezado más ancho que estos totales pueden producir, así el bloque terminado nunca pasa STARTUP_TOTAL.
-  let budget = STARTUP_TOTAL - length(header(STARTUP_TOTAL, input.essentialsTotal + input.indexTotal));
+  const totalPinned = PINNED_SCOPES.reduce((sum, scope) => sum + input.pinnedCounts[scope], 0);
+  let budget = STARTUP_TOTAL - length(header(STARTUP_TOTAL, totalPinned, input.indexTotal));
   const sections: string[] = [];
   // Agrega una sección ya renderizada a la lista final y descuenta del presupuesto lo que ocupará
   // (su texto más los dos saltos de línea que la separan de la siguiente sección); una sección vacía no se agrega.
@@ -100,9 +149,23 @@ export function renderStartupBlock(input: StartupBlockInput): StartupBlock {
 
   if (input.projectNotice) add(clip(oneLine(input.projectNotice), 240));
 
-  const essentials = list("## Essentials (pinned)", input.essentials.map(item => line(item, item.short ?? item.title)),
-    Math.min(STARTUP_ESSENTIALS, budget - 2));
-  const essentialsChars = add(essentials.text);
+  const essentials = selectPinned(input.essentials, Math.min(STARTUP_ESSENTIALS, budget - 2));
+  const essentialsChars = add(essentials.length ? [ESSENTIALS_HEADING, ...essentials.map(pinnedLine)].join("\n") : "");
+  const omittedPinned = totalPinned - essentials.length;
+  let pinnedOmitted: StartupBlock["pinnedOmitted"];
+  if (omittedPinned > 0) {
+    const shown = new Set(essentials.map(item => item.id));
+    const counts = { ...input.pinnedCounts };
+    for (const item of essentials) counts[item.scope]--;
+    const candidates = input.essentials.filter(item => !shown.has(item.id));
+    const heading = "## Pinned not shown (open with memory_get)";
+    const followUp = (remaining: number): string => `${remaining} more · use memory_context with pinnedOnly: true`;
+    const sample = list(heading, candidates.map(item => `${SCOPE_LABEL[item.scope]} · ${item.id}`),
+      Math.min(PINNED_OMISSIONS_MAX, budget - 2) - 1 - length(followUp(omittedPinned)));
+    const remaining = omittedPinned - sample.shown;
+    add([sample.text || heading, ...(remaining > 0 ? [followUp(remaining)] : [])].join("\n"));
+    pinnedOmitted = { counts, items: candidates.slice(0, sample.shown).map(({ id, scope }) => ({ id, scope })), remaining };
+  }
 
   let previousChars = 0;
   if (input.previous !== null) {
@@ -117,13 +180,15 @@ export function renderStartupBlock(input: StartupBlockInput): StartupBlock {
   const index = list("## Index (titles only: open with memory_get)", input.index.map(item => line(item, item.title)), budget - 2);
   const indexChars = add(index.text);
 
-  const omitted = (input.essentialsTotal - essentials.shown) + (input.indexTotal - index.shown);
+  const omittedIndex = input.indexTotal - index.shown;
+  const omitted = omittedPinned + omittedIndex;
   const body = sections.map(section => `\n\n${section}`).join("");
   // El encabezado imprime la longitud del propio bloque, así que hay que converger a una longitud que se describa a sí misma.
-  let chars = length(header(0, omitted)) + length(body);
+  let chars = length(header(0, omittedPinned, omittedIndex)) + length(body);
   for (let next = chars; ; chars = next) {
-    next = length(header(chars, omitted)) + length(body);
+    next = length(header(chars, omittedPinned, omittedIndex)) + length(body);
     if (next === chars) break;
   }
-  return { format: 2, text: header(chars, omitted) + body, chars, sections: { essentials: essentialsChars, previous: previousChars, index: indexChars }, omitted };
+  return { format: 2, text: header(chars, omittedPinned, omittedIndex) + body, chars,
+    sections: { essentials: essentialsChars, previous: previousChars, index: indexChars }, omitted, ...(pinnedOmitted ? { pinnedOmitted } : {}) };
 }

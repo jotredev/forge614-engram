@@ -4,7 +4,7 @@
  * para leer y escribir memorias, gestionar proyectos, sincronizar con la nube,
  * instalar, actualizar y desinstalar Engram.
  */
-export { MemoryStore } from "./memory-store";
+export { MemoryStore, pinnedPageFor } from "./memory-store";
 export { MemoryWorkspace } from "./workspace";
 export type { GroupBinding, GroupRename, GroupUnbinding, IdentityFilesResult, MemoryMove } from "./workspace";
 export { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";

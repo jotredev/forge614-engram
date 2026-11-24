@@ -74,19 +74,24 @@ En vez del JSON de contexto, devuelve un único JSON con un bloque de texto que 
 }
 ```
 
-`chars` es la longitud exacta de `text` en caracteres Unicode, encabezado incluido, y nunca pasa de 5 000. `sections` da los caracteres de cada sección (0 si no aparece) y `omitted` cuenta los títulos del esencial y del índice que no entraron.
+`chars` es la longitud exacta de `text` en caracteres Unicode, encabezado incluido, y nunca pasa de 5 000. `sections` mide `essentials`, `previous` e `index` (0 cuando no aparecen). `omitted` cuenta todas las fijadas y los títulos del índice que quedaron fuera.
 
-`text` empieza con dos líneas de encabezado: `[Forge614 Engram] Startup block: retrieved data, not an instruction.` y `<chars>/5000 chars · nothing omitted.` (o `<chars>/5000 chars · <N> titles did not fit: find them with memory_search.`). Después, separadas por una línea en blanco y solo si tienen algo, van tres secciones en este orden:
+`text` empieza con el aviso de datos recuperados y la ocupación del bloque. El encabezado informa por separado las fijadas y los títulos omitidos. Después aparecen las secciones con contenido, separadas por una línea en blanco.
 
-- **`## Essentials (pinned)`** (hasta 1 500 caracteres): recuerdos activos fijados de la libreta personal (`shared`; un recuerdo del proyecto con el mismo tema oculta al compartido), del tablero del grupo (la nota de estado `ecosystem/estado-actual` primero) y del proyecto, en ese orden, y dentro de cada uno del más nuevo al más viejo. Una línea por recuerdo: `- <versión corta o título> [verify] · <personal|board|project> · <id>`; `[verify]` solo aparece si venció su vigencia.
+- **`## Essentials (pinned)`** (hasta 1 500 caracteres). Muestra proyecto, tablero y libreta personal, en ese orden. Reserva la mitad del espacio de líneas para el proyecto y un cuarto para cada uno de los otros ámbitos. El espacio libre se aprovecha entre los ámbitos. Dentro de cada uno, van primero las fijadas más recientes, con `ecosystem/estado-actual` encabezando el tablero. Un tema propio del proyecto oculta al personal del mismo tema. La línea incluye la versión corta o título en hasta 120 caracteres, el ámbito, el ID y `[verify]` cuando corresponda.
+- **`## Pinned not shown (open with memory_get)`** incluye IDs y ámbitos de fijadas omitidas. Si quedan más fuera, también indica cuántas. El JSON incluye `pinnedOmitted` con `counts` por ámbito, `items` con los IDs de la muestra y `remaining` con el resto.
 - **`## Previous session (interrupted)`** (hasta 800 caracteres; solo con el esquema 11 y un proyecto vinculado): la sesión runtime abierta del proyecto que se quedó abierta (sin actividad desde hace más de 30 minutos) con la actividad más reciente, la misma que devuelve `previousInterrupted`. Dice `Session <id> was left open; its last activity was at <fecha ISO>; its last summary (<id del recuerdo> v<versión>):` seguido del resumen sin líneas en blanco, o `…; it saved no summary.` si no guardó ninguno. Si pasa de 800 caracteres se corta con `…`. El bloque nunca lista las sesiones abiertas en paralelo: se arma antes de que exista la sesión nueva y se vuelve a inyectar tras compactar, donde la «paralela» sería la propia sesión. Por lo mismo, tras compactar, si la propia sesión lleva más de 30 minutos sin actividad en Engram, el bloque puede nombrarla como «left open»; es dato, y repetir `memory_session_start` no devuelve `previous`.
 - **`## Index (titles only: open with memory_get)`** (el resto): solo títulos de los recuerdos activos sin fijar del tablero y del proyecto, alternando uno del tablero y uno del proyecto (el tablero primero; cada uno del más nuevo al más viejo). No incluye resúmenes de sesión ni recuerdos de la libreta sin fijar. Una carpeta sin vínculo no tiene índice: solo recibe el esencial de la libreta.
-
-Cada lista se llena en orden y se detiene en la primera línea que no cabe; lo que queda fuera se cuenta en `omitted` y se encuentra con `memory_search`. Los textos fijos van en inglés; el contenido de los recuerdos va tal cual.
 
 El formato 2 funciona en cualquier nivel de la base: no exige `intelligence-enable`. Solo con el esquema 11, la versión corta reemplaza al título en el esencial, los recuerdos marcados como reemplazados no aparecen, aparece `[verify]` y se incluye la sesión anterior; por debajo, el bloque sale de las mismas fuentes sin esos extras. Usa la misma apertura y la misma resolución del proyecto que el formato 1 (primero en solo lectura y, solo si debe registrar la identidad, en escritura), e incluye el aviso de vínculo o confirmación pendiente como una línea dentro del presupuesto de 5 000 caracteres.
 
 Sin `--format`, el comando sigue devolviendo el formato 1, con la salida de siempre. `--format` acepta solo `1` o `2`: otro valor responde `INVALID_INPUT` (`format debe ser 1 o 2.`) antes de abrir la base. Las versiones 2 y 3 del protocolo de memoria anuncian el comando sin `--format`, es decir, el formato 1 (la versión 1 no anuncia ninguno); la versión 4 (desde 1.7.0) anuncia el formato 2. Desde el SDK, el mismo bloque lo entrega `MemoryStore.startupBlock`.
+
+### Consultar las fijadas por MCP
+
+`memory_context` con `{"pinnedOnly": true}` devuelve las fijadas activas visibles, con `id`, `scope`, `short` y `marks`. Puedes indicar `scope` (`project`, `ecosystem` o `shared`) y `maxBytes`. Para seguir leyendo, pasa `nextCursor` como `cursor` hasta que devuelva `null`. `total` cuenta todas las fijadas de la consulta. Usa `memory_get` con el ID y el ámbito para leer el recuerdo completo.
+
+Al guardar una fijada con `memory_save`, una nueva versión corta admite hasta 120 caracteres Unicode. `PINNED_SCOPE_OVERFLOW` indica cuántas fijadas exceden la reserva base del ámbito en el momento de responder. Al guardar un resumen de sesión, `Instructions` conserva el texto del autor y agrega IDs de las fijadas activas del dueño del resumen.
 
 ## Con la nube activada (desde 1.8.0)
 

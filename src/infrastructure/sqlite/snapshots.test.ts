@@ -9,8 +9,34 @@ import { applySnapshot, checkpoint, exportSnapshot } from "./snapshots";
 import { createProject } from "./projects";
 import { bindProjectToGroup, createGroup } from "./ecosystem-groups";
 import { enableEcosystem, enableProjectBindings, enableSearchReinforcement, enableSessionLifecycle, enableSynchronization } from "./schema";
-import { save, saveWithSession, startSession } from "./writes";
+import { save, saveSessionSummary, saveWithSession, startSession } from "./writes";
 import { withDatabase } from "../__test-support__/fixtures";
+
+test("summaries with pin references export, import and replay in snapshot formats 2 and 3", () => {
+  for (const enable of [enableSessionLifecycle, enableSearchReinforcement]) withDatabase(source => {
+    enable(source);
+    const { projectId } = createProject(source, "Project");
+    const pin = save(source, { projectId, title: "Pinned rule", content: "Do this", type: "fact", pinned: true });
+    startSession(source, projectId, "session");
+    const fields = { goal: "Retain notes", instructions: "Author's text", discoveries: "", accomplishments: "", nextSteps: "", files: [] };
+    const request = { requestKey: "summary" };
+    const saved = saveSessionSummary(source, projectId, "session", fields, request);
+    expect(saved.memory.content).toContain(`project · ${pin.id}`);
+    const confirmation = { requestKey: "confirm", expectedVersion: 1 };
+    const confirmed = enable === enableSearchReinforcement ? saveSessionSummary(source, projectId, "session", fields, confirmation) : null;
+    const exported = exportSnapshot(source);
+    withDatabase(target => {
+      enable(target);
+      applySnapshot(target, exportSnapshot(target), exported, "replica");
+      expect(exportSnapshot(target)).toEqual(exported);
+      save(target, { projectId, title: "New pin", content: "New rule", type: "fact", pinned: true });
+      expect(saveSessionSummary(target, projectId, "session", fields, request)).toEqual(saved);
+      if (confirmed) expect(saveSessionSummary(target, projectId, "session", fields, confirmation)).toEqual(confirmed);
+      expect(() => saveSessionSummary(target, projectId, "session", { ...fields, instructions: "Changed" }, request))
+        .toThrow(expect.objectContaining({ code: "REQUEST_CONFLICT" }));
+    });
+  });
+});
 
 // Aplicar un snapshot guarda datos y checkpoint de forma atómica, y rechaza si el estado local cambió mientras tanto (SYNC_LOCAL_CHANGED).
 test("snapshot application persists data and checkpoint atomically and refuses stale local state", () => withDatabase(db => {

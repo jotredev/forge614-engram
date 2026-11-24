@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Session startup.** Project pins appear first and have reserved space in `Essentials`. The startup block reports omitted pins, and `memory_context` can list them by scope. Saves warn when a pin exceeds its scope's reservation. Session summaries keep references to the active pins of their owner.
+
 ## 1.11.0
 
 - **Project identity.** A confirmed Git origin restores the project's UUID, memories, and group in a new checkout. A conflict keeps shared context available and requires an explicit choice before a project write.

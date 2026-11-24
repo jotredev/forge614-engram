@@ -6,14 +6,14 @@
  * Es de solo lectura: no cambia nada en la base de datos.
  */
 import type { Database } from "bun:sqlite";
-import { ECOSYSTEM_STATUS_TOPIC } from "../../modules/ecosystem";
 import { marksFor } from "../../modules/memory";
 import { projectIdentity } from "../../modules/projects";
-import { renderStartupBlock, type StartupBlock, type StartupItem } from "../../modules/search";
+import { PINNED_SCOPES, renderStartupBlock, type PinnedCounts, type StartupBlock, type StartupItem } from "../../modules/search";
 import { previousInterrupted } from "./activity";
 import { groupOfProject } from "./ecosystem-groups";
 import { intelligenceEnabled } from "./intelligence";
 import { readMetas } from "./meta";
+import { readPinned } from "./pinned";
 
 // Hay más candidatas de las que cualquier bloque puede mostrar; los conteos de abajo igual cubren a todas.
 const CANDIDATES = 200;
@@ -23,8 +23,7 @@ type Row = { id: string; scope: StartupItem["scope"]; title: string };
 /**
  * Arma el bloque de arranque (formato 2) de un proyecto, o de una carpeta sin proyecto ligado cuando
  * `projectId` es null. Es de solo lectura.
- * Esenciales: memorias fijadas (pinned) activas (primero las compartidas, luego el tablero (board) del
- * grupo con su nota de estado primero, y después las del proyecto).
+ * Esenciales: memorias fijadas activas, con una reserva para proyecto, tablero y personal.
  * Índice: memorias sin fijar activas del tablero y del proyecto, alternando una de cada uno (de la más
  * reciente a la más antigua dentro de cada uno), para que ninguno de los dos cajones (drawers) se coma el
  * espacio del otro; los resúmenes de sesión quedan fuera.
@@ -54,17 +53,12 @@ export function startupBlock(db: Database, projectId: string | null, now: string
     // Una memoria cuenta como "viva" si está activa y, con inteligencia (intelligence) encendida, si
     // ninguna otra la sustituyó (no tiene superseded_by en memory_meta).
     const live = `m.state='active'${intelligence ? " AND NOT EXISTS (SELECT 1 FROM memory_meta mm WHERE mm.memory_id=m.id AND mm.superseded_by IS NOT NULL)" : ""}`;
-    // Una memoria de proyecto sobre el mismo tema oculta a la compartida (shared), igual que en context().
-    const shared = project === null ? { sql: "m.scope='shared'", args: [] as string[] }
-      : { sql: "(m.scope='shared' AND NOT EXISTS (SELECT 1 FROM memories p WHERE p.projectId=? AND p.scope='project' AND p.state='active' AND p.topic_key=m.topic_key))", args: [project] };
-    const pinnedFrom = `FROM memories m WHERE ${live} AND m.pinned=1 AND (${[shared.sql, ...owners].join(" OR ")})`;
-    // Orden: compartida primero, luego ecosistema, luego el resto; dentro del grupo ecosistema, la nota
-    // de estado (ECOSYSTEM_STATUS_TOPIC) se antepone; después, la más reciente primero.
-    const essentials = db.query(`SELECT m.id,m.scope,m.title ${pinnedFrom}
-      ORDER BY CASE m.scope WHEN 'shared' THEN 0 WHEN 'ecosystem' THEN 1 ELSE 2 END,m.topic_key IS ? DESC,m.updated_at DESC,m.id ASC LIMIT ${CANDIDATES}`)
-      .all(...shared.args, ...args, ECOSYSTEM_STATUS_TOPIC) as Row[];
-    // Cuenta cuántas esenciales hay en total, aunque solo se hayan traído CANDIDATES filas arriba.
-    const essentialsTotal = (db.query(`SELECT count(*) AS n ${pinnedFrom}`).get(...shared.args, ...args) as { n: number }).n;
+    const pinnedCounts: PinnedCounts = { project: 0, ecosystem: 0, shared: 0 };
+    const essentials = PINNED_SCOPES.flatMap(scope => {
+      const { items, total } = readPinned(db, { projectId: project, groupId, scope }, CANDIDATES, 0, now);
+      pinnedCounts[scope] = total;
+      return items;
+    });
     const drawers = owners.map((owner, n) => {
       // Cada cajón (drawer) es el conjunto de memorias sin fijar de un dueño (tablero o proyecto),
       // dejando fuera los resúmenes de sesión (topic_key con forma session/*/summary).
@@ -79,7 +73,7 @@ export function startupBlock(db: Database, projectId: string | null, now: string
     const indexTotal = drawers.reduce((sum, drawer) => sum + drawer.total, 0);
     // Los metadatos (short, marcas de vigencia) solo se calculan con la inteligencia encendida; si no,
     // el bloque usa el título completo y sin marcas.
-    const metas = intelligence ? readMetas(db, [...essentials, ...index].map(row => row.id)) : new Map();
+    const metas = intelligence ? readMetas(db, index.map(row => row.id)) : new Map();
     const item = (row: Row): StartupItem => {
       const meta = metas.get(row.id) ?? null;
       return { id: row.id, scope: row.scope, title: row.title, short: meta?.short ?? null, marks: marksFor(meta, now) };
@@ -87,7 +81,7 @@ export function startupBlock(db: Database, projectId: string | null, now: string
     const previous = project === null ? null : previousInterrupted(db, project, now);
     return renderStartupBlock({
       ...(projectNotice ? { projectNotice } : {}),
-      essentials: essentials.map(item), essentialsTotal,
+      essentials, pinnedCounts,
       previous: previous === null ? null : { sessionId: previous.sessionId, interruptedAt: previous.interruptedAt,
         summary: previous.summary === null ? null : { id: previous.summary.id, version: previous.summary.version, content: previous.summary.content } },
       index: index.map(item), indexTotal,
