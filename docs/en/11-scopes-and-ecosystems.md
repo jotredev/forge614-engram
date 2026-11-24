@@ -27,7 +27,7 @@ A **group** is a named set of related projects. Its rules:
 
 ## Portable project identity
 
-Up to 1.5.x a project was bound to the **path** of its folder: moving or renaming the folder, or cloning the repository on another machine, broke the binding and the memory seemed to vanish. Since 1.6.0 the repository carries its identity in `.forge614/project.json`, at the root of the checkout, versioned in Git:
+Engram stores a project UUID in SQLite. A binding identifies its local folder, and a confirmed Git origin identifies new checkouts. A repository’s worktrees share its common Git directory. Older repositories can also carry a legacy `.forge614/project.json` file at the root, with this structure.
 
 ```json
 {
@@ -37,22 +37,20 @@ Up to 1.5.x a project was bound to the **path** of its folder: moving or renamin
 }
 ```
 
-`ecosystem` is `null` for a loose project. The `id` values are the truth; the `name` values are for people.
+`ecosystem` is `null` for a project without a group. UUIDs identify the project and group. Names are for display.
 
-- **It resolves by `id`, not by path.** Every operation with `--directory` reads that file first; the path remains a hint. If the `id` does not exist in the local database (a clone on another machine), Engram registers the project —and its group— with that `id`, without asking.
-- **Moving, renaming the folder, or cloning needs no action.** `project-rename` and `group-rename` update the `name` in the file; the `id` values never change.
-- **Engram is the sole owner of the file and writes it silently.** It never asks permission or announces writing it: it is product configuration. The write is idempotent: if the file already exists, Engram reads it, **never replaces it or changes its `id` values**, and at most completes a missing field; repeating `init --directory` or `project-bind` does not change a single byte. Inside `.forge614/` Engram writes only `project.json` and never touches other files (each Forge614 node owns its own).
-- **When the database and the file disagree, the file wins.** If the database had that folder bound to another project, Engram re-binds it to the file's project, records the `PROJECT_REBOUND_FROM_FILE` event, and does not modify the file. Projects that were already bound only by path receive their `project.json` on the next `startup-context` or `session-start` in that folder, with a `PROJECT_FILE_CREATED` notice in the `startup-context` result (inside `project.notices`) and in the `session-start` result (a `notices` key).
-- **An invalid file is never overwritten.** Corrupt JSON, an unknown `schemaVersion`, unknown fields, an `id` that is not a UUID, a symbolic link, a directory, or a file larger than 64 KiB produce `PROJECT_FILE_INVALID` on stderr and nothing changes. Validation is strict (a Zod `.strict()` schema) and is loaded only when the repository carries that file: a session start in a folder without a `project.json` does not pay for it. For hosts it is a **visible error**, not an empty context: `startup-context` returns no block at all (not even `shared`); it is repaired by fixing the file or deleting it.
+- **A legacy file provides evidence.** A compatible declaration can recover the UUID. If it conflicts with the local binding or confirmed origin, Engram preserves the file and asks for a decision. See [03. CLI reference](03-cli-reference.md).
+- **Legacy publication requires an effective exclusion.** A Git folder with a usable origin uses SQLite. When publishing a legacy file, Engram verifies the root `.gitignore` rule `/.forge614/` for that worktree. If Git already tracks the file, Engram reads it, reports it, and preserves both the file and its index entry.
+- **An invalid file produces `PROJECT_FILE_INVALID`.** Engram preserves files with corrupt JSON, unknown fields or versions, symbolic links, or files larger than 64 KiB. Fix the file before reading that folder again.
 
 ## How a project joins a group
 
 Without asking, in this order of priority:
 
 1. **`forge614.node.json`** with the `ecosystem` field (the group name). Forge614 nodes ship with `"ecosystem": "forge614"`. Engram only **reads** that file (it belongs to another component) and ignores any unusable value. Since the file carries only the name, the group's `id` is derived from it, so every machine recognizes the same group without coordination; the `forge614` group has the fixed `id` `e0b3e1c9-ffbb-4b6b-8a55-79fbf3e8f0b4`.
-2. **The `ecosystem` section of `.forge614/project.json`** (which Engram writes when binding and which travels through Git).
+2. **The `ecosystem` section of a compatible legacy file.**
 
-If neither exists, non-interactive commands (`init --json --directory`, `project-bind`, `startup-context`) leave the project **without a group** and write `ecosystem: null` (the result carries no `group`); they do not ask. The single question ("which group does it belong to?") belongs to Shell's visual flow, not to Engram. **Nothing is inferred**: not from folder names, not from disk proximity, not from Git remotes, not from similar names. If both sources declare a different group, `forge614.node.json` wins. Removing the `ecosystem` section from a file that established the membership removes it from the database too; a membership made with `group-bind` is not undone because a file has not caught up yet.
+In the ordinary flow, `forge614.node.json` takes precedence over a compatible legacy declaration. A project with neither a declaration nor an existing membership stays without a group. Projects created with `project-create --directory` require explicit membership through `group-bind`. Use `group-unbind` to remove it, even if the folder still carries copied declarations.
 
 ## Moving a memory between scopes
 
@@ -63,7 +61,7 @@ No memory changes scope automatically. To bring an existing one into a group use
 The new scopes need an extension of the database schema. It is **additive**: only tables and a nullable column are added, and `memories` and `requests` are recreated keeping name, columns, types, and every row to widen the scope restriction to three values.
 
 - **Levels.** Schema levels 8, 9, and 10 are levels 5, 6, and 7 (bindings, sessions, reinforcement) plus the ecosystem. Enabling groups never turns on sessions or reinforcement by itself.
-- **When.** A normal open never migrates. The database is upgraded the first time a command needs groups (`group-create`, reading a `project.json` or `forge614.node.json` that declares a group, or re-binding a folder because the file wins); commands that only query, or move something into a group that does not exist, answer `GROUP_NOT_FOUND` without migrating. Someone who never uses groups keeps their database as it is.
+- **When.** A normal open never migrates. The database is upgraded the first time a command needs groups (`group-create`, reading a `project.json` or `forge614.node.json` that declares a compatible group); commands that only query, or move something into a group that does not exist, answer `GROUP_NOT_FOUND` without migrating. Someone who never uses groups keeps their database as it is.
 - **Automatic backup.** Before migrating, Engram copies the database to `engram.db.v<version>-pre-ecosystem-<UTC date>-<id>.bak` next to it (`0600` permissions, a consistent copy made with `VACUUM INTO`). It is skipped when the database holds no projects or memories yet. Engram never deletes those backups.
 - **Notice.** The result of the command that triggers the upgrade (`startup-context`, `group-create`, `session-start`, `init --directory`, `project-bind`, or an MCP call) includes a `DATABASE_MIGRATED` notice with the backup path in `backup`. Later calls do not notify again. If that call returns a list (for example `memory_history`), the notice arrives in the first result that can carry it.
 - **Verification.** The migration runs in a single transaction and compares, before and after, the row count and a SHA-256 checksum of the content of `memories` and `requests`, plus foreign keys and the text index. If anything differs it rolls everything back and answers `MIGRATION_VERIFY_FAILED`; the backup is kept. Applying it twice changes nothing. In the test with 50,000 memories it took about 0.65 s, including backup and verification (measured on macOS).
@@ -87,11 +85,11 @@ Group session summaries (`memory_session_summary` with `scope: "ecosystem"`) do 
 
 ## The same memory on another Mac, with the cloud (since 1.8.0)
 
-With `forge614-engram cloud on` (chapter [01](01-installation-and-getting-started.md)), groups, memberships, group source, and `ecosystem` memories with their history travel between two Macs just like project and `shared` ones do. On the other Mac, a project without `.forge614/project.json` is recognized by its normalized Git remote (`origin`, with or without `.git`, `git@`/`ssh://` versus `https://`, host lowercased): if it matches exactly one already-known local project it is bound to it; if two projects share the same remote, neither is bound — it is never guessed — and a new project is created as usual. With the cloud on, a second clone of the same repository on the same Mac binds to the same project, just as worktrees already do.
+With `cloud on`, incremental sync carries memories, groups, memberships, confirmed origins, and group policies. On the other installation, run `sync` and let the first download finish before using a new folder. On the same machine, SQLite can recognize reclones with cloud sync off.
 
 ## Current limits
 
 - **Formats 1–3 PostgreSQL replica.** **`ecosystem` memories are not replicated through this path.** Without the cloud on, `sync` (with or without `--upgrade-format`) stops with `SYNC_ECOSYSTEM_UNSUPPORTED` if `ecosystem` memories exist, without touching local or remote data; without group memories it works as before. `sync --upgrade-format` always uses this path, even with the cloud on. This path is deprecated since 1.8.0 (sunset 2027-03-31): the `cloud on` cloud does replicate the `ecosystem` scope (above).
 - **`forge614.node.json` is read-only** for Engram and only its `ecosystem` field is used.
-- **A group is local to this machine's database** plus each repository's `.forge614/project.json` files; there is no central group service.
+- **Each database stores its groups.** Installations using the same incremental replica sync group records and memberships.
 - Asking which group a project without a declaration belongs to is not done by Engram (Shell does it in its visual flow).

@@ -11,7 +11,7 @@ const OPTIONS: Record<string, readonly string[]> = {
   "group-create": ["name"], "group-list": [], "group-bind": ["project-id","group"], "group-unbind": ["project-id"], "group-rename": ["group","name"], "group-source-set": ["group","project-id"],
   "memory-demote": ["id","project-id"],
   "memory-move": ["id","project-id","scope","to-scope","group"],
-  "project-create": ["name"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id"],
+  "project-create": ["name","directory","replace-from"], "project-list": [], "project-rename": ["project-id", "name"], "project-bind": ["directory","project-id","replace-from","accept-origin"],
   save: [...MEMORY_OPTIONS,"title","content","type","topic","expected-version","request-key","pinned","session-id","session-project-id","affects"],
   search: [...MEMORY_OPTIONS,"query","limit","preview"],
   get: [...MEMORY_OPTIONS,"id","version"], history: [...MEMORY_OPTIONS,"id"],
@@ -22,7 +22,7 @@ const OPTIONS: Record<string, readonly string[]> = {
   context:["project-id","scope","group","compact","max-bytes"],
   "startup-context":["directory","json","format"],
 };
-const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format","json","purge-data","self"]);
+const BOOLEAN_FLAGS=new Set(["preview","compact","upgrade-format","json","purge-data","self","accept-origin"]);
 /** Lanza un `MemoryError` de código `INVALID_INPUT` con el mensaje dado; lo usan tanto este archivo como `commands.ts` para cortar en el primer argumento inválido. */
 export function invalid(message: string): never { throw new MemoryError("INVALID_INPUT",message); }
 /** Valida que `value` sea un entero positivo (1 en adelante) hasta `max`; usado por opciones como `--interval` o `--limit`. */
@@ -90,6 +90,9 @@ export function parseArguments(rawArgs:string[]) {
   }
   if (command === "init" && values.has("directory") && values.has("postgres-url")) {
     invalid("--directory no se combina con --postgres-url.");
+  }
+  if (command === "project-create" && values.has("replace-from") && !values.has("directory")) {
+    invalid("--replace-from requiere --directory.");
   }
   if (command === "startup-context" && !values.has("json")) {
     invalid("startup-context requiere --json.");

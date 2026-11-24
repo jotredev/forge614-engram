@@ -401,13 +401,24 @@ export class PostgresReplica {
    * mientras la consulta seguía en curso, o para cualquier otro fallo.
    */
   async pullChanges(since:number,limit=1000,signal?:AbortSignal):Promise<ChangeRow[]> {
-    if(!Number.isInteger(since)||since<0||!Number.isInteger(limit)||limit<1||limit>1000) syncError("SYNC_INVALID");
+    return this.readChanges(since,limit,signal);
+  }
+
+  /** Recupera únicamente los ajustes que un cliente anterior pudo omitir antes de su cursor general. */
+  async pullProjectIdentitySettings(since:number,through:number,limit=1000,signal?:AbortSignal):Promise<ChangeRow[]> {
+    if(!Number.isSafeInteger(through)||through<since) syncError("SYNC_INVALID");
+    return this.readChanges(since,limit,signal,through);
+  }
+
+  private async readChanges(since:number,limit:number,signal?:AbortSignal,through?:number):Promise<ChangeRow[]> {
+    if(!Number.isSafeInteger(since)||since<0||!Number.isInteger(limit)||limit<1||limit>1000) syncError("SYNC_INVALID");
     // Si el tope ya venció antes de intentarlo, ni vale la pena abrir la consulta.
     if(signal?.aborted) return safe(new Error("pullChanges aborted before querying"));
     const query=this.db.unsafe(
       `SELECT id,change_id,installation_id,kind,op,payload,
         to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at
-       FROM forge614_sync.changes WHERE id>$1 ORDER BY id LIMIT $2`,[since,limit]);
+       FROM forge614_sync.changes WHERE id>$1 ${through===undefined ? "" : "AND kind='project_identity_settings' AND id<=$3"}
+       ORDER BY id LIMIT $2`,through===undefined ? [since,limit] : [since,limit,through]);
     // Si la señal se aborta mientras la consulta sigue en curso, se cancela de verdad en PostgreSQL
     // (libera cualquier candado que estuviera esperando), no solo se descarta la respuesta al volver.
     const onAbort=()=>{query.cancel();};

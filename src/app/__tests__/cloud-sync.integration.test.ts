@@ -7,8 +7,10 @@
 import { Database } from "bun:sqlite";
 import { SQL } from "bun";
 import { afterAll, expect, test } from "bun:test";
-import { enableCloud, initialize } from "../../infrastructure/sqlite/schema";
+import { enableCloud, ensureProjectIdentitySchema, initialize } from "../../infrastructure/sqlite/schema";
 import { createProject } from "../../infrastructure/sqlite/projects";
+import { requireExplicitProjectGroup, setConfirmedProjectOrigin } from "../../infrastructure/sqlite/project-catalog";
+import { save } from "../../infrastructure/sqlite/writes";
 import { PostgresReplica } from "../../infrastructure/postgres/replica";
 import { postgresTestTimeoutMs, startPostgresCluster, stopPostgresCluster } from "../../infrastructure/__test-support__/postgres";
 import { downloadChanges, uploadOutbox } from "../cloud-sync";
@@ -76,4 +78,39 @@ integration("downloadChanges applies 1500 pending remote changes from real Postg
     const lastApplied = (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
     expect(lastApplied).toBe(1500);
   } finally { await replica.close(); }
+}, postgresTestTimeoutMs);
+
+integration("a legacy cursor can recover only skipped settings from PostgreSQL without repeating memories", async () => {
+  const name = "cloud_sync_identity_catchup";
+  await admin.unsafe(`DROP DATABASE IF EXISTS ${name}`);
+  await admin.unsafe(`CREATE DATABASE ${name}`);
+  const url = cluster.available ? cluster.url.replace(/\/postgres(\?|$)/, `/${name}$1`) : "";
+  const replica = await PostgresReplica.connect(url, true);
+  const sender = freshCloudDb(), receiver = freshCloudDb();
+  try {
+    ensureProjectIdentitySchema(sender);
+    const project = createProject(sender, "Confirmed origin");
+    setConfirmedProjectOrigin(sender, project.projectId, "example.com:443/Org/Repo");
+    requireExplicitProjectGroup(sender, project.projectId);
+    save(sender, { projectId: project.projectId, type: "fact", title: "Kept memory", content: "One version" });
+    await uploadOutbox(sender, replica, crypto.randomUUID());
+    const installation = crypto.randomUUID();
+    await downloadChanges(receiver, replica, installation);
+    const history = receiver.query("SELECT * FROM memory_versions").all();
+    expect(history).toHaveLength(1);
+    expect(receiver.query("SELECT count(*) AS n FROM cloud_notices WHERE payload LIKE '%UNKNOWN_KIND%'").get()).toEqual({ n: 2 });
+    const { last_applied_id: through } = receiver.query("SELECT last_applied_id FROM cloud_state").get() as { last_applied_id: number };
+    expect((await replica.pullProjectIdentitySettings(0, through, 1)).map(row => row.kind)).toEqual(["project_identity_settings"]);
+    expect(await replica.pullProjectIdentitySettings(through, through)).toEqual([]);
+    await expect(replica.pullProjectIdentitySettings(through, through - 1)).rejects.toMatchObject({ code: "SYNC_INVALID" });
+
+    ensureProjectIdentitySchema(receiver);
+    expect(await downloadChanges(receiver, replica, installation)).toBe(2);
+    expect(receiver.query("SELECT setting,value FROM project_identity_settings ORDER BY setting").all()).toEqual([
+      { setting: "group_policy", value: "explicit" }, { setting: "origin", value: "example.com:443/Org/Repo" },
+    ]);
+    expect(receiver.query("SELECT * FROM memory_versions").all()).toEqual(history);
+    expect(receiver.query("SELECT last_applied_id,initial_download_complete FROM cloud_identity_state").get())
+      .toEqual({ last_applied_id: through, initial_download_complete: 1 });
+  } finally { sender.close(); receiver.close(); await replica.close(); }
 }, postgresTestTimeoutMs);

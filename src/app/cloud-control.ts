@@ -11,7 +11,8 @@ import { WorkspaceConfig } from "../infrastructure/filesystem/workspace-config";
 import { PostgresReplica } from "../infrastructure/postgres/replica";
 import { MemoryError } from "../shared/errors";
 import { MemoryWorkspace } from "./workspace";
-import { cloudSettings, connectCloudReplica } from "./cloud-settings";
+import { cloudSettings, connectCloudReplica, remoteFingerprint } from "./cloud-settings";
+import { projectIdentityFor } from "./memory-store";
 import type { CloudProgress } from "./cloud-sync";
 
 /** Resultado de `cloud on`: el id de instalación (nuevo o ya existente) y que la nube quedó activa. */
@@ -35,21 +36,6 @@ export interface CloudStatusResult {
 export interface CloudSyncResult { readonly uploaded: number; readonly downloaded: number }
 
 /**
- * Reduce una URL de PostgreSQL ya validada a la huella que D14 usa para reconocer si `cloud on`
- * apunta a la base de siempre o a una distinta: host en minúsculas, puerto explícito (5432 si
- * falta) y nombre de base, sin usuario ni contraseña (la huella puede quedar en la base local, y
- * D13 exige que la dirección completa nunca se guarde en texto donde no haga falta).
- * @param url URL de conexión ya validada por `postgresOptions` (vía `PostgresReplica.connect`).
- * @returns La huella `host:puerto/base`.
- */
-function remoteFingerprint(url: string): string {
-  const parsed = new URL(url);
-  const port = parsed.port || "5432";
-  const database = decodeURIComponent(parsed.pathname.slice(1));
-  return `${parsed.hostname.toLowerCase()}:${port}/${database}`;
-}
-
-/**
  * Activa la sincronización con la nube (D9). Exige que `init` ya se haya ejecutado; prueba la
  * conexión y la cierra ANTES de escribir nada (una URL que no sirve no debe dejar rastro); genera
  * el id de instalación solo si todavía no existía (repetir la llamada no lo cambia); y activa el
@@ -71,7 +57,10 @@ export async function runCloudOn(url: string, config = new WorkspaceConfig()): P
   config.configurePostgres(url, config.revision(), installationId);
   const workspace = new MemoryWorkspace(config);
   const store = workspace.open();
-  try { store.enableCloud(remoteFingerprint(url)); }
+  try {
+    store.enableCloud(remoteFingerprint(url));
+    projectIdentityFor(store).ensureSchema();
+  }
   finally { store.close(); }
   return { installationId, enabled: true };
 }
@@ -128,7 +117,16 @@ export async function runCloudSync(options?: { onProgress?: ((progress: CloudPro
     const replica = await connectCloudReplica(settings.postgresUrl);
     // "Subidos" y "bajados" son los que de verdad subió y aplicó el ciclo, no el avance de `lastAppliedId`
     // (que también cuenta filas propias que vuelven al bajar y filas saltadas, y por eso mentía antes).
-    try { return await store.syncCloudCycle(replica, settings.installationId, undefined, options?.onProgress); }
+    try {
+      const current = cloudSettings();
+      const identity = projectIdentityFor(store);
+      const fingerprint = remoteFingerprint(settings.postgresUrl);
+      if (current?.postgresUrl !== settings.postgresUrl || current.installationId !== settings.installationId || !identity.claimCloud(fingerprint)) {
+        throw new MemoryError("SYNC_DISABLED", "La configuración de la réplica cambió durante sync. Revisa cloud status y vuelve a sincronizar.");
+      }
+      identity.ensureSchema();
+      return await identity.syncConfiguredCloud(replica, settings.installationId, fingerprint, options?.onProgress);
+    }
     finally { await replica.close(); }
   } finally { store.close(); }
 }

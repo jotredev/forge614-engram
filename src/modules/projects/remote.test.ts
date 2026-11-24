@@ -4,7 +4,7 @@
  * si una carpeta se liga a un proyecto ya conocido.
  */
 import { expect, test } from "bun:test";
-import { matchProjectByRemote, normalizeRemote } from "./remote";
+import { matchProjectByRemote, normalizeIdentityOrigin, normalizeRemote } from "./remote";
 
 // Todas estas formas del mismo remoto (https, con ".git", forma scp, ssh://, con puerto explícito, con
 // credenciales embebidas, y con protocolo y host en mayúsculas y "/" final) deben normalizar igual.
@@ -92,4 +92,34 @@ test("matchProjectByRemote ignores known projects with a null origin", () => {
   ];
   expect(matchProjectByRemote("https://github.com/org/repo", known)).toBe("p2");
   expect(matchProjectByRemote("https://gitlab.com/org/unrelated", [{ projectId: "p3", origin: null }])).toBeNull();
+});
+
+test("identity keys equate supported transports and preserve custom ports and path case", () => {
+  expect([
+    "https://Example.com:443/Org/Repo.git",
+    "ssh://git@Example.com:22/Org/Repo.git",
+    "git@Example.com:Org/Repo.git",
+  ].map(normalizeIdentityOrigin)).toEqual(Array(3).fill("example.com/Org/Repo"));
+  expect(normalizeIdentityOrigin("ssh://git@Example.com:2222/Org/Repo.git")).toBe("example.com:2222/Org/Repo");
+  expect(normalizeIdentityOrigin("ssh://git@Example.com:443/Org/Repo.git")).toBe("example.com:443/Org/Repo");
+  expect(normalizeIdentityOrigin("https://Example.com:8443/org/Repo.git")).toBe("example.com:8443/org/Repo");
+});
+
+test("identity keys discard local paths, missing hosts and credential-bearing URLs", () => {
+  for (const raw of [
+    "/home/user/Repo.git",
+    "./Org/Repo.git",
+    "C:/Org/Repo.git",
+    "file:///Org/Repo.git",
+    "https:///Org/Repo.git",
+    "ssh://git@/Org/Repo.git",
+    "https://credential@example.com/Org/Repo.git",
+    "https://user:credential@example.com/Org/Repo.git",
+    "https://example.com/Org/Repo.git?access_token=credential",
+    "https://example.com/Org/AKIAABCDEFGHIJKLMNOP",
+    "https://example.com/Org/%41KIAABCDEFGHIJKLMNOP",
+    "ssh://git@example.com:99999/Org/Repo.git",
+    "alice@example.com:Org/Repo.git",
+    "bob@example.com:Org/Repo.git",
+  ]) expect(normalizeIdentityOrigin(raw)).toBeNull();
 });

@@ -74,8 +74,8 @@ test("schema 7 initialization validates exact definitions and future versions re
     initialize(db); enableSearchReinforcement(db); initialize(db);
     db.exec("DROP INDEX confirmations_memory_time");
     expect(()=>initialize(db)).toThrow(expect.objectContaining({code:"DATABASE_SCHEMA"}));
-    // El 12 ya es el nivel de la nube (T1); el 13 es la siguiente versión futura desconocida.
-    db.exec("PRAGMA user_version=13");
+    // El catálogo cubre hasta el nivel 20.
+    db.exec("PRAGMA user_version=21");
     expect(()=>initialize(db)).toThrow(expect.objectContaining({code:"DATABASE_VERSION"}));
   } finally { db.close(); }
 });

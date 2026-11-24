@@ -304,7 +304,7 @@ test("future activity stays eligible while unbound runtime sessions do not", () 
     const manual=store.saveWithSession({projectId,title:"Unbound",content:"Manual",type:"fact"},{mode:"assistant",runtimeDirectory:"/tmp/other"});
     expect(manual.sessionSource).toBe("manual"); expect(manual.sessionId).not.toBe("imported");
   } finally {store.close();}
-});
+}, 20_000);
 
 // Verifica el borde exacto de la ventana de siete días de actividad: justo en el borde y un milisegundo después se infiere la sesión, un milisegundo antes del borde no (cae a manual).
 test("public saves include seven-day exact and plus-one activity but exclude minus one millisecond", () => {

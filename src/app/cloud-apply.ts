@@ -6,8 +6,9 @@
  */
 import type { Database } from "../infrastructure/sqlite/connection";
 import type { ChangeRow } from "../infrastructure/postgres/replica";
-import { travelingTableColumns } from "../infrastructure/sqlite/schema";
+import { cloudDownloadProgress, sameCloudReplica, travelingTableColumns, type CloudDownloadProgress } from "../infrastructure/sqlite/schema";
 import { findSecret } from "../modules/memory";
+import { isIdentityOriginKey, projectIdentity } from "../modules/projects";
 
 /** Resumen de una tanda de cambios aplicados: cuántas filas se aplicaron, se saltaron o generaron un conflicto de versión, y hasta qué id de la tabla `changes` se llegó. */
 export interface ApplyResult { readonly applied: number; readonly skipped: number; readonly conflicts: number; readonly lastAppliedId: number }
@@ -21,6 +22,7 @@ type Outcome = "applied" | "skipped" | "conflict" | "own";
 const NATURAL_KEY: Record<string, readonly string[]> = {
   projects: ["projectId"],
   project_remotes: ["project_id"],
+  project_identity_settings: ["project_id", "setting"],
   ecosystem_groups: ["id"],
   ecosystem_memberships: ["projectId"],
   ecosystem_sources: ["groupId"],
@@ -37,6 +39,7 @@ const NATURAL_KEY: Record<string, readonly string[]> = {
 const DATED_COLUMN: Record<string, string> = {
   projects: "updatedAt",
   project_remotes: "updated_at",
+  project_identity_settings: "updated_at",
   ecosystem_memberships: "boundAt",
   ecosystem_sources: "setAt",
   memory_meta: "updated_at",
@@ -89,6 +92,15 @@ function validPayload(payload: unknown, columns: readonly string[]): payload is 
   return keys.every(key => set.has(key));
 }
 
+function validIdentityMetadata(payload: Row): boolean {
+  const { project_id: projectId, setting, value, updated_at: updatedAt } = payload;
+  if (typeof projectId !== "string" || typeof value !== "string" || typeof updatedAt !== "string"
+      || (setting !== "origin" && setting !== "group_policy")) return false;
+  const time = Date.parse(updatedAt);
+  if (!Number.isFinite(time) || new Date(time).toISOString() !== updatedAt) return false;
+  try { return projectIdentity(projectId) === projectId; } catch { return false; }
+}
+
 /** Arma el texto de la clave natural de una fila (sus columnas de NATURAL_KEY unidas con "|"), para identificarla en un aviso sin exponer el resto de sus datos. */
 function naturalKeyOf(kind: string, payload: Row): string {
   return (NATURAL_KEY[kind] ?? []).map(column => String(payload[column])).join("|");
@@ -106,6 +118,7 @@ function secretPatternOf(kind: string, payload: Row): string | null {
   if (kind === "memories") return check(payload.title) ?? check(payload.content) ?? check(payload.topic_key);
   if (kind === "projects") return check(payload.name);
   if (kind === "project_remotes") return check(payload.origin);
+  if (kind === "project_identity_settings") return check(payload.value);
   if (kind === "memory_meta") {
     const short = check(payload.short);
     if (short) return short;
@@ -300,6 +313,10 @@ function applyUpsert(db: Database, row: ChangeRow, columns: readonly string[], p
 /** Aplica una fila entrante que borra un registro, traduciendo antes su versión (salvo en `memories`, que ya no guarda su propia versión al borrarse) y su clave de borrado si es una versión de memoria. */
 function applyDelete(db: Database, row: ChangeRow, columns: readonly string[], payload: Row): Outcome {
   const kind = row.kind;
+  if (kind === "project_identity_settings") {
+    const current = existingRow(db, kind, NATURAL_KEY[kind]!, payload);
+    if (current && String(current.updated_at) > String(payload.updated_at)) return "applied";
+  }
   const remapped: Row = VERSION_COLUMN[kind] && kind !== "memories"
     ? { ...payload, [VERSION_COLUMN[kind]!]: mappedVersion(db, String(payload[MEMORY_ID_COLUMN[kind]!]), row.installationId, Number(payload[VERSION_COLUMN[kind]!])) }
     : payload;
@@ -322,10 +339,16 @@ function applyRow(db: Database, row: ChangeRow, installationId: string, columnsB
   const columns = columnsByKind.get(row.kind);
   if (row.installationId === installationId) return "own";
   if (!columns) { notice(db, "CLOUD_ROW_SKIPPED", { id: row.id, kind: row.kind, op: row.op, reason: "UNKNOWN_KIND" }); return "skipped"; }
-  if (!validPayload(row.payload, columns)) { notice(db, "CLOUD_ROW_SKIPPED", { id: row.id, kind: row.kind, op: row.op, reason: "INVALID_PAYLOAD" }); return "skipped"; }
+  const identity = row.kind === "project_identity_settings";
+  if (!validPayload(row.payload, columns) || (identity && !validIdentityMetadata(row.payload))) {
+    notice(db, "CLOUD_ROW_SKIPPED", { id: row.id, kind: row.kind, op: row.op, reason: "INVALID_PAYLOAD" }); return "skipped";
+  }
   const payload = row.payload;
   const pattern = secretPatternOf(row.kind, payload);
   if (pattern) { notice(db, "SECRET_REJECTED", { id: row.id, kind: row.kind, key: naturalKeyOf(row.kind, payload), pattern }); return "skipped"; }
+  if (identity && !(payload.setting === "origin" ? isIdentityOriginKey(payload.value as string) : payload.value === "explicit")) {
+    notice(db, "CLOUD_ROW_SKIPPED", { id: row.id, kind: row.kind, op: row.op, reason: "INVALID_PAYLOAD" }); return "skipped";
+  }
   if (row.op === "delete") return applyDelete(db, row, columns, payload);
   return applyUpsert(db, row, columns, payload);
 }
@@ -344,15 +367,23 @@ function applyRow(db: Database, row: ChangeRow, installationId: string, columnsB
  * @param installationId Identificador de esta instalación, para reconocer y saltar sus propias filas.
  * @returns Cuántas filas se aplicaron, se saltaron o generaron un conflicto de versión, y el último id aplicado.
  */
-export function applyCloudChanges(db: Database, rows: readonly ChangeRow[], installationId: string): ApplyResult {
-  const columnsByKind = travelingTableColumns();
+export function applyCloudChanges(db: Database, rows: readonly ChangeRow[], installationId: string,
+    page?: { expected: CloudDownloadProgress; identityThrough?: number; complete?: boolean }): ApplyResult {
   let applied = 0, skipped = 0, conflicts = 0;
-  let lastAppliedId = (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
+  let lastAppliedId = 0;
   db.transaction(() => {
+    const progress = cloudDownloadProgress(db);
+    lastAppliedId = progress.general;
+    if (page && !sameCloudReplica(progress, page.expected)) return;
+    const identityThrough = page?.identityThrough;
+    const prior = identityThrough === undefined ? progress.general : progress.identity;
+    if (prior === null) return;
+    const columnsByKind = travelingTableColumns(db);
     // Se levanta el guardia antes de tocar ninguna fila, para que los disparadores locales sepan que hay una aplicación de cambios remotos en curso y no la confundan con un guardado propio.
     db.query("UPDATE cloud_state SET apply_guard=1 WHERE id=1").run();
     try {
       for (const row of rows) {
+        if (page && row.id <= prior) continue;
         // Cada fila tiene su propio punto de recuperación (savepoint): si falla, se deshace solo esa fila, no la tanda completa.
         db.exec("SAVEPOINT cloud_apply_row");
         try {
@@ -371,8 +402,17 @@ export function applyCloudChanges(db: Database, rows: readonly ChangeRow[], inst
           skipped++;
         }
         // El puntero avanza incluso para una fila salteada o propia: ya se procesó (o se descartó a propósito) y no debe volver a pedirse.
-        lastAppliedId = row.id;
-        db.query("UPDATE cloud_state SET last_applied_id=? WHERE id=1").run(lastAppliedId);
+        if (identityThrough === undefined) {
+          lastAppliedId = Math.max(lastAppliedId, row.id);
+          db.query("UPDATE cloud_state SET last_applied_id=? WHERE id=1").run(lastAppliedId);
+        }
+      }
+      if (identityThrough !== undefined) {
+        db.query("UPDATE cloud_identity_state SET last_applied_id=max(last_applied_id,?) WHERE id=1")
+          .run(Math.min(identityThrough, progress.general));
+      } else if (progress.identity === progress.general) {
+        db.query(`UPDATE cloud_identity_state SET last_applied_id=?, initial_download_complete=max(initial_download_complete,?) WHERE id=1`)
+          .run(lastAppliedId, page?.complete ? 1 : 0);
       }
     } finally {
       // Se baja el guardia pase lo que pase, incluso si una fila lanzó un error no atrapado más arriba.

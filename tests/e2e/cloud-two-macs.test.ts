@@ -10,7 +10,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { SQL } from "bun";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -207,21 +207,22 @@ integration("offline: the queue waits intact and uploads once the address is res
   expect(found).toHaveLength(1);
 }, postgresTestTimeoutMs);
 
-// Escenario 5 (D6, T3b): una carpeta sin archivo de identidad se reconoce por su remoto de Git equivalente.
-integration("a project without .forge614/project.json is recognized by its Git remote", async () => {
+// Una instalación anterior solo aporta la fila de compatibilidad. Sin confirmación ni
+// directorio Git local para verificarla, esa evidencia obliga a decidir antes de vincular.
+integration("a historic cloud remote alone requires an explicit binding", async () => {
   const macA = createMac(), macB = createMac();
   expect((await runIn(macA, "init", "--json")).code).toBe(0);
-  const url = await freshDatabase("t6_scenario5");
-  expect((await runIn(macA, "cloud", "on", "--postgres-url", url)).code).toBe(0);
   const repoA = mkdtempSync(join(tmpdir(), "forge614-repo-a-"));
   directories.push(repoA);
   await Bun.spawn(["git", "init"], { cwd: repoA, stdout: "ignore", stderr: "ignore" }).exited;
   await Bun.spawn(["git", "remote", "add", "origin", "https://github.com/example/repo.git"], { cwd: repoA, stdout: "ignore", stderr: "ignore" }).exited;
-  // Ligar la carpeta con `init --json --directory` (D6): con la nube activa y un remoto usable, crea el
-  // proyecto y anota su remoto normalizado, sin escribir `.forge614/project.json` con un vínculo distinto.
   const bound = JSON.parse((await run(macA, repoA, "init", "--json", "--directory", repoA)).stdout);
-  expect(bound.project.projectId).toBeTruthy();
-  expect((await run(macA, repoA, "save", "--project-id", bound.project.projectId, "--title", "From A's repo", "--content", "Bound by Git remote")).code).toBe(0);
+  const saved = JSON.parse((await run(macA, repoA, "save", "--project-id", bound.project.projectId, "--title", "From A's repo", "--content", "Bound by Git remote")).stdout);
+  const url = await freshDatabase("t6_scenario5");
+  expect((await runIn(macA, "cloud", "on", "--postgres-url", url)).code).toBe(0);
+  // Version 1.10 only publishes the three-field compatibility row and the known record types.
+  const legacy = new Database(join(macA.engramDir, "engram.db"));
+  try { legacy.query("DELETE FROM cloud_outbox WHERE kind='project_identity_settings'").run(); } finally { legacy.close(); }
   expect((await runIn(macA, "sync")).code).toBe(0);
   expect((await runIn(macB, "init", "--json")).code).toBe(0);
   expect((await runIn(macB, "cloud", "on", "--postgres-url", url)).code).toBe(0);
@@ -229,10 +230,13 @@ integration("a project without .forge614/project.json is recognized by its Git r
   const repoB = mkdtempSync(join(tmpdir(), "forge614-repo-b-"));
   directories.push(repoB);
   await Bun.spawn(["git", "init"], { cwd: repoB, stdout: "ignore", stderr: "ignore" }).exited;
-  // Remoto equivalente al de A (ssh en vez de https, sin ".git" final ya presente igual): D6 lo reconoce como el mismo proyecto.
   await Bun.spawn(["git", "remote", "add", "origin", "git@github.com:example/repo.git"], { cwd: repoB, stdout: "ignore", stderr: "ignore" }).exited;
-  const boundB = JSON.parse((await run(macB, repoB, "init", "--json", "--directory", repoB)).stdout);
-  expect(boundB.project.projectId).toBe(bound.project.projectId);
+
+  const attempt = await run(macB, repoB, "init", "--json", "--directory", repoB);
+  expect(attempt.code).toBe(1);
+  expect(JSON.parse(attempt.stderr).code).toBe("PROJECT_BINDING_REQUIRED");
+  const got = JSON.parse((await runIn(macB, "get", "--project-id", bound.project.projectId, "--id", saved.id)).stdout);
+  expect(got.content).toBe("Bound by Git remote");
 }, postgresTestTimeoutMs);
 
 // Escenario 6 (M5): sin `cloud on`, ni el `.env` ni el nivel de esquema cambian con el uso normal de la CLI.
@@ -281,4 +285,65 @@ integration("a secret arriving from the cloud is rejected without stopping the r
   expect(projects.map(p => p.name)).toContain("From the cloud batch");
   const notice = JSON.parse((await runIn(macB, "session-start", "--directory", macB.home, "--session-id", "watch-secret")).stdout);
   expect(notice.sessionNotice).toContain("Cloud sync: 1 change from the cloud was skipped");
+}, postgresTestTimeoutMs);
+
+integration("a replica recovers confirmed origins, memories and explicit group policy before resolving new checkouts", async () => {
+  const a = createMac(), b = createMac();
+  const repository = async (origin: string) => {
+    const folder = mkdtempSync(join(tmpdir(), "forge614-confirmed-origin-"));
+    directories.push(folder);
+    expect(await Bun.spawn(["git", "-C", folder, "init", "--quiet"], { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
+    expect(await Bun.spawn(["git", "-C", folder, "remote", "add", "origin", origin], { stdout: "ignore", stderr: "ignore" }).exited).toBe(0);
+    return folder;
+  };
+  const first = await repository("https://example.com/Org/Original.git");
+  const own = await repository("ssh://git@example.com:2222/Org/Independent.git");
+  const clone = await repository("git@example.com:Org/Original.git");
+  const cloneOwn = await repository("ssh://git@EXAMPLE.com:2222/Org/Independent");
+  const runOk = async (mac: typeof a, folder: string, ...args: string[]) => {
+    const result = await run(mac, folder, ...args);
+    expect(result.code, args.join(" ")).toBe(0);
+    return JSON.parse(result.stdout);
+  };
+  const original = (await runOk(a, first, "init", "--directory", first, "--json")).project.projectId;
+  const independent = (await runOk(a, own, "project-create", "--name", "Independent", "--directory", own)).projectId;
+  const { group: inherited } = await runOk(a, first, "group-create", "--name", "original-team");
+  const { group: explicit } = await runOk(a, own, "group-create", "--name", "independent-team");
+  await runOk(a, first, "group-bind", "--project-id", original, "--group", inherited.id);
+  await runOk(a, own, "group-bind", "--project-id", independent, "--group", explicit.id);
+  const memory = await runOk(a, first, "save", "--project-id", original, "--title", "Portable fact", "--content", "Original checkout");
+  const target = await freshDatabase("identity_catalog_two_macs");
+  await runOk(a, first, "cloud", "on", "--postgres-url", target);
+  await runOk(a, first, "sync");
+  await runOk(b, clone, "init", "--json");
+  await runOk(b, clone, "cloud", "on", "--postgres-url", target);
+
+  const pending = await run(b, clone, "session-start", "--directory", clone, "--session-id", "early");
+  expect(pending.code).toBe(1);
+  expect(JSON.parse(pending.stderr).code).toBe("PROJECT_BINDING_REQUIRED");
+  await runOk(b, clone, "sync");
+  const arrived = await runOk(b, clone, "startup-context", "--json", "--directory", clone);
+  expect(arrived.project).toMatchObject({ source: "path", projectId: original, context: { recent: [{ id: memory.id }] } });
+  expect(arrived.ecosystem).toMatchObject({ status: "member", group: { id: inherited.id } });
+  expect(existsSync(join(clone, ".forge614"))).toBe(false);
+
+  const metadata = join(cloneOwn, ".forge614");
+  mkdirSync(metadata);
+  const copiedFile = JSON.stringify({ schemaVersion: 1, project: { id: independent, name: "Independent" },
+    ecosystem: { id: inherited.id, name: inherited.name } });
+  writeFileSync(join(metadata, "project.json"), copiedFile);
+  writeFileSync(join(cloneOwn, "forge614.node.json"), JSON.stringify({ ecosystem: inherited.name }));
+  expect((await runOk(b, cloneOwn, "session-start", "--directory", cloneOwn, "--session-id", "independent-session")).projectId).toBe(independent);
+  const current = await runOk(b, cloneOwn, "startup-context", "--json", "--directory", cloneOwn);
+  expect(current.ecosystem).toMatchObject({ status: "member", group: { id: explicit.id } });
+  expect(readFileSync(join(metadata, "project.json"), "utf8")).toBe(copiedFile);
+
+  await runOk(b, clone, "cloud", "off");
+  expect((await runOk(b, clone, "startup-context", "--json", "--directory", clone)).project.projectId).toBe(original);
+  const db = new Database(join(b.engramDir, "engram.db"), { readonly: true });
+  try {
+    expect(db.query("SELECT initial_download_complete FROM cloud_identity_state").get()).toEqual({ initial_download_complete: 1 });
+    expect(db.query("SELECT last_applied_id FROM cloud_identity_state").get()).toEqual(db.query("SELECT last_applied_id FROM cloud_state").get());
+    expect(db.query("SELECT COUNT(*) AS n FROM projects").get()).toEqual({ n: 2 });
+  } finally { db.close(); }
 }, postgresTestTimeoutMs);

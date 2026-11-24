@@ -34,6 +34,14 @@ export function cloudSettings(): CloudSettings | null {
   return { postgresUrl: settings.postgresUrl, installationId: settings.installationId };
 }
 
+/** Identifica el servidor y la base sin guardar el usuario ni las credenciales. */
+export function remoteFingerprint(url: string): string {
+  const parsed = new URL(url);
+  const port = parsed.port || "5432";
+  const database = decodeURIComponent(parsed.pathname.slice(1));
+  return `${parsed.hostname.toLowerCase()}:${port}/${database}`;
+}
+
 /**
  * Conexión perezosa por defecto hacia la réplica de PostgreSQL: la que usa la tarea de fondo cuando
  * ninguna prueba inyecta un doble (`CloudBackgroundOptions.connect`).

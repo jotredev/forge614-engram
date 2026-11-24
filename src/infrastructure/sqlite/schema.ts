@@ -14,6 +14,7 @@ import { Database } from "bun:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync } from "node:fs";
 import { MemoryError } from "../../shared/errors";
+import { backfillProjectOrigins } from "./project-catalog";
 
 const APPLICATION_ID = 1177956660;
 const SCHEMA_VERSION = 3;
@@ -27,6 +28,33 @@ const BINDING_SCHEMA = `CREATE TABLE project_bindings (
   createdAt TEXT NOT NULL
 );
 CREATE INDEX project_bindings_project ON project_bindings(projectId);
+`;
+const PROJECT_REMOTES_SCHEMA = `CREATE TABLE project_remotes (
+  project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(projectId),
+  origin TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`;
+const PROJECT_IDENTITY_SCHEMA = `CREATE TABLE project_identity_settings (
+  project_id TEXT NOT NULL REFERENCES projects(projectId),
+  setting TEXT NOT NULL CHECK(setting IN ('origin','group_policy')),
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(project_id,setting)
+);
+CREATE INDEX project_identity_origin ON project_identity_settings(value) WHERE setting='origin';
+CREATE TABLE project_binding_corrections (
+  id INTEGER PRIMARY KEY,
+  directory TEXT NOT NULL REFERENCES project_bindings(directory),
+  project_id TEXT NOT NULL REFERENCES projects(projectId),
+  previous_project_id TEXT REFERENCES projects(projectId),
+  legacy_project_id TEXT,
+  origin TEXT,
+  accepted_project_ids TEXT NOT NULL CHECK(json_valid(accepted_project_ids)),
+  cause TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX project_binding_corrections_directory ON project_binding_corrections(directory,id);
 `;
 const SESSION_SCHEMA = `CREATE TABLE sessions (
   sessionId TEXT PRIMARY KEY NOT NULL,
@@ -281,7 +309,7 @@ type Base = 3 | 4 | 5 | 6 | 7;
  * `intelligence`: si tiene la memoria inteligente (nivel 11: metadatos de recuerdo y búsqueda por palabra).
  * `cloud`: si tiene la cola de la nube (nivel 12: bandeja de cambios pendientes de subir).
  */
-export interface SchemaState { readonly base: Base; readonly ecosystem: boolean; readonly intelligence: boolean; readonly cloud: boolean }
+export interface SchemaState { readonly base: Base; readonly ecosystem: boolean; readonly intelligence: boolean; readonly cloud: boolean; readonly projectIdentity?: true }
 // Los niveles 3-7 son la cadena lineal de funciones. Los niveles 8-10 son los niveles 5-7 con la
 // estructura de ecosistema, así que activar ecosistema nunca activa en silencio sesiones ni el
 // refuerzo de búsqueda. El 11 es el nivel de memoria inteligente (exige base 7 y la estructura de
@@ -293,6 +321,8 @@ export interface SchemaState { readonly base: Base; readonly ecosystem: boolean;
  * @returns el estado correspondiente, o `null` si esta versión de Engram no conoce ese número.
  */
 function decode(version: number): SchemaState | null {
+  // Los niveles 13–20 conservan la composición de los niveles 5–12 y agregan el catálogo.
+  if (version >= 13 && version <= 20) return { ...decode(version - 8)!, projectIdentity: true };
   if (version >= 3 && version <= 7) return { base: version as Base, ecosystem: false, intelligence: false, cloud: false };
   if (version >= 8 && version <= 10) return { base: (version - 3) as Base, ecosystem: true, intelligence: false, cloud: false };
   if (version === 11) return { base: 7, ecosystem: true, intelligence: true, cloud: false };
@@ -305,9 +335,8 @@ function decode(version: number): SchemaState | null {
  * @returns el número de versión correspondiente.
  */
 function encode(state: SchemaState): number {
-  if (state.cloud) return 12;
-  if (state.intelligence) return 11;
-  return state.base + (state.ecosystem ? 3 : 0);
+  const level = state.cloud ? 12 : state.intelligence ? 11 : state.base + (state.ecosystem ? 3 : 0);
+  return level + (state.projectIdentity ? 8 : 0);
 }
 /**
  * Lee el número de versión del esquema que la base tiene guardado ahora mismo.
@@ -377,6 +406,9 @@ function validate(db: Database, version: number): void {
       if (state.ecosystem) applyEcosystemStructure(reference);
       if (state.intelligence) reference.exec(INTELLIGENCE_SCHEMA);
       if (state.cloud) reference.exec(CLOUD_SCHEMA);
+      else if (state.projectIdentity) reference.exec(PROJECT_REMOTES_SCHEMA);
+      if (state.projectIdentity) reference.exec(PROJECT_IDENTITY_SCHEMA);
+      if (state.projectIdentity && state.cloud) reference.exec(CLOUD_IDENTITY_SCHEMA);
       expectedDefinitions.set(version,definition(reference));
     } finally { reference.close(); }
   }
@@ -400,7 +432,7 @@ function upgradeTo(db: Database, target: 4 | 5 | 6 | 7, unsupported: string): vo
     validate(db, version);
     if (state.base >= target) return;
     db.exec(featureSql(state.base, target));
-    db.exec(`PRAGMA user_version=${encode({ base: target, ecosystem: state.ecosystem, intelligence: state.intelligence, cloud: false })}`);
+    db.exec(`PRAGMA user_version=${encode({ ...state, base: target })}`);
   }).immediate();
 }
 
@@ -485,19 +517,48 @@ function verificationFailed(): never {
  * @param db conexión abierta a la base.
  * @param version versión actual, usada en el nombre del archivo de respaldo.
  * @param label qué migración lo produce, usada en el nombre del archivo de respaldo.
- * @returns la ruta del archivo de respaldo, o `null` si la base es solo en memoria o aún no tiene datos que perder.
+ * @returns la ruta del respaldo, o `null` para una base en memoria o una migración sin datos que respaldar.
  */
-function backupBeforeMigration(db: Database, version: number, label: "ecosystem" | "intelligence" | "cloud"): string | null {
+function backupBeforeMigration(db: Database, version: number, label: "ecosystem" | "intelligence" | "cloud" | "project-identity"): string | null {
   const main = (db.query("PRAGMA database_list").all() as { name: string; file: string }[]).find(entry => entry.name === "main");
   if (!main?.file) return null;
   // No hay nada que perder en una base que todavía no tiene ni proyectos ni recuerdos.
   const held = db.query("SELECT (SELECT count(*) FROM projects)+(SELECT count(*) FROM memories) AS n").get() as { n: number };
-  if (held.n === 0) return null;
+  if (held.n === 0 && label !== "project-identity") return null;
   const stamp = new Date().toISOString().replace(/[-:.]/g, "");
   const target = `${main.file}.v${version}-pre-${label}-${stamp}-${randomUUID().slice(0, 8)}.bak`;
-  db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
+  const statement = `VACUUM INTO '${target.replaceAll("'", "''")}'`;
+  if (db.inTransaction) {
+    // El escritor ya tiene el bloqueo inmediato. Otra conexión ve exactamente ese esquema,
+    // sin intentar ejecutar VACUUM dentro de la transacción de migración.
+    const snapshot = new Database(main.file, { readonly: true });
+    try { snapshot.exec(statement); } finally { snapshot.close(); }
+  } else db.exec(statement);
   chmodSync(target, 0o600);
   return target;
+}
+
+/** Activa el catálogo y conserva las funciones inscritas. Se llama antes de la transacción del guardado. */
+export function ensureProjectIdentitySchema(db: Database): { migrated: boolean; backup: string | null } {
+  return db.transaction(() => {
+    const version = currentVersion(db);
+    const state = decode(version);
+    if (!state || state.base < 5) throw new MemoryError("MIGRATION_REQUIRED", "Inicializa Engram para habilitar los vínculos de proyecto.");
+    validate(db, version);
+    if (state.projectIdentity) return { migrated: false, backup: null };
+
+    // Comprueba que la conexión puede escribir antes de producir el respaldo.
+    db.exec(`PRAGMA user_version=${version}`);
+    const backup = backupBeforeMigration(db, version, "project-identity");
+    if (!state.cloud) db.exec(PROJECT_REMOTES_SCHEMA);
+    db.exec(PROJECT_IDENTITY_SCHEMA);
+    if (state.cloud) enableCloudIdentityStructure(db);
+    backfillProjectOrigins(db);
+    const updated = encode({ ...state, projectIdentity: true });
+    validate(db, updated);
+    db.exec(`PRAGMA user_version=${updated}`);
+    return { migrated: true, backup };
+  }).immediate();
 }
 
 /**
@@ -525,26 +586,21 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
     const current = currentVersion(db), decoded = decode(current);
     if (!decoded) throw new MemoryError("MIGRATION_REQUIRED", "No se puede habilitar el ámbito ecosystem en este formato.");
     validate(db, current);
-    return { current, decoded };
+    return decoded;
   }).deferred();
-  let version = seen.current;
-  let state = seen.decoded;
-  if (state.ecosystem) return { migrated: false, backup: null };
-  if (state.base < 5) { enableProjectBindings(db); version = currentVersion(db); state = decode(version)!; }
-  // Una conexión que no puede escribir debe fallar antes de dejar un respaldo inútil a medias.
-  // Son sentencias separadas a propósito: un exec de varias sentencias no deja ver un error de solo lectura.
-  db.exec("BEGIN IMMEDIATE");
-  try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
-  const backup = backupBeforeMigration(db, version, "ecosystem");
-  let migrated = false;
+  if (seen.ecosystem) return { migrated: false, backup: null };
+  if (seen.base < 5) enableProjectBindings(db);
   const foreignKeys = (db.query("PRAGMA foreign_keys").get() as { foreign_keys: number }).foreign_keys;
   db.exec("PRAGMA foreign_keys=OFF");
   try {
-    db.transaction(() => {
-      const inside = currentVersion(db);
-      const insideState = decode(inside)!;
-      if (insideState.ecosystem) { validate(db, inside); return; }
-      validate(db, inside);
+    return db.transaction(() => {
+      const version = currentVersion(db);
+      const state = decode(version)!;
+      validate(db, version);
+      if (state.ecosystem) return { migrated: false, backup: null };
+      // El mismo bloqueo cubre la comprobación de escritura, el respaldo y la migración.
+      db.exec(`PRAGMA user_version=${version}`);
+      const backup = backupBeforeMigration(db, version, "ecosystem");
       const violationsBefore = foreignKeyViolations(db);
       const memoriesBefore = contentDigest(db, "memories");
       const requestsBefore = contentDigest(db, "requests");
@@ -555,13 +611,12 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
         || requestsAfter.count !== requestsBefore.count || requestsAfter.digest !== requestsBefore.digest
         || foreignKeyViolations(db) > violationsBefore) verificationFailed();
       try { db.exec("INSERT INTO memories_fts(memories_fts) VALUES('integrity-check')"); } catch { verificationFailed(); }
-      db.exec(`PRAGMA user_version=${encode({ base: insideState.base, ecosystem: true, intelligence: false, cloud: false })}`);
-      migrated = true;
+      db.exec(`PRAGMA user_version=${encode({ ...state, ecosystem: true })}`);
+      return { migrated: true, backup };
     }).immediate();
   } finally {
     db.exec(`PRAGMA foreign_keys=${foreignKeys ? "ON" : "OFF"}`);
   }
-  return { migrated, backup: migrated ? backup : null };
 }
 
 /**
@@ -624,7 +679,7 @@ export function enableIntelligence(db: Database): IntelligenceEnrolment {
       || requestsAfter.count !== requestsBefore.count || requestsAfter.digest !== requestsBefore.digest) verificationFailed();
     ftsIntegrity(db, "memories_fts");
     ftsIntegrity(db, "memories_words");
-    db.exec(`PRAGMA user_version=${encode({ base: 7, ecosystem: true, intelligence: true, cloud: false })}`);
+    db.exec(`PRAGMA user_version=${encode({ ...insideState, intelligence: true })}`);
     migrated = true;
   }).immediate();
   return { migrated, backup: migrated ? backup : null };
@@ -664,11 +719,6 @@ CREATE TABLE cloud_version_map (
   local_version INTEGER NOT NULL,
   PRIMARY KEY (memory_id, installation_id, remote_version)
 );
-CREATE TABLE project_remotes (
-  project_id TEXT PRIMARY KEY NOT NULL REFERENCES projects(projectId),
-  origin TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
 `;
 // Cada tabla que viaja (sección 5 del diseño), en orden de dependencia (D14): primero projects y la
 // estructura de ecosistema, luego memories y sus tablas auxiliares, luego sessions, luego confirmations.
@@ -690,6 +740,11 @@ const TRAVELING_TABLES: readonly (readonly [string, readonly string[]])[] = [
   ["confirmations", ["confirmationId", "memoryId", "version", "recordedAt", "sessionId"]],
   ["confirmation_requests", ["memoryId", "requestKey", "payloadHash", "expectedVersion", "confirmationId", "response"]],
 ];
+const TRAVELING_IDENTITY = ["project_identity_settings", ["project_id", "setting", "value", "updated_at"]] as const;
+
+function travelingTables(identity: boolean): readonly (readonly [string, readonly string[]])[] {
+  return identity ? [...TRAVELING_TABLES.slice(0, 2), TRAVELING_IDENTITY, ...TRAVELING_TABLES.slice(2)] : TRAVELING_TABLES;
+}
 /**
  * Arma la expresión SQL `json_object(...)` que empaqueta las columnas de una tabla en un JSON,
  * leyendo la fila nueva o la vieja de un disparador.
@@ -706,9 +761,9 @@ function jsonObject(columns: readonly string[], row: "new" | "old"): string {
  * volver a encolar los cambios que la propia aplicación de cambios bajados produce).
  * @returns el SQL de creación de todos los disparadores, concatenado.
  */
-function cloudTriggersSql(): string {
+function cloudTriggersSql(tables = TRAVELING_TABLES): string {
   let sql = "";
-  for (const [table, columns] of TRAVELING_TABLES) {
+  for (const [table, columns] of tables) {
     sql += `CREATE TRIGGER cloud_outbox_${table}_insert AFTER INSERT ON ${table}
 WHEN (SELECT apply_guard FROM cloud_state) = 0
 BEGIN
@@ -728,11 +783,23 @@ END;
   }
   return sql;
 }
-const CLOUD_SCHEMA = CLOUD_TABLES_SCHEMA + cloudTriggersSql();
+const CLOUD_SCHEMA = CLOUD_TABLES_SCHEMA + PROJECT_REMOTES_SCHEMA + cloudTriggersSql();
+const CLOUD_IDENTITY_SCHEMA = `CREATE TABLE cloud_identity_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1) REFERENCES cloud_state(id),
+  last_applied_id INTEGER NOT NULL DEFAULT 0,
+  initial_download_complete INTEGER NOT NULL DEFAULT 0 CHECK(initial_download_complete IN (0,1)),
+  generation TEXT NOT NULL DEFAULT (lower(hex(randomblob(16))))
+);
+` + cloudTriggersSql([TRAVELING_IDENTITY]);
+
+function enableCloudIdentityStructure(db: Database): void {
+  db.exec(CLOUD_IDENTITY_SCHEMA);
+  db.exec("INSERT INTO cloud_identity_state(id) VALUES (1)");
+}
 
 /** Vista de solo lectura de qué columnas viajan por tabla, para que las pruebas la comparen contra `PRAGMA table_info`. */
-export function travelingTableColumns(): ReadonlyMap<string, readonly string[]> {
-  return new Map(TRAVELING_TABLES);
+export function travelingTableColumns(db?: Database): ReadonlyMap<string, readonly string[]> {
+  return new Map(travelingTables(db !== undefined && schemaFeatures(db)?.projectIdentity === true));
 }
 
 /**
@@ -745,8 +812,8 @@ function jsonObjectFromColumns(columns: readonly string[]): string {
   return `json_object(${columns.map(column => `'${column}',${column}`).join(",")})`;
 }
 /** Encola cada fila que ya existe de cada tabla que viaja, en orden de dependencia (D14, primera sincronización). */
-function enqueueAllExisting(db: Database): void {
-  for (const [table, columns] of TRAVELING_TABLES) {
+function enqueueAllExisting(db: Database, identity: boolean): void {
+  for (const [table, columns] of travelingTables(identity)) {
     db.exec(`INSERT INTO cloud_outbox(kind,op,payload) SELECT '${table}','insert',${jsonObjectFromColumns(columns)} FROM ${table}`);
   }
 }
@@ -774,6 +841,46 @@ function setFingerprint(db: Database, fingerprint: string | null): void {
  */
 export function lastAppliedId(db: Database): number {
   return (db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get() as { last_applied_id: number }).last_applied_id;
+}
+
+export interface CloudDownloadProgress {
+  general: number;
+  identity: number | null;
+  complete: boolean;
+  fingerprint: string | null;
+  generation: string | null;
+}
+
+export function sameCloudReplica(left: CloudDownloadProgress, right: CloudDownloadProgress): boolean {
+  return left.fingerprint === right.fingerprint && left.generation === right.generation;
+}
+
+/** Lee cursores y réplica como una sola foto; el nivel 12 no tiene cursor de identidad. */
+export function cloudDownloadProgress(db: Database): CloudDownloadProgress {
+  const identity = schemaFeatures(db)?.projectIdentity === true;
+  const row = identity
+    ? db.query(`SELECT c.last_applied_id AS general, i.last_applied_id AS identity, i.initial_download_complete AS complete,
+        c.remote_fingerprint AS fingerprint, i.generation FROM cloud_state c JOIN cloud_identity_state i USING(id) WHERE c.id=1`).get()
+    : db.query(`SELECT last_applied_id AS general, NULL AS identity, 0 AS complete,
+        remote_fingerprint AS fingerprint, NULL AS generation FROM cloud_state WHERE id=1`).get();
+  const state = row as Omit<CloudDownloadProgress, "complete"> & { complete: 0 | 1 };
+  return { ...state, complete: state.complete === 1 };
+}
+
+export function cloudIdentityCatalogReady(db: Database, fingerprint: string): boolean {
+  const state = schemaFeatures(db);
+  if (!state?.cloud || !state.projectIdentity) return false;
+  const progress = cloudDownloadProgress(db);
+  return progress.fingerprint === fingerprint && progress.complete && progress.identity === progress.general;
+}
+
+/** Asocia una base legacy sin huella con su configuración actual sin rebobinar los cursores. */
+export function claimCloudReplica(db: Database, fingerprint: string): boolean {
+  return db.transaction(() => {
+    const progress = cloudDownloadProgress(db);
+    if (progress.fingerprint === null) setFingerprint(db, fingerprint);
+    return progress.fingerprint === null || progress.fingerprint === fingerprint;
+  }).immediate();
 }
 
 /**
@@ -804,14 +911,16 @@ export function enableCloud(db: Database, remoteFingerprint?: string | null): Cl
   if (!seen.intelligence) enableIntelligence(db);
   if (seen.cloud) {
     if (fingerprint === null) return { migrated: false, backup: null };
-    const stored = (db.query("SELECT remote_fingerprint FROM cloud_state WHERE id=1").get() as { remote_fingerprint: string | null }).remote_fingerprint;
-    if (fingerprint === stored) return { migrated: false, backup: null };
     let migrated = false;
     db.transaction(() => {
+      const progress = cloudDownloadProgress(db);
+      if (fingerprint === progress.fingerprint) return;
       db.exec("DELETE FROM cloud_outbox");
       db.query("UPDATE cloud_state SET last_applied_id=0, apply_guard=0 WHERE id=1").run();
       setFingerprint(db, fingerprint);
-      enqueueAllExisting(db);
+      if (progress.identity !== null) db.exec(`UPDATE cloud_identity_state
+        SET last_applied_id=0, initial_download_complete=0, generation=lower(hex(randomblob(16))) WHERE id=1`);
+      enqueueAllExisting(db, progress.identity !== null);
       migrated = true;
     }).immediate();
     return { migrated, backup: null };
@@ -827,10 +936,11 @@ export function enableCloud(db: Database, remoteFingerprint?: string | null): Cl
     const insideState = decode(inside)!;
     validate(db, inside);
     if (insideState.cloud) return;
-    db.exec(CLOUD_SCHEMA);
+    db.exec(insideState.projectIdentity ? CLOUD_TABLES_SCHEMA + cloudTriggersSql() : CLOUD_SCHEMA);
     db.query("INSERT INTO cloud_state(id,last_applied_id,apply_guard,remote_fingerprint) VALUES (1,0,0,?)").run(fingerprint);
-    enqueueAllExisting(db);
-    db.exec(`PRAGMA user_version=${encode({ base: insideState.base, ecosystem: true, intelligence: true, cloud: true })}`);
+    if (insideState.projectIdentity) enableCloudIdentityStructure(db);
+    enqueueAllExisting(db, insideState.projectIdentity === true);
+    db.exec(`PRAGMA user_version=${encode({ ...insideState, cloud: true })}`);
     migrated = true;
   }).immediate();
   return { migrated, backup: migrated ? backup : null };

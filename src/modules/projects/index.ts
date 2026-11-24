@@ -3,4 +3,4 @@
  * reexporta desde `src/index.ts`: es un detalle interno, no entra al SDK público. */
 export type { Project } from "./types";
 export { projectIdentity } from "./identity";
-export { normalizeRemote, matchProjectByRemote } from "./remote";
+export { normalizeRemote, matchProjectByRemote, normalizeIdentityOrigin, legacyOriginKey, isIdentityOriginKey } from "./remote";

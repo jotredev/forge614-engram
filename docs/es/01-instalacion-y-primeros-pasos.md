@@ -107,9 +107,9 @@ Si trabajas desde dos Mac, puedes hacer que las dos vean exactamente los mismos 
 
 **1. Crea un proyecto en Neon.** [Neon](https://neon.tech) es un servicio de PostgreSQL en la nube; crea una cuenta y un proyecto nuevo dedicado solo a Engram (cualquier región cercana sirve; Engram admite PostgreSQL 16 a 18). Neon te da una dirección de conexión: cópiala tal cual, con `sslmode=require&channel_binding=require`, con o sin `-pooler` en el host. Si quieres ensayar antes, Neon deja crear una rama de prueba con su propia dirección, que puedes borrar al terminar.
 
-Esa dirección es una llave: nunca la pegues en un chat ni la guardes en un archivo del repositorio. Los comandos de este capítulo la piden en la terminal sin mostrarla en pantalla, y la guardan solo en `~/.forge614/engram/.env`, con permisos que solo tú puedes leer. Por ejemplo: `postgresql://<usuario>:<contraseña>@<host>/neondb?sslmode=require&channel_binding=require`.
+Los comandos de este capítulo piden la dirección en la terminal sin mostrarla y la guardan con permisos privados en `FORGE614_HOME/memory/.env` (por defecto `~/.forge614/memory/.env`). Conserva la dirección fuera del repositorio y de tus conversaciones.
 
-**2. Instala 1.8.0 y cierra todas las sesiones.** Actualiza Engram en las dos Mac (`forge614-engram update`). Una base ya preparada para la nube no la puede abrir una versión anterior a 1.8.0 (responde `DATABASE_VERSION`), así que antes de activar la nube cierra cualquier sesión de terminal, IA o servidor MCP que todavía use Engram en esa Mac.
+**2. Respalda la base, cierra las sesiones y actualiza sus lectores.** Actualiza Engram en las dos instalaciones y cualquier binario de Atlas que abra la misma base con otra versión de Engram. Consulta [06. Resolución de errores](06-resolucion-de-errores.md) para el orden de actualización y recuperación desde 1.10.0.
 
 **3. Activa la nube en la primera Mac.**
 
@@ -133,7 +133,7 @@ Esta Mac también activa la nube por primera vez: sube toda su memoria local que
 forge614-engram cloud status --json
 ```
 
-Cuando `pending` sea `0` en ambas, las dos Mac tienen la misma memoria. A partir de aquí, cada guardado se sincroniza solo, sin comandos: mientras Engram esté abierto, sube y baja cambios cada 30 segundos y también justo después de guardar. Si te quedas sin internet, lo pendiente espera en una cola local y sale en cuanto vuelva la conexión, sin perder nada. Consulta el capítulo [05. Arquitectura Interna y Fórmulas](05-arquitectura-interna-y-formulas.md) para cómo funciona por dentro y el capítulo [03. Referencia CLI](03-referencia-cli.md) para el resto de `cloud on/off/status`.
+Ejecuta `forge614-engram sync` en ambas instalaciones y deja que termine la primera descarga antes de abrir un proyecto que todavía no esté vinculado. `pending: 0` indica que la cola local de subida está vacía. El servidor MCP sincroniza cada 30 segundos y después de guardar. Consulta [05. Arquitectura interna](05-arquitectura-interna-y-formulas.md) para los cursores de descarga.
 
 ## MCP y trabajo diario con IA
 

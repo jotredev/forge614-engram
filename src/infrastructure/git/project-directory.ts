@@ -79,6 +79,19 @@ function gitEnvironment(): Record<string,string> {
   return environment;
 }
 
+/** Ejecuta una consulta Git local con el mismo entorno saneado que usa la identidad de carpeta. */
+export function runProjectGit(directory: string, args: string[]): Bun.ReadableSyncSubprocess | null {
+  const executable = process.env.PATH === undefined ? Bun.which("git") : Bun.which("git", { PATH: process.env.PATH });
+  if (!executable) return null;
+  try {
+    const result = Bun.spawnSync([executable, "-C", directory, ...args], {
+      env: gitEnvironment(), stdout: "pipe", stderr: "pipe", timeout: GIT_TIMEOUT_MS,
+      maxBuffer: GIT_MAX_OUTPUT_BYTES, killSignal: "SIGKILL",
+    });
+    return result.exitedDueToTimeout || result.exitedDueToMaxBuffer ? null : result;
+  } catch { return null; }
+}
+
 /**
  * Lanza el error estándar de identidad Git no determinable de forma segura.
  * @throws MemoryError con código `PROJECT_IDENTITY_UNAVAILABLE` siempre.
@@ -132,16 +145,8 @@ function hasGitMarker(directory: string): boolean {
  */
 function canonicalProjectFromDirectory(explicit: string): CanonicalProject {
   const marker = hasGitMarker(explicit);
-  const executable = process.env.PATH === undefined ? Bun.which("git") : Bun.which("git",{ PATH:process.env.PATH });
-  if (!executable) projectIdentityUnavailable();
-  let result: Bun.ReadableSyncSubprocess;
-  try {
-    result = Bun.spawnSync([executable,"-C",explicit,"rev-parse","--path-format=absolute","--git-common-dir"], {
-      env:gitEnvironment(),stdout:"pipe",stderr:"pipe",timeout:GIT_TIMEOUT_MS,
-      maxBuffer:GIT_MAX_OUTPUT_BYTES,killSignal:"SIGKILL",
-    });
-  } catch { projectIdentityUnavailable(); }
-  if (result.exitedDueToTimeout || result.exitedDueToMaxBuffer) projectIdentityUnavailable();
+  const result = runProjectGit(explicit, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!result) projectIdentityUnavailable();
   if (result.exitCode !== 0) {
     const ordinaryNonGit = result.stderr.toString().includes("not a git repository");
     if (marker || !ordinaryNonGit) projectIdentityUnavailable();
@@ -203,16 +208,8 @@ export function canonicalProject(directory: string): CanonicalProject {
 export function runtimeProjectDirectory(directory: string, project: CanonicalProject): string {
   const explicit = bindableProjectDirectory(directory);
   if (!project.git) return explicit;
-  const executable = process.env.PATH === undefined ? Bun.which("git") : Bun.which("git",{ PATH:process.env.PATH });
-  if (!executable) projectIdentityUnavailable();
-  let result: Bun.ReadableSyncSubprocess;
-  try {
-    result = Bun.spawnSync([executable,"-C",explicit,"rev-parse","--show-toplevel"], {
-      env:gitEnvironment(),stdout:"pipe",stderr:"pipe",timeout:GIT_TIMEOUT_MS,
-      maxBuffer:GIT_MAX_OUTPUT_BYTES,killSignal:"SIGKILL",
-    });
-  } catch { projectIdentityUnavailable(); }
-  if (result.exitedDueToTimeout || result.exitedDueToMaxBuffer || result.exitCode !== 0) projectIdentityUnavailable();
+  const result = runProjectGit(explicit, ["rev-parse", "--show-toplevel"]);
+  if (!result || result.exitCode !== 0) projectIdentityUnavailable();
   const output = result.stdout.toString().trim();
   if (!output || output.includes("\0") || !isAbsolute(output)) projectIdentityUnavailable();
   try { return realpathSync(output); }
@@ -272,4 +269,36 @@ export function rootOfBinding(key: string): string | null {
     if (existsSync(join(key, "HEAD")) && existsSync(join(key, "objects")) && existsSync(join(key, "refs"))) return null;
     return key;
   } catch { return null; }
+}
+
+/** Devuelve las raíces de identidad alcanzables desde una clave de vínculo local. */
+export function identityRootsOfBinding(key: string): { root: string; git: boolean }[] {
+  let common: string;
+  // Git puede devolver el nombre largo de NTFS aunque el vínculo se guardara con un alias 8.3.
+  try { common = realpathSync.native(key); } catch { return []; }
+  const ordinary = rootOfBinding(key);
+  if (ordinary === key) {
+    try {
+      return hasGitMarker(key) ? [] : [{ root: key, git: false }];
+    } catch { return []; }
+  }
+  const roots = new Set<string>();
+  const addIfCurrent = (path: string) => {
+    try {
+      const root = bindableProjectDirectory(path);
+      const canonical = canonicalProjectForRead(root);
+      if (canonical.git && realpathSync.native(canonical.directory) === common) roots.add(root);
+    } catch { /* La raíz ya no está disponible. */ }
+  };
+  const listing = runProjectGit(key, ["--git-dir", key, "worktree", "list", "--porcelain", "-z"]);
+  if (listing?.exitCode === 0) {
+    for (const record of listing.stdout.toString().split("\0\0")) {
+      const [path, ...attributes] = record.split("\0");
+      if (!path?.startsWith("worktree ") || attributes.some(value => value === "bare" || value.startsWith("prunable"))) continue;
+      addIfCurrent(path.slice("worktree ".length));
+    }
+  } else if (ordinary !== null) {
+    addIfCurrent(ordinary);
+  }
+  return [...roots].map(root => ({ root, git: true }));
 }

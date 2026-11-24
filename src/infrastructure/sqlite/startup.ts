@@ -40,7 +40,7 @@ type Row = { id: string; scope: StartupItem["scope"]; title: string };
  * @param now Marca de tiempo ISO usada para decidir qué cuenta como sesión previa interrumpida; por defecto, el momento actual.
  * @returns El bloque de arranque ya renderizado (texto, secciones y conteos).
  */
-export function startupBlock(db: Database, projectId: string | null, now: string = new Date().toISOString()): StartupBlock {
+export function startupBlock(db: Database, projectId: string | null, now: string = new Date().toISOString(), projectNotice?: string): StartupBlock {
   const project = projectId === null ? null : projectIdentity(projectId);
   // .deferred() (al final de la llamada) abre la transacción sin tomar el candado de escritura;
   // aquí solo se lee, así que nunca hace falta tomarlo.
@@ -86,6 +86,7 @@ export function startupBlock(db: Database, projectId: string | null, now: string
     };
     const previous = project === null ? null : previousInterrupted(db, project, now);
     return renderStartupBlock({
+      ...(projectNotice ? { projectNotice } : {}),
       essentials: essentials.map(item), essentialsTotal,
       previous: previous === null ? null : { sessionId: previous.sessionId, interruptedAt: previous.interruptedAt,
         summary: previous.summary === null ? null : { id: previous.summary.id, version: previous.summary.version, content: previous.summary.content } },

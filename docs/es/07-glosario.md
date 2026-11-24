@@ -22,7 +22,7 @@ Un **grupo** es un conjunto con nombre de proyectos relacionados (microservicios
 
 ## Identidad portátil del proyecto
 
-El archivo `.forge614/project.json` en la raíz de un repositorio, versionado en Git y propiedad exclusiva de Engram: guarda el `id` y el nombre del proyecto y, si pertenece a uno, el `id` y el nombre de su grupo. Permite que mover, renombrar o clonar el repositorio conserve la memoria: la identidad viaja con el repositorio, no con la ruta.
+El archivo legado `.forge614/project.json` puede declarar un UUID y un grupo compatibles con el vínculo y el remoto confirmado. El catálogo SQLite guarda la identidad de cada proyecto y permite reconocer reclones con un remoto confirmado.
 
 ## Clave de tema (`topicKey`)
 

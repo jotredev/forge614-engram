@@ -152,8 +152,8 @@ test("a failure inside the migration rolls back to level 10 with no new objects"
   } finally { db.close(); }
 });
 
-// El nivel 11 valida su estructura exacta (por ejemplo, rechaza que falte un disparador), y el 13 sigue siendo una versión futura desconocida.
-test("level 11 validates its exact structure and 13 stays an unknown future version", () => {
+// El nivel 11 valida su estructura exacta (por ejemplo, rechaza que falte un disparador), y el 21 sigue siendo una versión futura desconocida.
+test("level 11 validates its exact structure and 21 stays an unknown future version", () => {
   const { db } = fixture("v1.6.0/schema-10.db");
   try {
     enableIntelligence(db);
@@ -163,8 +163,8 @@ test("level 11 validates its exact structure and 13 stays an unknown future vers
   const fresh = new Database(":memory:");
   try {
     initialize(fresh); enableIntelligence(fresh);
-    // El 12 ya es el nivel de la nube (T1); el 13 es la siguiente versión futura desconocida.
-    fresh.exec("PRAGMA user_version=13");
+    // El catálogo cubre hasta el nivel 20.
+    fresh.exec("PRAGMA user_version=21");
     expect(() => initialize(fresh)).toThrow(expect.objectContaining({ code: "DATABASE_VERSION" }));
   } finally { fresh.close(); }
 });

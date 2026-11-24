@@ -12,7 +12,7 @@ import { toolSchemas } from "./schemas";
 /** Resuelve el proyecto vinculado a un directorio y el grupo de ecosistema al que pertenece; ambos son obligatorios para el alcance (scope) ecosystem. */
 export async function ecosystemTarget({memoryStore,projectDirectory}:ToolContext, directory:string|undefined):Promise<{projectId:string;group:{id:string;name:string}}> {
   const context=resolveProjectContext(memoryStore(),await projectDirectory(directory),false);
-  if(!context.projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
+  if(!context.projectId) throw projectNotBound(context);
   if(!context.group) throw new MemoryError("GROUP_REQUIRED","El proyecto no pertenece a un grupo de ecosistema; vincúlalo a uno o usa otro alcance.");
   return {projectId:context.projectId,group:context.group};
 }
@@ -21,8 +21,17 @@ export async function ecosystemTarget({memoryStore,projectDirectory}:ToolContext
 export const UNBOUND_PROJECT_MESSAGE="Esta carpeta todavía no tiene proyecto en Engram, así que no hay recuerdos de proyecto ni de grupo. Se crea al iniciar sesión (memory_session_start) o al guardar.";
 
 /** Campo `project` que se agrega a la respuesta de una lectura de orientación en una carpeta sin proyecto; mismo `status` "unbound" que usa `startup-context`. */
-export function unboundProjectNote():{status:"unbound";message:string} {
-  return {status:"unbound",message:UNBOUND_PROJECT_MESSAGE};
+type FolderContext = ReturnType<typeof resolveProjectContext>;
+export function unboundProjectNote(context: FolderContext):{status:"unbound";message:string;code?:"PROJECT_BINDING_REQUIRED"} {
+  const pending = context.notices?.find(notice => notice.code === "PROJECT_BINDING_REQUIRED");
+  return pending ? { status: "unbound", code: "PROJECT_BINDING_REQUIRED", message: pending.message }
+    : { status: "unbound", message: UNBOUND_PROJECT_MESSAGE };
+}
+
+export function projectNotBound(context: FolderContext): MemoryError {
+  const note = unboundProjectNote(context);
+  return note.code ? new MemoryError(note.code, note.message)
+    : new MemoryError("PROJECT_NOT_BOUND", "La carpeta no está vinculada a un proyecto.");
 }
 
 /** Texto de la nota que acompaña a `memory_search` y `memory_context` con scope ecosystem cuando el proyecto está ligado pero no pertenece a ningún grupo. */
@@ -55,7 +64,7 @@ export function registerMemoryTools(tools:ToolContext):void {
     const directoryPath = await projectDirectory(directory);
     const context = resolveProjectContext(memoryStore(),directoryPath,false);
     // Una carpeta sin proyecto no es un error: no tiene recuerdos de proyecto ni de grupo. Con scope all quedan los de shared; en ambos casos se agrega la nota y la lectura no registra la carpeta.
-    if (!context.projectId) return {format:2,results:selected === "all" ? memoryStore().searchPreviews(null,query,limit ?? 10,"shared") : [],project:unboundProjectNote()};
+    if (!context.projectId) return {format:2,results:selected === "all" ? memoryStore().searchPreviews(null,query,limit ?? 10,"shared") : [],project:unboundProjectNote(context)};
     // Un proyecto ligado sin grupo tampoco es un error en scope ecosystem: no tiene recuerdos de tablero. Se comprueba aquí y no en la capa SQLite, que sigue lanzando GROUP_REQUIRED a los demás llamadores (la CLI).
     if (selected === "ecosystem" && !context.group) return {format:2,results:[],ecosystem:noGroupNote(),...(context.notices?{notices:context.notices}:{})};
     return {format:2,results:memoryStore().searchPreviews(context.projectId,query,limit ?? 10,selected as SearchScope),...(context.notices?{notices:context.notices}:{})};
@@ -78,9 +87,9 @@ export function registerMemoryTools(tools:ToolContext):void {
     if (scope !== "shared") {
       const directoryPath = await projectDirectory(directory);
       const context = resolveProjectContext(memoryStore(),directoryPath,false);
+      if (!context.projectId) throw projectNotBound(context);
       projectId = context.projectId; notices = context.notices;
     }
-    if (scope !== "shared" && !projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
     const memory = memoryStore().getVersion(projectId,id,version);
     if (!memory) throw new MemoryError("NOT_FOUND","Recuerdo no encontrado en el alcance seleccionado.");
     return notices ? {...memory,notices} : memory;
@@ -140,9 +149,10 @@ export function registerMemoryTools(tools:ToolContext):void {
     let projectId: string | null = null;
     if (scope !== "shared") {
       const directoryPath = await projectDirectory(directory);
-      projectId = resolveProjectContext(memoryStore(),directoryPath,false).projectId;
+      const context = resolveProjectContext(memoryStore(),directoryPath,false);
+      if (!context.projectId) throw projectNotBound(context);
+      projectId = context.projectId;
     }
-    if (scope !== "shared" && !projectId) throw new MemoryError("PROJECT_NOT_BOUND","La carpeta no está vinculada a un proyecto.");
     const history = memoryStore().history(projectId,id);
     if (history.length === 0) throw new MemoryError("NOT_FOUND","Recuerdo no encontrado en el alcance seleccionado.");
     return history;

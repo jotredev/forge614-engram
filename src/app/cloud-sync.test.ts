@@ -8,10 +8,11 @@
  */
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { enableCloud, initialize } from "../infrastructure/sqlite/schema";
+import { enableCloud, ensureProjectIdentitySchema, initialize } from "../infrastructure/sqlite/schema";
 import { createProject } from "../infrastructure/sqlite/projects";
 import type { ChangeRow } from "../infrastructure/postgres/replica";
 import { downloadChanges, runCloudCycle, uploadOutbox, type CloudProgress, type CloudReplica } from "./cloud-sync";
+import { applyCloudChanges } from "./cloud-apply";
 
 /** Una base SQLite en memoria, ya en el nivel 12 (nube activada). */
 function freshCloudDb(): Database {
@@ -204,4 +205,86 @@ test("runCloudCycle without onProgress returns the same uploaded and downloaded 
   db.exec("DELETE FROM cloud_outbox");
   createProject(db, "one"); createProject(db, "two");
   expect(await runCloudCycle(db, fakeReplica(), "local")).toEqual({ uploaded: 2, downloaded: 0 });
+});
+
+test("an upgraded client recovers skipped identity settings without rereading the general cursor", async () => {
+  const db = freshCloudDb();
+  const project = createProject(db, "Already downloaded");
+  const now = "2026-01-01T00:00:00.000Z";
+  const setting = (id: number, setting: string, value: string): ChangeRow => ({
+    id, changeId: `identity-${id}`, installationId: "remote", kind: "project_identity_settings", op: "insert",
+    payload: { project_id: project.projectId, setting, value, updated_at: now }, createdAt: now,
+  });
+  const changes = [setting(5, "origin", "example.com:2222/Org/Repo"), setting(23, "group_policy", "explicit")];
+  const original = applyCloudChanges(db, changes, "local");
+  expect(original).toMatchObject({ skipped: 2, lastAppliedId: 23 });
+  ensureProjectIdentitySchema(db);
+  const filtered: [number, number][] = [];
+  const general = fakeReplica();
+  const replica = { ...general, async pullProjectIdentitySettings(since: number, through: number) {
+    filtered.push([since, through]);
+    return changes.filter(row => row.id > since && row.id <= through);
+  } };
+  await downloadChanges(db, replica, "local");
+  expect(filtered).toEqual([[0, 23]]);
+  expect(general.pullCalls).toEqual([23]);
+  expect(db.query("SELECT setting,value FROM project_identity_settings ORDER BY setting").all()).toEqual([
+    { setting: "group_policy", value: "explicit" }, { setting: "origin", value: "example.com:2222/Org/Repo" },
+  ]);
+  expect(db.query("SELECT last_applied_id,initial_download_complete FROM cloud_identity_state WHERE id=1").get())
+    .toEqual({ last_applied_id: 23, initial_download_complete: 1 });
+  expect(db.query("SELECT last_applied_id FROM cloud_state WHERE id=1").get()).toEqual({ last_applied_id: 23 });
+  db.close();
+});
+
+test("identity recovery resumes its next page after cancellation and first sync remains pending until caught up", async () => {
+  const db = freshCloudDb(), now = "2026-01-01T00:00:00.000Z";
+  const project = createProject(db, "Existing");
+  db.query("UPDATE cloud_state SET last_applied_id=1700 WHERE id=1").run();
+  ensureProjectIdentitySchema(db);
+  const changes: ChangeRow[] = Array.from({ length: 1001 }, (_, index) => ({
+    id: index + 1, changeId: `identity-${index}`, installationId: "remote", kind: "project_identity_settings", op: "update",
+    payload: { project_id: project.projectId, setting: "origin", value: "example.com/Org/Repo", updated_at: now }, createdAt: now,
+  }));
+  const controller = new AbortController();
+  const base = fakeReplica();
+  const calls: number[] = [];
+  const replica = { ...base, async pullProjectIdentitySettings(since: number, through: number, limit = 1000, signal?: AbortSignal) {
+    calls.push(since);
+    if (since === 1000 && signal === controller.signal) controller.abort();
+    return changes.filter(row => row.id > since && row.id <= through).slice(0, limit);
+  } };
+  await downloadChanges(db, replica, "local", controller.signal);
+  expect(db.query("SELECT last_applied_id,initial_download_complete FROM cloud_identity_state").get())
+    .toEqual({ last_applied_id: 1000, initial_download_complete: 0 });
+  expect(base.pullCalls).toEqual([]);
+  await downloadChanges(db, replica, "local");
+  expect(calls).toEqual([0, 1000, 1000]);
+  expect(base.pullCalls).toEqual([1700]);
+  expect(db.query("SELECT last_applied_id,initial_download_complete FROM cloud_identity_state").get())
+    .toEqual({ last_applied_id: 1700, initial_download_complete: 1 });
+  enableCloud(db, "another replica");
+  expect(db.query("SELECT last_applied_id,initial_download_complete FROM cloud_identity_state").get())
+    .toEqual({ last_applied_id: 0, initial_download_complete: 0 });
+  db.close();
+});
+
+test("a page fetched before switching replicas cannot advance the replacement cursors", async () => {
+  const db = freshCloudDb(), now = "2026-01-01T00:00:00.000Z";
+  ensureProjectIdentitySchema(db);
+  enableCloud(db, "before");
+  const replica = fakeReplica({ async pullChanges() {
+    enableCloud(db, "after");
+    return [{ id: 100, changeId: "stale", installationId: "remote", kind: "projects", op: "insert",
+      payload: { projectId: "stale", name: "Stale", createdAt: now, updatedAt: now }, createdAt: now }];
+  } });
+  await downloadChanges(db, replica, "local");
+  expect(db.query("SELECT name FROM projects WHERE projectId='stale'").get()).toBeNull();
+  expect(db.query("SELECT last_applied_id,remote_fingerprint FROM cloud_state").get())
+    .toEqual({ last_applied_id: 0, remote_fingerprint: "after" });
+  expect(db.query("SELECT last_applied_id,initial_download_complete FROM cloud_identity_state").get())
+    .toEqual({ last_applied_id: 0, initial_download_complete: 0 });
+  expect(await runCloudCycle(db, replica, "local", undefined, undefined, "before")).toEqual({ uploaded: 0, downloaded: 0 });
+  expect(replica.pullCalls).toEqual([0]);
+  db.close();
 });

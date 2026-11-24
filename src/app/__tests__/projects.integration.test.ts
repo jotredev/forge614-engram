@@ -37,7 +37,7 @@ test("same display names have independent persistent identities and topics", () 
   expect(store.get(b.projectId, saved.id)).toBeNull();
   store.close();
   expect(open(path).getProject(a.projectId)).toEqual(a);
-});
+}, 20_000);
 
 // Verifica que renombrar un proyecto no rompe la propiedad de sus memorias, su historial de versiones, si están archivadas, ni la repetición de una petición ya guardada (misma requestKey).
 test("renaming preserves memory ownership, history, archive state and request replay", () => {

@@ -37,25 +37,22 @@ En éxito escribe un único JSON en stdout, con las claves en este orden:
 `shared`, `ecosystem.context` y `project.context` usan la misma forma de `ContextResult` del comando `context` e incluyen vistas previas acotadas, no solo títulos. Cada bloque usa su propio límite de bytes.
 
 - **`ecosystem`** es `{ "status": "member", "group": { "id", "name" }, "context": … }` cuando el proyecto pertenece a un grupo (consulta [11. Ámbitos y Ecosistemas](11-ambitos-y-ecosistemas.md)) y `{ "status": "none" }` en cualquier otro caso: proyecto suelto, carpeta sin vínculo o base creada por una versión anterior.
-- **`project.source`** indica cómo se identificó el proyecto: `"file"` (por el `id` de su `.forge614/project.json`), `"path"` (por el vínculo de carpeta registrado en la base) o `"unbound"` (sin proyecto).
-- **`project.notices`** aparece solo cuando hay algo que informar, como una lista de `{ "code", "message" }`: `PROJECT_FILE_CREATED` (un proyecto que ya estaba vinculado por ruta recibió su archivo), `PROJECT_REBOUND_FROM_FILE` (la carpeta se re-vinculó al proyecto que declara su archivo) `PROJECT_FILE_NOT_WRITTEN` (no se pudo escribir el archivo; la operación continúa) o `DATABASE_MIGRATED` (este comando actualizó la base por primera vez, porque el repositorio declara un grupo; `backup` indica dónde quedó el respaldo previo, si había datos, y las llamadas siguientes ya no avisan).
+- **`project.source`** usa `"file"` para una declaración legada compatible, `"path"` para un vínculo SQLite o una coincidencia única por remoto confirmado, y `"unbound"` cuando falta resolver el proyecto.
+- **`project.notices`** aparece cuando hay un aviso. Cada entrada tiene `code` y `message`. `PROJECT_BINDING_REQUIRED` señala una decisión pendiente y `PROJECT_ORIGIN_CONFIRMATION_REQUIRED` un traslado a un remoto libre. También se informa de archivos legados rastreados o no publicados y de migraciones de grupo con su respaldo, si corresponde.
 
 Cuando no se pueda resolver o vincular como proyecto, no falla: devuelve `"project": { "status": "unbound", "projectId": null, "context": null, "source": "unbound" }` y `"ecosystem": { "status": "none" }`. Cualquier directorio existente y legible es válido: `$HOME`, `/`, una carpeta sin Git, un repositorio Git sin vínculo y una carpeta vinculada.
 
 ## Por qué `format` se mantiene en 1
 
-`ecosystem`, `project.source` y `project.notices` son **campos aditivos**: ningún campo existente cambió de nombre, tipo ni significado, de modo que un consumidor que ignore los campos desconocidos sigue funcionando sin cambios. Subir `format` habría obligado a todos los hosts, incluso a quienes no usan grupos, a reconocer una forma nueva. Un consumidor debe **ignorar los campos desconocidos** y tratar como ausente un bloque `ecosystem` que no entienda; Engines y Shell deben aceptarlo como opcional y saneado. Si algún día cambiara la forma de un campo existente, `format` subiría.
+`ecosystem`, `project.source` y `project.notices` son **campos aditivos**: ningún campo existente cambió de nombre, tipo ni significado, de modo que un consumidor que ignore los campos desconocidos sigue funcionando sin cambios. Subir `format` habría obligado a todos los hosts, incluso a quienes no usan grupos, a reconocer una forma nueva. Un consumidor debe **ignorar los campos desconocidos** y tratar como ausente un bloque `ecosystem` que no entienda; Engines y Shell deben aceptarlo como opcional y saneado. Para mostrar los avisos nuevos, un host que filtra por código debe admitir `PROJECT_BINDING_REQUIRED` y `PROJECT_ORIGIN_CONFIRMATION_REQUIRED`. El formato 2 incorpora el aviso directamente en el texto.
 
-## Qué mantiene al día y qué nunca hace
+## Lectura del catálogo
 
-El comando abre la base primero en modo de **solo lectura** y solo la reabre para escritura cuando tiene que registrar algo, porque mantiene sincronizadas la identidad del repositorio y la base local:
+El comando abre SQLite primero en solo lectura. Una coincidencia única por remoto confirmado puede mostrar el UUID, los recuerdos y el ecosistema sin registrar un vínculo ni publicar el archivo. El primer guardado o inicio de sesión confirma el vínculo local. Un archivo legado compatible sigue siendo una vía de importación y puede necesitar reabrir la base para registrar el proyecto o su grupo.
 
-- Si el repositorio trae `.forge614/project.json` y su `id` no existe en la base local (por ejemplo, un clon en otra máquina), registra el proyecto —y su grupo— con ese `id`, sin preguntar.
-- Si la base tenía esa carpeta vinculada a otro proyecto, **gana el archivo**: re-vincula, registra el evento `PROJECT_REBOUND_FROM_FILE` y no toca el archivo.
-- Si un proyecto ya estaba vinculado solo por ruta, escribe su `.forge614/project.json` (en silencio; el resultado lo indica en `project.notices`).
-- Si `forge614.node.json` declara `ecosystem`, o el archivo trae su sección `ecosystem`, vincula el grupo sin preguntar. Nada se infiere por nombres de carpeta, cercanía en disco ni remotos de Git.
+Cuando hay evidencias contradictorias o el catálogo de nube está pendiente, el resultado incluye contexto compartido, `project.status: "unbound"` y un aviso `PROJECT_BINDING_REQUIRED`. El comando conserva los archivos y los vínculos previos. Los proyectos con una política de grupo explícita reciben su membresía mediante `group-bind` y `group-unbind`.
 
-Nunca crea recuerdos, sesiones ni bases, y nunca crea un proyecto para una carpeta sin vínculo ni archivo: esa carpeta es `unbound` y no se escribe nada en ella. Una memoria de proyecto con el mismo `topicKey` sustituye la compartida solo dentro de `project.context`; la sección superior `shared` no cambia. Los bloques `shared`, `ecosystem` y `project` no se deduplican entre sí.
+El arranque nunca crea recuerdos, sesiones ni bases. Una memoria de proyecto con el mismo `topicKey` oculta la compartida solo dentro de `project.context`. El bloque superior `shared` conserva sus resultados.
 
 Cada bloque usa el límite propio de `context()` —16 384 bytes por defecto—, por lo que el payload combinado queda acotado (tres veces ese límite como máximo).
 
@@ -87,13 +84,13 @@ En vez del JSON de contexto, devuelve un único JSON con un bloque de texto que 
 
 Cada lista se llena en orden y se detiene en la primera línea que no cabe; lo que queda fuera se cuenta en `omitted` y se encuentra con `memory_search`. Los textos fijos van en inglés; el contenido de los recuerdos va tal cual.
 
-El formato 2 funciona en cualquier nivel de la base: no exige `intelligence-enable`. Solo con el esquema 11, la versión corta reemplaza al título en el esencial, los recuerdos marcados como reemplazados no aparecen, aparece `[verify]` y se incluye la sesión anterior; por debajo, el bloque sale de las mismas fuentes sin esos extras. Usa la misma apertura y la misma resolución del proyecto que el formato 1 (primero en solo lectura y, solo si debe registrar la identidad, en escritura), pero no incluye `notices`.
+El formato 2 funciona en cualquier nivel de la base: no exige `intelligence-enable`. Solo con el esquema 11, la versión corta reemplaza al título en el esencial, los recuerdos marcados como reemplazados no aparecen, aparece `[verify]` y se incluye la sesión anterior; por debajo, el bloque sale de las mismas fuentes sin esos extras. Usa la misma apertura y la misma resolución del proyecto que el formato 1 (primero en solo lectura y, solo si debe registrar la identidad, en escritura), e incluye el aviso de vínculo o confirmación pendiente como una línea dentro del presupuesto de 5 000 caracteres.
 
 Sin `--format`, el comando sigue devolviendo el formato 1, con la salida de siempre. `--format` acepta solo `1` o `2`: otro valor responde `INVALID_INPUT` (`format debe ser 1 o 2.`) antes de abrir la base. Las versiones 2 y 3 del protocolo de memoria anuncian el comando sin `--format`, es decir, el formato 1 (la versión 1 no anuncia ninguno); la versión 4 (desde 1.7.0) anuncia el formato 2. Desde el SDK, el mismo bloque lo entrega `MemoryStore.startupBlock`.
 
 ## Con la nube activada (desde 1.8.0)
 
-Con `cloud on` ya corrido en esta Mac, `startup-context` (y `memory_context` por MCP) esperan como máximo 1 segundo a que lleguen los cambios nuevos de la nube antes de devolver el contexto; si no llegan a tiempo, siguen con lo local y lo nuevo llega en el siguiente ciclo en segundo plano. Medido contra Neon: cerca de 0,6 s con la base despierta; si Neon estaba dormida (sin uso reciente) puede gastar el segundo completo. Sin la nube activada, este comando no cambia nada respecto a versiones anteriores.
+Con `cloud on`, `startup-context` y `memory_context` esperan como máximo 1 segundo a la réplica. Una carpeta nueva con remoto utilizable o archivo legado queda pendiente hasta que termine la primera descarga y el cursor de identidad alcance al general. Un vínculo local existente sigue disponible. Si actualizaste desde una base de esquema 12, ejecuta `sync` para preparar el catálogo de identidad con respaldo fuera de la espera de arranque. Con `cloud off` se usa el catálogo local.
 
 `startup-context` también abre correctamente aunque falten los archivos auxiliares de SQLite en modo WAL (`engram.db-wal` y `engram.db-shm`), que SQLite borra al cerrarse la última conexión: antes fallaba con `STORAGE_ERROR` en la primera sesión tras cerrar todo (también en 1.7.2); desde 1.8.0 reintenta en modo escritura y sigue funcionando con normalidad, incluida la espera de la nube.
 
@@ -101,7 +98,7 @@ Con `cloud on` ya corrido en esta Mac, `startup-context` (y `memory_context` por
 
 `--directory` y `--json` son obligatorios. Fallan una ruta inexistente, una ruta que no es directorio o una ruta ilegible, un espacio no inicializado o cualquier otro fallo real, y también un `.forge614/project.json` inválido (`PROJECT_FILE_INVALID`: JSON corrupto, versión de esquema desconocida o campos desconocidos), que Engram nunca sobrescribe. El fallo deja stdout vacío, escribe JSON únicamente por stderr y termina con exit code 1: `{ "code": "…", "error": "…" }`, o `{ "schemaVersion": 1, "code": "…", "error": "…" }` para los códigos incorporados en 1.6.0. No imprime secretos, tokens, credenciales ni rutas crudas en el mensaje de error.
 
-**Para los hosts:** un `.forge614/project.json` inválido es un error visible, no un contexto vacío: `startup-context` sale con código 1 y no devuelve ningún bloque (ni siquiera `shared`). Se repara corrigiendo el archivo o borrándolo; si se borra, Engram lo regenera en la siguiente ejecución cuando el proyecto ya está vinculado por ruta, y una carpeta sin vínculo queda `unbound`.
+**Para los hosts.** Un archivo legado inválido produce `PROJECT_FILE_INVALID` y no hay bloque de salida. Un archivo válido con identidad incompatible produce un aviso y deja disponible el bloque compartido.
 
 ## Relación con memory protocol
 

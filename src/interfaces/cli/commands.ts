@@ -3,7 +3,7 @@
  * por `parseArguments`, abre el espacio de trabajo (workspace) que corresponda y llama a la operación de `app`
  * adecuada, imprimiendo el resultado como JSON. `main.ts` llama a `dispatch` con el resultado de `parseArguments`.
  */
-import { MemoryWorkspace, syncWorkspace, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, uninstallEngramSelf, uninstallConfirmation, uninstallMemoryPath, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud, runCloudOn, runCloudOff, runCloudStatus, runCloudSync } from "../../app";
+import { MemoryWorkspace, syncWorkspace, createProjectContext, bindProjectContext, resolveProjectContext, startProjectSessionWithNotices, uninstallEngram, uninstallEngramSelf, uninstallConfirmation, uninstallMemoryPath, updateEngram, applyMemoryInitialization, previewMemoryInitialization, inspectMemoryInitialization, readProjectContext, readStartupBlock, readStartupContext, cloudSettings, waitForCloud, runCloudOn, runCloudOff, runCloudStatus, runCloudSync, type IdentityFilesResult } from "../../app";
 import type { EngramUpdateResult, SelfUninstallResult, UninstallInput, UninstallDependencies, UninstallResult } from "../../app";
 import { MemoryError } from "../../shared/errors";
 import { createInterface } from "node:readline";
@@ -21,6 +21,10 @@ import { invalid, integer, nonnegative, type ParsedCommand } from "./arguments";
 const SYNC_UPGRADE_FORMAT_DEPRECATED = { code: "SYNC_UPGRADE_FORMAT_DEPRECATED", error: "sync --upgrade-format es obsoleto; se retira el 2027-03-31." };
 
 /** Imprime en líneas legibles en español las cifras de `cloud status` cuando no se pidió `--json` (mismo idioma que sus vecinos, D16). */
+function identityFilesOutput(files: IdentityFilesResult) {
+  return { identityFilesUpdated: files.updated, ...(files.notices ? { notices: files.notices } : {}) };
+}
+
 function printCloudStatus(status: ReturnType<typeof runCloudStatus>): void {
   console.log(`Nube: ${status.enabled ? "activada" : "desactivada"}`);
   console.log(`Id de instalación: ${status.installationId ?? "(ninguno)"}`);
@@ -190,7 +194,14 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
   }
   if (command === "project-bind") {
     const store = workspace.open();
-    try { console.log(JSON.stringify(bindProjectContext(store,need("directory"),projectIdentity(need("project-id"))),null,2)); }
+    try {
+      const replaceFrom = values.get("replace-from");
+      const result = bindProjectContext(store, need("directory"), need("project-id"), {
+        ...(replaceFrom === undefined ? {} : { replaceFrom }),
+        acceptOrigin: values.has("accept-origin"),
+      });
+      console.log(JSON.stringify(result, null, 2));
+    }
     finally { store.close(); }
     return;
   }
@@ -206,17 +217,17 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
       case "group-bind": {
         const projectId = projectIdentity(need("project-id"));
         const bound = workspace.bindProjectToGroup(projectId, need("group"));
-        result = { projectId, group: bound.group, changed: bound.changed, identityFilesUpdated: bound.identityFiles.updated }; break;
+        result = { projectId, group: bound.group, changed: bound.changed, ...identityFilesOutput(bound.identityFiles) }; break;
       }
       case "group-unbind": {
         const projectId = projectIdentity(need("project-id"));
         const unbound = workspace.unbindProject(projectId);
-        result = { projectId, unbound: unbound.unbound, identityFilesUpdated: unbound.identityFiles.updated }; break;
+        result = { projectId, unbound: unbound.unbound, ...identityFilesOutput(unbound.identityFiles) }; break;
       }
       case "group-source-set": result = { source: workspace.setGroupSource(need("group"), projectIdentity(need("project-id"))) }; break;
       default: {
         const renamed = workspace.renameGroup(need("group"), need("name"));
-        result = { group: renamed.group, identityFilesUpdated: renamed.identityFiles.updated };
+        result = { group: renamed.group, ...identityFilesOutput(renamed.identityFiles) };
       }
     }
     console.log(JSON.stringify({ schemaVersion: 1, ...result }, null, 2)); return;
@@ -257,7 +268,19 @@ export async function dispatch({command,values,need}:ParsedCommand, currentVersi
         }
         break;
       }
-      case "project-create": result = workspace.createProject(need("name")); break;
+      case "project-create": {
+        const directory = values.get("directory");
+        if (directory === undefined) { result = workspace.createProject(need("name")); break; }
+        workspace.init();
+        const store = workspace.open();
+        const replaceFrom = values.get("replace-from");
+        try {
+          result = createProjectContext(store, directory, {
+            name: need("name"), ...(replaceFrom === undefined ? {} : { replaceFrom }),
+          });
+        } finally { store.close(); }
+        break;
+      }
       case "project-list": result = workspace.listProjects(); break;
       case "project-rename": result = workspace.renameProject(projectIdentity(need("project-id")),need("name")); break;
     }

@@ -2,16 +2,18 @@
  * Comprueba la identidad de proyecto sobre repositorios Git reales: un clon con archivo de
  * identidad se registra sin preguntar, el archivo de nodo liga el grupo fijo del ecosistema,
  * un archivo dañado detiene toda operación sin cambiar nada, activar el ecosistema por un
- * archivo hace un respaldo la primera vez y calla después, y un vínculo local en conflicto
- * con el archivo cede ante este último dejando registro del cambio.
+ * archivo hace un respaldo la primera vez y calla después, y las contradicciones con el
+ * vínculo de carpeta conservan los datos existentes hasta una confirmación.
  */
 import { afterEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FORGE614_GROUP_ID } from "../../modules/ecosystem";
 import { MemoryStore } from "../memory-store";
+import { readStartupBlock, readStartupContext } from "../startup-context";
+import { updateIdentityFiles } from "../project-identity";
 import { bindProjectContext, resolveProjectContext, resolveStartupProjectContext, saveProjectMemory, startProjectSession } from "../project-context";
 
 const directories: string[] = [];
@@ -119,21 +121,18 @@ test("an unbound folder without a file stays unbound: nothing is created or writ
   expect(db.listProjects()).toEqual([]);
 });
 
-// Verifica que cuando el vínculo local no coincide con lo que declara el archivo de identidad, gana el archivo: la carpeta se religa, queda el evento PROJECT_REBOUND_FROM_FILE registrado, y el archivo en sí no se modifica.
-test("when the local binding disagrees with the file, the file wins, the event is recorded and the file is untouched", () => {
+test("a conflicting file preserves the local binding and the file", () => {
   const db = store(), root = repository();
   const local = resolveProjectContext(db, root, true);
   const foreign = crypto.randomUUID();
   writeIdentity(root, { schemaVersion: 1, project: { id: foreign, name: "del-archivo" }, ecosystem: null });
   const digest = sha(filePath(root));
   const context = resolveProjectContext(db, root, false);
-  expect(context).toMatchObject({ projectId: foreign, source: "file" });
-  expect(context.notices?.map(item => item.code)).toEqual(["DATABASE_MIGRATED", "PROJECT_REBOUND_FROM_FILE"]);
+  expect(context).toMatchObject({ projectId: null, source: "unbound", notices: [{ code: "PROJECT_BINDING_REQUIRED" }] });
   expect(sha(filePath(root))).toBe(digest);
-  expect(db.projectForDirectory(context.directory)?.projectId).toBe(foreign);
-  expect(db.getProject(local.projectId!)).not.toBeNull();
-  expect(db.identityEvents(foreign).some(event => event.action === "PROJECT_REBOUND_FROM_FILE" && event.previousProjectId === local.projectId)).toBe(true);
-  expect(resolveProjectContext(db, root, false).notices).toBeUndefined();
+  expect(db.projectForDirectory(context.directory)?.projectId).toBe(local.projectId!);
+  expect(db.getProject(foreign)).toBeNull();
+  expect(db.ecosystemEnabled()).toBe(false);
 });
 
 // Verifica, para tres formas distintas de archivo inválido (JSON corrupto, versión de esquema desconocida, campos extra), que toda operación (resolver, guardar, iniciar sesión) se detiene con PROJECT_FILE_INVALID sin cambiar el archivo ni crear ningún proyecto.
@@ -200,4 +199,135 @@ test("the first read that has to upgrade the base says so, once, and names the b
   expect(existsSync(notice!.backup!)).toBe(true);
   expect(notice!.message).toContain(notice!.backup!);
   expect(resolveProjectContext(value, root, true).notices?.some(item => item.code === "DATABASE_MIGRATED") ?? false).toBe(false);
+});
+
+test("a file contradicting a confirmed origin leaves shared startup context and blocks writes", () => {
+  const database = store();
+  database.enableIntelligence();
+  const first = repository(), second = repository();
+  git(first, "remote", "add", "origin", "https://example.com/Org/Repo.git");
+  git(second, "remote", "add", "origin", "git@example.com:Org/Repo.git");
+  const projectId = saveProjectMemory(database, first, { title: "Private", content: "Project only", type: "fact", pinned: true }).projectId!;
+  const other = crypto.randomUUID();
+  writeIdentity(second, { schemaVersion: 1, project: { id: other, name: "Other" }, ecosystem: null });
+  const shared = database.save({ projectId: null, scope: "shared", title: "Shared", content: "Shared orientation", type: "fact", pinned: true });
+  const startup = readStartupContext(database, second);
+  expect(startup.shared.pinned.map(row => row.id)).toEqual([shared.id]);
+  expect(startup.ecosystem).toEqual({ status: "none" });
+  expect(startup.project).toMatchObject({ status: "unbound", projectId: null, context: null, notices: [{ code: "PROJECT_BINDING_REQUIRED" }] });
+  const block = readStartupBlock(database, second);
+  expect(block.text).toContain("project-bind");
+  expect(block.text).not.toContain("Private");
+  expect(block.chars).toBe(Array.from(block.text).length);
+  expect(block.chars).toBeLessThanOrEqual(5000);
+  expect(() => startProjectSession(database, second, "blocked")).toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
+  expect(() => saveProjectMemory(database, second, { title: "Blocked", content: "This must not save", type: "fact" }))
+    .toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
+  expect(database.getProject(other)).toBeNull();
+  expect(database.projectForDirectory(realpathSync(join(second, ".git")))).toBeNull();
+  expect(database.getSession(projectId, "blocked")).toBeNull();
+});
+
+test("an invalid save rolls back the legacy project registration, group and folder binding", () => {
+  const database = store(), root = repository();
+  const id = crypto.randomUUID(), groupId = crypto.randomUUID();
+  writeIdentity(root, { schemaVersion: 1, project: { id, name: "Unimported" }, ecosystem: { id: groupId, name: "team" } });
+  const before = sha(filePath(root));
+  expect(() => saveProjectMemory(database, root, { title: "", content: "Invalid", type: "fact" })).toThrow();
+  expect(database.getProject(id)).toBeNull();
+  expect(database.getGroup(groupId)).toBeNull();
+  expect(database.projectForDirectory(realpathSync(join(root, ".git")))).toBeNull();
+  expect(sha(filePath(root))).toBe(before);
+});
+
+test("a free remote conflicts with a copied file for a project whose confirmed remote is different", () => {
+  const database = store(), original = repository(), copied = repository();
+  database.enableSessions();
+  git(original, "remote", "add", "origin", "https://example.com/Org/Original.git");
+  git(copied, "remote", "add", "origin", "https://example.com/Org/Independent.git");
+  const privateMemory = saveProjectMemory(database, original, { title: "Private", content: "Cannot be inherited", type: "fact", pinned: true });
+  writeIdentity(copied, { schemaVersion: 1, project: { id: privateMemory.projectId, name: "Original" }, ecosystem: null });
+  const startup = readStartupContext(database, copied);
+  expect(startup.project).toMatchObject({ status: "unbound", projectId: null, context: null, notices: [{ code: "PROJECT_BINDING_REQUIRED" }] });
+  expect(() => startProjectSession(database, copied, "disagreement")).toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
+  expect(() => saveProjectMemory(database, copied, { title: "Blocked", content: "Must not save", type: "fact" }))
+    .toThrow(expect.objectContaining({ code: "PROJECT_BINDING_REQUIRED" }));
+  expect(database.getSession(privateMemory.projectId!, "disagreement")).toBeNull();
+});
+
+test("remote-backed Git writes and later group updates keep identity only in SQLite", () => {
+  const db = store(), folder = repository();
+  git(folder, "remote", "add", "origin", "https://example.com/Org/Stored.git");
+  const saved = saveProjectMemory(db, folder, { title: "Registered", content: "SQLite identity", type: "fact" });
+  expect(existsSync(join(folder, ".forge614"))).toBe(false);
+  expect(existsSync(join(folder, ".gitignore"))).toBe(false);
+  db.enableEcosystem();
+  const group = db.createGroup("team");
+  db.bindProjectToGroup(saved.projectId!, group.id, "command");
+  expect(updateIdentityFiles(db, saved.projectId!, { group: { id: group.id, name: group.name } })).toEqual({ updated: 0, skipped: 0 });
+  expect(existsSync(join(folder, ".forge614"))).toBe(false);
+});
+
+test("legacy identity creation establishes exclusions per worktree", () => {
+  const db = store(), folder = repository(), sibling = temporary("engram-linked-");
+  rmSync(sibling, { recursive: true });
+  git(folder, "worktree", "add", "--quiet", "-b", "linked", sibling);
+  const project = resolveProjectContext(db, folder, true);
+  expect(readFileSync(join(folder, ".gitignore"), "utf8")).toBe("/.forge614/\n");
+  expect(existsSync(filePath(sibling))).toBe(false);
+  db.enableEcosystem();
+  const group = db.createGroup("team");
+  db.bindProjectToGroup(project.projectId!, group.id, "command");
+  expect(updateIdentityFiles(db, project.projectId!, { group: { id: group.id, name: group.name } })).toMatchObject({ updated: 2, skipped: 0 });
+  expect(readFileSync(join(sibling, ".gitignore"), "utf8")).toBe("/.forge614/\n");
+  expect(read(sibling).project.id).toBe(project.projectId!);
+});
+
+test("tracked legacy identity is read and reported while group and project changes preserve every byte", () => {
+  const db = store(), folder = repository(), id = crypto.randomUUID();
+  writeIdentity(folder, { schemaVersion: 1, project: { id, name: "Tracked legacy" } });
+  git(folder, "add", "-f", ".forge614/project.json");
+  const before = readFileSync(filePath(folder));
+  const startup = readStartupContext(db, folder);
+  expect(startup.project).toMatchObject({ projectId: id, source: "file", notices: [{ code: "PROJECT_FILE_TRACKED" }] });
+  expect(existsSync(join(folder, ".gitignore"))).toBe(false);
+  db.enableEcosystem();
+  const group = db.createGroup("team");
+  db.bindProjectToGroup(id, group.id, "command");
+  db.renameProject(id, "After update");
+  expect(updateIdentityFiles(db, id, { group: { id: group.id, name: group.name } }))
+    .toMatchObject({ updated: 0, skipped: 1, notices: [{ code: "PROJECT_FILE_TRACKED" }] });
+  expect(updateIdentityFiles(db, id, { name: "After update" }))
+    .toMatchObject({ updated: 0, skipped: 1, notices: [{ code: "PROJECT_FILE_TRACKED" }] });
+  expect(readFileSync(filePath(folder))).toEqual(before);
+  expect(db.getProject(id)?.name).toBe("After update");
+  expect(db.groupOfProject(id)?.group.id).toBe(group.id);
+});
+
+test.skipIf(process.platform === "win32")("an unavailable Git exclusion reports a notice and leaves SQLite usable", () => {
+  const db = store(), folder = repository(), guard = join(folder, ".gitignore");
+  writeFileSync(guard, "# protected\n", { mode: 0o444 });
+  try {
+    const resolved = resolveProjectContext(db, folder, true);
+    expect(resolved.notices).toEqual([{ code: "PROJECT_FILE_NOT_WRITTEN", message: expect.stringContaining(".gitignore") }]);
+    expect(existsSync(filePath(folder))).toBe(false);
+    expect(readFileSync(guard, "utf8")).toBe("# protected\n");
+    expect(db.projectForDirectory(resolved.directory)?.projectId).toBe(resolved.projectId!);
+  } finally { chmodSync(guard, 0o644); }
+});
+
+test("a worktree path reused by a different repository never receives another project's identity", () => {
+  const db = store(), primary = repository(), reused = temporary("engram-reused-");
+  rmSync(reused, { recursive: true });
+  git(primary, "worktree", "add", "--quiet", "-b", "old-worktree", reused);
+  const project = resolveProjectContext(db, primary, true);
+  rmSync(reused, { recursive: true });
+  mkdirSync(reused);
+  git(reused, "init", "--quiet");
+  db.enableEcosystem();
+  const group = db.createGroup("team");
+  expect(updateIdentityFiles(db, project.projectId!, { group: { id: group.id, name: group.name } }))
+    .toMatchObject({ updated: 1, skipped: 0 });
+  expect(existsSync(join(reused, ".gitignore"))).toBe(false);
+  expect(existsSync(filePath(reused))).toBe(false);
 });

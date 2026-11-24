@@ -1,204 +1,358 @@
-/**
- * Resuelve, liga y usa el proyecto asociado a una carpeta de trabajo: identifica el
- * proyecto (por archivo de identidad o por vínculo de carpeta), lo crea si hace falta y
- * se pidió, y ofrece las variantes de guardar memoria e iniciar sesión que además hacen
- * esa resolución. Mantiene sincronizado `.forge614/project.json` con la base local.
- */
+/** Resuelve la identidad local a partir de los vínculos, del catálogo Git y de los archivos legados. */
 import { MemoryError } from "../shared/errors";
 import type { MemoryVersion, SaveInput } from "../modules/memory";
+import { normalizeIdentityOrigin, projectIdentity, type Project } from "../modules/projects";
 import type { ParallelSession, PreviousSession, Session, SessionSaveOptions, SessionSaveResult } from "../modules/sessions";
-import { MemoryStore } from "./memory-store";
-import { applyIdentityFile, groupOf, publishIdentity, type IdentityNotice } from "./project-identity";
-import { readProjectFile } from "../infrastructure/filesystem/project-identity-file";
+import { MemoryStore, projectIdentityFor } from "./memory-store";
+import { applyDeclaredGroup, declaredGroupChanges, enrollEcosystem, groupOf, publishIdentity, readDeclaredGroup,
+  TRACKED_PROJECT_FILE, type IdentityNotice } from "./project-identity";
+import { readProjectFile, type ProjectFile } from "../infrastructure/filesystem/project-identity-file";
 import { canonicalProject, canonicalProjectForRead, identityRoot, runtimeProjectDirectory, bindingAvailable } from "../infrastructure/git/project-directory";
 import { readOriginRemote } from "../infrastructure/git/remote-origin";
+import { isTrackedProjectFile } from "../infrastructure/git/project-ignore";
+import type { ProjectBindingCorrection } from "../infrastructure/sqlite/project-catalog";
 export { assertGitProjectDirectory } from "../infrastructure/git/project-directory";
 
-/** Resultado de identificar el proyecto de una carpeta. */
 export interface ProjectContext {
-  /** Identificador del proyecto identificado, o `null` si no se identificó ninguno. */
   projectId: string | null;
-  /** Carpeta en su forma canónica (resuelta, por ejemplo, con `realpath`). */
   directory: string;
-  /** Cómo se identificó: `"file"` (archivo de identidad), `"binding"` (vínculo ya registrado), `"created"` (proyecto nuevo) o `"unbound"` (no se identificó). */
   source: string;
-  /** Grupo (ecosistema) al que pertenece el proyecto, si pertenece a alguno. */
   group?: { id: string; name: string };
-  /** Avisos generados al registrar, ligar o publicar la identidad, si los hubo. */
   notices?: IdentityNotice[];
 }
 
-/** Campos de una memoria de proyecto sin `projectId` ni `scope`, que estas funciones resuelven a partir de la carpeta. */
-type ProjectMemoryInput = Omit<SaveInput,"projectId"|"scope">;
-/** Forma normalizada de una carpeta (ruta canónica y nombre) tal como la produce `canonicalProject`. */
+type ProjectMemoryInput = Omit<SaveInput, "projectId" | "scope">;
 type Canonical = ReturnType<typeof canonicalProject>;
+type FolderEvidence = { directory: string; name: string; root: string | null; origin: string | null; file: ProjectFile | null; git: boolean; tracked: boolean };
+type PendingReason = "ambiguous" | "conflict" | "unverified-origin" | "cloud-pending";
+type ProjectDecision =
+  | { status: "known"; projectId: string; source: "binding" | "file" | "remote" }
+  | { status: "unbound" }
+  | { status: "pending"; reason: PendingReason; candidates: string[] };
 
-/**
- * Resuelve el proyecto de una carpeta, creando uno nuevo si no existe y `create` es `true`.
- * @param store Base abierta desde la que se lee y, si aplica, se escribe.
- * @param directory Carpeta de trabajo cuyo proyecto se quiere resolver.
- * @param create Si se permite crear un proyecto nuevo cuando la carpeta no está ligada a ninguno.
- * @returns El contexto del proyecto resuelto (o creado).
- * @throws MemoryError con código `INVALID_INPUT` si `create` no es un valor booleano.
- */
-export function resolveProjectContext(store: MemoryStore, directory: string, create: boolean): ProjectContext {
-  if (typeof create !== "boolean") throw new MemoryError("INVALID_INPUT","create debe ser booleano.");
-  const canonical = canonicalProject(directory);
-  // D6 (T3b): el remoto solo hace falta cuando de verdad se puede crear un proyecto; con create=false
-  // (la ruta más frecuente, en cada lectura) leerlo sería un archivo de disco de más sin ningún uso.
-  const origin = create && canonical.git ? readOriginRemote(canonical.directory) : null;
-  return resolveCanonicalProjectContext(store, canonical, create, identityRoot(directory, canonical), create, origin);
+function allowsEvidence(correction: ProjectBindingCorrection, evidence: FolderEvidence, candidates: string[]): boolean {
+  const fileId = evidence.file?.project.id;
+  const otherCandidates = candidates.filter(id => id !== correction.projectId);
+  return (!fileId || fileId === correction.projectId || fileId === correction.legacyProjectId)
+    && (otherCandidates.length === 0 || (evidence.origin === correction.origin && otherCandidates.every(id => correction.candidates.includes(id))));
 }
 
-/** Precarga de solo lectura en su mayoría: nunca crea un proyecto para una carpeta sin vínculo, pero mantiene los archivos de identidad al día. Nunca lee el remoto de Git (D6): es una ruta de solo lectura. */
-export function resolveStartupProjectContext(store: MemoryStore, directory: string): ProjectContext {
-  const canonical = canonicalProjectForRead(directory);
-  return resolveCanonicalProjectContext(store, canonical, false, identityRoot(directory, canonical), true, null);
-}
-
-/**
- * Núcleo común de la resolución: primero intenta identificar el proyecto por su archivo
- * de identidad; si no hay archivo (o no declara proyecto), cae al vínculo de carpeta
- * registrado en la base (creando el proyecto si `create` lo permite).
- * @param canonical Carpeta ya normalizada, con su nombre canónico.
- * @param create Si se permite crear un proyecto nuevo al caer al vínculo de carpeta.
- * @param root Carpeta desde la que se busca el archivo de identidad, o `null` si no aplica.
- * @param publish Si se debe reescribir el archivo de identidad tras resolver por vínculo de carpeta.
- * @param origin Remoto de Git crudo de `canonical.directory` (D6, T3b), o `null` si no aplica o no se leyó.
- */
-function resolveCanonicalProjectContext(store: MemoryStore, canonical: Canonical, create: boolean, root: string | null, publish: boolean, origin: string | null): ProjectContext {
-  const fromFile = applyIdentityFile(store, canonical.directory, root);
-  const notices = [...fromFile.notices];
-  let projectId: string | null, source: string;
-  if (fromFile.projectId !== null) { projectId = fromFile.projectId; source = "file"; }
-  else {
-    const resolved = store.resolveProjectDirectory(canonical.directory,canonical.name,create,bindingAvailable,origin);
-    projectId = resolved.project?.projectId ?? null;
-    source = resolved.created ? "created" : resolved.project ? "binding" : "unbound";
-    // Solo se publica (reescribe) el archivo de identidad cuando se pidió y de verdad se resolvió un proyecto por vínculo de carpeta.
-    if (publish && resolved.project) notices.push(...publishIdentity(store, resolved.project, root, !resolved.created));
-  }
-  const group = groupOf(store, projectId);
-  return { projectId, directory:canonical.directory, source, ...(group ? { group } : {}), ...(notices.length ? { notices } : {}) };
-}
-
-/**
- * Liga explícitamente una carpeta a un proyecto ya existente y publica su identidad.
- * @param store Base abierta desde la que se lee y a la que se escribe el vínculo.
- * @param directory Carpeta a ligar.
- * @param projectId Identificador del proyecto al que se liga la carpeta.
- * @returns El contexto resultante, con `source` siempre `"binding"`.
- * @throws MemoryError con código `PROJECT_FILE_CONFLICT` si la carpeta ya tiene un archivo
- * de identidad que declara un proyecto distinto al pedido.
- */
-export function bindProjectContext(store: MemoryStore, directory: string, projectId: string): ProjectContext {
-  const canonical = canonicalProject(directory);
-  const root = identityRoot(directory, canonical);
+function folderEvidence(directory: string, canonical: Canonical, root = identityRoot(directory, canonical)): FolderEvidence {
+  const raw = canonical.git ? readOriginRemote(canonical.directory) : null;
   const file = root === null ? null : readProjectFile(root);
-  if (file !== null && file.project.id !== projectId) {
-    throw new MemoryError("PROJECT_FILE_CONFLICT","La carpeta ya declara otra identidad de proyecto en .forge614/project.json; bórralo o usa esa identidad.");
+  return {
+    directory: canonical.directory,
+    name: canonical.name,
+    root,
+    origin: raw === null ? null : normalizeIdentityOrigin(raw),
+    file,
+    git: canonical.git,
+    tracked: canonical.git && root !== null && file !== null && isTrackedProjectFile(root),
+  };
+}
+
+function decideProject(store: MemoryStore, evidence: FolderEvidence): ProjectDecision {
+  const identity = projectIdentityFor(store);
+  const binding = store.projectForDirectory(evidence.directory);
+  const fileId = evidence.file?.project.id;
+  if (!binding && (fileId || evidence.origin) && !identity.catalogReady()) {
+    return { status: "pending", reason: "cloud-pending", candidates: [] };
   }
-  const project = store.bindProjectDirectory(canonical.directory,projectId);
-  const notices = publishIdentity(store, project, root, false);
-  const group = groupOf(store, project.projectId);
-  return { projectId:project.projectId,directory:canonical.directory,source:"binding",...(group ? { group } : {}),...(notices.length ? { notices } : {}) };
+  const candidates = evidence.origin === null ? [] : identity.candidates(evidence.origin);
+  const ids = candidates.map(candidate => candidate.project.projectId);
+  if (binding) {
+    if ((fileId && fileId !== binding.projectId) || ids.some(id => id !== binding.projectId)) {
+      const correction = identity.correction(evidence.directory);
+      if (correction?.projectId === binding.projectId && allowsEvidence(correction, evidence, ids)) {
+        return { status: "known", projectId: binding.projectId, source: "binding" };
+      }
+      return { status: "pending", reason: "conflict", candidates: [...new Set([binding.projectId, ...ids, ...(fileId ? [fileId] : [])])].sort() };
+    }
+    return { status: "known", projectId: binding.projectId, source: fileId ? "file" : "binding" };
+  }
+  const [candidate] = candidates;
+  if (candidate) {
+    if (candidates.length > 1) return { status: "pending", reason: "ambiguous", candidates: ids };
+    const projectId = candidate.project.projectId;
+    if (fileId && fileId !== projectId) return { status: "pending", reason: "conflict", candidates: [fileId, projectId].sort() };
+    if (!candidate.verified) return { status: "pending", reason: "unverified-origin", candidates: ids };
+    return { status: "known", projectId, source: "remote" };
+  }
+  if (fileId && evidence.origin !== null) {
+    const confirmed = identity.confirmedOrigin(fileId);
+    if (confirmed !== null && confirmed !== evidence.origin) return { status: "pending", reason: "conflict", candidates: [fileId] };
+  }
+  return fileId ? { status: "known", projectId: fileId, source: "file" } : { status: "unbound" };
 }
 
-/**
- * Guarda una memoria de proyecto resolviendo el proyecto a partir de la carpeta (lo crea
- * si hace falta) y publicando su identidad después.
- * @param store Base abierta a la que se guarda.
- * @param directory Carpeta cuyo proyecto recibe la memoria.
- * @param input Campos de la memoria a guardar (sin `projectId` ni `scope`, que se resuelven aquí).
- * @returns La versión de la memoria recién guardada.
- */
+function bindingRequired(reason: PendingReason): IdentityNotice {
+  const message = reason === "cloud-pending"
+    ? "Engram necesita sincronizar el catálogo antes de vincular esta carpeta. Ejecuta sync o elige el proyecto con project-bind."
+    : "Engram necesita confirmar la identidad de esta carpeta. Usa project-bind para resolver el vínculo.";
+  return { code: "PROJECT_BINDING_REQUIRED", message };
+}
+
+function requireDecision(decision: ProjectDecision): asserts decision is Exclude<ProjectDecision, { status: "pending" }> {
+  if (decision.status === "pending") throw new MemoryError("PROJECT_BINDING_REQUIRED", bindingRequired(decision.reason).message);
+}
+
+function originNotice(store: MemoryStore, evidence: FolderEvidence, projectId: string): IdentityNotice[] {
+  if (evidence.origin === null) return [];
+  const identity = projectIdentityFor(store);
+  const previous = identity.confirmedOrigin(projectId);
+  const correction = previous !== null && previous !== evidence.origin ? identity.correction(evidence.directory) : null;
+  if (correction?.projectId === projectId && correction.origin === evidence.origin) return [];
+  return previous !== null && previous !== evidence.origin
+    ? [{ code: "PROJECT_ORIGIN_CONFIRMATION_REQUIRED", message: "Confirma el remoto actual con project-bind --accept-origin para reconocer futuros clones." }]
+    : [];
+}
+
+function acceptsGroupDeclaration(store: MemoryStore, directory: string, projectId: string): boolean {
+  const identity = projectIdentityFor(store);
+  return !identity.hasExplicitGroupPolicy(projectId) && identity.correction(directory)?.projectId !== projectId;
+}
+
+function publishResolved(store: MemoryStore, evidence: FolderEvidence, project: Project, legacy: boolean): IdentityNotice[] {
+  if (evidence.tracked) return [TRACKED_PROJECT_FILE];
+  if (evidence.file && evidence.file.project.id !== project.projectId) return [];
+  if (evidence.origin !== null && evidence.file === null) return [];
+  return publishIdentity(store, project, evidence.root, legacy, evidence.git);
+}
+
+function context(store: MemoryStore, evidence: FolderEvidence, projectId: string | null, source: string, notices: IdentityNotice[] = []): ProjectContext {
+  const group = groupOf(store, projectId);
+  if (evidence.tracked && !notices.some(notice => notice.code === TRACKED_PROJECT_FILE.code)) notices = [...notices, TRACKED_PROJECT_FILE];
+  return { projectId, directory: evidence.directory, source, ...(group ? { group } : {}), ...(notices.length ? { notices } : {}) };
+}
+
+function requireProject(store: MemoryStore, projectId: string): Project {
+  const project = store.getProject(projectId);
+  if (!project) throw new MemoryError("PROJECT_NOT_FOUND", "Proyecto no encontrado en esta base.");
+  return project;
+}
+
+/** Confirma los datos de SQLite dentro de la operación que los necesita. */
+function writeProject<T>(store: MemoryStore, evidence: FolderEvidence, use: (project: Project) => T,
+    legacyImport = false, group = readDeclaredGroup(evidence.root, evidence.file)) {
+  const identity = projectIdentityFor(store);
+  const initial = decideProject(store, evidence);
+  const canMigrate = initial.status !== "pending" || initial.reason === "unverified-origin" || initial.reason === "ambiguous";
+  const migrated = !legacyImport && evidence.origin !== null && canMigrate && identity.ensureSchema();
+  const prepared = migrated ? decideProject(store, evidence) : initial;
+  requireDecision(prepared);
+  const notices: IdentityNotice[] = [];
+  if (group && !store.ecosystemEnabled()
+      && (prepared.status === "unbound" || acceptsGroupDeclaration(store, evidence.directory, prepared.projectId))) enrollEcosystem(store, notices);
+
+  return identity.write(() => {
+    const decision = decideProject(store, evidence);
+    requireDecision(decision);
+    let project: Project;
+    let source: string;
+    if (decision.status === "unbound") {
+      const resolved = identity.resolveUnbound(evidence.directory, evidence.name, bindingAvailable, evidence.origin);
+      project = resolved.project!;
+      source = resolved.created ? "created" : "remote";
+    } else {
+      const file = evidence.file;
+      project = decision.source === "file" && file
+        ? store.registerProject(decision.projectId, file.project.name).project
+        : requireProject(store, decision.projectId);
+      store.bindProjectDirectory(evidence.directory, project.projectId);
+      source = decision.source;
+    }
+    if ((group || evidence.file) && acceptsGroupDeclaration(store, evidence.directory, project.projectId)) {
+      applyDeclaredGroup(store, project.projectId, group, evidence.file);
+    }
+    notices.push(...originNotice(store, evidence, project.projectId));
+    return { value: use(project), project, source, notices };
+  });
+}
+
+/** Las coincidencias por remoto son lecturas puras. Los archivos legados compatibles siguen importándose. */
+function readFolder(store: MemoryStore, evidence: FolderEvidence, publishLegacy: boolean): ProjectContext {
+  const decision = decideProject(store, evidence);
+  if (decision.status === "pending") return context(store, evidence, null, "unbound", [bindingRequired(decision.reason)]);
+  if (decision.status === "unbound") return context(store, evidence, null, "unbound");
+  const { projectId, source } = decision;
+  if (source === "remote" || (source === "binding" && !publishLegacy)) {
+    return context(store, evidence, projectId, source, originNotice(store, evidence, projectId));
+  }
+
+  const group = readDeclaredGroup(evidence.root, evidence.file);
+  const needsImport = !store.projectForDirectory(evidence.directory)
+    || (acceptsGroupDeclaration(store, evidence.directory, projectId) && declaredGroupChanges(store, projectId, group, evidence.file));
+  let written;
+  try { written = needsImport ? writeProject(store, evidence, project => project, true, group) : null; }
+  catch (error) {
+    if (!(error instanceof MemoryError) || error.code !== "PROJECT_BINDING_REQUIRED") throw error;
+    return context(store, evidence, null, "unbound", [{ code: error.code, message: error.message }]);
+  }
+  const project = written?.project ?? requireProject(store, projectId);
+  const notices = written?.notices ?? originNotice(store, evidence, projectId);
+  const file = evidence.file;
+  if (file === null || file.ecosystem === undefined || (file.ecosystem === null && group !== null)) {
+    notices.push(...publishResolved(store, evidence, project, file === null));
+  }
+  return context(store, evidence, project.projectId, written?.source ?? source, notices);
+}
+
+export function resolveProjectContext(store: MemoryStore, directory: string, create: boolean): ProjectContext {
+  if (typeof create !== "boolean") throw new MemoryError("INVALID_INPUT", "create debe ser booleano.");
+  const evidence = folderEvidence(directory, canonicalProject(directory));
+  if (!create) return readFolder(store, evidence, false);
+  const result = writeProject(store, evidence, project => project);
+  const notices = [...result.notices, ...publishResolved(store, evidence, result.project, result.source !== "created" && result.source !== "file")];
+  return context(store, evidence, result.project.projectId, result.source, notices);
+}
+
+export function resolveStartupProjectContext(store: MemoryStore, directory: string): ProjectContext {
+  return readFolder(store, folderEvidence(directory, canonicalProjectForRead(directory)), true);
+}
+
+interface CreateProjectOptions { name: string; replaceFrom?: string }
+interface BindProjectOptions { replaceFrom?: string; acceptOrigin?: boolean }
+
+function correctionMismatch(): never {
+  throw new MemoryError("PROJECT_BINDING_CONFLICT", "El vínculo actual no coincide con --replace-from. Revisa el UUID de la carpeta antes de corregirlo.");
+}
+
+function displacedFile(evidence: FolderEvidence, projectId: string): string | null {
+  const declared = evidence.file?.project.id;
+  return declared && declared !== projectId ? declared : null;
+}
+
+function explicitContext(store: MemoryStore, evidence: FolderEvidence, project: Project, source: "created" | "binding",
+    notices: IdentityNotice[]): ProjectContext {
+  const legacy = displacedFile(evidence, project.projectId);
+  if (legacy !== null) notices.push({
+    code: "PROJECT_FILE_DISPLACED", message: `El vínculo local conserva el proyecto elegido y deja intacta la identidad legada ${legacy}.`,
+  });
+  notices.push(...publishResolved(store, evidence, project, false));
+  return context(store, evidence, project.projectId, source, notices);
+}
+
+export function createProjectContext(store: MemoryStore, directory: string, options: CreateProjectOptions): ProjectContext {
+  const evidence = folderEvidence(directory, canonicalProject(directory));
+  const replaceFrom = options.replaceFrom === undefined ? null : projectIdentity(options.replaceFrom);
+  const identity = projectIdentityFor(store);
+  identity.ensureSchema();
+
+  const project = identity.write(() => {
+    const binding = store.projectForDirectory(evidence.directory);
+    const candidates = evidence.origin === null ? [] : identity.candidates(evidence.origin).map(item => item.project.projectId);
+    if (binding) {
+      const latest = identity.correction(evidence.directory);
+      if (latest?.cause === "create" && latest.projectId === binding.projectId && latest.previousProjectId === replaceFrom
+          && latest.origin === evidence.origin && binding.name === options.name.trim() && allowsEvidence(latest, evidence, candidates)) return binding;
+    }
+    if ((binding?.projectId ?? null) !== replaceFrom) correctionMismatch();
+    const created = store.createProject(options.name);
+    identity.useExplicitGroupPolicy(created.projectId);
+    if (!binding && evidence.file === null && evidence.origin !== null && candidates.length === 0 && identity.catalogReady()) {
+      identity.confirmOrigin(created.projectId, evidence.origin);
+    }
+    identity.replaceBinding(evidence.directory, created.projectId);
+    identity.recordCorrection(evidence.directory, {
+      projectId: created.projectId, previousProjectId: binding?.projectId ?? null, legacyProjectId: displacedFile(evidence, created.projectId),
+      origin: evidence.origin, candidates, cause: "create",
+    });
+    return created;
+  });
+
+  return explicitContext(store, evidence, project, "created", []);
+}
+
+export function bindProjectContext(store: MemoryStore, directory: string, rawProjectId: string, options: BindProjectOptions = {}): ProjectContext {
+  const evidence = folderEvidence(directory, canonicalProject(directory));
+  const projectId = projectIdentity(rawProjectId);
+  const replaceFrom = options.replaceFrom === undefined ? null : projectIdentity(options.replaceFrom);
+  const legacy = displacedFile(evidence, projectId);
+  if (legacy && replaceFrom === null) {
+    throw new MemoryError("PROJECT_FILE_CONFLICT", "La carpeta declara otra identidad de proyecto en .forge614/project.json. Usa --replace-from para confirmar el UUID anterior.");
+  }
+
+  const identity = projectIdentityFor(store);
+  if (replaceFrom || evidence.origin !== null || options.acceptOrigin) identity.ensureSchema();
+  const cause = options.acceptOrigin ? "bind-origin" : "bind";
+  const notices: IdentityNotice[] = [];
+  const group = replaceFrom === null ? readDeclaredGroup(evidence.root, evidence.file) : null;
+  const hasOtherOrigin = () => evidence.origin !== null && identity.candidates(evidence.origin).some(item => item.project.projectId !== projectId);
+  if (group && !store.ecosystemEnabled() && acceptsGroupDeclaration(store, evidence.directory, projectId) && !hasOtherOrigin()) {
+    enrollEcosystem(store, notices);
+  }
+
+  const project = identity.write(() => {
+    const selected = requireProject(store, projectId);
+    const binding = store.projectForDirectory(evidence.directory);
+    const candidates = evidence.origin === null ? [] : identity.candidates(evidence.origin).map(item => item.project.projectId);
+    const latest = binding?.projectId === projectId && replaceFrom ? identity.correction(evidence.directory) : null;
+    const replay = latest !== null && latest.cause === cause && (latest.previousProjectId ?? latest.legacyProjectId) === replaceFrom
+      && latest.origin === evidence.origin && allowsEvidence(latest, evidence, candidates);
+    if (replay) return selected;
+    if (replaceFrom !== null ? replaceFrom !== (binding?.projectId ?? legacy)
+        : binding !== null && binding.projectId !== projectId) correctionMismatch();
+    const otherCandidates = candidates.filter(id => id !== projectId);
+    if (options.acceptOrigin) {
+      if (evidence.origin === null) throw new MemoryError("PROJECT_BINDING_REQUIRED", "Configura un remoto origin de Git utilizable antes de confirmarlo.");
+      if (!identity.catalogReady()) throw new MemoryError("PROJECT_BINDING_REQUIRED", bindingRequired("cloud-pending").message);
+      if (otherCandidates.length) throw new MemoryError("PROJECT_BINDING_REQUIRED", "Ese remoto está asociado a otro proyecto.");
+      identity.confirmOrigin(projectId, evidence.origin);
+    }
+    identity.replaceBinding(evidence.directory, projectId);
+    const correction = replaceFrom !== null || otherCandidates.length > 0;
+    if (correction) identity.recordCorrection(evidence.directory, {
+      projectId, previousProjectId: binding?.projectId ?? null, legacyProjectId: legacy, origin: evidence.origin,
+      candidates, cause,
+    });
+    else if ((group || evidence.file) && acceptsGroupDeclaration(store, evidence.directory, projectId)) {
+      applyDeclaredGroup(store, projectId, group, evidence.file);
+    }
+    return selected;
+  });
+
+  return explicitContext(store, evidence, project, "binding", notices);
+}
+
 export function saveProjectMemory(store: MemoryStore, directory: string, input: ProjectMemoryInput): MemoryVersion {
-  const canonical = canonicalProject(directory);
-  const root = identityRoot(directory, canonical);
-  applyIdentityFile(store, canonical.directory, root);
-  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
-  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
-  const saved = store.saveForProjectDirectory(canonical.directory,canonical.name,input,bindingAvailable,origin);
-  const project = saved.projectId === null ? null : store.getProject(saved.projectId);
-  if (project) publishIdentity(store, project, root, false);
-  return saved;
+  const evidence = folderEvidence(directory, canonicalProject(directory));
+  const result = writeProject(store, evidence, project => store.save({ ...input, scope: "project", projectId: project.projectId }));
+  publishResolved(store, evidence, result.project, false);
+  return result.value;
 }
 
-/**
- * Como `saveProjectMemoryWithSession`, pero además informa los avisos de identidad
- * (por ejemplo, una migración de la base) que se produjeron al resolver el proyecto.
- * @param store Base abierta a la que se guarda.
- * @param directory Carpeta cuyo proyecto recibe la memoria.
- * @param input Campos de la memoria a guardar.
- * @param options Opciones de guardado ligado a la sesión (por ejemplo, `sessionId`).
- * @returns El resultado del guardado y los avisos de identidad generados.
- */
 export function saveProjectMemoryWithSessionAndNotices(store: MemoryStore, directory: string,
     input: ProjectMemoryInput, options: SessionSaveOptions = {}): { saved: SessionSaveResult; notices: IdentityNotice[] } {
   const canonical = canonicalProject(directory);
-  const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
-  const root = identityRoot(directory, canonical);
-  const notices = [...applyIdentityFile(store, canonical.directory, root).notices];
-  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
-  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
-  const saved = store.saveWithSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,input,options,bindingAvailable,origin);
-  const project = saved.memory.projectId === null ? null : store.getProject(saved.memory.projectId);
-  if (project) notices.push(...publishIdentity(store, project, root, false));
-  return { saved, notices };
+  const runtimeDirectory = runtimeProjectDirectory(directory, canonical);
+  const evidence = folderEvidence(directory, canonical, runtimeDirectory);
+  const result = writeProject(store, evidence, project => store.saveWithSession({ ...input, scope: "project", projectId: project.projectId },
+    { ...options, runtimeDirectory }));
+  return { saved: result.value, notices: [...result.notices, ...publishResolved(store, evidence, result.project, false)] };
 }
 
-/**
- * Como `saveProjectMemoryWithSessionAndNotices`, pero devuelve solo el resultado del
- * guardado, sin los avisos de identidad.
- * @param store Base abierta a la que se guarda.
- * @param directory Carpeta cuyo proyecto recibe la memoria.
- * @param input Campos de la memoria a guardar.
- * @param options Opciones de guardado ligado a la sesión.
- * @returns El resultado del guardado (memoria y, si aplica, datos de la sesión).
- */
 export function saveProjectMemoryWithSession(store: MemoryStore, directory: string,
     input: ProjectMemoryInput, options: SessionSaveOptions = {}): SessionSaveResult {
   return saveProjectMemoryWithSessionAndNotices(store, directory, input, options).saved;
 }
 
-/**
- * Como `startProjectSession`, pero además informa los avisos de identidad (por ejemplo, el
- * archivo que se acaba de escribir) y, solo para una sesión creada por esta llamada (nunca
- * en una repetición con el mismo id): la sesión previa del proyecto que quedó abierta
- * durante PARALLEL_MINUTES o más (si la hay), y cualquier otra de sus sesiones en tiempo de
- * ejecución que siga abierta en paralelo con esta (si las hay, como máximo PARALLEL_LIMIT, 1.7.1).
- * @param store Base abierta desde la que se lee y a la que se escribe la sesión.
- * @param directory Carpeta cuyo proyecto inicia la sesión.
- * @param sessionId Identificador de la sesión a iniciar (o repetir, si ya existía).
- * @returns La sesión iniciada, los avisos de identidad y, cuando aplica, `previous` y `parallel`.
- */
-export function startProjectSessionWithNotices(store: MemoryStore, directory: string, sessionId: string): { session: Session; notices: IdentityNotice[]; previous?: PreviousSession; parallel?: ParallelSession[] } {
+export function startProjectSessionWithNotices(store: MemoryStore, directory: string, sessionId: string):
+    { session: Session; notices: IdentityNotice[]; previous?: PreviousSession; parallel?: ParallelSession[] } {
   const canonical = canonicalProject(directory);
-  const runtimeDirectory = runtimeProjectDirectory(directory,canonical);
-  const root = identityRoot(directory, canonical);
-  const identity = applyIdentityFile(store, canonical.directory, root);
-  const notices = [...identity.notices];
-  // Solo con el nivel 11: si este id ya nombra una sesión, se comprueba antes de iniciarla (una repetición nunca informa `previous`/`parallel`).
-  const known = store.intelligenceEnabled() ? (identity.projectId ?? store.projectForDirectory(canonical.directory)?.projectId ?? null) : null;
-  const existed = known !== null && store.getSession(known, sessionId) !== null;
-  // D6 (T3b): esta ruta siempre puede crear el proyecto (writes.ts la llama con create=true), así que el remoto siempre es útil aquí.
-  const origin = canonical.git ? readOriginRemote(canonical.directory) : null;
-  const session = store.startSessionForProjectDirectory(canonical.directory,canonical.name,runtimeDirectory,sessionId,bindingAvailable,origin);
-  const project = store.getProject(session.projectId);
-  if (project) notices.push(...publishIdentity(store, project, root, true));
-  const previous = store.intelligenceEnabled() && !existed ? store.previousInterrupted(session.projectId) : null;
-  const parallel = store.intelligenceEnabled() && !existed ? store.parallelSessions(session.projectId, sessionId) : null;
-  return { session, notices, ...(previous ? { previous } : {}), ...(parallel && parallel.length ? { parallel } : {}) };
+  const runtimeDirectory = runtimeProjectDirectory(directory, canonical);
+  const evidence = folderEvidence(directory, canonical, runtimeDirectory);
+  const intelligence = store.intelligenceEnabled();
+  const result = writeProject(store, evidence, project => {
+    const existed = intelligence && store.getSession(project.projectId, sessionId) !== null;
+    return { existed, session: store.startSession(project.projectId, sessionId, runtimeDirectory) };
+  });
+  const { session, existed } = result.value;
+  const previous = intelligence && !existed ? store.previousInterrupted(session.projectId) : null;
+  const parallel = intelligence && !existed ? store.parallelSessions(session.projectId, sessionId) : null;
+  return { session, notices: [...result.notices, ...publishResolved(store, evidence, result.project, true)],
+    ...(previous ? { previous } : {}), ...(parallel?.length ? { parallel } : {}) };
 }
 
-/**
- * Como `startProjectSessionWithNotices`, pero devuelve solo la sesión, sin avisos ni datos
- * de sesión previa o paralela.
- * @param store Base abierta desde la que se lee y a la que se escribe la sesión.
- * @param directory Carpeta cuyo proyecto inicia la sesión.
- * @param sessionId Identificador de la sesión a iniciar.
- * @returns La sesión iniciada (o la existente, si `sessionId` ya se había usado).
- */
 export function startProjectSession(store: MemoryStore, directory: string, sessionId: string): Session {
   return startProjectSessionWithNotices(store, directory, sessionId).session;
 }

@@ -22,7 +22,7 @@ A **group** is a named set of related projects (microservices, microfrontends, a
 
 ## Portable project identity
 
-The `.forge614/project.json` file at the root of a repository, versioned in Git and owned exclusively by Engram: it stores the project's `id` and name and, if it belongs to one, its group's `id` and name. It lets moving, renaming, or cloning the repository keep its memory: the identity travels with the repository, not with the path.
+The legacy `.forge614/project.json` file can declare a UUID and group compatible with the local binding and confirmed origin. The SQLite catalog stores each project identity and identifies new checkouts by confirmed origin.
 
 ## Topic key (`topicKey`)
 

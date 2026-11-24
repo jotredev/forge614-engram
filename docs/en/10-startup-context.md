@@ -37,25 +37,22 @@ On success it writes one JSON object to stdout, with keys in this order:
 `shared`, `ecosystem.context`, and `project.context` use the same `ContextResult` shape as the `context` command and include bounded previews, not titles alone. Each block uses its own byte ceiling.
 
 - **`ecosystem`** is `{ "status": "member", "group": { "id", "name" }, "context": … }` when the project belongs to a group (see [11. Scopes and Ecosystems](11-scopes-and-ecosystems.md)) and `{ "status": "none" }` otherwise: a loose project, an unlinked folder, or a database created by an earlier version.
-- **`project.source`** says how the project was identified: `"file"` (by the `id` in its `.forge614/project.json`), `"path"` (by the folder binding recorded in the database), or `"unbound"` (no project).
-- **`project.notices`** appears only when there is something to report, as a list of `{ "code", "message" }`: `PROJECT_FILE_CREATED` (a project that was already bound by path received its file), `PROJECT_REBOUND_FROM_FILE` (the folder was re-bound to the project its file declares), `PROJECT_FILE_NOT_WRITTEN` (the file could not be written; the operation continues), or `DATABASE_MIGRATED` (this command upgraded the database for the first time because the repository declares a group; `backup` says where the previous backup went, if there was data, and later calls do not notify again).
+- **`project.source`** is `"file"` for a compatible legacy declaration, `"path"` for an SQLite binding or a unique confirmed origin match, and `"unbound"` when the project is unresolved.
+- **`project.notices`** appears when there is a notice. Each entry has `code` and `message`. `PROJECT_BINDING_REQUIRED` marks a pending decision and `PROJECT_ORIGIN_CONFIRMATION_REQUIRED` a move to an unclaimed origin. Notices also report tracked or unpublished legacy files and ecosystem migrations, with the backup path where applicable.
 
 When it cannot be resolved or linked as a project, it does not fail: it returns `"project": { "status": "unbound", "projectId": null, "context": null, "source": "unbound" }` and `"ecosystem": { "status": "none" }`. Any existing readable directory is valid: `$HOME`, `/`, an unversioned folder without Git, an unlinked Git repository, and a linked folder.
 
 ## Why `format` stays at 1
 
-`ecosystem`, `project.source`, and `project.notices` are **additive fields**: no existing field changed its name, type, or meaning, so a consumer that ignores unknown fields keeps working unchanged. Raising `format` would have forced every host, including those that never use groups, to recognize a new shape. A consumer must **ignore unknown fields** and treat an `ecosystem` block it does not understand as absent; Engines and Shell must accept it as optional and sanitized. If the shape of an existing field ever changed, `format` would be raised.
+`ecosystem`, `project.source`, and `project.notices` are **additive fields**: no existing field changed its name, type, or meaning, so a consumer that ignores unknown fields keeps working unchanged. Raising `format` would have forced every host, including those that never use groups, to recognize a new shape. A consumer must **ignore unknown fields** and treat an `ecosystem` block it does not understand as absent; Engines and Shell must accept it as optional and sanitized. To display the new notices, a host that filters by code needs to recognize `PROJECT_BINDING_REQUIRED` and `PROJECT_ORIGIN_CONFIRMATION_REQUIRED`. Format 2 includes the notice directly in its text.
 
-## What it keeps in step and what it never does
+## Reading the catalog
 
-The command opens the database **read-only** first and reopens it for writing only when it has to register something, because it keeps the repository identity and the local database in step:
+The command opens SQLite read-only first. A unique confirmed origin match can show the UUID, memories, and ecosystem without recording a binding or publishing a file. The first save or session start records the local binding. A compatible legacy file can still import an identity and may need to reopen the database to register the project or its group.
 
-- If the repository carries `.forge614/project.json` and its `id` does not exist in the local database (for example, a clone on another machine), it registers the project —and its group— with that `id`, without asking.
-- If the database had that folder bound to another project, **the file wins**: it re-binds, records the `PROJECT_REBOUND_FROM_FILE` event, and does not touch the file.
-- If a project was already bound only by path, it writes its `.forge614/project.json` (silently; the result reports it in `project.notices`).
-- If `forge614.node.json` declares `ecosystem`, or the file carries its `ecosystem` section, it binds the group without asking. Nothing is inferred from folder names, disk proximity, or Git remotes.
+When the evidence conflicts or the cloud catalog is pending, the result includes shared context, `project.status: "unbound"`, and a `PROJECT_BINDING_REQUIRED` notice. The command preserves existing files and bindings. Projects with an explicit group policy take their membership from `group-bind` and `group-unbind`.
 
-It never creates memories, sessions, or databases, and never creates a project for a folder that has neither a binding nor a file: that folder is `unbound` and nothing is written in it. A project memory using the same `topicKey` supersedes the shared one only inside `project.context`; the top-level `shared` section is unchanged. The `shared`, `ecosystem`, and `project` blocks are not deduplicated against each other.
+Startup never creates memories, sessions, or databases. A project memory with the same `topicKey` hides the shared memory only within `project.context`. The top-level `shared` block keeps its results.
 
 Each block uses `context()`'s own ceiling —16,384 bytes by default— so the combined payload remains bounded (three times that ceiling at most).
 
@@ -87,13 +84,13 @@ Instead of the context JSON, it returns a single JSON object with a text block t
 
 Each list is filled in order and stops at the first line that does not fit; what is left out is counted in `omitted` and can be found with `memory_search`. The fixed texts are in English; the content of the memories goes as is.
 
-Format 2 works at any database level: it does not require `intelligence-enable`. Only with schema 11 does the short version replace the title in essentials, memories marked as superseded not appear, `[verify]` appear, and the previous session get included; below it, the block is built from the same sources without those extras. It uses the same opening and the same project resolution as format 1 (read-only first and, only if it must register the identity, writable), but it does not include `notices`.
+Format 2 works at any database level: it does not require `intelligence-enable`. Only with schema 11 does the short version replace the title in essentials, memories marked as superseded not appear, `[verify]` appear, and the previous session get included; below it, the block is built from the same sources without those extras. It uses the same opening and the same project resolution as format 1 (read-only first and, only if it must register the identity, writable), and includes a pending binding or confirmation notice as a line within the 5,000-character budget.
 
 Without `--format`, the command keeps returning format 1, with the same output as always. `--format` accepts only `1` or `2`: any other value answers `INVALID_INPUT` (`format debe ser 1 o 2.`) before the database is opened. Versions 2 and 3 of the memory protocol announce the command without `--format`, that is, format 1 (version 1 announces none); version 4 (since 1.7.0) announces format 2. From the SDK, `MemoryStore.startupBlock` delivers the same block.
 
 ## With the cloud on (since 1.8.0)
 
-With `cloud on` already run on this Mac, `startup-context` (and `memory_context` over MCP) wait at most 1 second for new changes to arrive from the cloud before returning context; if they do not arrive in time, they continue with local data and what is new arrives on the next background cycle. Measured against Neon: around 0.6 s with the database awake; if Neon was asleep (no recent use) it can spend the full second. Without the cloud on, this command changes nothing compared to earlier versions.
+With `cloud on`, `startup-context` and `memory_context` wait up to 1 second for the replica. A new folder with a usable origin or legacy file stays pending until the first download finishes and the identity cursor reaches the general cursor. Existing local bindings stay available. After upgrading from schema 12, run `sync` to prepare the identity catalog with a backup outside the startup wait. With `cloud off`, Engram uses the local catalog.
 
 `startup-context` also opens correctly even when SQLite's WAL auxiliary files are missing (`engram.db-wal` and `engram.db-shm`), which SQLite deletes when the last connection closes: previously it failed with `STORAGE_ERROR` on the first session after closing everything (also in 1.7.2); since 1.8.0 it retries in writable mode and keeps working normally, including the cloud wait.
 
@@ -101,7 +98,7 @@ With `cloud on` already run on this Mac, `startup-context` (and `memory_context`
 
 `--directory` and `--json` are required. A nonexistent path, a path that is not a directory, an unreadable path, an uninitialized workspace, or any other real failure fails, and so does an invalid `.forge614/project.json` (`PROJECT_FILE_INVALID`: corrupt JSON, an unknown schema version, or unknown fields), which Engram never overwrites. The failure leaves stdout empty, writes JSON only to stderr, and exits with exit code 1: `{ "code": "…", "error": "…" }`, or `{ "schemaVersion": 1, "code": "…", "error": "…" }` for the codes introduced in 1.6.0. It does not print secrets, tokens, credentials, or raw paths in an error message.
 
-**For hosts:** an invalid `.forge614/project.json` is a visible error, not an empty context: `startup-context` exits with code 1 and returns no block at all (not even `shared`). It is repaired by fixing the file or deleting it; if it is deleted, Engram regenerates it on the next run when the project is already bound by path, and a folder with no binding stays `unbound`.
+**For hosts.** An invalid legacy file produces `PROJECT_FILE_INVALID` and no output block. A valid file with an incompatible identity produces a notice and leaves the shared block available.
 
 ## Relationship to the memory protocol
 

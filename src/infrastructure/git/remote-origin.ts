@@ -4,15 +4,15 @@
  * con un proceso más). La usa `src/app/project-context.ts` en cada ruta de escritura, para anotar el
  * remoto normalizado de un proyecto (D6, identidad de proyecto por remoto de Git).
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 // Encabezado de sección de un archivo de configuración de Git: "[tipo]" o "[tipo \"subsección\"]",
 // con espacios tolerados alrededor. El tipo de sección es insensible a mayúsculas; la subsección no.
-const SECTION = /^\s*\[\s*([^\s\]"]+)(?:\s+"([^"]*)")?\s*\]/u;
+const SECTION = /^\s*\[\s*([^\s\]"]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]/u;
 // Una asignación "clave = valor" dentro de una sección, con espacios y tabuladores tolerados
 // alrededor del "=". La clave es insensible a mayúsculas, como en el resto de Git.
-const ASSIGNMENT = /^\s*([^\s=;#]+)\s*=\s*(.*)$/u;
+const ASSIGNMENT = /^\s*([^\s=;#]+)\s*(?:=\s*(.*)|[;#].*|$)$/u;
 
 /**
  * Lee, sin ejecutar `git`, el valor crudo de `url` dentro de la sección `[remote "origin"]` del
@@ -20,12 +20,12 @@ const ASSIGNMENT = /^\s*([^\s=;#]+)\s*=\s*(.*)$/u;
  *
  * Limitación documentada: no resuelve `include`, `includeIf` ni `insteadOf` (directivas de Git que
  * traen configuración de otro archivo o la reescriben); solo lee lo que está escrito directamente en
- * este archivo. Quien llama debe normalizar el valor devuelto (con `normalizeRemote`) antes de
+ * este archivo. Quien llama debe normalizar el valor devuelto (con `normalizeIdentityOrigin`) antes de
  * compararlo o guardarlo: este lector nunca normaliza ni valida, solo devuelve el texto tal cual.
  * @param commonDirectory Directorio común de Git (`.git`, o su equivalente en un `worktree`) que
  * contiene el archivo `config` a leer.
  * @returns El valor crudo de `url` dentro de `[remote "origin"]`, o `null` si el archivo no existe, no
- * se puede leer, o esa sección no declara ninguna línea `url`. Nunca lanza.
+ * se puede leer, o el archivo no declara un único valor de `origin.url`. Nunca lanza.
  */
 export function readOriginRemote(commonDirectory: string): string | null {
   let text: string;
@@ -38,21 +38,34 @@ export function readOriginRemote(commonDirectory: string): string | null {
   }
   // Se recorre línea por línea, llevando si la línea actual cae dentro de la sección [remote "origin"].
   let insideOrigin = false;
-  for (const line of text.split(/\r?\n/u)) {
+  let origin: string | null = null;
+  for (let line of text.replace(/\\\r?\n/gu, "").split(/\r?\n/u)) {
     const section = SECTION.exec(line);
     if (section) {
       // Una nueva sección reemplaza la anterior: solo cuenta como "origin" si el tipo es "remote" y la
       // subsección entre comillas es exactamente "origin" (las subsecciones de Git distinguen mayúsculas).
-      insideOrigin = section[1]!.toLowerCase() === "remote" && section[2] === "origin";
-      continue;
+      const name = section[1]!.toLowerCase();
+      const subsection = section[2]?.replace(/\\(.)/gu, "$1");
+      insideOrigin = (name === "remote" && subsection === "origin") || (name === "remote.origin" && subsection === undefined);
+      line = line.slice(section[0].length);
     }
     if (!insideOrigin) continue;
     const assignment = ASSIGNMENT.exec(line);
     if (!assignment || assignment[1]!.toLowerCase() !== "url") continue;
-    return unquote(stripComment(assignment[2]!));
+    if (assignment[2] === undefined || origin !== null) return null;
+    origin = unquote(stripComment(assignment[2]));
   }
   // Se recorrió el archivo entero (o no había sección [remote "origin"], o no tenía línea "url").
-  return null;
+  return origin || null;
+}
+
+/** Lee una clave de vínculo histórica solo si conserva la estructura de un directorio común Git. */
+export function readBoundOrigin(directory: string): string | null {
+  try {
+    if (!statSync(join(directory, "HEAD")).isFile() || !statSync(join(directory, "objects")).isDirectory()
+      || !statSync(join(directory, "refs")).isDirectory()) return null;
+    return readOriginRemote(directory);
+  } catch { return null; }
 }
 
 /**
