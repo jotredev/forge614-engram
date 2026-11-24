@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { memoryProtocol } from "../../../modules/memory-protocol";
 
 const roots: string[] = [];
@@ -14,8 +14,8 @@ afterEach(() => { for (const value of roots.splice(0).reverse()) rmSync(value, {
 const cli = resolve(import.meta.dir, "../../../cli.ts");
 interface Result { code: number; stdout: string; stderr: string }
 // Se usa Bun.spawn asíncrono a propósito: ver cli.e2e.test.ts (oven-sh/bun#34069).
-async function launch(home: string, cwd: string, args: string[]): Promise<Result> {
-  const child = Bun.spawn([process.execPath, cli, ...args], { cwd, env: { ...process.env, FORGE614_HOME: home }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+async function launch(home: string, cwd: string, args: string[], env: Record<string, string> = {}): Promise<Result> {
+  const child = Bun.spawn([process.execPath, cli, ...args], { cwd, env: { ...process.env, ...env, FORGE614_HOME: home }, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => child.kill(), 20_000);
   try {
     const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
@@ -145,17 +145,25 @@ test("many hosts starting at once in a fresh clone all succeed and register the 
 }, T);
 
 // Doce procesos que disparan a la vez la migración de una base v1.5.3 (esquema 7) terminan todos sin error y la base queda una sola vez en el esquema 10.
-test("upgrading a v1.5.3 database from many processes at once never reports a false schema error", async () => {
+test("upgrading a v1.5.3 database concurrently creates one pre-migration backup", async () => {
   const engram = await machine();
   const fixture = resolve(import.meta.dir, "../../../../tests/fixtures/v1.5.3/schema-7.db");
   for (const suffix of ["", "-wal", "-shm"]) rmSync(engram.database + suffix, { force: true });
   copyFileSync(fixture, engram.database);
   const holder = new Database(engram.database); holder.query("SELECT count(*) FROM memories").get();
   try {
-    const results = await Promise.all(Array.from({ length: 12 }, (_, index) => engram.run("group-create", "--name", `grupo-${index}`)));
-    expect(results.map(result => result.stderr)).toEqual(Array(12).fill(""));
+    const diagnostic = { NODE_ENV: "test", FORGE614_TEST_RAW_ERRORS: "1" };
+    const results = await Promise.all(Array.from({ length: 12 }, (_, index) =>
+      launch(engram.home, dirname(engram.home), ["group-create", "--name", `grupo-${index}`], diagnostic)));
+    expect(results.map(({ code, stderr }) => ({ code, stderr }))).toEqual(Array(12).fill({ code: 0, stderr: "" }));
     expect((await engram.ok("group-list")).groups).toHaveLength(12);
     expect(holder.query("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+    const memoryDirectory = dirname(engram.database);
+    const backups = readdirSync(memoryDirectory).filter(name => name.includes("pre-ecosystem"));
+    expect(backups).toHaveLength(1);
+    const backup = new Database(join(memoryDirectory, backups[0]!), { readonly: true });
+    try { expect(backup.query("PRAGMA user_version").get()).toEqual({ user_version: 7 }); }
+    finally { backup.close(); }
   } finally { holder.close(); }
 }, T);
 

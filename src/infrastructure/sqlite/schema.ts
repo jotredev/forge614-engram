@@ -528,7 +528,7 @@ function backupBeforeMigration(db: Database, version: number, label: "ecosystem"
   const stamp = new Date().toISOString().replace(/[-:.]/g, "");
   const target = `${main.file}.v${version}-pre-${label}-${stamp}-${randomUUID().slice(0, 8)}.bak`;
   const statement = `VACUUM INTO '${target.replaceAll("'", "''")}'`;
-  if (label === "project-identity") {
+  if (db.inTransaction) {
     // El escritor ya tiene el bloqueo inmediato. Otra conexión ve exactamente ese esquema,
     // sin intentar ejecutar VACUUM dentro de la transacción de migración.
     const snapshot = new Database(main.file, { readonly: true });
@@ -586,26 +586,21 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
     const current = currentVersion(db), decoded = decode(current);
     if (!decoded) throw new MemoryError("MIGRATION_REQUIRED", "No se puede habilitar el ámbito ecosystem en este formato.");
     validate(db, current);
-    return { current, decoded };
+    return decoded;
   }).deferred();
-  let version = seen.current;
-  let state = seen.decoded;
-  if (state.ecosystem) return { migrated: false, backup: null };
-  if (state.base < 5) { enableProjectBindings(db); version = currentVersion(db); state = decode(version)!; }
-  // Una conexión que no puede escribir debe fallar antes de dejar un respaldo inútil a medias.
-  // Son sentencias separadas a propósito: un exec de varias sentencias no deja ver un error de solo lectura.
-  db.exec("BEGIN IMMEDIATE");
-  try { db.exec(`PRAGMA user_version=${version + 100}`); } finally { db.exec("ROLLBACK"); }
-  const backup = backupBeforeMigration(db, version, "ecosystem");
-  let migrated = false;
+  if (seen.ecosystem) return { migrated: false, backup: null };
+  if (seen.base < 5) enableProjectBindings(db);
   const foreignKeys = (db.query("PRAGMA foreign_keys").get() as { foreign_keys: number }).foreign_keys;
   db.exec("PRAGMA foreign_keys=OFF");
   try {
-    db.transaction(() => {
-      const inside = currentVersion(db);
-      const insideState = decode(inside)!;
-      if (insideState.ecosystem) { validate(db, inside); return; }
-      validate(db, inside);
+    return db.transaction(() => {
+      const version = currentVersion(db);
+      const state = decode(version)!;
+      validate(db, version);
+      if (state.ecosystem) return { migrated: false, backup: null };
+      // El mismo bloqueo cubre la comprobación de escritura, el respaldo y la migración.
+      db.exec(`PRAGMA user_version=${version}`);
+      const backup = backupBeforeMigration(db, version, "ecosystem");
       const violationsBefore = foreignKeyViolations(db);
       const memoriesBefore = contentDigest(db, "memories");
       const requestsBefore = contentDigest(db, "requests");
@@ -616,13 +611,12 @@ export function enableEcosystem(db: Database): EcosystemEnrolment {
         || requestsAfter.count !== requestsBefore.count || requestsAfter.digest !== requestsBefore.digest
         || foreignKeyViolations(db) > violationsBefore) verificationFailed();
       try { db.exec("INSERT INTO memories_fts(memories_fts) VALUES('integrity-check')"); } catch { verificationFailed(); }
-      db.exec(`PRAGMA user_version=${encode({ ...insideState, ecosystem: true })}`);
-      migrated = true;
+      db.exec(`PRAGMA user_version=${encode({ ...state, ecosystem: true })}`);
+      return { migrated: true, backup };
     }).immediate();
   } finally {
     db.exec(`PRAGMA foreign_keys=${foreignKeys ? "ON" : "OFF"}`);
   }
-  return { migrated, backup: migrated ? backup : null };
 }
 
 /**
